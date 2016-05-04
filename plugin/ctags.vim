@@ -16,8 +16,8 @@ vmap <silent> ,tg :!ctags -Rn --c++-kinds=+p --fields=+ialS --extra=+q .<cr><cr>
 nmap <silent> ,ts :!ctags -Rn --c++-kinds=+p --fields=+ialS --extra=+q -o ~/.vim/systags /usr/include /usr/local/include<cr><cr>
 vmap <silent> ,ts :!ctags -Rn --c++-kinds=+p --fields=+ialS --extra=+q -o ~/.vim/systags /usr/include /usr/local/include<cr><cr>
 "vmap <silent> ,tg :!ctags -R --fields=+lS<cr><cr>
-"set tags+=~/.vim/systags
-set tags=./tags;                            "向上级目录递归查找tags文件（好像只有在Windows下才有用）
+set tags=~/.vim/systags
+" set tags+=./tags                            "向上级目录递归查找tags文件（好像只有在Windows下才有用）
 
 "解决ctrl+]跳转默认跳到第一个关键词
 nmap <C-]>  :ts <C-R>=expand("<cword>")<CR><CR>
