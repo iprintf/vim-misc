@@ -2,9 +2,9 @@
 "  C语言公共模块
 " -----------------------------------------------------------------------------
 
-function Create_Main()
+function Kyo_Create_Main()
     let s = ['#include <stdio.h>', '']
-    call add(s, 'int main(void)')
+    " call add(s, 'int main(void)')
     let s += ['int main(void)', '{']
     let s += ['    return 0;', '}']
     " let s = ['#include <stdio.h>', '', 'int main(void)', '{', '', '    return 0;', '}']
@@ -22,3 +22,16 @@ nnoremap ,ks  i#include <stdio.h><CR>#include <string.h><CR>
 nnoremap ,ka i#include <stdio.h><CR><CR>int main(void)<CR>{<CR>return 0;<ESC>v=o}<ESC>v=kO
 
 nnoremap ,kc i#include <iostream><CR><CR>using namespace std;<CR><CR>int main(void)<CR>{<CR>return 0;<ESC>v=o}<ESC>v=kO
+
+
+" -----------------------------------------------------------------------------
+"  PHP语言公共模块
+" -----------------------------------------------------------------------------
+function Kyo_Create_Command_PHP()
+    let command_path = system('echo -n $(which php)')
+    let s = ['#!'.command_path, '<?PHP']
+    call setline(1, s)
+    :exe 'normal 2jo'
+endfunction
+
+nnoremap ,pc :call Kyo_Create_Command_PHP()<CR>
