@@ -1,0 +1,294 @@
+
+imap_append
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_append — Append a string message to a specified mailbox
+
+说明
+
+bool imap_append ( resource $imap_stream , string $mailbox , string $message [,
+string $options = NULL [, string $internal_date = NULL ]] )
+
+Appends a string message to the specified mailbox.
+
+参数
+
+imap_stream
+
+    由 imap_open() 返回的 IMAP 流。
+
+mailbox
+
+    The mailbox name, see imap_open() for more information
+
+message
+
+    The message to be append, as a string
+
+    When talking to the Cyrus IMAP server, you must use "\r\n" as your
+    end-of-line terminator instead of "\n" or the operation will fail
+
+options
+
+    If provided, the options will also be written to the mailbox
+
+internal_date
+
+    If this parameter is set, it will set the INTERNALDATE on the appended
+    message. The parameter should be a date string that conforms to the rfc2060
+    specifications for a date_time value.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                     说明
+5.3.2 Added INTERNALDATE support to imap_append.
+
+范例
+
+Example #1 imap_append() example
+
+<?php
+$stream = imap_open("{imap.example.org}INBOX.Drafts", "username", "password");
+
+$check = imap_check($stream);
+echo "Msg Count before append: ". $check->Nmsgs . "\n";
+
+imap_append($stream, "{imap.example.org}INBOX.Drafts"
+                   , "From: me@example.com\r\n"
+                   . "To: you@example.com\r\n"
+                   . "Subject: test\r\n"
+                   . "\r\n"
+                   . "this is a test message, please ignore\r\n"
+                   );
+
+$check = imap_check($stream);
+echo "Msg Count after append : ". $check->Nmsgs . "\n";
+
+imap_close($stream);
+?>
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+Hi,
+
+As we have been struggling with this for some time I wanted to share how we got
+imap_append working properly with all MIME parts including attachments.  If you
+are sending email and also wish to append the sent message to the Sent Items
+folder, I cannot think of an easier way to do this, as follows:
+
+1) Use SwiftMailer to send the message via PHP.
+$message = Swift_Message::newInstance("Subject goes here");
+(then add from, to, body, attachments etc)
+$result = $mailer->send($message);
+
+2) When you construct the message in step 1) above save it to a variable as
+follows:
+
+$msg = $message->toString(); (this creates the full MIME message required for
+imap_append()!!  After this you can call imap_append like this:
+
+imap_append($imap_conn,$mail_box,$msg."\r\n","\\Seen");
+
+I hope this helps the readers, and prevents saves people from doing what we
+started doing - hand crafting the MIME messages :-0
+===============================================================================
+
+Here is how I used this function with an attachment. I used examples from
+everyone else but made it easier and cleaner to change.
+
+<?php
+$authhost="{000.000.000.000:993/validate-cert/ssl}Drafts";
+
+$user="sadasd";
+$pass="sadasd";
+
+if ($mbox=imap_open( $authhost, $user, $pass))
+{
+    $dmy=date("d-M-Y H:i:s");
+   
+    $filename="filename.pdf";
+    $attachment = chunk_split(base64_encode($filestring));
+   
+    $boundary = "------=".md5(uniqid(rand()));
+   
+    $msg = ("From: Somebody\r\n"
+        . "To: test@example.co.uk\r\n"
+        . "Date: $dmy\r\n"
+        . "Subject: This is the subject\r\n"
+        . "MIME-Version: 1.0\r\n"
+        . "Content-Type: multipart/mixed; boundary=\"$boundary\"\r\n"
+        . "\r\n\r\n"
+        . "--$boundary\r\n"
+        . "Content-Type: text/html;\r\n\tcharset=\"ISO-8859-1\"\r\n"
+        . "Content-Transfer-Encoding: 8bit \r\n"
+        . "\r\n\r\n"
+        . "Hello this is a test\r\n"
+        . "\r\n\r\n"
+        . "--$boundary\r\n"
+        . "Content-Transfer-Encoding: base64\r\n"
+        . "Content-Disposition: attachment; filename=\"$filename\"\r\n"
+        . "\r\n" . $attachment . "\r\n"
+        . "\r\n\r\n\r\n"
+        . "--$boundary--\r\n\r\n");
+       
+    imap_append($mbox,$authhost,$msg, "\\Draft");
+
+    imap_close($mbox);
+}
+else
+{
+    echo "<h1>FAIL!</h1>\n";
+}
+
+?>
+
+Hope this helps someone.
+===============================================================================
+
+The last argument, $options, are flags like for use with imap_setflag_full.
+It took a while before I found out
+===============================================================================
+
+The date format string to use when creating $internal_date is 'd-M-Y H:i:s O'.
+===============================================================================
+
+You can use PHPMailer ( https://github.com/PHPMailer/PHPMailer/ ) with imap.
+
+<?php
+// after creating content of mail you have to run preSend() - part of send()
+method
+$mail->send();
+// and you can get whole raw message with getSentMIMEMessage() method
+imap_append($imap, $mailserver.'INBOX.Sent',$mail->getSentMIMEMessage(), "\\
+Seen");
+===============================================================================
+
+I have used this function to copy all the emails of one account from one server
+to another. The problem was that this function don't copy the original
+receiving date for each message.
+To add a fifth field to provide the date, I have made some changes at some php
+source files following the steps described in http://www.zend.com/lists/php-dev
+/200303/msg00843.html and it has worked fine.
+The correct date format is the returned by the function mail_date in c-client/
+mail.c source file, for instance: "17-Jan-2007 10:00:01 +0100"
+===============================================================================
+
+The parameter description is misleading.  You can pass a string of flags such
+as '\Seen' [see imap_setflag_full()] as the last argument.  In the other imap
+functions, 'options' seems to usually refer to a bitmask, not message flags.
+===============================================================================
+
+I use imap_append() to decode message/rfc822 attachments type(embedded emails):
+
+$attachment = imap_fetchbody($mbox,$mailuid,$atpos,FT_UID);
+$attachment = imap_base64($attachment);
+$res =  imap_append($mbox,mboxspec("INBOX"),$attachment);
+//the embedded email is now a normal mail in my INBOX
+===============================================================================
+
+i used imap_append to copy any composed message into INBOX.Sent folder..
+
+$app = imap_append($stream,"{" . $connectstring . "}INBOX.Sent","$header\r\n"
+."$mbody\r\n");
+
+if (!$app) {
+error("Email copying to Sent folder FAILED!");
+}
+===============================================================================
+
+With SIMS IMAP server you also need to use \r\n as a line terminator, otherwise
+you will be able to add all the header lines correctly, but the body of the
+message will not be saved.<br>
+You can use \n by itself for each header line, but when creating the blank line
+between the headers and the body you must use \r\n\r\n
+===============================================================================
+
+We couldn't get this function to work properly with MS-Exchange/IMAP, not
+because there's a problem with a the function as such, but because MS-Exchange
+changed the content-type in the header from multipart/[anything] to text/plain
+in every instance.  We set ImapMessagesRetrievalMimeFormat to
+HtmlAndTextAlternative
+on the Exchange server, and that didn't help either.  I even tried wrapping the
+multipart message in a message/rfc822 wrapper and it reached inside the outer
+message and tweeked the inner message from multipart/alternative to text/plain.
+
+Messages emailed to the mbox were unaffected, I suggest you try that route
+instead, and move the relevant messages to where you want them.
+===============================================================================
+
+I encountered 3 problems when attempting to get my server to copy messages to
+the sent folder.
+
+1. Wouldn't login until I added /novalidate-cert
+2. No code example of getting the date sent
+3. Including an attachment
+
+Hope this code helps others
+
+<?php
+$dmy=date("d-M-Y H:i:s");
+$dmy.= " +0100"; // Had to do this bit manually as server and me are in
+different timezones
+$stream=@imap_open("{mail.example.com/novalidate-cert}INBOX.Sent", "username", 
+"password");
+$boundary = "------=".md5(uniqid(rand()));
+$header = "MIME-Version: 1.0\r\n";
+$header .= "Content-Type: multipart/mixed; boundary=\"$boundary\"\r\n";
+$header .= "\r\n";
+$file="../path_to/filename.pdf";
+$filename="filename.pdf";
+$ouv=fopen ("$file", "rb");$lir=fread ($ouv, filesize ("$file"));fclose
+($ouv);
+$attachment = chunk_split(base64_encode($lir));
+$msg2 .= "--$boundary\r\n";
+$msg2 .= "Content-Transfer-Encoding: base64\r\n";
+$msg2 .= "Content-Disposition: attachment; filename=\"$filename\"\r\n";
+$msg2 .= "\r\n";
+$msg2 .= $attachment . "\r\n";
+$msg2 .= "\r\n\r\n";
+$msg3 .= "--$boundary--\r\n";
+imap_append($stream,"{mail.example.com/novalidate-cert}INBOX.Sent","From:
+Somebody\r\n"."To: test@example.co.uk\r\n"."Date: $dmy\r\n"."Subject: This is
+the subject\r\n"."$header\r\n"."$msg2\r\n"."$msg3\r\n");
+imap_close ($stream);
+?>
+===============================================================================
+
+I spend most of today refining the example to make it work properly when saving
+to the Inbox.Sent folder.
+
+The append command now looks like:
+
+    $return = imap_append($stream,$mailbox_addr
+                       , "From: $fromReply\r\n"
+                       . "To: $to\r\n"
+                       . "Subject: $subject\r\n"
+                       . "Date: $now  \r\n"
+              . "X-Mailer: Cmail_v2.0 \r\n"
+                       . "X-Originating-IP: $ip_addr \r\n"
+                       . "MIME-Version: 1 \r\n"
+                       . "Content-Type: text/html;\r\n\tcharset=\"ISO-8859-1\"\
+r\n"
+                       . "Content-Transfer-Encoding: 8bit \r\n"
+                       . "\r\n\r\n"
+                       . "$wk_msg\r\n"
+                       );
+
+This inserts the current date into the email and lets it support html content.
+The one thing that I haven't got working yet is including attachments. I
+presumably have to make the boundaries and attachment content part of the
+message body.
+
+Chris
+===============================================================================
+
+Please observe that imap_append() do not support NNTP posting. Use fsockopen()
+instead, and do the work yourself.

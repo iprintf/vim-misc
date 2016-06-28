@@ -1,0 +1,159 @@
+
+Transliterator::transliterate
+
+transliterator_transliterate
+
+(PHP >= 5.4.0, PECL intl >= 2.0.0)
+
+Transliterator::transliterate -- transliterator_transliterate — Transliterate a
+string
+
+说明
+
+面向对象风格
+
+public string Transliterator::transliterate ( string $subject [, int $start [, 
+int $end ]] )
+
+过程化风格
+
+transliterator_transliterate ( mixed $transliterator , string $subject [, int
+$start [, int $end ]] )
+
+Transforms a string or part thereof using an ICU transliterator.
+
+参数
+
+transliterator
+
+    In the procedural version, either a Transliterator or a string from which a
+    Transliterator can be built.
+
+subject
+
+    The string to be transformed.
+
+start
+
+    The start index (in UTF-16 code units) from which the string will start to
+    be transformed, inclusive. Indexing starts at 0. The text before will be
+    left as is.
+
+end
+
+    The end index (in UTF-16 code units) until which the string will be
+    transformed, exclusive. Indexing starts at 0. The text after will be left
+    as is.
+
+返回值
+
+The transfomed string on success, 或者在失败时返回 FALSE.
+
+范例
+
+Example #1 Converting escaped UTF-16 code units
+
+<?php
+$s = "\u304A\u65E9\u3046\u3054\u3056\u3044\u307E\u3059";
+echo transliterator_transliterate("Hex-Any/Java", $s), "\n";
+
+//now the reverse operation with a supplementary character
+$supplChar = html_entity_decode('&#x1D11E;');
+echo mb_strlen($supplChar, "UTF-8"), "\n";
+$encSupplChar = transliterator_transliterate("Any-Hex/Java", $supplChar);
+//echoes two encoded UTF-16 code units
+echo $encSupplChar, "\n";
+//and back
+echo transliterator_transliterate("Hex-Any/Java", $encSupplChar), "\n";
+?>
+
+以上例程的输出类似于：
+
+お早うございます
+1
+\uD834\uDD1E
+𝄞
+
+
+参见
+
+  • Transliterator::getErrorMessage() - Get last error message
+  • Transliterator::__construct() - Private constructor to deny instantiation
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+I pretty much like the idea of hdogan, but there's at least one group of
+characters he's missing: ligature characters.
+They're at least used in Norwegian and I read something about French, too ...
+Some are just used for styling (f.e. ﬁ)
+
+Here's an example that supports all characters (should at least, according to
+the documentation):
+<?php
+var_dump(transliterator_transliterate('Any-Latin; Latin-ASCII; Lower()', "A æ
+Übérmensch på høyeste nivå! И я люблю PHP! ﬁ"));
+// string(41) "a ae ubermensch pa hoyeste niva! i a lublu php! fi"
+?>
+
+In this example any character will firstly be converted to a latin character.
+If that's finished, replace all latin characters by their ASCII replacement.
+===============================================================================
+
+You can create slugs easily with:
+
+<?php
+function slugify($string) {
+    $string = transliterator_transliterate("Any-Latin; NFD; [:Nonspacing Mark:]
+Remove; NFC; [:Punctuation:] Remove; Lower();", $string);
+    $string = preg_replace('/[-\s]+/', '-', $string);
+    return trim($string, '-');
+}
+
+echo slugify("Я люблю PHP!");
+?>
+===============================================================================
+
+Sorry, for posting it again, but I found a bug in my code:
+
+If you have a character, like the cyrillic ь (a soft-sign - no sound), the
+"Any-Latin" would translate it to a prime-character, and the "Latin-ASCII"
+doesn't touch prime-characters. Therefore I added an option to remove all
+characters, that are higher than \u0100.
+
+Here's my new code, including an example:
+
+var_dump(transliterator_transliterate('Any-Latin; Latin-ASCII; [\u0100-\u7fff]
+remove',
+    "A æ Übérmensch på høyeste nivå! И я люблю PHP! есть. ﬁ"));
+// string(50) "A ae Ubermensch pa hoyeste niva! I a lublu PHP! est. fi"
+
+Another approach, I found quite helpful (if you by no way want to remove
+characters ...), try to use iconv() in addition. This surely will just return
+ASCII characters.
+
+See: http://stackoverflow.com/a/3542748/517914
+
+Also an example here:
+
+var_dump(iconv("UTF-8", "ASCII//TRANSLIT//IGNORE", transliterator_transliterate
+('Any-Latin; Latin-ASCII',
+    "A æ Übérmensch på høyeste nivå! И я люблю PHP! есть. ﬁ"));
+// string(50) "A ae Ubermensch pa hoyeste niva! I a lublu PHP! est'. fi"
+===============================================================================
+
+OOP version :
+
+<?php
+$str = 'àáâãäçèéêëìíîïñòóôõöùúûüýÿ
+ÀÁÂÃÄÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ';
+$rule = 'NFD; [:Nonspacing Mark:] Remove; NFC';
+
+$myTrans = Transliterator::create($rule);
+echo $myTrans->transliterate($str);
+
+//aaaaaceeeeiiiinooooouuuuyy
+//AAAAACEEEEIIIINOOOOOUUUUY
+?>

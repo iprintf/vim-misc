@@ -1,0 +1,170 @@
+
+zlib://
+
+bzip2://
+
+zip://
+
+zlib:// -- bzip2:// -- zip:// — 压缩流
+
+说明
+
+zlib: PHP 4.0.4 - PHP 4.2.3（仅支持带 fopencookie 的系统）
+
+compress.zlib:// 和 compress.bzip2:// PHP 4.3.0 及以上
+
+zlib: 的功能类似 gzopen()，但是其数据流还能被 fread() 和其他文件系统函数使用。
+自 PHP 4.3.0 后这个不建议被使用，因为会和其他带“:”字符的文件名混淆；请使用
+compress.zlib:// 作为替代。
+
+compress.zlib://、 compress.bzip2:// 和 gzopen()、bzopen() 是相等的。并且可以在
+不支持 fopencookie 的系统中使用。
+
+ZIP 扩展注册了 zip: 封装协议。
+
+可选项
+
+  • compress.zlib://file.gz
+  • compress.bzip2://file.bz2
+  • zip://archive.zip#dir/file.txt
+
+用法
+
+                            封装协议摘要
+         属性                              支持
+受限于 allow_url_fopen No
+允许读取               Yes
+允许写入               Yes（除了 zip://）
+允许附加               Yes（除了 zip://）
+允许同时读写           No
+支持 stat()            No，请使用普通的 file:// 封装器统计压缩文件。
+支持 unlink()          No，请使用 file:// 封装器删除压缩文件。
+支持 rename()          No
+支持 mkdir()           No
+支持 rmdir()           No
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Example on how to read an entry from a ZIP archive (file "bar.txt" inside "./
+foo.zip"):
+
+<?php
+
+$fp = fopen('zip://./foo.zip#bar.txt', 'r');
+if( $fp ){
+    while( !feof($fp) ){
+        echo fread($fp, 8192);
+    }
+    fclose($fp);
+}
+
+?>
+
+Also, apparently, the "zip:" wrapper does not allow writing as of PHP/5.3.6.
+You can read http://php.net/ziparchive-getstream for further reference since
+the underlying code is probably the same.
+===============================================================================
+
+Prior to PHP 5.6 i used code like
+<?php
+file_get_contents("compress.zlib://php://input");
+?>
+to read gz-compressed or plain input file. Not it doesn't work.
+Simple workaround :
+<?php
+//file_get_contents("compress.zlib://php://input");
+
+class gzip_header_filter8 extends php_user_filter {
+    private $filtered = 0;
+    public function filter($in, $out, &$consumed, $closing) {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            if($this->filtered == 0) {
+                $header_len = 8;
+                $header = substr($bucket->data, 0, 8);
+                $flags = ord($header[1]);
+                if($flags & 0x08) {
+                    // a filename is present
+                    $header_len = strpos($bucket->data, "\0", 8) + 1;
+                }
+                $bucket->data = substr($bucket->data, $header_len);
+                $this->filtered = $header_len;
+            }
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register('gzip_header_filter8', 'gzip_header_filter8');
+
+$READ_LEN = 64*1024;
+$MAX_BUF_LEN = $READ_LEN*1024;
+
+$mode_plain=true;
+$src=fopen("php://input","rb"); //test if OK!!!!
+$magic_number=fread($src,2);
+$input="";
+    if(strlen($magic_number)==2)
+        if(
+            (ord($magic_number[0])==31)
+        &&  (ord($magic_number[1])==139)
+            )
+        {
+        $mode_plain=false;
+        stream_filter_append($src, "gzip_header_filter8", STREAM_FILTER_READ);
+        stream_filter_append($src, "zlib.inflate", STREAM_FILTER_READ);
+        }
+else
+        {
+        $input=$magic_number;
+        }
+
+/* read starts here*/
+$k = 0;
+while (!feof($src) && $k <= $MAX_BUF_LEN) {
+      $inp = fread($src,$READ_LEN);
+      $k += strlen($inp);
+      $input.=$inp;
+    }
+echo $input;
+fclose($src);
+?>
+===============================================================================
+
+I had a difficult time finding how to use compress.zlib with an http resource
+so I thought I would post what I found
+<?php
+$file = 'compress.zlib://http://www.example.com/myarchive.gz';
+$fr = fopen($file, 'rb');
+?>
+
+Per the bugreport I found here (http://bugs.php.net/bug.php?id=29045)
+===============================================================================
+
+@alvaro at demogracia dot com
+
+well in fact that is wrong!
+right code is:
+
+<?php
+
+$fp = fopen('compress.zip://./foo.zip#bar.txt', 'r');
+if( $fp ){
+    while( !feof($fp) ){
+        echo fread($fp, 8192);
+    }
+    fclose($fp);
+}
+
+?>
+
+as you might see you just have to add a "compress."
+
+maybe when you posted this note is was right (2 years ago) but today its
+wrong... :/
+
+sry for my english i am german :)

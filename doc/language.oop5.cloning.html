@@ -1,0 +1,848 @@
+
+对象复制
+
+在多数情况下，我们并不需要完全复制一个对象来获得其中属性。但有一个情况下确实需
+要：如果你有一个 GTK 窗口对象，该对象持有窗口相关的资源。你可能会想复制一个新的
+窗口，保持所有属性与原来的窗口相同，但必须是一个新的对象（因为如果不是新的对象
+，那么一个窗口中的改变就会影响到另一个窗口）。还有一种情况：如果对象 A 中保存着
+对象 B 的引用，当你复制对象 A 时，你想其中使用的对象不再是对象 B 而是 B 的一个
+副本，那么你必须得到对象 A 的一个副本。
+
+对象复制可以通过 clone 关键字来完成（如果可能，这将调用对象的 __clone() 方法）
+。对象中的 __clone() 方法不能被直接调用。
+
+$copy_of_object = clone $object;
+
+当对象被复制后，PHP 5 会对对象的所有属性执行一个浅复制（shallow copy）。所有的
+引用属性仍然会是一个指向原来的变量的引用。
+
+void __clone ( void )
+
+当复制完成时，如果定义了 __clone() 方法，则新创建的对象（复制生成的对象）中的
+__clone() 方法会被调用，可用于修改属性的值（如果有必要的话）。
+
+Example #1 复制一个对象
+
+<?php
+class SubObject
+{
+    static $instances = 0;
+    public $instance;
+
+    public function __construct() {
+        $this->instance = ++self::$instances;
+    }
+
+    public function __clone() {
+        $this->instance = ++self::$instances;
+    }
+}
+
+class MyCloneable
+{
+    public $object1;
+    public $object2;
+
+    function __clone()
+    {
+      
+        // 强制复制一份this->object， 否则仍然指向同一个对象
+        $this->object1 = clone $this->object1;
+    }
+}
+
+$obj = new MyCloneable();
+
+$obj->object1 = new SubObject();
+$obj->object2 = new SubObject();
+
+$obj2 = clone $obj;
+
+
+print("Original Object:\n");
+print_r($obj);
+
+print("Cloned Object:\n");
+print_r($obj2);
+
+?>
+
+以上例程会输出：
+
+Original Object:
+MyCloneable Object
+(
+    [object1] => SubObject Object
+        (
+            [instance] => 1
+        )
+
+    [object2] => SubObject Object
+        (
+            [instance] => 2
+        )
+
+)
+Cloned Object:
+MyCloneable Object
+(
+    [object1] => SubObject Object
+        (
+            [instance] => 3
+        )
+
+    [object2] => SubObject Object
+        (
+            [instance] => 2
+        )
+
+)
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+I ran into the same problem of an array of objects inside of an object that I
+wanted to clone all pointing to the same objects. However, I agreed that
+serializing the data was not the answer. It was relatively simple, really:
+
+public function __clone() {
+    foreach ($this->varName as &$a) {
+        foreach ($a as &$b) {
+            $b = clone $b;
+        }
+    }
+}
+
+Note, that I was working with a multi-dimensional array and I was not using the
+Key=>Value pair system, but basically, the point is that if you use foreach,
+you need to specify that the copied data is to be accessed by reference.
+===============================================================================
+
+It should go without saying that if you have circular references, where a
+property of object A refers to object B while a property of B refers to A (or
+more indirect loops than that), then you'll be glad that clone does NOT
+automatically make a deep copy!
+
+<?php
+
+class Foo
+{
+    var $that;
+
+function __clone()
+{
+    $this->that = clone $this->that;
+}
+
+}
+
+$a = new Foo;
+$b = new Foo;
+$a->that = $b;
+$b->that = $a;
+
+$c = clone $a;
+echo 'What happened?';
+var_dump($c);
+===============================================================================
+
+Here is test script i wrote to test the behaviour of clone when i have arrays
+with primitive values in my class - as an additonal test of the note below by
+jeffrey at whinger dot nl
+
+<pre>
+<?php
+
+class MyClass {
+
+    private $myArray = array();
+    function pushSomethingToArray($var) {
+        array_push($this->myArray, $var);
+    }
+    function getArray() {
+        return $this->myArray;
+    }
+
+}
+
+//push some values to the myArray of Mainclass
+$myObj = new MyClass();
+$myObj->pushSomethingToArray('blue');
+$myObj->pushSomethingToArray('orange');
+$myObjClone = clone $myObj;
+$myObj->pushSomethingToArray('pink');
+
+//testing
+print_r($myObj->getArray());     //Array([0] => blue,[1] => orange,[2] => pink)
+print_r($myObjClone->getArray());//Array([0] => blue,[1] => orange)
+//so array  cloned
+
+?>
+</pre>
+===============================================================================
+
+Keep in mind that since PHP 5.2.5, trying to clone a non-object correctly
+results in a fatal error, this differs from previous versions where only a
+Warning was thrown.
+===============================================================================
+
+For me it wasn't very clear to how this cloning of objects really worked so I
+made this little bit of code:
+
+<?php
+class foo
+{
+    public $test;
+   
+    public function test()
+    {
+        echo 'give us a '.$this->test."<br>\n";
+    }
+}
+
+class bar
+{
+    public $foo;
+   
+    public function insertFoo($foo)
+    {
+        $this->foo = $foo;
+    }
+}
+
+$foo = new foo();
+
+$foo->test = 'foo';
+
+$bar = new bar();
+
+$bar->insertFoo($foo);
+
+$foo->test();
+
+$bar->foo->test();
+
+$foo->test = 'bar';
+
+$foo->test();
+
+$bar->foo->test();
+
+$bar->foo = clone $foo;
+
+$bar->foo->test = 'woop woop';
+
+$foo->test();
+
+$bar->foo->test();
+
+// result:
+// give us a foo
+// give us a foo
+// give us a bar
+// give us a bar
+// give us a bar
+// give us a woop woop
+?>
+===============================================================================
+
+I think it's relevant to note that __clone is NOT an override. As the example
+shows, the normal cloning process always occurs, and it's the responsibility of
+the __clone method to "mend" any "wrong" action performed by it.
+===============================================================================
+
+It's possible to know how many clones have been created of a  object. I'm think
+that is correct:
+
+<?php
+
+class Classe {
+
+    public static $howManyClones = 0;
+
+    public function __clone() {
+        ++static::$howManyClones;
+    }
+
+    public static function howManyClones() {
+        return static::$howManyClones;
+    }
+
+    public function __destruct() {
+        --static::$howManyClones;
+    }
+}
+
+$a = new Classe;
+
+$b = clone $a;
+$c = clone $b;
+$d = clone $c;
+
+echo 'Clones:' . Classe::howManyClones() . PHP_EOL;
+
+unset($d);
+
+echo 'Clones:' . Classe::howManyClones() . PHP_EOL;
+===============================================================================
+
+Here are some cloning and reference gotchas we came up against at Last.fm.
+
+1. PHP treats variables as either 'values types' or 'reference types', where
+the difference is supposed to be transparent. Object cloning is one of the few
+times when it can make a big difference. I know of no programmatic way to tell
+if a variable is intrinsically a value or reference type. There IS however a
+non-programmatic ways to tell if an object property is value or reference type:
+
+<?php
+
+class A { var $p; }
+
+$a = new A;
+$a->p = 'Hello'; // $a->p is a value type
+var_dump($a);
+
+/*
+object(A)#1 (1) {
+  ["p"]=>
+  string(5) "Hello" // <-- no &
+}
+*/
+
+$ref =& $a->p; // note that this CONVERTS $a->p into a reference type!!
+var_dump($a);
+
+/*
+object(A)#1 (1) {
+  ["p"]=>
+  &string(5) "Hello" // <-- note the &, this indicates it's a reference.
+}
+*/
+
+?>
+
+2. unsetting all-but-one of the references will convert the remaining reference
+back into a value. Continuing from the previous example:
+
+<?php
+
+unset($ref);
+var_dump($a);
+
+/*
+object(A)#1 (1) {
+  ["p"]=>
+  string(5) "Hello"
+}
+*/
+
+?>
+
+I interpret this as the reference-count jumping from 2 straight to 0.
+However...
+
+2. It IS possible to create a reference with a reference count of 1 - i.e. to
+convert an property from value type to reference type, without any extra
+references. All you have to do is declare that it refers to itself. This is
+HIGHLY idiosyncratic, but nevertheless it works. This leads to the observation
+that although the manual states that 'Any properties that are references to
+other variables, will remain references,' this is not strictly true. Any
+variables that are references, even to *themselves* (not necessarily to other
+variables), will be copied by reference rather than by value.
+
+Here's an example to demonstrate:
+
+<?php
+
+class ByVal
+{
+    var $prop;
+}
+
+class ByRef
+{
+    var $prop;
+    function __construct() { $this->prop =& $this->prop; }
+}
+
+$a = new ByVal;
+$a->prop = 1;
+$b = clone $a;
+$b->prop = 2; // $a->prop remains at 1
+
+$a = new ByRef;
+$a->prop = 1;
+$b = clone $a;
+$b->prop = 2; // $a->prop is now 2
+
+?>
+===============================================================================
+
+Regarding the generic deep __clone() example provided by david ashe at metabin:
+
+If your object has a variable that stores an array of objects, that particular
+__clone() example will NOT perform a deep copy on your array of objects.
+===============================================================================
+
+If you want a property that gets the same value in every clone if changed, you
+can do this simple trick:
+
+<?php
+
+class A
+{
+    public $name ;
+   
+    public function __construct()
+    {
+        $this->name = & $this->name;
+    }
+}
+
+$a = new A;
+$a->name = "George";
+
+$b = clone $a;
+$b->name = "Somebody else";
+
+var_dump($a);
+var_dump($b);
+?>
+
+this will output:
+
+object(A)#1 (1) {
+  ["name"]=>
+  &string(13) "Somebody else"
+}
+object(A)#2 (1) {
+  ["name"]=>
+  &string(13) "Somebody else"
+}
+
+You can change any of the clones property and all of the others will change
+accordingly.
+===============================================================================
+
+The __clone() method for deep cloning by cheetah at tanabi dot org also works
+when the object to be cloned contains references to itself. This is not the
+case for any variation of the __clone() method in edit by danbrown at php dot
+net.
+
+We are taking advantage of the fact that one can serialize an object that
+references itself.
+
+Example:
+
+<?php
+class Foo
+{
+    function __construct()
+    {
+        $this->_myself = $this;
+    }
+
+    function __clone() {
+        foreach ($this as $key => $val) {
+            if (is_object($val) || (is_array($val))) {
+                $this->{$key} = unserialize(serialize($val));
+            }
+        }
+    }
+}
+
+// this object references itself
+$foo = new Foo();
+
+// create a deep clone
+$bar = clone $foo;
+
+// check if we reach this point
+echo 'Finished cloning!';
+?>
+
+Replacing the __clone() method with the one shown in edit by danbrown at php
+dot net we run into an infinite loop, and we never get message 'Finished
+cloning!'.
+===============================================================================
+
+Another gotcha I encountered: like __construct and __desctruct, you must call
+parent::__clone() yourself from inside a child's __clone() function. The manual
+kind of got me on the wrong foot here: "An object's __clone() method cannot be
+called directly."
+===============================================================================
+
+This base class automatically clones attributes of type object or array values
+of type object recursively. Just inherit your own classes from this base class.
+
+<?php
+    class clone_base
+    {
+        public function __clone()
+        {
+            $object_vars = get_object_vars($this);
+
+            foreach ($object_vars as $attr_name => $attr_value)
+            {
+                if (is_object($this->$attr_name))
+                {
+                    $this->$attr_name = clone $this->$attr_name;
+                }
+                else if (is_array($this->$attr_name))
+                {
+                    // Note: This copies only one dimension arrays
+                    foreach ($this->$attr_name as &$attr_array_value)
+                    {
+                        if (is_object($attr_array_value))
+                        {
+                            $attr_array_value = clone $attr_array_value;
+                        }
+                        unset($attr_array_value);
+                    }
+                }
+            }
+        }
+    }
+?>
+
+Example:
+<?php
+    class foo extends clone_base
+    {
+        public $attr = "Hello";
+        public $b = null;
+        public $attr2 = array();
+
+        public function __construct()
+        {
+            $this->b = new bar("World");
+            $this->attr2[] = new bar("What's");
+            $this->attr2[] = new bar("up?");
+        }
+    }
+
+    class bar extends clone_base
+    {
+        public $attr;
+
+        public function __construct($attr_value)
+        {
+            $this->attr = $attr_value;
+        }
+    }
+
+    echo "<pre>";
+
+    $f1 = new foo();
+    $f2 = clone $f1;
+    $f2->attr = "James";
+    $f2->b->attr = "Bond";
+    $f2->attr2[0]->attr = "Agent";
+    $f2->attr2[1]->attr = "007";
+
+    echo "f1.attr = " . $f1->attr . "\n";
+    echo "f1.b.attr = " . $f1->b->attr . "\n";
+    echo "f1.attr2[0] = " . $f1->attr2[0]->attr . "\n";
+    echo "f1.attr2[1] = " . $f1->attr2[1]->attr . "\n";
+    echo "\n";
+    echo "f2.attr = " . $f2->attr . "\n";
+    echo "f2.b.attr = " . $f2->b->attr . "\n";
+    echo "f2.attr2[0] = " . $f2->attr2[0]->attr . "\n";
+    echo "f2.attr2[1] = " . $f2->attr2[1]->attr . "\n";
+?>
+===============================================================================
+
+To implement __clone() method in complex classes I use this simple function:
+
+function clone_($some)
+{
+   return (is_object($some)) ? clone $some : $some;
+}
+
+In this way I don't need to care about type of my class properties.
+===============================================================================
+
+@DPB
+
+I believe the two functions are not quite the same. The serialize followed by
+deserialize method is the way I've done deep cloning in other languages
+(bypasses any weird clone function behavior and ensures you have a
+no-strings-attached copy of the object).
+===============================================================================
+
+Want deep cloning without too much hassle?
+
+<?php
+function __clone() {
+    foreach($this as $key => $val) {
+        if(is_object($val)||(is_array($val))){
+            $this->{$key} = unserialize(serialize($val));
+        }
+    }
+}
+?>
+
+That will insure any object, or array that may potentially contain objects,
+will get cloned without using recursion or other support methods.
+
+
+
+[EDIT BY danbrown AT php DOT net: An almost exact function was contributed on
+02-DEC-2008-10:18 by (david ashe AT metabin):
+
+<?php
+    function __clone(){
+        foreach($this as $name => $value){
+            if(gettype($value)=='object'){
+                $this->$name= clone($this->$name);
+            }
+        }
+    }
+?>
+
+Giving credit where it's due.  ~DPB]
+===============================================================================
+
+If you want a property that gets the same value in every clone if changed, you
+can do this simple trick:
+
+<?php
+
+class A
+{
+    public static $name ;
+
+}
+
+$a = new A;
+$a::$name = 'George';
+
+$b = clone $a;
+$b::$name = "Somebody else";
+
+echo 'a: ' . $a::$name . "\n";
+echo 'b: ' . $b::$name . "\n";
+
+?>
+
+this will output:
+
+a: Somebody else
+b: Somebody else
+
+You can change any of the clones property and all of the others will change
+accordingly.
+===============================================================================
+
+Arrays are shallow cloned on assignment, so don't use the clone keyword on
+them, just assign it to a new variable. That would lead to an error instead.
+===============================================================================
+
+Remember that in PHP 5 ALL objects are assigned BY REFERENCE.
+
+<?php
+
+  function foo($a) // notice that '&' near $a is missing
+  {
+    $a['bar'] = 10;
+  }
+
+  $x = array('bar' => 0); // built-in array() is not an object
+  $y = new ArrayObject(array('bar' => 0));
+
+  echo "\$x['bar'] == ${x['bar']};\n\$y['bar'] == ${y['bar']};\n\n";
+
+  foo($x);
+  foo($y);
+
+  echo "\$x['bar'] == ${x['bar']};\n\$y['bar'] == ${y['bar']};\n";
+
+?>
+
+Output:
+$x['bar'] == 0;
+$y['bar'] == 0;
+
+$x['bar'] == 0;
+$y['bar'] == 10;
+
+Hope this will be useful.
+
+By the way, to determine whether the variable is compatible with ArrayAccess/
+ArrayObject see http://php.net/manual/en/function.is-array.php#48083
+===============================================================================
+
+If you think "clone" will create a new instance, thus calling "__constructor",
+you're wrong. clone seems to only allocate memory for the object cloned, and
+simply copies the variables memory from the original to the new one (imagine
+something alike memcpy() in C). Nothing more. Keep in mind you'll have to do
+all the rest by yourself.
+===============================================================================
+
+CLONED ARMIES? USE STATIC DATA
+
+When I think of cloning, I always think of Star Wars "Cloned Army"... where the
+number of clones are in the hundreds of thousands. So far, I have only seen
+examples of one or two clones with either shallow, deep, or recursive
+references. My fix is to use the static keyword. With static, you choose the
+properties your objects share... and makes scaling up the number of so-called
+"clones" much easier.
+
+<?php
+
+class Soldier {
+  public static $status;           // this is the property I'm trying to clone
+
+  protected static $idCount = 0;   // used to increment ID numbers
+  protected $id;                   // each Soldier will have a unique ID
+
+  public function __construct() {
+    $this->id = ++self::$idCount;
+  } 
+
+  public function issueCommand($task) {
+    switch($task){
+      case 'Deploy Troops': self::$status = 'deploying'; break;
+      case 'March Forward': self::$status = 'marching forward'; break;
+      case 'Fire!': self::$status = 'shot fired'; break;
+      case 'Retreat!': self::$status = 'course reversed'; break;
+      default: self::$status = 'at ease'; break;
+    }
+    echo 'COMMAND ISSUED: ' . $task . '<br>';
+  }
+
+  public function __toString() {
+    return "Soldier[id=$this->id, status=" . self::$status . ']';
+  }
+}
+
+# create the General and the Cloned Army
+$general = new Soldier();
+$platoon = array();
+  for($i = 0; $i < 250; $i++) $platoon[] = new Soldier();
+
+# issue commands, then check what soldiers are doing
+$general->issueCommand('Deploy Troops');
+echo $general . '<br>';
+echo $platoon[223] . '<br>';
+echo $platoon[12] . '<br>';
+
+$general->issueCommand('March Forward');
+echo $platoon[47] . '<br>';
+echo $platoon[163] . '<br>';
+
+$general->issueCommand('Fire!');
+echo $platoon[248] . '<br>';
+echo $platoon[68] . '<br>';
+
+$general->issueCommand('Retreat!');
+echo $platoon[26] . '<br>';
+echo $platoon[197] . '<br>';
+?>
+
+COMMAND ISSUED: Deploy Troops
+  Soldier[id=1, status=deploying]
+  Soldier[id=225, status=deploying]
+  Soldier[id=14, status=deploying]
+
+COMMAND ISSUED: March Forward
+  Soldier[id=49, status=marching forward]
+  Soldier[id=165, status=marching forward]
+
+COMMAND ISSUED: Fire!
+  Soldier[id=250, status=shot fired]
+  Soldier[id=70, status=shot fired]
+
+COMMAND ISSUED: Retreat!
+  Soldier[id=28, status=course reversed]
+  Soldier[id=199, status=course reversed]
+===============================================================================
+
+<?php
+class A{
+  public $my_var;
+  function __construct() { $this->my_var = 'aaa'; }
+  }
+ 
+  $a = new A;
+  $b = clone $a;
+  $b->my_var = 'bbb';
+ 
+  echo($a->my_var);   // 'aaa'
+  echo($b->my_var);   // 'bbb'
+
+  $c = new A;
+  $d = $c;
+  $d->my_var = 'bbb';
+ 
+  echo($c->my_var);   // 'bbb'
+  echo($d->my_var);   // 'bbb'
+?>
+
+simple example to understand the basic concept behind clone.
+===============================================================================
+
+I had some trouble with cloning an array with objects in another object.
+But I found a function on the internet  that was very helpful:
+
+function array_clone( array $array ) {
+        $result = array();
+        foreach( $array as $key => $val ) {
+            if( is_array( $val ) ) {
+                $result[$key] = arrayCopy( $val );
+            } elseif ( is_object( $val ) ) {
+                $result[$key] = clone $val;
+            } else {
+                $result[$key] = $val;
+            }
+        }
+        return $result;
+}
+
+//== my test case:
+class Employee
+{
+    public $sName = '';
+}
+
+class EmployeesContainer
+{
+    private $arrObjects = array();
+   
+    public function __clone()
+    {   
+        //try to comment out the line below, you will see the out differs
+        $this->arrObjects = array_clone($this->arrObjects);
+    }
+   
+    public function add(Employee $objEmployee)
+    {
+        $this->arrObjects[] = $objEmployee;
+    }
+   
+    public function getInternalArray()
+    {
+        return $this->arrObjects;
+    }
+}
+
+$objContainerOriginal = new EmployeesContainer();
+
+$objEmpl1 = new Employee();
+$objEmpl1->sName = 'erny';
+$objContainerOriginal->add($objEmpl1);
+
+$objEmpl2 = new Employee();
+$objEmpl2->sName = 'bert';
+$objContainerOriginal->add($objEmpl2);
+
+$objContainerClone = clone $objContainerOriginal;
+
+if ($objContainerClone->getInternalArray()[1] === $objEmpl2)
+    echo 'SAME object: '.$objContainerClone->getInternalArray()[0]->sName.' <->
+'.$objEmpl1->sName;
+else
+    echo 'OTHER object: '.$objContainerClone->getInternalArray()[0]->sName.'
+<-> '.$objEmpl1->sName;

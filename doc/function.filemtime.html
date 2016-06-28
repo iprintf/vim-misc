@@ -1,0 +1,668 @@
+
+filemtime
+
+(PHP 4, PHP 5, PHP 7)
+
+filemtime — 取得文件修改时间
+
+说明
+
+int filemtime ( string $filename )
+
+本函数返回文件中的数据块上次被写入的时间，也就是说，文件的内容上次被修改的时间
+。
+
+参数
+
+filename
+
+    文件的路径。
+
+返回值
+
+返回文件上次被修改的时间，或者在失败时返回 FALSE。时间以 Unix 时间戳的方式返回
+，可用于 date()。
+
+范例
+
+Example #1 filemtime() 例子
+
+<?php
+// outputs e.g.  somefile.txt was last modified: December 29 2002 22:16:23.
+
+$filename = 'somefile.txt';
+if (file_exists($filename)) {
+    echo "$filename was last modified: " . date ("F d Y H:i:s.", filemtime(
+$filename));
+}
+?>
+
+错误／异常
+
+失败时抛出E_WARNING警告。
+
+注释
+
+    Note:
+
+    注意：不同文件系统对时间的判断方法可能是不相同的。
+
+    Note: 此函数的结果会被缓存。参见 clearstatcache() 以获得更多细节。
+
+Tip
+
+自 PHP 5.0.0 起, 此函数也用于某些 URL 包装器。请参见支持的协议和封装协议以获得
+支持 stat() 系列函数功能的包装器列表。
+
+参见
+
+  • filectime() - 取得文件的 inode 修改时间
+  • stat() - 给出文件的信息
+  • touch() - 设定文件的访问和修改时间
+  • getlastmod() - 获取页面最后修改的时间
+
+
+User Contributed Notes 28 notes
+
+===============================================================================
+
+To get the last modification time of a directory, you can use this:
+
+<pre>
+$getLastModDir = filemtime("/path/to/directory/.");
+</pre>
+
+Take note on the last dot which is needed to see the directory as a file and to
+actually get a last modification date of it.
+
+This comes in handy when you want just one 'last updated' message on the
+frontpage of your website and still taking all files of your website into
+account.
+
+Regards,
+Frank Keijzers
+===============================================================================
+
+This is a very handy function for dealing with browser caching. For example,
+say you have a stylesheet and you want to make sure everyone has the most
+recent version. You could rename it every time you edit it, but that would be a
+pain in the ass. Instead, you can do this:
+
+<?php
+echo '<link rel="stylesheet" type="text/css" href="style.css?' . filemtime(
+'style.css') . '" />';
+?>
+
+Sample output:
+
+<link rel="stylesheet" type="text/css" href="style.css?1203291283" />
+
+By appending a GET value (the UNIX timestamp) to the stylesheet URL, you make
+the browser think the stylesheet is dynamic, so it'll reload the stylesheet
+every time the modification date changes.
+===============================================================================
+
+There's a deeply-seated problem with filemtime() under Windows due to the fact
+that it calls Windows' stat() function, which implements DST (according to this
+bug: http://bugs.php.net/bug.php?id=40568). The detection of DST on the time of
+the file is confused by whether the CURRENT time of the current system is
+currently under DST.
+
+This is a fix for the mother of all annoying bugs:
+
+<?php
+function GetCorrectMTime($filePath)
+{
+
+    $time = filemtime($filePath);
+
+    $isDST = (date('I', $time) == 1);
+    $systemDST = (date('I') == 1);
+
+    $adjustment = 0;
+
+    if($isDST == false && $systemDST == true)
+        $adjustment = 3600;
+   
+    else if($isDST == true && $systemDST == false)
+        $adjustment = -3600;
+
+    else
+        $adjustment = 0;
+
+    return ($time + $adjustment);
+}
+?>
+
+Dustin Oprea
+===============================================================================
+
+While testing on Windows, I noticed that the precision of filemtime is just 1
+second.
+
+So if you use clearstatcache() and filemtime() to check if a file has been
+modified, it might fail to detect the change. The modifications just have to
+happen within less than a second.
+
+(I ran into this with Apache on Windows XP.)
+===============================================================================
+
+If PHP's integer type is only 32 bits on your system, filemtime() will fail on
+files over 2GB with the warning "stat failed". All stat()-related commands will
+exhibit the same behavior.
+
+As a workaround, you can call the system's stat command to get the modification
+time of a file:
+
+On FreeBSD:
+$mtime = exec ('stat -f %m '. escapeshellarg ($path));
+
+On Linux:
+$mtime = exec ('stat -c %Y '. escapeshellarg ($path));
+
+Thanks to "mpb dot mail at gmail dot com" for his/her similar comment on stat
+().
+===============================================================================
+
+Another little handy tool; to get the most recent modified time from files in a
+directory. It even does recursive directories if you set the $doRecursive param
+to true. Based on a file/directory list function I saw somewhere on this site.
+;)
+
+function mostRecentModifiedFileTime($dirName,$doRecursive) {
+    $d = dir($dirName);
+    $lastModified = 0;
+    while($entry = $d->read()) {
+        if ($entry != "." && $entry != "..") {
+            if (!is_dir($dirName."/".$entry)) {
+                $currentModified = filemtime($dirName."/".$entry);
+            } else if ($doRecursive && is_dir($dirName."/".$entry)) {
+                $currentModified = mostRecentModifiedFileTime($dirName."/
+".$entry,true);
+            }
+            if ($currentModified > $lastModified){
+                $lastModified = $currentModified;
+            }
+        }
+    }
+    $d->close();
+    return $lastModified;
+}
+===============================================================================
+
+Cheaper and dirtier way to code a cache:
+
+<?php
+$cache_file = 'URI to cache file';
+$cache_life = '120'; //caching time, in seconds
+
+$filemtime = @filemtime($cache_file);  // returns FALSE if file does not exist
+if (!$filemtime or (time() - $filemtime >= $cache_life)){
+    ob_start();
+    resource_consuming_function();
+    file_put_contents($cache_file,ob_get_flush());
+}else{
+    readfile($cache_file);
+}
+?>
+===============================================================================
+
+i needed the ability to grab the mod time of an image on a remote site. the
+following is the solution with the help of Joe Ferris.
+
+<?php
+
+function filemtime_remote($uri)
+{
+    $uri = parse_url($uri);
+    $handle = @fsockopen($uri['host'],80);
+    if(!$handle)
+        return 0;
+
+    fputs($handle,"GET $uri[path] HTTP/1.1\r\nHost: $uri[host]\r\n\r\n");
+    $result = 0;
+    while(!feof($handle))
+    {
+        $line = fgets($handle,1024);
+        if(!trim($line))
+            break;
+
+        $col = strpos($line,':');
+        if($col !== false)
+        {
+            $header = trim(substr($line,0,$col));
+            $value = trim(substr($line,$col+1));
+            if(strtolower($header) == 'last-modified')
+            {
+                $result = strtotime($value);
+                break;
+            }
+        }
+    }
+    fclose($handle);
+    return $result;
+}
+// echo filemtime_remote('http://www.somesite.com/someimage.jpg');
+
+?>
+===============================================================================
+
+Here is a handy script to create a csv file with file names and the date when
+files in a given folder were inserted:
+
+<?php
+  header("Pragma: public");
+  header("Cache-Control: private");
+  header("Content-Type: text/csv");
+  header("Content-Disposition: attachment; filename=age-of-files.csv");
+
+  $result = array();
+  $handle =  opendir(".");
+     while ($datei = readdir($handle))
+     {
+          if (($datei != '.') && ($datei != '..'))
+          {
+               $file = "./".$datei;
+               if (!is_dir($file))
+                    $result[] = $file;
+          }
+     }
+     closedir($handle);
+  foreach($result as $r)
+    if (file_exists($r))
+      echo substr($r,2).",".date ("m/d/Y", filemtime($r))."\r\n";
+?>
+===============================================================================
+
+The above code works fine if you place it on each page you want a date stamp
+on.  I've found that if you place a reference such as filemtime(__FILE__) in an
+included or required file, that the modification time of the inherited file
+will be returned, not the time of the file that did the ineriting.
+===============================================================================
+
+Here is a small but handy script that you can use to find which files in your
+server are modified after a  date/time that you specify. This script will go
+through all folders in the specified directory recursively and echo the
+modified files with the last modified date/time...
+
+//Starts Here
+//Put here the directory you want to search for. Put / if you want to search
+your entire domain
+$dir='/';
+
+//Put the date you want to compare with in the format of:  YYYY-mm-dd hh:mm:ss
+$comparedatestr="2006-08-12 00:00:00";
+$comparedate=strtotime($comparedatestr);
+
+//I run the function here to start the search.
+directory_tree($dir,$comparedate);
+
+//This is the function which is doing the search...
+function directory_tree($address,$comparedate){
+
+@$dir = opendir($address);
+
+  if(!$dir){ return 0; }
+        while($entry = readdir($dir)){
+                if(is_dir("$address/$entry") && ($entry != ".." && $entry !=
+".")){                            
+                        directory_tree("$address/$entry",$comparedate);
+                }
+                 else   {
+
+                  if($entry != ".." && $entry != ".") {
+                 
+                    $fulldir=$address.'/'.$entry;
+                    $last_modified = filemtime($fulldir);
+                    $last_modified_str= date("Y-m-d h:i:s", $last_modified);
+
+                       if($comparedate < $last_modified)  {
+                          echo $fulldir.'=>'.$last_modified_str;
+                          echo "<BR>";
+                       }
+
+                 }
+
+            }
+
+      }
+
+}
+===============================================================================
+
+Here's a handy little function for smart cache overriding :)
+<?php
+function img($src, $alt='', $attr='')
+{
+    if(file_exists($src))
+    {
+        $lmod = filemtime($src);
+        echo '<img src="'.$src.'?lmod='.$lmod.'" alt="'.$alt.'" '.$attr.' />';
+    }
+}
+?>
+===============================================================================
+
+The mentioned example:
+
+$filename = 'somefile.txt';
+if (file_exists($filename)) {
+    echo "$filename wurde zuletzt modifiziert:: " . date ("F d Y H:i:s.",
+filemtime($filename));
+}
+
+works, however is not ideal from a performance point of view of serving static
+files through PHP, since it basically needs two perform two file system
+operations (file_exists and filemtime). A more effective way would be to only
+use filemtime and save the overhead of file_exists using:
+
+$filename = 'somefile.txt';
+$fmtime = filemtime($filename);
+if (!$fmtime) {
+    echo "$filename wurde zuletzt modifiziert:: " . date ("F d Y H:i:s.",
+$fmtime);
+}
+===============================================================================
+
+To find the oldest file in a directory :
+$directory= "C:\\";
+
+$smallest_time=INF;
+
+$oldest_file='';
+
+if ($handle = opendir($directory)) {
+
+    while (false !== ($file = readdir($handle))) {
+
+        $time=filemtime($directory.'/'.$file);
+
+        if (is_file($directory.'/'.$file)) {
+
+            if ($time < $smallest_time) {
+                $oldest_file = $file;
+                $smallest_time = $time;
+            }
+        }
+    }
+    closedir($handle);
+}
+
+echo $oldest_file;
+===============================================================================
+
+If you do use:
+<?php
+$filename = 'somefile.txt';
+$fmtime = filemtime($filename);
+if (!$fmtime) {
+    echo "$filename wurde zuletzt modifiziert:: " . date ("F d Y H:i:s.", 
+$fmtime);
+}
+?>
+
+Make note that it will throw a warning as the documentation states. While
+tobias makes a good point for production, when error reporting is off, this can
+increase your performance over using `file_exists`. However, if error reporting
+is on and it's writing to a log... this is not the case. Obviously this varies
+on sever specs and the size of the error log. For most cases, it's still ideal
+to use the `file_exists` method.
+===============================================================================
+
+To get the modification date of some remote file, you can use the fine function
+by notepad at codewalker dot com (with improvements by dma05 at web dot de and
+madsen at lillesvin dot net).
+
+But you can achieve the same result more easily now with stream_get_meta_data
+(PHP>4.3.0).
+
+However a problem may arise if some redirection occurs. In such a case, the
+server HTTP response contains no Last-Modified header, but there is a Location
+header indicating where to find the file. The function below takes care of any
+redirections, even multiple redirections, so that you reach the real file of
+which you want the last modification date.
+
+hih,
+JJS.
+
+<?php
+
+// get remote file last modification date (returns unix timestamp)
+function GetRemoteLastModified( $uri )
+{
+    // default
+    $unixtime = 0;
+   
+    $fp = fopen( $uri, "r" );
+    if( !$fp ) {return;}
+   
+    $MetaData = stream_get_meta_data( $fp );
+       
+    foreach( $MetaData['wrapper_data'] as $response )
+    {
+        // case: redirection
+        if( substr( strtolower($response), 0, 10 ) == 'location: ' )
+        {
+            $newUri = substr( $response, 10 );
+            fclose( $fp );
+            return GetRemoteLastModified( $newUri );
+        }
+        // case: last-modified
+        elseif( substr( strtolower($response), 0, 15 ) == 'last-modified: ' )
+        {
+            $unixtime = strtotime( substr($response, 15) );
+            break;
+        }
+    }
+    fclose( $fp );
+    return $unixtime;
+}
+?>
+===============================================================================
+
+concerning "notepad at codewalkers dot com"'s code:
+
+this code is pretty neat, but i just wanted to note that using the
+"HEAD"-method instead of the "GET"-method in the http-request might be
+preferrable, since then not the whole resource is being downloaded...
+
+http/1.1 definiton snippet:
+Section "9.4 HEAD"
+
+The HEAD method is identical to GET except that the server MUST NOT return a
+message-body in the response. The metainformation contained in the HTTP headers
+in response to a HEAD request SHOULD be identical to the information sent in
+response to a GET request. This method can be used for obtaining
+metainformation about the entity implied by the request without transferring
+the entity-body itself. This method is often used for testing hypertext links
+for validity, accessibility, and recent modification. [...]
+-- snippet end ---
+
+the code would then be...:
+
+-- snippet ---
+fputs($handle,"HEAD $uri[path] HTTP/1.1\r\nHost: $uri[host]\r\n\r\n");
+-- snippet end ---
+
+regards, Magnus
+===============================================================================
+
+"this is not (necessarily) correct, the modification time of a directory will
+be the time of the last file *creation* in a directory (and not in it's sub
+directories)."
+
+This is not (necessarily) correct either. In *nix the timestamp can be
+independently set. For example the command "touch directory" updates the
+timestamp of a directory without file creation.
+
+Also file removal will update the timestamp of a directory.
+===============================================================================
+
+Also on 32-bit systems, filemtime() also does not work for files with
+modification time set beyond Jan 2038. It is the dreaded time_t overflow bug
+for unix seconds.
+
+On windows you can set the system time to any arbitrary future date, and any
+new files you created or edited will automatically change to that future date.
+
+If exec isn't permitted for some reason, and if you could access the file via
+an web url (e.g. http://localhost/yourfile.txt), another workaround is to get
+the Last-Modified time from the HTTP headers (e.g. get_headers(url) ), and
+parse it as a DateTime object.
+
+I have tested it and it works for years like 2050 and 3012.
+===============================================================================
+
+Cheap and dirty way to code a cache:
+
+<?php
+$cache_file = 'URI to cache file';
+$cache_life = '120'; //caching time, in seconds
+
+if (!file_exists($cache_file) or (time() - filemtime($cache_file) >= 
+$cache_life)){
+    ob_start();
+    resource_consuming_function();
+    file_put_contents($cache_file,ob_get_flush());
+}else{
+    readfile($cache_file);
+}
+?>
+===============================================================================
+
+when working with swf files (flash animations), there is a nice way to avoid
+the browser cache. i used to do this by hand, then i used a random number, but
+with large animations while working online, it gets boring because the server
+always downloads the whole animation, even if there was no change.
+but...
+
+this will do the trick
+
+base.swf?rand=<?php echo filemtime("base.swf") ?>
+
+<embed src="base.swf?rand=<?php echo filemtime("base.swf") ?>" quality="high"
+pluginspage="http://www.macromedia.com/go/getflashplayer" type="application/
+x-shockwave-flash" width="1680" height="1050">
+===============================================================================
+
+Please note that many of the functions below that people have provided to get
+files modified after a certain time in a directory will NOT get all files on a
+Windows operating system.
+
+If you copy and paste any file inside the folder or into the folder from
+another folder (such as images that may be used but aren't going to be modified
+right away), the modified time is not updated on these copied files, only the
+creation time.
+
+You need to use filectime with filemtime to assure you get copied files that
+aren't modified but are obviously new.
+===============================================================================
+
+It could be useful to determinate the timestamp of the newest file in a
+directory. (e.g. if you want to find out when the last change was made to your
+project).
+
+Following function will help you:
+
+<?php
+
+function getAllFiles($directory, $recursive = true) {
+     $result = array();
+     $handle =  opendir($directory);
+     while ($datei = readdir($handle))
+     {
+          if (($datei != '.') && ($datei != '..'))
+          {
+               $file = $directory.$datei;
+               if (is_dir($file)) {
+                    if ($recursive) {
+                         $result = array_merge($result, getAllFiles($file.'/'
+));
+                    }
+               } else {
+                    $result[] = $file;
+               }
+          }
+     }
+     closedir($handle);
+     return $result;
+}
+
+function getHighestFileTimestamp($directory, $recursive = true) {
+     $allFiles = getAllFiles($directory, $recursive);
+     $highestKnown = 0;
+     foreach ($allFiles as $val) {
+          $currentValue = filemtime($val);
+          if ($currentValue > $highestKnown) $highestKnown = $currentValue;
+     }
+     return $highestKnown;
+}
+
+// Use example
+
+echo 'The newest file has the time stamp:<br>';
+echo date('Y-m-d H:i:s', getHighestFileTimestamp('../'));
+
+?>
+===============================================================================
+
+The snippet of code earlier that allows you to delete all files older than 2
+weeks uses the function (filemtime) - which checks the original create date of
+the file (filesystem independent).  You MAY want to use filectime() - that
+looks at when the file was last changed on YOUR file system.
+
+        if (is_dir("$path") )
+        {
+           $handle=opendir($path);
+           while (false!==($file = readdir($handle))) {
+               if ($file != "." && $file != "..") { 
+                   $Diff = (time() - filectime("$path/$file"))/60/60/24;
+                   if ($Diff > 14) unlink("$path/$file");
+
+               }
+           }
+           closedir($handle);
+        }
+===============================================================================
+
+If you want this functionality for the parent web page you should use
+getlastmod()
+i.e.
+<?php echo "Last modified: ".date( "F d Y H:i:s.", getlastmod() ); ?>
+within the included page... i.e. as a commont footer include for all pages
+===============================================================================
+
+A little amendment to "tobias" post:
+
+Insted of:
+$filename = 'somefile.txt';
+$fmtime = filemtime($filename);
+if (!$fmtime) {
+     echo "$filename wurde zuletzt modifiziert:: " . date ("F d Y H:i:s.",
+$fmtime);
+}
+
+it should be something like this:
+$filename = 'somefile.txt';
+$fmtime = filemtime($filename);
+if ($fmtime != false) {
+     echo "$filename wurde zuletzt modifiziert:: " . date ("F d Y H:i:s.",
+$fmtime);
+}
+
+filemtime() returns false on failure so in the first example it will never
+display the date modified.
+===============================================================================
+
+A comment below states
+
+  "When using this function to get the modified date of a directory,
+   it returns the date of the file in that directory that was last modified."
+
+this is not (necessarily) correct, the modification time of a directory will be
+the time of the last file *creation* in a directory (and not in it's sub
+directories).
+===============================================================================
+
+On the Windows system filectime() returns the creation time. To find the
+changed time use fileatime() or filemtime().

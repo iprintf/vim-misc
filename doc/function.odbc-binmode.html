@@ -1,0 +1,150 @@
+
+odbc_binmode
+
+(PHP 4, PHP 5, PHP 7)
+
+odbc_binmode — Handling of binary column data
+
+说明
+
+bool odbc_binmode ( resource $result_id , int $mode )
+
+Enables handling of binary column data. ODBC SQL types affected are BINARY,
+VARBINARY, and LONGVARBINARY.
+
+When binary SQL data is converted to character C data, each byte (8 bits) of
+source data is represented as two ASCII characters. These characters are the
+ASCII character representation of the number in its hexadecimal form. For
+example, a binary 00000001 is converted to "01" and a binary 11111111 is
+converted to "FF".
+
+             LONGVARBINARY handling
+       binmode        longreadlen     result
+ODBC_BINMODE_PASSTHRU 0           passthru
+ODBC_BINMODE_RETURN   0           passthru
+ODBC_BINMODE_CONVERT  0           passthru
+ODBC_BINMODE_PASSTHRU 0           passthru
+ODBC_BINMODE_PASSTHRU >0          passthru
+ODBC_BINMODE_RETURN   >0          return as is
+ODBC_BINMODE_CONVERT  >0          return as char
+
+If odbc_fetch_into() is used, passthru means that an empty string is returned
+for these columns.
+
+参数
+
+result_id
+
+    The result identifier.
+
+    If result_id is 0, the settings apply as default for new results.
+
+
+        Note: Default for longreadlen is 4096 and mode defaults to
+        ODBC_BINMODE_RETURN. Handling of binary long columns is also affected
+        by odbc_longreadlen().
+
+mode
+
+    Possible values for mode are:
+      □ ODBC_BINMODE_PASSTHRU: Passthru BINARY data
+      □ ODBC_BINMODE_RETURN: Return as is
+      □ ODBC_BINMODE_CONVERT: Convert to char and return
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+For Sybase users (this probably applies to MS-SQL Server as well) who are using
+ODBC:
+
+I was using the same code as mizmerize, but I was getting truncated data back
+from the server (at the 32kb mark) when selecting data with the image datatype.
+My Sybase server has a @@textsize property of 2Gb, which should be plenty. But
+apparently, the php ODBC driver resets this to 32Kb when a connection is made,
+and then sets it back to 2Gb after. The solution is to do a query:
+
+<?php odbc_exec($connH, "set textsize 131072"); ?>
+
+immediately before your main query, in mizmerize's code. That should override
+the default setting.
+===============================================================================
+
+I am currently using an SQL Server 2000 used as a datasource for ODBC access,
+Testing PHP scripts from an Apache 2 server running on Windows 2000.
+
+I was trying to get an image from the database using ODBC but the output always
+flushes automatically while I was just getting the result using odbc_result()
+function.
+
+With this code, the picture automatically prints to the browser as soon as I
+hit odbc_result() (probably a bug, but bug reports aren't that easy to do).
+
+<?php
+  $connH=odbc_pconnect("ImageDB","sa","",SQL_CUR_USE_IF_NEEDED) or die(
+odbc_errormsg());
+    $result=odbc_exec($connH, "SELECT Emp_Image FROM tblEmployeePics WHERE
+Emp_Id=547");
+    if ($result) {                           
+        odbc_longreadlen($result, 131072);       
+        odbc_binmode($result,ODBC_BINMODE_PASSTHRU);                           
+//upon calling this, the output flushes out to the browser... made me scratch 
+     
+$m_FValue=odbc_result($result, 1);
+}
+?>
+
+...after 48 hours of scratching I finally made a work around, but by using a
+function in the bin2hex() function documentation...
+
+<?php
+      function hex2bin($data){
+       $len = strlen($data);
+       return pack("H" . $len, $data);
+    }
+
+   
+    $connH=odbc_pconnect("ImageDB","sa","",SQL_CUR_USE_IF_NEEDED) or die(
+odbc_errormsg());
+    $result=odbc_exec($connH, "SELECT Emp_Image FROM tblEmployeePics WHERE
+Emp_Id=547");
+    if ($result) {                           
+        odbc_longreadlen($result, 131072);       
+        odbc_binmode($result,ODBC_BINMODE_CONVERT);                           
+        $m_FValue=odbc_result($result, 1);
+        $out=hex2bin($m_FValue);
+    }
+?>
+
+The trick was to convert the output into hex by changing odbc_binmode to 
+ODBC_BINMODE_CONVERT and using a handy function to convert it back to binary in
+order to facilitate manipulation of its size, depth etc...
+===============================================================================
+
+I set the odbc_longreadlen() at the beggining of my script so nText field types
+dont get truncated, like this:
+
+<?php odbc_longreadlen (0, 1000000); ?>
+===============================================================================
+
+Example: retrieve image from database.
+
+<?php
+
+   $Link_ID = odbc_connect("DSN", "user", "pass");
+   $Query_ID = odbc_exec($Link_ID, "SELECT picture FROM categories");
+
+   // change to ODBC_BINMODE_CONVERT for comparison
+
+   odbc_binmode($Query_ID, ODBC_BINMODE_RETURN);
+
+   $Images = odbc_result($Query_ID, 1);
+
+   echo $Images;
+
+?>

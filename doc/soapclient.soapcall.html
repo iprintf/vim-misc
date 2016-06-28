@@ -1,0 +1,548 @@
+
+SoapClient::__soapCall
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+SoapClient::__soapCall — Calls a SOAP function
+
+说明
+
+public mixed SoapClient::__soapCall ( string $function_name , array $arguments
+[, array $options [, mixed $input_headers [, array &$output_headers ]]] )
+
+This is a low level API function that is used to make a SOAP call. Usually, in
+WSDL mode, SOAP functions can be called as methods of the SoapClient object.
+This method is useful in non-WSDL mode when soapaction is unknown, uri differs
+from the default or when sending and/or receiving SOAP Headers.
+
+On error, a call to a SOAP function can cause PHP to throw exceptions or return
+a SoapFault object if exceptions are disabled. To check if the function call
+failed to catch the SoapFault exceptions, check the result with is_soap_fault()
+.
+
+参数
+
+function_name
+
+    The name of the SOAP function to call.
+
+arguments
+
+    An array of the arguments to pass to the function. This can be either an
+    ordered or an associative array. Note that most SOAP servers require
+    parameter names to be provided, in which case this must be an associative
+    array.
+
+options
+
+    An associative array of options to pass to the client.
+
+    The location option is the URL of the remote Web service.
+
+    The uri option is the target namespace of the SOAP service.
+
+    The soapaction option is the action to call.
+
+input_headers
+
+    An array of headers to be sent along with the SOAP request.
+
+output_headers
+
+    If supplied, this array will be filled with the headers from the SOAP
+    response.
+
+返回值
+
+SOAP functions may return one, or multiple values. If only one value is
+returned by the SOAP function, the return value of __soapCall will be a simple
+value (e.g. an integer, a string, etc). If multiple values are returned,
+__soapCall will return an associative array of named output parameters.
+
+On error, if the SoapClient object was constructed with the exceptions option
+set to FALSE, a SoapFault object will be returned.
+
+范例
+
+Example #1 SoapClient::__soapCall() example
+
+<?php
+
+$client = new SoapClient("some.wsdl");
+$client->SomeFunction($a, $b, $c);
+
+$client->__soapCall("SomeFunction", array($a, $b, $c));
+$client->__soapCall("SomeFunction", array($a, $b, $c), NULL,
+                    new SoapHeader(), $output_headers);
+
+
+$client = new SoapClient(null, array('location' => "http://localhost/soap.php",
+                                     'uri'      => "http://test-uri/"));
+$client->SomeFunction($a, $b, $c);
+$client->__soapCall("SomeFunction", array($a, $b, $c));
+$client->__soapCall("SomeFunction", array($a, $b, $c),
+                    array('soapaction' => 'some_action',
+                          'uri'        => 'some_uri'));
+?>
+
+参见
+
+  • SoapClient::SoapClient() - SoapClient constructor
+  • SoapParam::SoapParam() - SoapParam constructor
+  • SoapVar::SoapVar() - SoapVar constructor
+  • SoapHeader::SoapHeader() - SoapHeader constructor
+  • SoapFault::SoapFault() - SoapFault constructor
+  • is_soap_fault() - Checks if a SOAP call has failed
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+Note that calling __soapCall and calling the generated method from WSDL
+requires specifying parameters in two different ways.
+
+For example, if you have a web service with method login that takes username
+and password, you can call it the following way:
+<?php
+$params = array('username'=>'name', 'password'=>'secret');
+$client->login($params);
+?>
+
+If you want to call __soapCall, you must wrap the arguments in another array as
+follows:
+<?php
+$client->__soapCall('login', array($params));
+?>
+===============================================================================
+
+Following OrionI's example:
+
+<?php
+$client = new SoapClient("http://server/sumservice.asmx?WSDL");
+$params->a = 2;
+$params->b = 3;
+$objectresult = $client->Sum($params);
+$simpleresult = $objectresult->SumResult;
+print($simpleresult); //produces "-1"
+?>
+
+Please note that the lines:
+
+"$client->Sum($params);"
+
+and
+
+"$simpleresult = $objectresult->SumResult;"
+
+are based off of each other. If your web service function is called "Sum", then
+add "Result" to the end of it to get the results of the call.
+
+EG:
+
+<?php
+$client = new SoapClient("http://server/mathservice.asmx?WSDL");
+$params->a = 2;
+$params->b = 3;
+$objectresult = $client->Minus($params); // note the name of the function is
+"Minus"
+$simpleresult = $objectresult->MinusResult; // note the name of the result is
+referenced as "MinusResult"
+print($simpleresult); //produces "5"
+?>
+===============================================================================
+
+One thing to note.
+
+This happened to me and it took a while until I discovered what the problem
+was.
+
+I was trying to get .NET objects from a provided web service, however it always
+seemed to return empty objects. It did return the backbone, but nothing within
+the objects that made up the structure.
+
+Anyhow, it seems that you have to be very precise with the arrays when calling
+these functions. Par example, do this:
+
+<?php
+$obj = $client->__soapCall($SOAPCall, array('parameters'=>$SoapCallParameters
+));
+?>
+
+meaning that you must put an array as the second argument with 'parameters' as
+the key and the soap call parameters as the value.
+
+Also make sure that the parameter variable, in my case $SoapCallParameters is
+in the form of what is requested by the webservice.
+
+So, don't just make an array of the form:
+<?php
+
+(
+   [0] => 'Mary',
+   [1] => 1983
+)
+
+?>
+
+but if the webservice requests a 'muid' variable as 'Mary' and a 'birthyear' as
+1983, then make your array like this:
+
+<?php
+
+(
+   [muid] => 'Mary',
+   [birthyear] => 1983
+)
+
+?>
+
+The above arrays refer to the $SoapCallParameters variable.
+
+Hope this helps somebody, not having to spend too much time figuring out the
+problems.
+===============================================================================
+
+I am using SOAP call response headers to sign request results.
+
+After alot of hours, I finally got the best way to get SOAP response headers
+(other than parsing __getLastResponse() witch requires trace option enabled) is
+using __soapCall() wrapper.
+
+You can extend SoapClient class and wrap some functions to make sure you get
+the headers.
+
+<?php
+
+class API extends SoapClient
+{
+
+    // ... Constructor, etc.
+
+    // Get SOAP Server response headers
+    public function __soapCall($function, $arguments, $options = array(), 
+$input_headers = null, &$output_headers = null)
+    {
+        parent::__soapCall($function, $arguments, $options, $input_headers, 
+$output_headers);
+
+        print_r($output_headers); // Array of response headers
+    }
+
+    // If you are using WSDL you need this, so you still can call functions
+directly without calling __soapCall manualy
+    public function __call($func, $args)
+    {
+        return $this->__soapCall($func, $args);
+    }
+
+?>
+===============================================================================
+
+The call to __soapCall returned an object to me either. This is the function
+which makes my life easier:
+
+function obj2array($obj) {
+  $out = array();
+  foreach ($obj as $key => $val) {
+    switch(true) {
+        case is_object($val):
+         $out[$key] = obj2array($val);
+         break;
+      case is_array($val):
+         $out[$key] = obj2array($val);
+         break;
+      default:
+        $out[$key] = $val;
+    }
+  }
+  return $out;
+}
+
+Usage:
+...
+$response = $client ->__soapCall("track", array('parameters' => $request));
+$response = obj2array($response);
+
+Hope it helps.
+===============================================================================
+
+When calling over SOAP to a .NET application, you may end up with an object as
+a result instead of a simple type, even if you're just grabbing a simple type
+(like a boolean result). Use a property accessor to get the actual result, like
+this:
+<?php
+$client = new SoapClient("http://server/myservice.asmx?WSDL");
+$objectresult = $client->MyMethod($param1, $param2);
+$simpleresult = $objectresult->MyMethodResult;
+?>
+Note that .NET seems to name the result MethodNameResult for method MethodName.
+===============================================================================
+
+One little gotcha when passing the parameters where you need to have attributes
+and a simpletype value:
+
+To get the xml
+
+<foo bar="moo">cheese</foo>
+
+You'd pass in:
+
+<?php
+array("foo" => array("_" => "cheese", "bar"=>"moo"));
+?>
+
+See that "_" bit? It really wasn't obvious from the documentation.
+===============================================================================
+
+If your service is a .NET doc/lit, which means the input message has a single
+part named 'parameters' that is a structure that wraps the parameters.  Your
+call should look like this:
+
+<?php
+
+$params = array('param_name_1'=>$val_1,'param_name_2'=>$val_2);
+$client->call('MethodName', array('parameters' => $params));
+
+?>
+===============================================================================
+
+To avoid the SOAP client returning sometimes objects and sometimes arrays of
+objects, there's a setting:
+
+   $this->soapClient = new \SoapClient($wsdlUrl, array(
+    'features' => SOAP_SINGLE_ELEMENT_ARRAYS,
+    'trace' => DEBUG_SOAP
+   ));
+===============================================================================
+
+I was working with SOAP for the first time and I had to create a client that
+sent a date range to a WSDL (Web Services Description Language) to return some
+information I needed.  I didn't know how to pass the params and there really
+was no documentation about it.  The main thing you have to make sure to do is
+when you pass params to a method that is definied by the WSDL that you are
+calling is that you use the same param name for the key of the array or the
+object variable as shown below.  Also, if you don't know what the methods/
+functions that a WSDL has or the params that you need to pass it you can use
+the __getFunctions() and __getTypes() methods after you declare your new
+SoapClient.
+
+<?php
+// From and to are the two params that the execute function needs
+// when called from the WSDL so make you to have them as the
+// key to an array like below
+$params["From"] = "06/01/2005"; // also can use $params->From = "date";
+$params["to"] = "12/31/2005"; // also can use $params->to = "date";
+
+$client = new SoapClient("some.wsdl");
+
+try {
+        print($client->execute($params));
+} catch (SoapFault $exception) {
+        echo $exception;
+}
+?>
+===============================================================================
+
+Correction on the previously submitted code snippet...the incoming parameter
+for .NET also has to be in object or array form for it to be correctly
+converted to the XML form that .NET expects (as already mentioned by Llu?s P?
+mies). The full example (when using WSDL) should be like this:
+<?php
+$client = new SoapClient("http://server/myservice.asmx?WSDL");
+$params->param1 = $value1;
+$params->param2 = $value2;
+$objectresult = $client->MyMethod($params);
+$simpleresult = $objectresult->MyMethodResult;
+?>
+So if you have a C# function like this:
+//sumservice.asmx
+...
+[WebMethod]
+public int Sum(int a, int b)
+{
+  return a + b;
+}
+...
+The PHP client would be this:
+<?php
+$client = new SoapClient("http://server/sumservice.asmx?WSDL");
+$params->a = 2;
+$params->b = 3;
+$objectresult = $client->Sum($params);
+$simpleresult = $objectresult->SumResult;
+print($simpleresult); //produces "5"
+?>
+===============================================================================
+
+The options in the third argument is documented in http://php.net/manual/en/
+function.soap-soapclient-construct.php
+===============================================================================
+
+If you are using this method, remember that the array of arguments need to be
+passed in with the ordering being the same order that the SOAP endpoint
+expects.
+
+e.g
+<?php
+//server expects: Foo(string name, int age)
+
+//won't work
+$args = array(32, 'john');
+$out = $client->__soapCall('Foo', $args);
+
+//will work
+$args = array('john', 32);
+$out = $client->__soapCall('Foo', $args);
+?>
+===============================================================================
+
+I get the same problem reported above by ryan:
+"ryan at grunt dot tv
+22-Sep-2005 01:38
+If you want to pass an xml document node as a function parameter, your need to
+create a SoapVar object with a text represention of the xml node and the
+XSD_ANYXML encoding constant. However, this constant is not exported by the
+extension and is not documented for some unknown reason."
+
+When defined variable soapVar I assigned the type XSD_STRING rather than as
+XSD_ANYXML.
+And when calls to the function you must pass the soapVar in an associative
+array.
+
+For example if the function (called myFunc) expect a parameter called xmlInput
+you should do something like this:
+$soapvar = new SoapVar($query, XSD_STRING);
+$result = $client->myFunc(array('xmlInput'=>$soapvar));
+
+This XML fragment are wrapped around xmlImput tags.-
+===============================================================================
+
+If you want to pass an xml document node as a function parameter, your need to
+create a SoapVar object with a text represention of the xml node and the
+XSD_ANYXML encoding constant. However, this constant is not exported by the
+extension and is not documented for some unknown reason.
+
+Therefore, to get this to work you must either register the XSD_ANYXML #define
+as a PHP constant, or use the integer value of the constant when creating the
+SoapVar, which is 147.
+
+$soapvar = new SoapVar($xml_text, 147);
+
+$params = array("ItemXml" => $soapvar, "PropertyView" => "blah");
+$result = $this->soapclient->__soapCall("SaveItem", array("parameters"=>
+$params), null, $this->soapheaders);
+
+However, this still doesnt give the correct result. For some reason, the
+ItemXml parameter node is not wrapped around the associated xml parameter in
+the soap request, and the following soap is produced (assumming '<item>blah</
+item>' is used as the $xml_text):
+
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="..." xmlns:ns1="...">
+<SOAP-ENV:Header>...</SOAP-ENV:Header>
+<SOAP-ENV:Body>
+<ns1:SaveItem>
+<item>blah</item>
+<ns1:PropertyView>blah</ns1:PropertyView>
+</ns1:SaveItem>
+</SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+===============================================================================
+
+The most annoying thing is that you'll get no warning trying to pass object not
+matching wsdl e.g. if server expects smth like $Object->expName->... and you
+would pass $Object->otherName the client will send empty request without
+notifying you.
+Also pay attention that names are key sensitive.
+
+In my case I spent hours trying to pass $Post->Lead->... object instead of
+$Post->lead-> ...
+===============================================================================
+
+Note, when trying to overload the __soapCall function, you should not use type
+hints or STRICT_STANDARDS will complain.
+The correct signature is as follows:
+
+<?php
+class MySoapClient extends \SoapClient
+{
+    ...
+    public function __soapCall($function_name, $arguments, $options = null, 
+$input_headers = null, &$output_headers = null)
+     {
+        ...
+    }
+    ....
+}
+?>
+===============================================================================
+
+I was integrating a local warehouse system with a SOAP to our system and
+noticed some things.
+
+1) Service uses "dot-namespacing" (fe. Item.Price) I classmapped this to
+Item_Price and used magical __get() and __set() to strip off 'Item.' from
+variable names. Works like a charm.
+
+Example:
+<Item.Price>1.52</Item.Price>
+
+<?php
+class Item_Price {
+    public $price;
+    public function __get($field) { $field = str_replace('Item.', '', $field);
+return $this->$field; }
+    public function __set($field, $value) { $field = str_replace('Item.', '', 
+$field); $this->$field = $value; }
+?>
+
+2) I noticed that classmapping a segment with attributes and value is possible.
+Class uses variables as attributes and $_ is the value.
+
+Example:
+<?php
+class Foo {
+    public $item = 'Bar';
+    public $_ = 'Value here';
+}
+?>
+Turns to <Foo item="Bar">Value here</Foo>
+
+Example of using classes with soapcalls:
+<?php
+    $client = ExtendSoapClient::getInstance();
+    $foo = new Foo();
+    $response = $client->sendFoo($foo);
+?>
+
+Posted these since I think the documentation is lacking and very obsolete.
+Hopefully someone's burden eases.
+===============================================================================
+
+If you are calling a weblogic service with a certificate and you are getting
+this error on the soap method call statement:
+
+[EJB:010160]Security Violation: User: '<anonymous>' has insufficient permission
+to access EJB: type=<ejb>, application=app2_0_52_3, module=appsejb.jar, ejb=
+AppMethod, method=AppMethod, methodInterface=Remote, signature=
+{java.lang.String}.
+
+then check the wsdl in the soap open call - it must be https.  Supplied with an
+http wsdl this took some time to figure out.
+
+<?php
+    $client = new SoapClient("https://example.com/AppWs/Service?WSDL",
+                array('trace'=>true,
+                      'exceptions'=>true,
+                      'local_cert' => "/var/www/html/app/newcert.pem",
+                      'passphrase' => "thepassphrase"));
+    $response = $client->__soapCall("MyMethod", array("param1" => $value1));
+?>
+
+Thanks to the authors for their comments on enabling openssl and curl by
+uncommenting extension=php_opensll.dll and extension=php_curl.dll in php.ini. 
+Also for Olaf's instructions "append the content of the private key file and
+the certificate file to a single file". I did this using copy command on the
+DOS prompt:
+
+copy mycert.pem+mykey.pem newcert.pem

@@ -1,0 +1,389 @@
+
+PDOStatement::rowCount
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.1.0)
+
+PDOStatement::rowCount — 返回受上一个 SQL 语句影响的行数
+
+说明
+
+int PDOStatement::rowCount ( void )
+
+PDOStatement::rowCount() 返回上一个由对应的 PDOStatement 对象执行DELETE、
+INSERT、或 UPDATE 语句受影响的行数。
+
+如果上一条由相关 PDOStatement 执行的 SQL 语句是一条 SELECT 语句，有些数据可能返
+回由此语句返回的行数。但这种方式不能保证对所有数据有效，且对于可移植的应用不应
+依赖于此方式。
+
+返回值
+
+返回行数。
+
+范例
+
+Example #1 返回删除的行数
+
+PDOStatement::rowCount() 返回受 DELETE、INSERT、或 UPDATE 语句影响的行数。
+
+<?php
+/*  从 FRUIT 数据表中删除所有行 */
+$del = $dbh->prepare('DELETE FROM fruit');
+$del->execute();
+
+/*  返回被删除的行数 */
+print("Return number of rows that were deleted:\n");
+$count = $del->rowCount();
+print("Deleted $count rows.\n");
+?>
+
+以上例程会输出：
+
+Return number of rows that were deleted:
+Deleted 9 rows.
+
+Example #2 计算由一个 SELECT 语句返回的行数
+
+对于大多数数据库，PDOStatement::rowCount() 不能返回受一条 SELECT 语句影响的行数
+。替代的方法是，使用 PDO::query() 来发出一条和原打算中的SELECT语句有相同条件表
+达式的 SELECT COUNT(*) 语句，然后用 PDOStatement::fetchColumn() 来取得返回的行
+数。这样应用程序才能正确执行。
+
+<?php
+$sql = "SELECT COUNT(*) FROM fruit WHERE calories > 100";
+if ($res = $conn->query($sql)) {
+
+    /* 检查符合 SELECT 语句的行数 */
+  if ($res->fetchColumn() > 0) {
+
+        /* 发出一条真正的 SELECT 语句并操作返回的结果 */
+         $sql = "SELECT name FROM fruit WHERE calories > 100";
+       foreach ($conn->query($sql) as $row) {
+           print "Name: " .  $row['NAME'] . "\n";
+         }
+    }
+    /* 没有匹配的行 -- 执行其他 */
+  else {
+      print "No rows matched the query.";
+    }
+}
+
+$res = null;
+$conn = null;
+?>
+
+以上例程会输出：
+
+apple
+banana
+orange
+pear
+
+参见
+
+  • PDOStatement::columnCount() - 返回结果集中的列数
+  • PDOStatement::fetchColumn() - 从结果集中的下一行返回单独的一列。
+  • PDO::query() - Executes an SQL statement, returning a result set as a
+    PDOStatement object
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+When updating a Mysql table with identical values nothing's really affected so
+rowCount will return 0. As Mr. Perl below noted this is not always preferred
+behaviour and you can change it yourself since PHP 5.3.
+
+Just create your PDO object with
+<? php
+$p = new PDO($dsn, $u, $p, array(PDO::MYSQL_ATTR_FOUND_ROWS => true));
+?>
+and rowCount() will tell you how many rows your update-query actually found/
+matched.
+===============================================================================
+
+Note that an INSERT ... ON DUPLICATE KEY UPDATE statement is not an INSERT
+statement, rowCount won't return the number or rows inserted or updated for
+such a statement.  For MySQL, it will return 1 if the row is inserted, and 2 if
+it is updated, but that may not apply to other databases.
+===============================================================================
+
+Great, while using MySQL5, the only way to get the number of rows after doing a
+PDO SELECT query is to either execute a separate SELECT COUNT(*) query (or to
+do count($stmt->fetchAll()), which seems like a ridiculous waste of overhead
+and programming time.
+
+Another gripe I have about PDO is its inability to get the value of output
+parameters from stored procedures in some DBMSs, such as SQL Server.
+
+I'm not so sure I'm diggin' PDO yet.
+===============================================================================
+
+MySQL does not seem to return anything in rowCount for a select statement, but
+you can easily and efficiently get the row count as follows:
+
+class db extends PDO {
+  public function last_row_count() {
+    return $this->query("SELECT FOUND_ROWS()")->fetchColumn();
+  }
+}
+
+$myDb = new db('mysql:host=myhost;dbname=mydb', 'login', 'password' );
+
+Then, after running your query:
+
+if ( $myDb->last_row_count() == 0 ) {
+  echo "Do something!";
+  }
+===============================================================================
+
+To display information only when the query is not empty, I do something like
+this:
+
+<?php
+    $sql = 'SELECT model FROM cars';
+    $stmt = $db->prepare($sql);
+    $stmt->execute();
+   
+    if ($data = $stmt->fetch()) {
+        do {
+            echo $data['model'] . '<br>';
+        } while ($data = $stmt->fetch());
+    } else {
+        echo 'Empty Query';
+    }
+?>
+===============================================================================
+
+It'd better to use SQL_CALC_FOUND_ROWS, if you only use MySQL. It has many
+advantages as you could retrieve only part of result set (via LIMIT) but still
+get the total row count.
+code:
+<?php
+$db = new PDO(DSN...);
+$db->setAttribute(array(PDO::MYSQL_USE_BUFFERED_QUERY=>TRUE));
+$rs  = $db->query('SELECT SQL_CALC_FOUND_ROWS * FROM table LIMIT 5,15');
+$rs1 = $db->query('SELECT FOUND_ROWS()');
+$rowCount = (int) $rs1->fetchColumn();
+?>
+===============================================================================
+
+every good work
+If you use "INSERT INTO ... ON DUPLICATE KEY UPDATE" syntax,
+mysql_affected_rows() will return you 2 if the UPDATE was made (just as it does
+with the "REPLACE INTO" syntax) and 1 if the INSERT was.
+
+So if you use one SQL request to insert several rows at a time, and some are
+inserted, some are just updated, you won't get the real count.
+===============================================================================
+
+In some drivers rowCount() only works when using the prepare() with
+PDO::CURSOR_SCROLL
+So, you can modify PDO class:
+
+<?php
+class myPDO extends PDO
+{
+    function query($query, $values=null)
+    {
+        if($query == "")
+            return false;
+           
+        if($sth = $this->prepare($query, array(PDO::ATTR_CURSOR => PDO::
+CURSOR_SCROLL)))
+        {
+            $res = ($values) ? $sth->execute($values) : $sth->execute();
+            if(!$res)
+                return false;
+        }           
+        return $sth;
+    }
+}
+?>
+
+Now let's test (i using php 5.2.9-2):
+
+<?php
+function TestRowCount($dsn, $db_user, $db_pass)
+{
+    $pdh = new PDO($dsn, $db_user, $db_pass);
+    $sth = $pdh->query("SELECT * FROM sys.tables");
+    print "rowCount() Standart: ".$sth->rowCount()."<br>";
+   
+    $pdh = new myPDO($dsn, $db_user, $db_pass);
+    $sth = $pdh->query("SELECT * FROM sys.tables");
+    print "rowCount() New: ".$sth->rowCount()."<br><br>";
+   
+    $pdh=null;   
+}
+
+$db_server = "xxx";
+$db_name = "xxx";
+$db_user = "xxx";
+$db_pass = "xxx";
+
+print "PDO_MSSQL"."<br>";
+TestRowCount("mssql:host=$db_server;dbname=$db_name", $db_user, $db_pass);
+
+print "MSSQL throw PDO_ODBC"."<br>";
+TestRowCount("odbc:DRIVER={SQL Server};SERVER=$db_server;DATABASE=$db_name;", 
+$db_user, $db_pass);
+
+print "MS SQL driver 2.0"."<br>";
+TestRowCount("sqlsrv:server=$db_server;Database=$db_name", $db_user, $db_pass);
+?>
+
+My results:
+-------------------
+PDO_MSSQL
+rowCount() Standart: 0
+rowCount() New: 0
+
+MSSQL throw PDO_ODBC
+rowCount() Standart: -1
+rowCount() New: 53
+
+MS SQL driver 2.0
+rowCount() Standart: -1
+rowCount() New: 53
+-------------------
+
+With myPDO class you can use prepared queries like:
+<?php
+    $pdh = new myPDO($dsn, $db_user, $db_pass);
+    $sth = $pdh->query("select * from data where id>? or name like ?", array(
+100, "A%"));
+?>
+===============================================================================
+
+As of SQLite 3.x, the SQLite API itself changed and now all queries are
+implemented using "statements".  Because of this, there is no way for PDO to
+know the rowCount of a SELECT result because the SQLite API itself doesn't
+offer this ability.
+
+As a workaround, I created my own rowCount() function - it's a bit of a hack
+and hasn't been fully tested yet (I don't know how it will work when using
+JOINs in SELECTs, etc...), but at least alleviates the necessity for SELECT
+COUNT(*)'s everywhere in your code.
+
+I would have preferred if it were possible to overload the rowCount() function
+from PDOStatement, but I don't think it's possible (or I don't know how to do
+it).  There's also potential room for a bit more security ensuring that
+$queryString is wiped clean after other query()s so that you don't get a bad
+result, etc...
+
+The actual code should be posted in the above/below post (max post limits,
+argh!).  If others wish to extend/perfect this method, please keep me posted
+with an email as to what you've done.
+===============================================================================
+
+We're having problem with these PDOStatement::fetchColumn() and
+PDOStatement::rowCount(). I don't know if we have alike case to others or this
+is just a problem in our coding. In local, the rowCount() is not giving the
+correct number of rows but it is working fine when uploaded to our hosting
+site.. while the fetchColumn() is the reverse. The fetchColumn() is working
+fine in local but not anymore when uploaded. I don't know what is really going
+on with that but I think rowCount() is the best and the others are optional to
+use.
+===============================================================================
+
+Yet another workaround to return the row count inside only ONE select (see
+limitations below!):
+
+$sth = $dbh->prepare("SELECT *,count(*) AS howmany FROM users WHERE email
+=:email and password=:pass"); #var placeholders
+$sth->execute(array(':email'=>$email, ':pass'=>$pass)); #var binding
+$row = $sth->fetch(); #get one row (it'll always be one and only one!!!)
+
+if ($row['howmany'] == 1){ #we have a match and only one! cool!
+    echo $row['email'], $row['name'], $row['phone'], ... ;
+} elseif ($row['howmany']>1) { #more than one row returned
+    #one programmer should be fired 'cause he's not checking for
+    #for existing emails, before creating a new user
+    ...
+    # treat this exception somehow or simply skip this branch,
+    # if you're sure it won't happen in your table
+} else { #no match in the table ($row['howmany'] == 0)
+    echo "Email/pass didn't match the ones in the database!";
+}
+
+Advantages:
+- only one select statement is executed, no two steps needed!
+- it checks if one row exists in the table or not, according to the WHERE
+clause.
+- it returns all (or only a selection of) fields for that one row, if exists.
+
+Disadvantages:
+- it doesn't return row fields reliable if more than one row found. If more
+than one row responds to the SELECT query, the query returns still only one row
+and you don't know which one exactly .
+Maybe using a SORT BY, would make it a bit more predictible (as in: "if more
+than one users found, return the last user added in the table") but it's more a
+matter of good design of the program that fills in the table initially.
+
+Uses:
+- It is perfect for checking if a user/pass pair is present in a users table
+and to return the other fields of the user (like name, phone, whatever) if user
+was found.
+===============================================================================
+
+Well, I woundn't do as suggested querying twice the database to get the count
+and then get the data I want. It would be simpler and would give better
+performance to query once and retrieve both, record count and the data itself
+
+<?php
+$sql = "SELECT * FROM fruit WHERE calories > :calories";
+$sth = $conn->prepare($sql);
+$sth->bindParam(':calories', 100, PDO::PARAM_INT);
+$res = $sth->execute();
+if ($res) {
+    $record = $sth->fetchAll();
+    /* Check the number of rows that match the SELECT statement */
+    if (count($record) > 0) {
+        foreach ($record as $row) {
+            print "Name: " .  $row['NAME'] . "\n";
+         }
+    }
+    /* No rows matched -- do something else */
+  else {
+      print "No rows matched the query.";
+    }
+}
+$conn = null;
+?>
+===============================================================================
+
+My rowCount() workaround & how it's used:
+
+<?php
+class MyPDO extends PDO {
+    private $queryString;
+
+    public function query(/* ... */) {
+        $args = func_get_args();
+        $this->queryString = func_get_arg(0);
+
+        return call_user_func_array(array(&$this, 'parent::query'), $args);
+    }
+
+    public function rowCount() {
+        $regex = '/^SELECT\s+(?:ALL\s+|DISTINCT\s+)?(?:.*?)\s+FROM\s+(.*)$/i';
+        if (preg_match($regex, $this->queryString, $output) > 0) {
+            $stmt = parent::query("SELECT COUNT(*) FROM {$output[1]}", PDO::
+FETCH_NUM);
+
+            return $stmt->fetchColumn();
+        }
+
+        return false;
+    }
+}
+
+$pdo = new MyPDO("sqlite::memory:");
+$result = $pdo->query("SELECT row1, row2 FROM table WHERE something = 5");
+
+if ($pdo->rowCount() > 0) {
+    echo "{$result['row1']}, {$result['row2']}";
+}
+?>

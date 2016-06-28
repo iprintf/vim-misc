@@ -1,0 +1,1702 @@
+
+The COM class
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+Description
+
+The COM class allows you to instantiate an OLE compatible COM object and call
+its methods and access its properties.
+
+$obj = new COM("Application.ID")
+
+Methods
+
+COM::__construct ( string $module_name [, mixed $server_name [, int $codepage
+[, string $typelib ]]] )
+
+COM class constructor. The parameters have the following meanings:
+
+module_name
+    Can be a ProgID, Class ID or Moniker that names the component to load. A
+    ProgID is typically the application or DLL name, followed by a period,
+    followed by the object name. e.g: Word.Application. A Class ID is the UUID
+    that uniquely identifies a given class. A Moniker is a special form of
+    naming, similar in concept to a URL scheme, that identifies a resource and
+    specifies how it should be loaded. As an example, you could load up Word
+    and get an object representing a word document by specifying the full path
+    to the word document as the module name, or you can use LDAP: as a moniker
+    to use the ADSI interface to LDAP.
+server_name
+    The name of the DCOM server on which the component should be loaded and
+    run. If NULL, the object is run using the default for the application. The
+    default is typically to run it on the local machine, although the
+    administrator might have configured the application to launch on a
+    different machine. If you specify a non-NULL value for server, PHP will
+    refuse to load the object unless the  configuration option is set to TRUE.
+
+    If server_name is an array, it should contain the following elements (case
+    sensitive!). Note that they are all optional (although you need to specify
+    both Username and Password together); if you omit the Server setting, the
+    default server will be used (as mentioned above), and the instantiation of
+    the object will not be affected by the  directive.
+
+                               DCOM server name
+    server_name  type                         description
+        key
+    Server      string  The name of the server.
+    Username    string  The username to connect as.
+    Password    string  The password for Username.
+                        One or more of the following constants, logically OR'd
+                        together: CLSCTX_INPROC_SERVER, CLSCTX_INPROC_HANDLER,
+                        CLSCTX_LOCAL_SERVER, CLSCTX_REMOTE_SERVER,
+                        CLSCTX_SERVER and CLSCTX_ALL. The default value if not
+    Flags       integer specified here is CLSCTX_SERVER if you also omit
+                        Server, or CLSCTX_REMOTE_SERVER if you do specify a
+                        server. You should consult the Microsoft documentation
+                        for CoCreateInstance for more information on the
+                        meaning of these constants; you will typically never
+                        have to use them.
+
+codepage
+    Specifies the codepage that is used to convert strings to unicode-strings
+    and vice versa. The conversion is applied whenever a PHP string is passed
+    as a parameter or returned from a method of this COM object. The code page
+    is sticky in PHP 5, which means that it will propagate to objects and
+    variants returned from the object. Possible values are CP_ACP (use system
+    default ANSI code page - the default if this parameter is omitted),
+    CP_MACCP, CP_OEMCP, CP_SYMBOL, CP_THREAD_ACP (use codepage/locale set for
+    the current executing thread), CP_UTF7 and CP_UTF8. You may also use the
+    number for a given codepage; consult the Microsoft documentation for more
+    details on codepages and their numeric values.
+
+Overloaded Methods
+
+The returned object is an overloaded object, which means that PHP does not see
+any fixed methods as it does with regular classes; instead, any property or
+method accesses are passed through to COM.
+
+Starting with PHP 5, PHP will automatically detect methods that accept
+parameters by reference, and will automatically convert regular PHP variables
+to a form that can be passed by reference. This means that you can call the
+method very naturally; you needn't go to any extra effort in your code.
+
+In PHP 4, to pass parameters by reference you need to create an instance of the
+VARIANT class to wrap the byref parameters.
+
+Pseudo Methods
+
+In PHP versions prior to 5, a number of not very pleasant hacks meant that the
+following method names were not passed through to COM and were handled directly
+by PHP. PHP 5 eliminates these things; read the details below to determine how
+to fix your scripts. These magic method names are case insensitive.
+
+void COM::AddRef ( void )
+
+Artificially adds a reference count to the COM object.
+
+Warning
+
+You should never need to use this method. It exists as a logical complement to
+the Release() method below.
+
+void COM::Release ( void )
+
+Artificially removes a reference count from the COM object.
+
+Warning
+
+You should never need to use this method. Its existence in PHP is a bug
+designed to work around a bug that keeps COM objects running longer than they
+should.
+
+Pseudo Methods for Iterating
+
+These pseudo methods are only available if com_isenum() returns TRUE, in which
+case, they hide any methods with the same names that might otherwise be
+provided by the COM object. These methods have all been eliminated in PHP 5,
+and you should use For Each instead.
+
+variant COM::All ( void )
+
+Returns a variant representing a SafeArray that has 10 elements; each element
+will be an empty/null variant. This function was supposed to return an array
+containing all the elements from the iterator, but was never completed. Do not
+use.
+
+variant COM::Next ( void )
+
+Returns a variant representing the next element available from the iterator, or
+FALSE when there are no more elements.
+
+variant COM::Prev ( void )
+
+Returns a variant representing the previous element available from the
+iterator, or FALSE when there are no more elements.
+
+void COM::Reset ( void )
+
+Rewinds the iterator back to the start.
+
+COM examples
+
+Example #1 COM example (1)
+
+<?php
+// starting word
+$word = new COM("word.application") or die("Unable to instantiate Word");
+echo "Loaded Word, version {$word->Version}\n";
+
+//bring it to front
+$word->Visible = 1;
+
+//open an empty document
+$word->Documents->Add();
+
+//do some weird stuff
+$word->Selection->TypeText("This is a test...");
+$word->Documents[1]->SaveAs("Useless test.doc");
+
+//closing word
+$word->Quit();
+
+//free the object
+$word = null;
+?>
+
+Example #2 COM example (2)
+
+<?php
+
+$conn = new COM("ADODB.Connection") or die("Cannot start ADO");
+$conn->Open("Provider=SQLOLEDB; Data Source=localhost;
+Initial Catalog=database; User ID=user; Password=password");
+
+$rs = $conn->Execute("SELECT * FROM sometable");    // Recordset
+
+$num_columns = $rs->Fields->Count();
+echo $num_columns . "\n";
+
+for ($i=0; $i < $num_columns; $i++) {
+    $fld[$i] = $rs->Fields($i);
+}
+
+$rowcount = 0;
+while (!$rs->EOF) {
+    for ($i=0; $i < $num_columns; $i++) {
+        echo $fld[$i]->value . "\t";
+    }
+    echo "\n";
+    $rowcount++;            // increments rowcount
+    $rs->MoveNext();
+}
+
+$rs->Close();
+$conn->Close();
+
+$rs = null;
+$conn = null;
+
+?>
+
+
+User Contributed Notes 44 notes
+
+===============================================================================
+
+After one week of trying to understand what was wrong with my PHP communication
+with MS Word, i finally got it working...
+It seems that if you're running IIS, the COM object are invoked with restricted
+privileges.
+If you're having permission problems like not being able to opening or saving a
+document and you're getting errors like:
+
+- This command is not available because no document is open
+or
+- Command failed
+
+try this (if you're running IIS):
+
+- Execute "dcomcnfg"
+- Open Component Services > Computers > My Computer > DCOM Config
+- Search for Microsoft Office Word 97-2003 Document (it will be something like
+this translated to your language, so take a while and search for it)
+- Right-Click on it and open the properties
+- Choose "Identity" tab
+- Normally this is set to "the launching user". You have to change this to "the
+interactive user" or a admin user of your choice.
+- Apply these new settings and test your COM application. It should work fine
+now.
+
+I hope I save lots and lots of hours of headaches to some of you :)
+===============================================================================
+
+This is an example of using .Net using the NetPhp library that is based on the
+COM/DOTNET classes.
+
+You can use any .dll file,  wether it is or not COM decorated and any of the
+.Net framework types out of the box. You can also target any version of the
+.Net framework.
+
+<?php
+
+$runtime = new \NetPhp\Core\NetPhpRuntime('COM', 'netutilities.NetPhpRuntime');
+
+// Add both SpreadsheetLight and the OpenXML it depends on.
+$runtime->RegisterAssemblyFromFile('/binaries/SpreadsheetLight.dll', 
+'SpreadsheetLight');
+$runtime->RegisterAssemblyFromFile('/binaries/DocumentFormat.OpenXml.dll', 
+'DocumentFormat.OpenXml');
+$runtime->RegisterAssemblyFromFile('/binaries/AjaxMin.dll', 'AjaxMin');
+
+// Using the FullName of a type that belongs to an assembly that has already
+been registered.
+$datetime = $runtime->TypeFromName("System.DateTime");
+
+// Using the FullName of a type that has not been registered yet (from a file)
+$minifier = $runtime->TypeFromFile("Microsoft.Ajax.Utilities.Minifier", 
+APPLICATION_ROOT . '/binaries/AjaxMin.dll');
+
+// Using the FullName of a type that has not been registered yet
+(autodiscoverable)
+$datetime2 = $runtime->TypeFromAssembly("System.DateTime", "mscorlib, ....");
+
+$datetime->Instantiate();
+echo $datetime->ToShortDateString()->Val(); // Outputs 01/01/0001
+
+// We can only use Int32 from native PHP, so parse
+// an Int64 that is equivalent to (long) in the DateTime constructor.
+$ticks = $runtime->TypeFromName("System.Int64")->Parse('98566569856565656');
+
+$datetime->Instantiate($ticks);
+echo $datetime->ToShortDateString()->Val(); // Outputs 07/05/0313
+
+// We can only use Int32 from native PHP, so parse
+// an Int64 that is equivalent to (long) in the DateTime constructor.
+$ticks = $runtime->TypeFromName("System.Int64")->Parse('98566569856565656');
+
+// Dump a .Net System.Timers.Timer object!
+$data = $timer->GetPhpFromJson();
+
+var_dump($data);
+
+    // Outputs:
+    //  object(stdClass)[38]
+    //     public 'AutoReset' => boolean true
+    //     public 'Enabled' => boolean false
+    //     public 'Interval' => int 100
+    //     public 'Site' => null
+    //     public 'SynchronizingObject' => null
+    //     public 'Container' => null
+
+// Check if today is monday
+$IsMonday = $runtime->TypeFromName("System.DateTime")->Now->DayOfWeek->
+Equals($runtime->TypeFromName("System.DayOfWeek")->Enum('Monday'));
+
+?>
+===============================================================================
+
+Using the DynamicWrapper from http://freenet-homepage.de/gborn/WSHBazaar/
+WSHDynaCall.htm and after registering it via "regsvr32 dynwrap.dll", you can
+easily set output colors to make colorful CLI scripts even on Windows.
+
+<?php
+
+$dw = new COM('DynamicWrapper');  // needs dynwrap.dll (regsvr32 dynwrap.dll)
+
+// register needed features
+$dw->Register('kernel32.dll', 'GetStdHandle', 'i=h', 'f=s', 'r=l');
+$dw->Register('kernel32.dll', 'SetConsoleTextAttribute', 'i=hl', 'f=s', 'r=t');
+$dw->Register('kernel32.dll', 'SetConsoleTitle', 'i=s', 'f=s', 'r=l');
+
+// get console handle
+$ch = self::$dw->GetStdHandle(-11);  // -11 = STD_OUTPUT_HANDLE
+
+?>
+
+After these initialization steps, you can set the console output color using:
+
+<?php
+$dw->SetConsoleTextAttribute($ch, 14);
+echo 'This is yellow text!';
+$dw->SetConsoleTextAttribute($ch, 7);
+echo 'Back to normal gray!';
+?>
+
+Using SetConsoleTitle you can even set the title displayed in the console
+window.
+
+Color values are 0..7 for dark colors and 8..15 for light colors. Sequence is
+(black/silver, blue, green, cyan, red, magenta, yellow/brown, white/gray). I
+also found that if you add 16384 to the value, it should be inverse. 32768
+added should get underlined text. But these latter two didn't work for me.
+===============================================================================
+
+Took me a while to figure this out by trial and error:
+
+If your frustrated when getting a com-exception like "Error [0x80004002] ..."
+(with a message nagging you about an unsupported interface), and you're calling
+a class method through COM that expects a char as an argument, you should NOT
+call the method with a single-character string.
+
+The correct way of calling a method like this is to use a VARIANT with a type
+of VT_UI1.
+
+COM enabled method definition:
+
+public bool DoSomething(char arg);
+
+<?php
+
+$com = new COM('Some.Class.Name');
+
+// This will fail
+$var = 'a';
+$com->DoSomething($var);
+
+// This works correctly
+$var = new VARIANT(ord('a'), VT_UI1);
+$com->DoSomething($var);
+
+?>
+
+I hope this helps some people
+===============================================================================
+
+Basic Windows IO
+If you are using a command line (CLI) version of PHP on a Win32 platform, you
+might like to have a simple graphical interface to get input and output.  The
+following gives an illustration for both.
+
+<?php
+    // first we get some input
+    $oScript = new COM("MSScriptControl.ScriptControl");
+    $oScript->Language = "VBScript";
+    $title = "I/O Demo: Input half";
+    $initial = "Change this value";
+    $prompt = "Please enter a value";
+   
+    $code = <<<EOF
+Function getInput()
+    inVal = InputBox("$prompt", "$title", "$initial")
+    getInput = inVal         'how return values are assigned in VB
+End Function
+EOF;
+
+    $oScript->AddCode($code);
+    $input = $oScript->Eval("getInput()");   
+    if (gettype($input)=="NULL") $input = "Input box was cancelled";
+
+    // now we show some output
+    $oWSH = new COM("WScript.Shell");
+    $title = "I/O Demo: Output half";
+    $timeout = 2;        // 0 for no timeout
+    $style = 0 + 48;    // buttons to show + alert symbol
+    $oWSH->Popup($input, $timeout, $title, $style);
+?>
+
+This is example is overblown for illustrative purposes.  The whole input part
+collapses if the amount of code used is a single statement.  So, this would
+have sufficed:
+$code = "InputBox(\"$prompt\", \"$title\", \"$initial\")";
+$input = $oScript->Eval($code);
+
+This technique exposes quite a bit of scripting power tied into the Windows
+operating system and VBScript.  However, you should have a really specific
+reason for using it since VBScript tends to be dog slow when compared to PHP in
+my tests.  Simple IO like this is good, however, and the popup size can be
+quite large.  Furthermore, this could be a viable route to go for accessing
+WinAPI's.
+
+http://www.ss64.com/wsh/popup.html shows some documentation for $oWSH->Popup
+
+Csaba Gabor from Vienna
+===============================================================================
+
+All the examples here show
+<?php $var = new COM('Whatever.Something') or die(); ?>
+however the 'or die()' bit is redundant as a fatal 'com_exception' exception
+will be thrown, killing your script.  If you want to handle the 'or' condition
+you need to catch the exception, eg
+<?php
+try {
+$var = new COM('Whatever.Something');
+} catch (com_exception $e) {
+//couldn't load, do something else like register
+exec('regsvr32 /s whatever.dll');
+}
+?>
+===============================================================================
+
+On a query reply using ADODB.Connection object, all my $rs->Fields
+['field_name']->Value returned `variable Object` when inserted into a array,
+like this:
+
+<?php
+for ($rl[$v]=array(),_qm($_query);!$res->EOF;$res->MoveNext()) {
+    $rl[$v][]=$res->Fields['x']->Value;
+}
+?>
+
+I figured out that converting the value into a INT fixed the issue:
+
+<?php $rl[$v][]=intval($res->Fields['x']->Value); ?>
+===============================================================================
+
+It seems that PHP does not support setting of properties with arguments.  This
+is how I got around the problem:
+
+        // Object with method I want to set
+        $auth = new COM("AUTHXOCX.AuthXOCXCtrl.1");
+
+        // ScriptControl
+        $oScript = new COM("MSScriptControl.ScriptControl");
+        $oScript->Language = "VBScript";
+        $oScript->AllowUI = TRUE;
+
+        // Add out object to the control
+        $oScript->AddObject('auth', $auth, true);
+
+        // Create a VBScript function that allow me to set them
+       $oScript->AddCode(
+'Function fixAccess(accessname)
+    auth.AuthDataReferrerEnabled(accessname) = 1
+    auth.AuthDataAuthentiXDBEnabled(accessname) = 0
+End Function');
+
+        // Execute function
+        $oScript->Run("fixAccess", $dir);
+===============================================================================
+
+This script reports all Windows drives, drive type, status (if not available),
+free space and total drive size:
+
+<?php
+
+    $fso = new COM('Scripting.FileSystemObject');
+    $D = $fso->Drives;
+    $type = array("Unknown","Removable","Fixed","Network","CD-ROM","RAM Disk");
+    foreach($D as $d ){
+       $dO = $fso->GetDrive($d);
+       $s = "";
+       if($dO->DriveType == 3){
+           $n = $dO->Sharename;
+       }else if($dO->IsReady){
+           $n = $dO->VolumeName;
+           $s = file_size($dO->FreeSpace) . " free of: " . file_size($dO->
+TotalSize);
+       }else{
+           $n = "[Drive not ready]";
+       }
+   echo "Drive " . $dO->DriveLetter . ": - " . $type[$dO->DriveType] . " - " . 
+$n . " - " . $s . "<br>";
+
+    }
+   
+      function file_size($size)
+      {
+      $filesizename = array(" Bytes", " KB", " MB", " GB", " TB", " PB", " EB",
+" ZB", " YB");
+      return $size ? round($size/pow(1024, ($i = floor(log($size, 1024)))), 2)
+. $filesizename[$i] : '0 Bytes';
+      }
+
+?>
+
+There are a number of other properties of the drive object which can be called
+this way - see:
+
+http://msdn.microsoft.com/en-us/library/ts2t8ybh%28VS.85%29.aspx
+===============================================================================
+
+Hi, just wanna share to everyone after tried and tested many many times to
+create report in PDF format from Crystal Report.
+Finally I can do it without any error.
+Here is my system; PHP 5.1.6, MSSQL2005 and Crystal Report Server XI RL2
+
+<?php
+
+//- Variables - for your RPT and PDF
+echo "Print Report Test";
+$my_report = "D:\\Folder1\\SubFolder1\\Report.rpt"; //
+rpt source file
+$my_pdf = "D:\\Folder1\\SubFolder1\\Report.pdf"; // RPT export to pdf file
+//-Create new COM object-depends on your Crystal Report version
+$ObjectFactory= new COM("CrystalReports115.ObjectFactory.1") or die ("Error on
+load"); // call COM port
+$crapp = $ObjectFactory-> CreateObject("CrystalDesignRunTime.Application"); //
+create an instance for Crystal
+$creport = $crapp->OpenReport($my_report, 1); // call rpt report
+
+// to refresh data before
+
+//- Set database logon info - must have
+$creport->Database->Tables(1)->SetLogOnInfo("servername", "DBname", "user", 
+"password");
+
+//- field prompt or else report will hang - to get through
+$creport->EnableParameterPrompting = 0;
+
+//- DiscardSavedData - to refresh then read records
+$creport->DiscardSavedData;
+$creport->ReadRecords();
+
+   
+//export to PDF process
+$creport->ExportOptions->DiskFileName=$my_pdf; //export to pdf
+$creport->ExportOptions->PDFExportAllPages=true;
+$creport->ExportOptions->DestinationType=1; // export to file
+$creport->ExportOptions->FormatType=31; // PDF type
+$creport->Export(false);
+
+//------ Release the variables ------
+$creport = null;
+$crapp = null;
+$ObjectFactory = null;
+
+//------ Embed the report in the webpage ------
+print "<embed src=\"D:\\Folder1\\SubFolder1\\Report.pdf\" width=\"100%\" height
+=\"100%\">"
+
+   
+   
+?>
+
+That's all for me, anyway in Crystal Report I have to check DisCardSavedData,
+Save data with report and AutoSave (1 min) in Option Tab and also in Report
+Options I have to check save dat with report, too.
+
+Hope this should be help to anybody
+
+Casanoteva
+===============================================================================
+
+I found somewhere (http://www.recrystallize.com/merchant/supportfaq/
+supportfaq0003.htm) a list relating each version of Crystal Reports to its
+respective progID - it may help some fellows out there.
+
+7          Crystal.CRPE.Application
+
+8.0        CrystalRuntime.Application or CrystalRuntime.Application.8
+
+8.5        CrystalRuntime.Application or CrystalRuntime.Application.8.5
+
+9 (RDC)    CrystalRuntime.Application.9
+9 (RAS)    CrystalReports.ObjectFactory.2
+10 (RDC)   CrystalRuntime.Application.11
+10 (CEE)   CrystalReports10.ObjectFactory.1
+
+
+XI (RDC)   CrystalRuntime.Application.11
+XI (RAS)   CrystalReports11.ObjectFactory.1
+===============================================================================
+
+My previous notes about Crystal Reports have vanished away, but anyway I was up
+to correct them.
+
+The code above connects to COM (beware of the version number! search on the
+Registry Editor for the correct name to put in $COM_Object), opens a report
+from a file ($my_report), reload records from database and then exports it to a
+PDF file ($my_pdf).
+
+* IMPORTANT * this code, when invoked from the browser (I'm using Apache) AND
+with a report that connects to a ODBC database, does not work (the problem is
+specificly the line ReadRecords(), but may arise without it too when data is
+not saved into the report file).
+
+But when you run this code by PHP-CLI (that is, by the command line), it works
+ok! I bug-reported this, but have no answer till now ( give it a vote, if you
+thing it's important: http://bugs.php.net/bug.php?id=36959 ).
+
+Also, exceptions may arise, so put it on a try_catch block.
+
+--------------------------
+
+// by dfcp '06 (djogopatrao@gmail.com)
+
+$COM_Object = "CrystalReports11.ObjectFactory.1";
+$my_report = "C:\\report.rpt";
+$my_pdf = "C:\\report.pdf";
+
+$ObjectFactory= New COM($COM_Object);
+$crapp = $ObjectFactory->CreateObject("CrystalDesignRunTime.Application");
+$creport = $crapp->OpenReport($my_report, 1);
+$creport->ReadRecords(); // attention!
+
+$creport->ExportOptions->DiskFileName=$my_pdf;
+$creport->ExportOptions->PDFExportAllPages=true;
+$creport->ExportOptions->DestinationType=1; // Export to File
+$creport->ExportOptions->FormatType=31; // Type: PDF
+$creport->Export(false);
+===============================================================================
+
+When you save a MS Word document with this:
+<?php
+$word->Documents[1]->SaveAs('myfile.doc');
+?>
+
+Your file maybe go to this location:
+C:\WINDOWS\system32\config\systemprofile\My documents (and not to your script
+directory)
+===============================================================================
+
+Here's a way to create an AES-Encrypted ZIP file in PHP, using DotNetZip via
+the COM class.
+
+<?php
+try
+{
+  $fname = "zip-generated-from-php-" . date('Y-m-d-His') . ".zip";
+  $zipOutput = "c:\\temp\\" . $fname;
+  $zip = new COM("Ionic.Zip.ZipFile");
+  $zip->Name = $zipOutput;
+  $dirToZip= "c:\\temp\\psh";
+  #$dirToZip= "c:\\dinoch\\webs\\php";
+  $zip->Encryption = 3;
+  $zip->Password = "AES-Encryption-Is-Secure";
+  $zip->AddDirectory($dirToZip);
+  $zip->Save();
+  $zip->Dispose();
+
+  if (file_exists($zipOutput))
+  {
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Content-Type: application/x-zip');
+    header('Content-Disposition: attachment; filename=' . $fname);
+    header('Content-Length: ' . filesize($zipOutput));
+    readfile($zipOutput);
+    unlink($zipOutput);
+  }
+  else
+  {
+    echo '<html>';
+    echo '  <head>';
+    echo '  <title>Calling DotNetZip from PHP through COM</title>';
+    echo '  <link rel="stylesheet" href="basic.css"/>';
+    echo '  </head>';
+    echo '<body>';
+    echo '<h2>Whoops!</h2>' . "<br/>\n";
+    echo '<p>The file was not successfully generated.</p>';
+    echo '</body>';
+    echo '</html>';
+  }
+}
+catch (Exception $e)
+{
+    echo '<html>';
+    echo '  <head>';
+    echo '  <title>Calling DotNetZip from PHP through COM</title>';
+    echo '  <link rel="stylesheet" href="basic.css"/>';
+    echo '  </head>';
+    echo '<body>';
+    echo '<h2>Whoops!</h2>' . "<br/>\n";
+    echo '<p>The file was not successfully generated.</p>';
+    echo '<p>Caught exception: ',  $e->getMessage(), '</p>', "\n";
+    echo '<pre>';
+    echo $e->getTraceAsString(), "\n";
+    echo '</pre>';
+    echo '</body>';
+    echo '</html>';
+}
+
+?>
+===============================================================================
+
+If you're using COM to create a DSN Less connection to an MS Access 2007
+database, you'll find through Googling that you need to use an updated version
+of Jet, so the connection string I've found looks like this:
+
+<?php
+$databaselocation = "C:\Path\to\db.accdb";
+$conn = new COM('ADODB.Connection') or exit('Cannot start ADO.');
+$conn->Open("Provider=Microsoft.ACE.OLEDB.12.0; Data Source=$databaselocation")
+or die('Cannot start with Jet');
+?>
+
+However, on my setup (WinVista, Access 2007, PHP526) I found that it always
+'dies' with "Cannot start with Jet", even if the connection was successful
+($conn->State reads "1").
+
+I figured to just drop the die() command on $conn->Open(). If something
+catastrophic happens with the ADO connection then it's own error handling
+engine passes stack traces, etc back to the console/standard output.
+
+Therefore, my Open() command looks like this:
+
+<?php
+$conn->Open("Provider=Microsoft.ACE.OLEDB.12.0; Data Source=$databaselocation"
+);
+?>
+===============================================================================
+
+Voila une deuxime fonction pour excel 2007 et le plugin pdf
+
+<?php
+function xls2pdf($doc,$pdf)
+{
+
+// Pas de paramétres requis
+$empty = new VARIANT();
+
+/* Supression du pdf si il existe */
+if(file_exists ($pdf))
+@unlink($pdf);
+
+/* Démarrage de Word */
+$w = new COM("excel.application") or die("Impossible d'instancier l'application
+Word");
+
+/* Test de Word 2007 */
+if($w->Version > 11)
+{
+    /* Amener Word devant */
+    $w->Visible = 1;
+
+    /* Test du fichier */
+    if(file_exists ($doc))
+        $w->Workbooks->Open($doc);
+    else
+        return false;
+
+    /* Quelques commandes */
+    $w->Workbooks[1]->ExportAsFixedFormat(0,$pdf);
+
+    /* Fermeture de word */
+    $w->Workbooks[1]->Close(false);
+}   
+$w->Quit();
+
+/* Libération des ressources */
+$w = null;
+unset($w);
+    
+/* Test du fichier */
+if(file_exists ($pdf))
+    return true;
+else
+    return false;
+   
+}
+
+if(xls2pdf("c:\\test.xls","c:\\test.pdf"))
+echo "ok";
+else
+echo "nok";
+?>
+
+Pour les options d'exportation :
+http://msdn.microsoft.com/en-us/library/bb238907.aspx
+
+http://verticka.blogspot.com/
+===============================================================================
+
+quick wmi query example:
+
+<?php
+    $obj = new COM ( 'winmgmts://localhost/root/CIMV2' );
+    $wmi_computersystem =     $obj->ExecQuery("Select * from
+Win32_ComputerSystem");
+    $wmi_bios             =    $obj->ExecQuery("Select * from Win32_BIOS");
+    foreach ( $wmi_computersystem as $wmi_call )
+    {
+        $model = $wmi_call->Model;
+    }
+   
+    foreach ( $wmi_bios as $wmi_call )
+    {
+        $serial = $wmi_call->SerialNumber;
+        $bios_version = $wmi_call->SMBIOSBIOSVersion;
+    }
+    echo "Bios version   : $bios_version\n".
+         "Serial number  : $serial\n".
+         "Hardware Model : $model\n";
+?>
+===============================================================================
+
+If you ever want to save an Excel(.xls) file into the Office Excel 2003 XML
+format, just use
+
+$excel->Workbooks[1]->SaveAs('new_file_name.xml', 46);
+
+That's the number you need, 46.
+===============================================================================
+
+Thanks to paul at completewebservices who added a note earlier; I have used his
+code to solve a particularly difficult issue with the Crystal 9 runtime
+component. For some reason, VBA/VBS can pass a native Date type as a parameter
+to a Crystal Report requiring a date, but in PHP I've tried all manner of
+strings, unix timestamps, COM variant dates etc and all of these resulted in a
+com_exception.
+
+My solution was to employ VBScript to borrow the CDate function, which works
+correctly. Not the most elegant of solutions, but this parameterised approach
+is to be preferred to search-n-replacing the RecordSelectionFormula string. Of
+course if anyone here has an even better approach, do post it here - I am sure
+it would be of use.
+
+<?php
+// $rptParam is a report parameter object having a type of date
+$oScript = new COM("MSScriptControl.ScriptControl");
+$oScript->Language = "VBScript";
+$oScript->AllowUI = false;
+$oScript->AddObject('rptParam', $rptParam, true);
+$oScript->AddCode('Function SetDateParameter(strDate)
+rptParam.AddCurrentValue(CDate(strDate))
+End Function');
+$oScript->Run("SetDateParameter", "25 April 2006");
+?>
+===============================================================================
+
+Reply to: djogopatrao at gmail dot com
+I have change little bit your code. Its work.
+
+$COM_Object = "CrystalDesignRunTime.Application";
+$my_report = "C:\\appserv\\www\\mc\\test.rpt";
+$my_pdf = "C:\\appserv\www\\mc\\test.pdf";
+
+$crapp= New COM($COM_Object) or die("Unable to Create Object");
+$creport = $crapp->OpenReport($my_report, 1);
+$creport->ReadRecords(); // attention!
+
+$creport->ExportOptions->DiskFileName=$my_pdf;
+$creport->ExportOptions->PDFExportAllPages=true;
+$creport->ExportOptions->DestinationType=1; // Export to File
+$creport->ExportOptions->FormatType=31; // Type: PDF
+$creport->Export(false);
+===============================================================================
+
+To use the windows speech system install the "Speech SDK 5.1 for Windows 
+applications" from the Microsoft homepage (free download).
+Then you can do Text2Speech like this:
+
+$voice = new COM("SAPI.SpVoice");
+$voice->Speak("Hello, lets have a conversation");
+===============================================================================
+
+If your PHP is configured as ISAPI module then the COM object you create in ur
+php page will use the same memory space as the web server. If your COM object
+takes too much memory then this may force some COM error as PHP does not handle
+the memory usage of COM itself. And also Web server doesnt know what do to free
+COM memory. But if you use PHP as CGI then PHP itself handle the memory usage
+of COM. Once in a script where i used COM and PHP as ISAPI module i got unknown
+COM error.But when i used PHP as CGI there was no error. So those who want to
+use COM object in your application please be careful about it.
+===============================================================================
+
+If you can get the old "TaskScheduler.dll" and register it, it is quite simple
+to handle and start Windows tasks from PHP.
+This is extremely useful when you got things to do which must be run in a
+different user context. Prepare a task with the user and use PHP & Com to build
+a webinterface for it.
+
+Here is an example how to start a Windows task:
+
+  function start_task ($taskname) {
+    $SchedObj = new COM("Scheduler.SchedulingAgent.1");
+    foreach ($SchedObj->Tasks as $task) {
+      if (strtolower( (string) $task) == strtolower( $taskname.".job" )) {
+         $task->Run();
+      }
+    }
+  }
+
+I'm also working on a class to handle infos, adding and removing of tasks via
+PHP. If you are interested drop me a line.
+===============================================================================
+
+Getting IE to the foreground
+If you are using a command line (CLI) version of PHP on a Win32 platform (e.g.
+XP Pro, SP2), you might want to have output directed to IE (perhaps you'll want
+to work with the output there) when Popup does not suffice (see my earlier
+post, below).
+
+It's easy enough to get an instance of IE using $ie = new COM
+("InternetExplorer.Application");.  The problem is, you don't necessarily see
+it in the foreground (especially if you already have one open) and who wants to
+waste keystrokes getting to it?  The code below has been working for me (If you
+want to do other adjustments (e.g. $ie->Document->ParentWindow->resizeTo
+(800,500); or $ie->Document->Body->bgColor = "yellow";), doing them before the
+$ie->Visible = true; line will avoid screen distractions):
+
+<?php
+function newIEtoForeground($title, $evtPrefix="") {
+    // brings new instance of IE to foreground with title $title
+    if (!$extPrefix) $ie = new COM("InternetExplorer.Application");
+    else $ie = new COM("InternetExplorer.Application", $evtPrefix);
+    $ie->Navigate2("about:blank");
+    $oWSH = new COM("WScript.Shell");
+    while ($ie->ReadyState!=4) usleep(10000);
+
+    $ie->Document->Title = ($tmpTitle = mt_rand());  //unique title
+    $ie->Visible = true;
+    while (!$oWSH->AppActivate("$tmpTitle - M")) usleep(10000);
+
+    $ie->Document->Title = $title;
+    $ie->Document->ParentWindow->opener="me";  // allows self.close()
+    return $ie;
+}
+?>
+
+Csaba Gabor from Vienna
+===============================================================================
+
+if you ever need to connect to an access database (on the server, using the IIS
+or APACHE user account), here is code below that can help to ease the process. 
+It is written like this because we have a MySQL as well as an Access database
+and need to be able to switch back and forth.  The runQuery function will
+return a 2 dimensional array and can use column names or numbers for the index
+of the internal arrays.  External arrays are always integer-indexed.  We also
+have found issues with Access staying open and growing from 7MB to 2.5GB within
+two hours, so we open and close it each time we run a query.  If it is not a
+select query it will return TRUE.  if it fails with errors, it will return
+false.
+
+There is a showErr flag that we mostly only use for MySQL, since you can output
+MySQL errors without PHP errors.  Access doesn't appear to be that friendly.
+
+<?php
+
+function runQuery(&$conn,
+                    $strSQL,
+                    $associative=true,
+                    $debug=false,
+                    $showSQL=false,
+                    $showErr=false) {    
+    return runMSQuery($conn,$strSQL,$associative,$debug,$showSQL,$showErr);
+    //return runMyQuery($conn,$strSQL,$associative,$debug,$showSQL,$showErr);
+}
+
+function openMSDB($dbfile="c:/path/and/filename.mdb") {
+    if (!@$conn = new COM("ADODB.Connection"))
+        exit("Unable to create an ADODB connection<br>");
+    $strConn = "DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=".$dbfile;
+    @$conn->open($strConn);
+    if($conn->State == 0) return false;
+    return $conn;
+}
+
+function closeMSDB(&$conn) {
+    @$conn->Close();
+    $conn = null;
+    return true;
+}
+
+function runMSQuery(&$conn,
+                    $strSQL,
+                    $associative=true,
+                    $debug=false,
+                    $showSQL=false,
+                    $showErr=false) {
+    if(!is_object($conn)) if(!$conn=openMSDB()) return false;
+    if( $showSQL || $debug ) echo $strSQL."\n<br>\n";
+    $rtn = false;
+    if($debug) $rs = $conn->execute($strSQL);
+    else $rs = @$conn->execute($strSQL);
+
+    if(!$rs) {
+        if($showErr) echo "Error running SQL.<br>\n";
+        closeMSDB($conn);
+        return false;
+    }
+    if ($rs->State == 0) {
+        closeMSDB($conn);
+        return true;
+    } else {   
+        $rows=0;
+        while(!$rs->EOF) {
+            for($i=0;$i<$rs->Fields->count;$i++) {
+                $rsf = $rs->Fields($i);
+                if($associative) $rtn[$rows][$rsf->Name] = $rsf->value;
+                else $rtn[$rows][$i] = $rsf->value;
+            }
+            $rows++;
+            $rs->MoveNext();
+        }
+        if($rs->State != 0) $rs->Close();
+        $rs = null;
+    }
+    if($debug) var_dump($rtn);
+    closeMSDB($conn);
+    return $rtn;
+}
+?>
+===============================================================================
+
+for connection to sql server and know the utf-8 code
+use this method to connect the database
+
+$db = new COM("ADODB.Connection",NULL, 65001 );
+===============================================================================
+
+Here's a simple example of printing formatted templates with MS Word.
+
+To begin with, I've already built my invoice in Word and saved it as an RTF
+file.
+In this case, I'm using "sampleInvoice.php"
+
+Fields that will be replaced have been marked as ||CUSTOMER ID|| and so on.
+
+<?php
+$dataText = "";
+
+// open the file
+if(!($fp= fopen ("C:\wordTest\sampleInvoice.rtf", "r"))) die ("Can't open");
+$dataText = fread($fp, 2000000);
+fclose ($fp);
+
+// replace the template fields
+$dataText = str_replace ("||CUSTOMER ID||",$customerIDValue, $dataText);
+
+// save the file as an rtf
+$timeStamp = time();
+$saveFile = "C:/wordTemp/".$timeStamp."-invoice-".$customerIDValue.".rtf";
+if(!($fq= fopen ($saveFile, "w+"))) die ("Can't open");
+fwrite ($fq, $dataText);
+fclose ($fq);
+
+// initialize the word components
+$word = new COM("word.application") or die("Unable to instantiate Word");
+
+print "Loaded word version ($word->Version)\n";
+$word->visible = true;
+$word->Documents->Add();
+
+// open the file
+$word->Documents->Open("$saveFile");
+
+// output the file to the default printer
+$word->ActiveDocument->PrintOut(1);
+
+// shutdown word
+$word->Quit();
+?>
+===============================================================================
+
+Here's an example/comparison of VBScript vs PHP's COM component to connect to
+an IIS Webserver.
+The examples backup the IIS MetaBase (your server's website(s) configuration)
+in IIS.
+
+VBScript:
+  Dim obj, iFlags
+  Set obj = GetObject("IIS://LocalHost")
+  ' Backup to next available version number.
+  ' Set flags to save the metabase first and
+  ' force the backup even if save fails.
+  iFlags = (MD_BACKUP_SAVE_FIRST or MD_BACKUP_FORCE_BACKUP)
+  obj.Backup "MyBackups", MD_BACKUP_NEXT_VERSION, iFlags
+  ' Note: The above was copied from Microbucks.
+  ' This is how you would have to do it.
+  ' i.e. use the actual constant's value.
+  iFlags = (2 or 4) 
+  obj.Backup "MyBackups", &HFFFFFFFF, iFlags
+
+PHP:
+  <?php
+  $obj = new COM("IIS://LocalHost")or die("Unable to instantiate IIS"); 
+  $err = com_invoke ($obj, "Backup", "MyBackups", "&HFFFFFFFF", 2|4 );
+  $obj = null;
+  print "err=".$err; // returns 0 on success
+  ?>
+
+Glen
+===============================================================================
+
+If you want to use a DSN-less connection to a database (access for example) and
+return the results of a query as a multidimensional array with the fieldnames
+as identifier try this. Hope it helps someone :-)
+--------------------------------------------------------
+
+<?php
+function db($sql) {
+    $c = new COM("ADODB.Connection");
+    $c->open('DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=' . realpath(
+"relative_path/db.mdb"));
+    $r = $c->execute($sql);
+    $i = 0;
+    $num_fields = $r->fields->count();
+    while (!$r->EOF)
+        {
+            for($j = 0;$j<$num_fields;$j++) {
+            $key = $r->Fields($j);
+            $r_items[$i][$key->name] = $key->value;
+        }
+        $i++;
+        $r->MoveNext();
+    }
+    $r->close();
+    $c->close();
+    $r = null;
+    $c = null;
+    return $r_items;
+}
+?>
+
+--------------------------------------------------------
+use it like this:
+--------------------------------------------------------
+<?php
+$results = db("SELECT field_a, field_b FROM table");
+foreach($result as $i => $item) {
+    echo $item['field_a'];
+    echo $item['field_b'];
+}
+?>
+--------------------------------------------------------
+You can also use: print_r($result); if you want the structure of the array to
+be printed.
+===============================================================================
+
+<?php
+// An other way to connect
+// this connect to a ODBC-datasourced added in the
+// ODBC Data Source Administrator under System DSN
+
+$odbcname = "northwind";
+$conn->Open("DSN=$odbcname");
+?>
+===============================================================================
+
+An example of connecting to a Microsoft Access database, executing an SQL
+query, and displaying the results in HTML.
+
+<?php
+
+$db = 'C:\\Program Files\\Microsoft Office\\Office\\Samples\\Northwind.mdb';
+
+$conn = new COM('ADODB.Connection');
+
+// Two ways to connect. Choose one.
+$conn->Open("Provider=Microsoft.Jet.OLEDB.4.0; Data Source=$db");
+//$conn->Open("DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=$db");
+
+$sql = 'SELECT   ProductName, QuantityPerUnit, UnitPrice
+         FROM     Products
+          ORDER BY ProductName';
+$rs = $conn->Execute($sql);
+
+?>
+
+<table>
+<tr>
+          <th>Product Name</th>
+         <th>Quantity Per Unit</th>
+         <th>Unit Price</th>
+</tr>
+<?php while (!$rs->EOF): ?>
+         <tr>
+                  <td><?= $rs->Fields['ProductName']->Value ?></td>
+                   <td><?= $rs->Fields['QuantityPerUnit']->Value ?></td>
+                  <td><?= $rs->Fields['UnitPrice']->Value ?></td>
+          </tr>
+         <?php $rs->MoveNext() ?>
+<?php endwhile ?>
+</table>
+
+<?php
+
+$rs->Close();
+$conn->Close();
+
+?>
+===============================================================================
+
+In order to get the Word exaple running, do the following on the server side.
+Worked for me...
+1. Click START-->RUN and enter "dcomcnfg"
+2. In the "Applications" tab, go down to "Microsoft Word Document"
+3. Click PROPERTIES button
+4. Go to the "Security" Tab
+5. Click "Use custom access permissions", and then click EDIT
+6. Click ADD and then click SHOW USERS
+7. Highlight the IIS anonymous user account (usually IUSR_<machinename>), click
+ADD
+8. Go back to the "Security" tab by hitting OK
+9. Click "Use custom launch permissions", and the click EDIT
+10. Click ADD and then click SHOW USERS
+11. Highlight the IIS anonymous user account (usually IUSR_<machinename>),
+click ADD
+12. Hit OK, and then hit APPLY.
+
+Also, you should look at the "Identity" tab in the Microsoft Word Document
+PROPERTIES and see that it is set to "Interactive User"
+ 
+
+ALSO, log into the machine AS the IUSR_<machinename> account, start word, and
+make sure to click through the dialog boxes that Word shows the first time it
+is run for a certain user.  In other words, make sure Word opens cleanly for
+the IUSR_ user.
+
+More useful information could be found here:
+http://www.email-screen.com/support-doc2txt.html
+===============================================================================
+
+The example above (MS Word) is quiet unsatisfying, as I find. Especially since
+I couldn't find anybody who actually got it running, including myself.
+
+You might therefore give this Powerpoint-example a chance:
+----------------------------------
+#Instantiate a PowerPoint object.
+$ppoint = new COM("PowerPoint.application") or die("Unable to instantiate
+PowerPoint");
+
+<?php
+#Create a new presentation
+$ppoint->Presentations->Add() or die ("Could not create presentation");
+
+//Add a slide
+$slide=$ppoint->Presentations[1]->Slides->Add(1,1);
+
+//Get the name of this slide
+$slidename = $slide->Name();
+echo"<br>slidename : $slidename";
+
+//Change the name of this new slide
+$slide->Name = "New Slidename";
+$slidename = $slide->Name();
+echo"<br>NEW slidename : $slidename";
+
+//Save the presentation
+$ppoint->Presentations[1]->SaveAs("c:/InetPub/www/test.ppt");
+$ppoint->Presentations[1]->Close();
+
+//closing powerpoint
+$ppoint->Quit();
+
+//free the object
+$ppoint->Release();
+$ppoint = null;
+-----------------------
+?>
+
+the config is :
+w2k-server/office2k/iis5/php 4.1.1 isapi
+
+If you happen to run into a working word2k-example, please let me know.
+
+Marc
+===============================================================================
+
+Changing Fields (Not FORMFIELDS) In MS Word....
+
+Searched most of the afternoon for this, as it is something needed here for our
+projects.  Maybe this can help someone else as well.
+
+<?php
+$input = "x:\\path\\to\\test.doc";
+$word = @new COM("word.application") or die("Unable to instantiate Word");
+print "Loaded Word, version {$word->Version}\n<br>";
+$word->Visible = 1;
+print "Set Word To Visible<br>";
+$word->Documents->Open($input);
+print "Opened $input<br>";
+$word->Activate;
+print "Activated Word<br>";
+
+print "Editing Fields<br>";
+$Field = $word->ActiveDocument->Fields(1);
+$fieldData = $Field->Result;
+$fieldData->Text = "Testing";
+
+// Print the document.
+$word->Printout();
+
+// closing word
+$word->Quit();
+
+// free the object
+$word->Release();
+$word = null;
+
+?>
+===============================================================================
+
+It should be noted that to run anything that needs to interact with the UI (the
+word example), one needs to ensure that the process that the Web server is
+running under can access the UI.  For Apache, this is an option in the Services
+control panel.
+===============================================================================
+
+If you make a DLL in VB6 and want to access from PHP, here is the example. Only
+connection method is defined. You need to create rest....
+
+How to use in PHP
+DLL refers ProjectName . ClassName
+$Obj = new COM ('ProjectName.ClassName');
+$dw->MsSql_Connect('MachineName', 'DB_NAme');
+
+If you want to connect Database through DLL then
+
+Open project in VB6 Class Module :
+And add this code and compile and make DLL.
+
+Public Function MsSql_Connect(ByVal DBMachineID As String, ByVal DBName As
+String) As Boolean
+    Dim LocalCn As New ADODB.Connection
+    Dim conStr As String, DB_UserID As String, DB_Password As String
+   
+    On Error GoTo ErrorHandler
+   
+    DB_UserID = "DBUserName"
+    DB_Password = "DBPassword"
+   
+    Set LocalCn = New ADODB.Connection
+    LocalCn.CursorLocation = adUseClient
+
+    conStr = "Provider=SQLOLEDB.1;Password=" & DB_Password & ";Persist Security
+Info=True;User ID=" & DB_UserID & ";Initial Catalog=" & DBName & ";Data Source=
+" & DBMachineID & ";"
+    LocalCn.Open conStr
+   
+    DBConnection = conStr
+   
+    MsSql_Connect = True
+    Set LocalCn = Nothing
+   
+ErrorHandler:
+    If Err.Number <> 0 Then
+       MsSql_Connect = False
+       Set LocalCn = Nothing
+       Err.Raise vbObjectError + 513, App.EXEName, Err.Description
+    End If
+End Function
+
+"DBConnection" is a variable you need to Set + Get property in VB6 to keep the
+connection string alive in DLL.
+
+Remember :
+Err.Raise vbObjectError + 513, App.EXEName, Err.Description
+
+will raise error in PHP, user can see error in browser and stop execution php
+code.
+
+If you need any help email me.
+
+Mohammed Ziaul Hasan [Rupam]
+rupams2002@yahoo.com
+Senior Developer
+Canada
+===============================================================================
+
+This is the code for entering Values in MS word through Php Program.
+
+First : You need to make word file with including Boolmark
+(Ms word 2003 , Insert -> Bookmark ->Bookmark Name -> add).
+Example
+Name : add here bookmark
+This is something like input as a text box.  Here I given 5 fields.
+Name , TODAYDATE , Company ,project , Features
+
+Here I opened a word file, and put data into Bookmark fields using PHP.
+
+Just note : it works in c:/ only. (not sure why), C:/program files may take
+longer time. (waiting for ...)
+
+<?php
+
+com_load_typelib('Word.Application');
+
+$word = new COM("word.application") or die("Unable to instantiate Word");
+
+// use like this. Place your's word file in C drive
+$word->Documents->Open('C:/reminder_new.doc');
+echo $current_date = date("m/d/Y");
+
+$tim= date("Y-m-d");
+
+$info_array=array(  "Name"      => "pavan",
+                    "TODAYDATE" => "$tim" ,
+                    "Company"   => "sparsh" ,
+                    "project"   => "Myrepc",
+                    "Features"   => "Auto fill form editor") ;
+
+foreach($info_array as $bookmarkname => $re)
+    {
+
+        $objBookmark = $word->ActiveDocument->Bookmarks($bookmarkname);
+        $range = $objBookmark->Range;
+        echo $range->Text = $re ;
+
+    }
+
+$new_file = "c:/reminder_filled.doc";
+
+$word->Documents[1]->SaveAs($new_file);
+
+$word->ActiveDocument->Close(false);
+
+$word->Quit();
+$word = null;
+
+?>
+===============================================================================
+
+Here I Am describing a Program from which you can connect any exe(software)
+using COM component.
+pdf2swf is a software for converting PDf to SWF files.
+
+This is best example for  WScript.Shell
+
+<?php
+#code for pdf to swf using pdf2swf software
+#this codeworks in windows environment.
+
+
+## Important Parameters
+$software_path  ="C:\\SWFTools\\pdf2swf" ;
+$pdf_path       ="C:\\SWFTools\\abcd.pdf" ;
+$argument       = "-o";
+$swf_output     ="C:\\SWFTools\\abcd.swf" ;
+
+
+
+#actual code
+$cmd        =" $software_path $pdf_path  $argument $swf_output";
+
+$WshShell   = new COM("WScript.Shell");
+$oExec      = $WshShell->Run("cmd /C $cmd ", 0, true);
+
+# 0 for command prompt invisible mode
+# 3 for visible
+
+?>
+===============================================================================
+
+Getting * directory * permissions ( attributes ) with COM
+
+PHP (5) example...
+
+<?
+    $dir = 'e:/www/docs/www/docs/junk/';
+
+    define ( 'READ_ONLY', 1 );
+    define ( 'IS_HIDDEN', 2 );
+    define ( 'IS_SYSTEM', 4 );
+
+    $hold = array ();
+
+    $obj = new COM ( 'scripting.filesystemobject' );
+
+    if ( is_object ( $obj ) )
+    {
+        $all = $obj->getfolder ( $dir );
+
+        foreach ( $all->subfolders AS $directory )
+        {
+            if ( substr ( $directory->name, - 3 ) != 'cnf' )
+            {
+                $hold[$dir . $directory->name . '/'] =  array ( 'read_only' =>
+( ( $directory->Attributes & READ_ONLY ) <> 0 ? 1 : 0 ), 'is_hidden' => ( (
+$directory->Attributes & IS_HIDDEN ) <> 0 ? 1 : 0 ), 'is_system' => ( (
+$directory->Attributes & IS_SYSTEM ) <> 0 ? 1 : 0 ) );
+            }
+        }
+
+        $obj = null;
+    }
+    else
+    {
+        echo 'sorry can not crate object: file_system_object';
+    }
+
+    print_r ( $hold );
+?>
+
+To do the same thing for * files * with in the directory named in $dir, change
+above ( foreach() ) to what is below...
+
+        foreach ( $all->files AS $file )
+        {
+            $hold[$file->name] =  array ( 'read_only' => ( ( $file->Attributes
+& READ_ONLY ) <> 0 ? 1 : 0 ), 'is_hidden' => ( ( $file->Attributes & IS_HIDDEN
+) <> 0 ? 1 : 0 ), 'is_system' => ( ( $file->Attributes & IS_SYSTEM ) <> 0 ? 1 :
+0 ) );
+        }
+
+pretty much anything you could think of doing in windows can be done using PHP
+and COM...
+
+John
+===============================================================================
+
+Example on how to read a registry value:
+
+<?php
+  $shell= &new COM('WScript.Shell');
+  var_dump($shell->regRead('HKEY_CURRENT_USER\Environment\TEMP'));
+?>
+
+(outputs string(39) "%USERPROFILE%\Lokale Einstellungen\Temp" on my system)
+===============================================================================
+
+For Access to Ms Access
+use another Provider like this:
+
+<?php
+$conn = new COM("ADODB.Connection")
+or die("Cannot start ADO");
+$conn->Open("Provider=Microsoft.Jet.OLEDB.4.0; Data Source=./thefile.mdb;");
+$rs = $conn->Execute("SELECT * FROM thetable");
+?>
+===============================================================================
+
+I couldn't find an example anywhere on what I was trying to do.  After taking
+bits from everyone I ended up with something that worked.
+
+Im using Crystal Reports 10, MS SQL Server 2005, Apache2, and PHP5.
+
+My report uses an SQL Store Procedure and passes some parameter to get the
+report data, so our PHP must set the database logon info and pass the
+parameters.
+
+Below is the solution I came up with:
+
+<?php
+
+//------  Variables ------
+$my_report = "C:\\Apache2\htdocs\\test\\MyReport.rpt";  //This must be the full
+path to the file
+$my_pdf = "C:\\Apache2\htdocs\\test\\MyReport.pdf";
+
+//------ Create a new COM Object of Crytal Reports 10 ------
+$ObjectFactory= new COM("CrystalReports10.ObjectFactory.1");
+
+//------ Create a instance of library Application -------
+$crapp = $ObjectFactory->CreateObject("CrystalDesignRunTime.Application.10");
+
+//------ Open your rpt file ------
+$creport = $crapp->OpenReport($my_report, 1);
+
+//------ Set database logon info ------
+$creport->Database->Tables(1)->SetLogOnInfo("MYSERVER", "Database", "user", 
+"password");
+
+//------ Suppress the Parameter field prompt or else report will hang ------
+$creport->EnableParameterPrompting = 0;
+
+//------ DiscardSavedData make a Refresh in your data -------
+$creport->DiscardSavedData;
+$creport->ReadRecords();
+
+//------ Pass formula fields --------
+$creport->FormulaFields->Item(1)->Text = ("'My Report Title'");
+$creport->ParameterFields(1)->AddCurrentValue ("FirstParameter");
+$creport->ParameterFields(2)->AddCurrentValue (2000);
+
+//------ Export to PDF -------
+$creport->ExportOptions->DiskFileName=$my_pdf;
+$creport->ExportOptions->FormatType=31;
+$creport->ExportOptions->DestinationType=1;
+$creport->Export(false);
+
+//------ Release the variables ------
+$creport = null;
+$crapp = null;
+$ObjectFactory = null;
+
+//------ Embed the report in the webpage ------
+print "<embed src=\"MyReport.pdf\" width=\"100%\" height=\"100%\">"
+
+?>
+
+Obviously there's plenty of room for refinement in there, but it works and
+should get you going on the right track.  I also found that during testing, the
+script was hanging before supressing the parameter prompt. Once this had
+happened, some exports that had been working earlier stopped completely and
+wouldn't work again untill I restarted Apache.  This might be something worth
+doing if you keep having issues after a script has hung.
+===============================================================================
+
+I have searched for ways to open and read an excel document and I found some
+information which I thought that I would document.  Information on the object
+model to help with programming COM objects can be found in your MS Office help
+files, search for VBA*.chm.
+Also, here is a script that I used to pull a cell from each worksheet, complete
+w/ variable for pathnames & worksheets.  This script also closes excel
+completely.  The coding might be dirty, but it gets the job done.
+--------copy from here-----------
+<pre>
+<?PHP
+$filename = "c:/spreadhseet/test.xls";
+$sheet1 = 1;
+$sheet2 = "sheet2";
+$excel_app = new COM("Excel.application") or Die ("Did not connect");
+print "Application name: {$excel_app->Application->value}\n" ;
+print "Loaded version: {$excel_app->Application->version}\n";
+$Workbook = $excel_app->Workbooks->Open("$filename") or Die("Did not open 
+$filename $Workbook");
+$Worksheet = $Workbook->Worksheets($sheet1);
+$Worksheet->activate;
+$excel_cell = $Worksheet->Range("C4");
+$excel_cell->activate;
+$excel_result = $excel_cell->value;
+print "$excel_result\n";
+$Worksheet = $Workbook->Worksheets($sheet2);
+$Worksheet->activate;
+$excel_cell = $Worksheet->Range("C4");
+$excel_cell->activate;
+$excel_result = $excel_cell->value;
+print "$excel_result\n";
+#To close all instances of excel:
+$Workbook->Close;
+unset($Worksheet);
+unset($Workbook);
+$excel_app->Workbooks->Close();
+$excel_app->Quit();
+unset($excel_app);
+?>
+</pre>
+----------------------------------
+===============================================================================
+
+If you wnat to connect to Access MDB Library you can use this small "progy". It
+works so, that if someone other accesses the library, it waits for so long to
+access it again because (as i know) MDB librarys can be accessed only once at
+the same time.
+
+<?php
+function mdb($sql, $array = 0, $base = "Base.mdb", $timelimit = 5)
+    {
+    $r_items = array();
+    $c = new COM("ADODB.Connection");
+    $r = false;
+    $time = time();
+    $process = $i = 0;
+    while($r == false && $process <= $timelimit)
+        {
+        $deb = $c->open('DRIVER={Microsoft Access Driver (*.mdb)}; Dbq='. 
+realpath($base) .';');
+        $r = $c->execute($sql);
+        $process = time() - $time;
+        }
+    if($process >= $timelimit) exit("mdbSQL Query Timeout!");
+    if(strtolower(substr($sql, 0, 6)) == "insert" or strtolower(substr($sql, 0,
+6)) == "update" or strtolower(substr($sql, 0, 6)) == "delete") return true;
+    $num_fields = $r->fields->count();
+    while (!$r->EOF)
+        {
+        for($j = 0; $j < $num_fields; $j++)
+            {
+            $key = $r->Fields($j);
+            if($array == 0) $r_items[$i][$key->name] = $key->value;
+            else $r_items[$i][$j] = $key->value;
+            }
+        $i++;
+        $r->MoveNext();
+        }
+    $r->close();
+    $c->close();
+    $r = null;
+    $c = null;
+    return $r_items;
+    }
+?>
+
+I got the source from the Manual, what i did is that i made it more compatible
+and user frendly. :)
+
+I hope it could some day help someone so as it did me...
+
+Greetings from Slovenia!
+
+Mihael Peternelj

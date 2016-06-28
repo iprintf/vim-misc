@@ -1,0 +1,888 @@
+
+is_callable
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+is_callable — 检测参数是否为合法的可调用结构
+
+说明
+
+bool is_callable ( callable $name [, bool $syntax_only = false [, string &
+$callable_name ]] )
+
+验证变量的内容能否作为函数调用。这可以检查包含有效函数名的变量，或者一个数组，
+包含了正确编码的对象以及函数名。
+
+参数
+
+name
+
+    要检查的回调函数。
+
+syntax_only
+
+    如果设置为 TRUE，这个函数仅仅验证 name 可能是函数或方法。它仅仅拒绝非字符，
+    或者未包含能用于回调函数的有效结构。有效的应该包含两个元素，第一个是一个对
+    象或者字符，第二个元素是个字符。
+
+callable_name
+
+    接受“可调用的名称”。下面的例子是“someClass::someMethod”。注意，尽管
+    someClass::SomeMethod() 的含义是可调用的静态方法，但例子的情况并不是这样的
+    。
+
+返回值
+
+如果 name 可调用则返回 TRUE，否则返回 FALSE。
+
+范例
+
+Example #1 is_callable() 例子
+
+<?php
+//  How to check a variable to see if it can be called
+//  as a function.
+
+//
+//  Simple variable containing a function
+//
+
+function someFunction() 
+{
+}
+
+$functionVariable = 'someFunction';
+
+var_dump(is_callable($functionVariable, false, $callable_name));  // bool(true)
+
+echo $callable_name, "\n";  // someFunction
+
+//
+//  Array containing a method
+//
+
+class someClass {
+
+  function someMethod() 
+  {
+  }
+
+}
+
+$anObject = new someClass();
+
+$methodVariable = array($anObject, 'someMethod');
+
+var_dump(is_callable($methodVariable, true, $callable_name));  //  bool(true)
+
+echo $callable_name, "\n";  //  someClass::someMethod
+
+?>
+
+参见
+
+  • function_exists() - 如果给定的函数已经被定义就返回 TRUE
+  • method_exists() - 检查类的方法是否存在
+
+
+User Contributed Notes 24 notes
+
+===============================================================================
+
+is_callable() will try __autoload(), if have one.
+===============================================================================
+
+bob at theshirdshift:
+
+"function_exists" doesn't do this, no, but "method_exists" works fine, and is
+still faster than is_callable:
+
+<?php
+function doTimes($start, $end)
+  {
+   $start_time = explode (" ", $start);
+   $start_time = $start_time[1] + $start_time[0];
+   $end_time = explode (" ", $end);
+   $end_time = $end_time[1] + $end_time[0];
+   $time = $end_time - $start_time;
+   return $time;
+  }
+
+class test
+  {
+     function test()
+     {
+         return true;
+     }
+  }
+
+$test = new test;
+
+$callableIsTrue = false;
+$startIsCallable = microtime();
+for($i = 0; $i < 10000; $i++)
+  {
+     if(is_callable(array('test', 'test'))) { $callableIsTrue = true; }
+  }
+$endIsCallable = microtime();
+
+$existsIsTrue = false;
+$startExists = microtime();
+for($i = 0; $i < 10000; $i++)
+  {
+     if(method_exists('test', 'test')) { $existsIsTrue = true; }
+  }
+$endExists = microtime();
+
+$timeIsCallable = doTimes($startIsCallable, $endIsCallable);
+$timeExists    = doTimes($startExists, $endExists);
+
+echo "<b>is_callable = ".($callableIsTrue ? "TRUE" : "FALSE")."</b>, \n";
+echo "<b>method_exists = ".($existsIsTrue ? "TRUE" : "FALSE")."</b><br>\n";
+
+echo "<br>Did 10000 is_callables in ".$timeIsCallable." seconds";
+echo "<br>Did 10000 method_exists in ".$timeExists." seconds";
+?>
+
+is_callable = TRUE, method_exists = TRUE
+
+Did 10000 is_callables in 0.410346984863 seconds
+Did 10000 method_exists in 0.175447940826 seconds
+===============================================================================
+
+To corey at eyewantmedia dot com:
+
+your misunderstanding lies in passing in the naked $object parameter. It is
+correct for is_callable to return FALSE since you cannot 'call an object', you
+can only call one of its methods, but you don't specify which one. Hence:
+
+is_callable(array($object, 'some_function'), [true or false], $callable_name)
+
+will yield the correct result.
+
+Notice, though, that a quick test I made (PHP 5.0.4) showed that is_callable
+incorrectly returns TRUE also if you specify the name of a protected/private
+method from outside of the context of the defining class, so, as wasti dot redl
+at gmx dot net pointed out, reflection is the way to go if you want to take
+visibility into account (which you should for true OOP, IMHO).
+===============================================================================
+
+is_callable doesn't seem able to resolve namespaces.  If you're passing a
+string, then the string has to include the function's full namespace. 
+
+<?php
+namespace foo\bar\baz;
+
+function something ()
+{
+    return (42);
+}
+
+var_dump (is_callable ('something')); // false
+var_dump (is_callable ('foo\bar\baz\something')); // true
+?>
+
+It's easy to forget, but if you just prepend __NAMESPACE__ to your function
+name strings you should be fine in most cases.
+===============================================================================
+
+Example how is_callable works:
+
+<?php
+$counter = 0;
+
+class TestClassOne {
+    function testMethod(){
+        global $counter;
+        return ++$counter;
+    }
+    static function testMethodStatic(){
+        global $counter;
+        return ++$counter;
+    }
+}
+
+class TestClassTwo {
+    function __invoke() {
+        global $counter;
+        return ++$counter;
+    }
+}
+
+function test_function() {
+    global $counter;
+    return ++$counter;
+}
+
+$p1 = 'test_function';
+$p2 = new TestClassOne();
+$p3 = ['TestClassOne', 'testMethodStatic'];
+$p4 = [new TestClassOne(), 'testMethod'];
+$p5 = new TestClassTwo();
+$p6 = function() {
+    global $counter;
+    return ++$counter;
+};
+
+foreach ([$p1, $p2, $p3, $p4, $p5, $p6] as $p) {
+    if(is_callable($p)){
+        echo 'is invokable: yes '.$p().PHP_EOL;
+    } else {
+        echo 'is invokable: no'.PHP_EOL;
+    }
+}
+?>
+
+And output is:
+
+is invokable: yes 1
+is invokable: no
+is invokable: yes 2
+is invokable: yes 3
+is invokable: yes 4
+is invokable: yes 5
+===============================================================================
+
+Be careful when using this function and __call (PHP5).  This function will
+always report true when using __call.
+
+Need a specific function for the purpose of checking if a class method exists
+explicitly even when using __call.
+
+Haven't ruled out the possibility of the existence of such a function yet.  So
+if someone knows of one, please point it out.
+===============================================================================
+
+As empyone noted, early versions of php 5 incorrectly returned true if
+is_callable checked on a protected or private method. Later versions of php 5
+will now only return true if the method is public and can be called externally.
+I do not know precisely when this behavior was changed, so you may have to test
+on your own. But sometime between 5.0.4, which empyone said he was using, and
+5.2.4 where I tested it myself, the behavior was modified.
+===============================================================================
+
+Note that is_callable is aware of context, and you can ask it things like
+parent::__construct from within a child constructor
+
+<?php
+
+    class TestClass extends TestClassParent {
+   
+        /** @brief Object initialisation callback
+            @returns void */
+        public function __construct() {
+
+            # do initialisation
+
+            # ...
+
+            # if we have a parent
+           
+            if(is_callable('parent::__construct')) {
+           
+                # then bubble up
+               
+                parent::__construct();
+            }
+        }
+    }
+?>
+===============================================================================
+
+The PHP's function is_callable not verify the visibility of the tested method.
+
+The following function uses the Reflection classes of the PHP5 to check it.
+
+<?php
+
+/**
+* Function is_callback().
+*
+* @param mixed $var Var
+* @return bool
+*/
+function is_callback($var)
+{
+    if (is_array($var) && count($var) == 2) {
+        $var = array_values($var);
+        if ((!is_string($var[0]) && !is_object($var[0])) || (is_string($var[0])
+&& !class_exists($var[0]))) {
+            return false;
+        }
+        $isObj = is_object($var[0]);
+        $class = new ReflectionClass($isObj ? get_class($var[0]) : $var[0]);
+        if ($class->isAbstract()) {
+            return false;
+        }
+        try {
+            $method = $class->getMethod($var[1]);
+            if (!$method->isPublic() || $method->isAbstract()) {
+                return false;
+            }
+            if (!$isObj && !$method->isStatic()) {
+                return false;
+            }
+        } catch (ReflectionException $e) {
+            return false;
+        }
+        return true;
+    } elseif (is_string($var) && function_exists($var)) {
+        return true;
+    }
+    return false;
+}
+
+?>
+===============================================================================
+
+For closures, the function will return true and $callable_name will be set to
+"Closure::__invoke".
+===============================================================================
+
+If the target class has __call() magic function implemented, then is_callable
+will ALWAYS return TRUE for whatever method you call it.
+is_callable does not evaluate your internal logic inside __call()
+implementation (and this is for good).
+Therefore every method name is callable for such classes.
+
+Hence it is WRONG to say (as someone said):
+...is_callable will correctly determine the existence of methods made with
+__call...
+
+Example:
+<?php
+class TestCallable
+{
+    public function testing()
+    {
+          return "I am called.";
+    }
+
+    public function __call($name, $args)
+    {
+        if($name == 'testingOther')
+        {
+                return call_user_func_array(array($this, 'testing'), $args);
+        }
+    }
+}
+
+$t = new TestCallable();
+echo $t->testing();      // Output: I am called.
+echo $t->testingOther(); // Output: I am called.
+echo $t->working();      // Output: (null)
+
+echo is_callable(array($t, 'testing'));       // Output: TRUE
+echo is_callable(array($t, 'testingOther'));  // Output: TRUE
+echo is_callable(array($t, 'working'));       // Output: TRUE, expected: FALSE
+?>
+===============================================================================
+
+I've been spending a month on and off trying to figure out why
+
+is_callable($object, [true or false], $varContainingFunctionName)
+
+returned false when it should not have (ie: $object->FunctionName() was
+callable), I realized I must have misunderstood its purpose. If you find
+yourself in the same situation, try
+
+function_exists(string functionname)
+
+or
+
+method_exists ( object object, string method_name )
+
+before you rip your hair out :)
+===============================================================================
+
+beware calling is_callable on class that has the same method name will return
+false, i filed a bug report to be included in function description as example
+
+<?php
+class test {
+function test() {
+}
+}
+$class = new test();
+var_dump(is_callable([$class, 'test']));
+?>
+
+will return false
+===============================================================================
+
+I haven't seen anyone note this before, but is_callable will correctly
+determine the existence of methods made with __call. The method_exists function
+will not.
+
+Example:
+<?php
+
+class Test {
+
+    public function testing($not = false) {
+        $not = $not ? 'true' : 'false';
+        echo "testing - not: $not<br/>";
+    }
+   
+    public function __call($name, $args) {
+        if(preg_match('/^not([A-Z]\w+)$/', $name, $matches)) {
+            $fn_name = strtolower($matches[1]);
+            if(method_exists($this, $fn_name)) {
+                $args[] = true; // add NOT boolean to args
+                return call_user_func_array(array($this, $matches[1]), $args);
+            }
+        }
+        die("No method with name: $name<br/>");
+    }
+
+}
+
+$t = new Test();
+$t->testing();
+$t->notTesting();
+
+echo "exists: ".method_exists($t, 'notTesting').'<br/>';
+echo "callable: ".is_callable(array($t, 'notTesting'));
+
+?>
+
+Output:
+
+testing - not: false
+testing - not: true
+exists:
+callable: 1
+===============================================================================
+
+It seems the only issue left with is_callable() is the disable_functions
+ini-setting. Apart from that, is_callable() will reliably evaluate whether the
+passed function or method can be called from within the same context
+is_callable() was called from, taking visibility and inheritance into account.
+This includes functions, regular and static methods, magic functions and
+methods and implemented interfaces (which are regular methods within the
+implementing class anyway).
+
+<?php
+function regular_function() {}
+
+abstract class ParentTest
+{
+    public function public_parent_method() {}
+    protected function protected_parent_method() {}
+    public static function static_method() {}
+    protected static function protected_static_method() {}
+}
+
+class CallableTest extends ParentTest implements Countable
+{
+    public function __invoke() { } // Introduced in 5.3, see http://php.net/
+manual/language.oop5.magic.php
+    protected function protected_method() { }
+    public function is_callable($args)
+    {
+        return is_callable($args);
+    }
+    // Countable
+    public function count()
+    {
+        return 1;
+    }
+}
+
+$o = new CallableTest();
+
+// Regular function:
+var_dump(is_callable('regular_function')); // true
+
+// Magic __invoke method:
+var_dump(is_callable($o)); // true if PHP >= 5.3, false otherwise
+
+// Countable implementation (regular method really):
+var_dump(is_callable(array($o, 'count'))); // true
+
+// Protected method from outside the object's scope:
+var_dump(is_callable(array($o, 'protected_method'))); // false
+
+// Protected method from inside the object's scope via public proxy method:
+var_dump($o->is_callable(array($o, 'protected_method'))); // true
+
+// Parent's public method
+var_dump(is_callable(array($o, 'public_parent_method'))); // true
+
+// Parent's protected method
+var_dump(is_callable(array($o, 'protected_parent_method'))); // false
+
+// Parent's protected method via proxy
+var_dump($o->is_callable(array($o, 'protected_parent_method'))); // true
+
+// Parent's static public method
+var_dump(is_callable('CallableTest::static_method')); // true
+
+// Parent's static protected method
+var_dump(is_callable('CallableTest::protected_static_method')); // false
+
+// Parent's static protected method via proxy
+var_dump($o->is_callable('CallableTest::protected_static_method')); // true
+?>
+
+Tested PHP versions were 5.2.9 on openSUSE 10.3 (x64) and 5.3.1 on Windows
+Server 2003 (x86).
+===============================================================================
+
+Revised function with static support:
+
+<?php
+    /**
+    * The is_callable php function only considers methods declared in the class
+itself, and ignores the parent's.
+    * This version considers all of the hierarchy.
+    *
+    * @param (string|Object) $class_name
+    * @param string $method_name
+    * @param bool $static the method being tested is static.
+    */
+    public static function isCallable( $class_name, $method_name, $static = 
+false ){
+       
+        if( !is_string( $class_name ) ){
+            $class_name = get_class( $class_name );
+        }
+       
+        // Define Callable
+        if( $static ){
+            $callable = "{$class_name}::{$method_name}";
+        }else{
+            $callable = array( $class_name, $method_name );
+        }
+       
+       
+        // Check class itself
+            if( @is_callable( $callable ) === true ){
+                if( $method_name == 'setEmailAddressTypeHash' ) {
+                    ErrorHandler::preDump($callable);
+                }
+                return true;
+            }
+       
+        // Check all parents
+            while( $parent_class = get_parent_class( $class_name ) ){
+                if( @is_callable( $callable ) === true ){
+                    return true;
+                }
+                $class_name = $parent_class;
+            }
+           
+        return false;
+    }
+?>
+===============================================================================
+
+I don't know if it is a bug but when you test an array with a class and method,
+is_callable returns true for non static method.
+
+Consider the following code:
+<?php
+
+class A
+{
+    public static function test()
+    {
+        echo 'test', '<br>';
+    }
+
+    public function hello()
+    {
+        echo 'hello', '<br>';
+    }
+}
+
+echo "Static #1: call_user_func(array('A', 'test')) => ", call_user_func(array(
+'A', 'test')), '<br>';
+echo 'expect is_callable TRUE => ',
+    is_callable(array('A', 'test'))
+        ? 'TRUE, A::test() is callable statically'
+        : 'FALSE, A::test() is not callable statically',
+    '<br><br>'
+;
+
+echo "Static #2: call_user_func(array('A', 'hello')) => ", call_user_func(array
+('A', 'hello')), '<br>';
+echo 'expect is_callable FALSE => ',
+    is_callable(array('A', 'hello'))
+        ? 'TRUE, A::hello() is callable statically'
+        : 'FALSE, A::hello() is not callable statically',
+    '<br><br>'
+;
+
+$a = new A();
+
+echo "Instance #1: call_user_func(array(\$a, 'test')) => ", call_user_func
+(array($a, 'test')), '<br>';
+echo 'expect is_callable TRUE => ',
+    is_callable(array($a, 'test'))
+        ? 'TRUE, $a::test() is callable'
+        : 'FALSE, $a::test() is not callable',
+    '<br><br>'
+;
+
+echo "Instance #2: call_user_func(array(\$a, 'hello')) => ", call_user_func
+(array($a, 'hello')), '<br>';
+echo 'expect is_callable FALSE => ',
+    is_callable(array($a, 'hello'))
+        ? 'TRUE, $a::hello() is callable'
+        : 'FALSE, $a::hello() is not callable',
+    '<br><br>'
+;
+
+?>
+
+Will output:
+Static #1: call_user_func(array('A', 'test')) => test
+
+expect is_callable TRUE => TRUE, A::test() is callable statically
+
+Static #2: call_user_func(array('A', 'hello')) =>
+Strict Standards: call_user_func() expects parameter 1 to be a valid callback,
+non-static method A::hello() should not be called statically in test.php on
+line 24
+hello
+
+expect is_callable FALSE => TRUE, A::hello() is callable statically
+
+Instance #1: call_user_func(array($a, 'test')) => test
+
+expect is_callable TRUE => TRUE, $a::test() is callable
+
+Instance #2: call_user_func(array($a, 'hello')) => hello
+
+expect is_callable TRUE => TRUE, $a::hello() is callable
+
+------------------------------------------------------------
+
+Also note that this works the same for inherited methods (I read other posts
+suggesting otherwise), and that private methods (static, inherited or both)
+always return false in any case as expected.
+
+Tested with php 5.6.20.
+===============================================================================
+
+is_callable() does _not_ check wheter this function is disabled by php.ini's
+disable_functions
+
+use:
+
+<?PHP
+function is_disabled($function) {
+  $disabled_functions=explode(',',ini_get('disable_functions'));
+  return in_array($function, $disabled_functions);
+}
+?>
+
+I`m running PHP 5.2.4
+===============================================================================
+
+True that method_exists() is faster than is_callable(). However, is_callable()
+will be able to correctly recognize method calls handled by __call() in PHP 5,
+while method_exists() will not.
+===============================================================================
+
+The way to discover whether a method exists in face of a __call is reflection.
+
+It should be mentioned that although array('Test', 'func') is callable
+according to this function (where func is a public static method of Test),
+actually calling this construct as $fn() fails.
+===============================================================================
+
+Note that, for the purpose of this function, an abstract method, although
+necessarily non-callable since it does not have a body, is still considered to
+be callable:
+
+<?php
+abstract class Foo {
+  abstract function bar();
+}
+
+echo is_callable(array('Foo', 'bar'));
+// display: 1
+?>
+===============================================================================
+
+I, too, was wondering whether is_callable or function exists is faster when
+checking class methods.  So, I setup the following test:
+
+<?php
+function doTimes($start, $end)
+  {
+    $start_time = explode (" ", $start);
+    $start_time = $start_time[1] + $start_time[0];
+    $end_time = explode (" ", $end);
+    $end_time = $end_time[1] + $end_time[0];
+    $time = $end_time - $start_time;
+    return $time;
+  }
+
+class test
+  {
+      function test()
+      {
+          return true;
+      }
+  }
+ 
+$callableIsTrue = false;
+$startIsCallable = microtime();
+for($i = 0; $i < 10000; $i++)
+  {
+      if(is_callable(array('test', 'test'))) { $callableIsTrue = true; }
+  }
+$endIsCallable = microtime();
+
+$existsIsTrue = false;
+$startExists = microtime();
+for($i = 0; $i < 10000; $i++)
+  {
+      if(function_exists('test::test')) { $existsIsTrue = true; }
+  }
+$endExists = microtime();
+
+$timeIsCallable = doTimes($startIsCallable, $endIsCallable);
+$timeExists     = doTimes($startExists, $endExists);
+
+echo "<b>is_callable = ".($callableIsTrue ? "TRUE" : "FALSE")."</b>, \n";
+echo "<b>function_exists = ".($existsIsTrue ? "TRUE" : "FALSE")."</b><br>\n";
+
+echo "<br>Did 10000 is_callables in ".$timeIsCallable." seconds";
+echo "<br>Did 10000 function_exists in ".$timeExists." seconds";
+?>
+
+This gives the output :
+
+is_callable = TRUE, function_exists = FALSE
+
+Did 10000 is_callables in 0.0640790462494 seconds
+Did 10000 function_exists in 0.0304429531097 seconds
+
+So the fact that function_exists is twice as fast is slightly over shadowed by
+the fact that it doesn't work on class methods, at least not as far as I can
+tell.
+===============================================================================
+
+is_callable generates an [E_STRICT] error if the  tested method cannot be
+called staticly. (and returns the good value)
+
+I used @is_called
+i'm using php 5.2.1
+===============================================================================
+
+I have come across a strange oddity in versions around the 4.3.11 mark - I may
+have missunderstood the purpose of this function but hope this'll be helpful
+for some.
+
+The point the code below is supposed to illustrate is that in some cases with
+
+    <? $myFunc = Array( $myObj, 'myMethod' ); ?>
+
+    <? is_callable( $myFunc, true, $callMe ); ?>
+
+will return true, and give you $callMe set to myObj::myMethod but calling
+
+    <? $callMe(); ?>
+
+doesn't work... however calling
+
+    <? $myFunc[0]->$myFunc[1](); ?>
+
+seems to work fine..
+
+... the reason all the code is down there is I think this oddity is due to how/
+the order in which I've instantiated my classes or something...
+
+anyhow... HTH someone! :-)
+
+Code follows:
+
+FILE 1 :
+<?
+    include('myTools');
+   
+    $foo = new myClass();
+   
+    print $foo->getMySource();
+   
+    class myClass{
+       
+        var $flibble = 'wibble';
+       
+        function myClass(
+            // Initialise loads of stuff.. including..
+            $this->tools = new myTools();
+        )
+       
+        function getMySource(){
+            // This just returns the source.. ok, like some HTML to go into an
+email for example.
+            // Some arguments;
+            $args   = $this->flibble;
+            // Call our Tool that returns the source..
+            $source = $this->tools->returnSource( Array ( $this, 'someHTML' ),
+$args );
+            // and return it..
+            return ( $source );
+        }
+       
+        function someHTML($args){
+            // Leave PHP
+            ?>
+            Here is some HTML.. that we want to build outside a PHP block,
+            possibly just cos it's tidier in <B>your favourite text editor</
+B>..
+            .. or you want this function to be elsewhere.. for your designers
+            to play with etc.. ... incidentally I'd like to say "<?=$args?>"
+etc.
+            <?
+            // .. and we're back.
+        }
+    }
+   
+?>
+
+FILE 2:
+
+<?
+    /* OK - this is some other big library and a whole load more
+       faff but this is the particular function in question... it
+       just calls the function it's been asked to and uses an output
+       buffer to grab the output and return it as a string rather than
+       letting it go to terminal/browser.... useful for grabbing PHP pages
+       for spidering, emailing etc. etc. etc..
+    */
+   
+    class myTools(){
+       
+        function returnSource($func, $args){
+           
+            if ( is_callable ( $func, true, $callMe ){
+                // Start a buffer
+                ob_start();
+                // Calling the function like this DOESN'T seem to work:
+                // ~~~~~~~~
+                // "Command not found : myClass::someHTML"
+                // $callMe($args);
+                // ~~~~~~~~
+                // But - what I've discovered is that this behaves fine..
+                if ( is_array($func) ){
+                    $func[0]->$func[1]($args);
+                } else {
+                    $func($args);
+                }
+                // Then we just carry on with our code..
+                $rtn =     ob_get_contents();
+                ob_clean();
+                return ( $rtn );
+            } else {
+                error_log("Doh!");
+            }
+        }
+    }
+   
+?>

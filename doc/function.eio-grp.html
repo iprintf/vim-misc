@@ -1,0 +1,104 @@
+
+eio_grp
+
+(PECL eio >= 0.0.1dev)
+
+eio_grp — Creates a request group.
+
+说明
+
+resource eio_grp ( callable $callback [, string $data = NULL ] )
+
+eio_grp() creates a request group.
+
+参数
+
+callback
+
+    callback 函数在请求完成时被调用。其应匹配一下原型：
+    void callback(mixed $data, int $result[, resource $req]);
+
+    data
+
+        传递给请求的用户数据。
+
+    result
+
+        针对请求的结果的值。通常是相应的系统调用返回的值。
+
+    req
+
+        可选的请求资源，可被 eio_get_last_error() 之类的函数使用。
+
+data
+
+    Arbitrary variable passed to callback.
+
+返回值
+
+eio_grp() returns request group resource on success or FALSE on error.
+
+范例
+
+Example #1 eio_grp() example
+
+<?php
+$temp_filename = dirname(__FILE__) ."/eio-file.tmp";
+$fp = fopen($temp_filename, "w");
+fwrite($fp, "some data");
+fclose($fp);
+$my_file_fd = NULL;
+
+/* Is called when the group requests are done */
+function my_grp_done($data, $result) {
+ // Remove the file, if it still exists
+ @unlink($data);
+}
+
+/* Is called when the temporary file is opened */
+function my_grp_file_opened_callback($data, $result) {
+ global $my_file_fd, $grp;
+
+ $my_file_fd = $result;
+
+ $req = eio_read($my_file_fd, 4, 0,
+   EIO_PRI_DEFAULT, "my_grp_file_read_callback");
+ eio_grp_add($grp, $req);
+}
+
+/* Is called when the file is read */
+function my_grp_file_read_callback($data, $result) {
+ global $my_file_fd, $grp;
+
+ var_dump($result);
+
+ // Create request to close the file
+ $req = eio_close($my_file_fd);
+
+ // Add request to the group
+ eio_grp_add($grp, $req);
+}
+
+// Create request group
+$grp = eio_grp("my_grp_done", $temp_filename);
+
+// Create request
+$req = eio_open($temp_filename, EIO_O_RDWR | EIO_O_APPEND , NULL,
+  EIO_PRI_DEFAULT, "my_grp_file_opened_callback", NULL);
+
+// Add request to the group
+eio_grp_add($grp, $req);
+
+// Process requests
+eio_event_loop();
+?>
+
+以上例程的输出类似于：
+
+string(4) "some"
+
+参见
+
+  • eio_grp_cancel
+  • eio_grp_add
+

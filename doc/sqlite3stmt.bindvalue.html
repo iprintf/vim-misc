@@ -1,0 +1,160 @@
+
+SQLite3Stmt::bindValue
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+SQLite3Stmt::bindValue — Binds the value of a parameter to a statement variable
+
+说明
+
+public bool SQLite3Stmt::bindValue ( string $sql_param , mixed $value [, int
+$type ] )
+
+Binds the value of a parameter to a statement variable.
+
+参数
+
+sql_param
+
+    An string identifying the statement variable to which the value should be
+    bound.
+
+value
+
+    The value to bind to a statement variable.
+
+type
+
+    The data type of the value to bind.
+      □ SQLITE3_INTEGER: The value is a signed integer, stored in 1, 2, 3, 4,
+        6, or 8 bytes depending on the magnitude of the value.
+
+      □ SQLITE3_FLOAT: The value is a floating point value, stored as an 8-byte
+        IEEE floating point number.
+
+      □ SQLITE3_TEXT: The value is a text string, stored using the database
+        encoding (UTF-8, UTF-16BE or UTF-16-LE).
+
+      □ SQLITE3_BLOB: The value is a blob of data, stored exactly as it was
+        input.
+
+      □ SQLITE3_NULL: The value is a NULL value.
+
+返回值
+
+Returns TRUE if the value is bound to the statement variable, FALSE on failure.
+
+范例
+
+Example #1 SQLite3Stmt::bindValue() example
+
+<?php
+unlink('mysqlitedb.db');
+$db = new SQLite3('mysqlitedb.db');
+
+$db->exec('CREATE TABLE foo (id INTEGER, bar STRING)');
+$db->exec("INSERT INTO foo (id, bar) VALUES (1, 'This is a test')");
+
+$stmt = $db->prepare('SELECT bar FROM foo WHERE id=:id');
+$stmt->bindValue(':id', 1, SQLITE3_INTEGER);
+
+$result = $stmt->execute();
+var_dump($result->fetchArray());
+?>
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Note that this also works with positional placeholders using the '?' token:
+
+<?php
+
+$stmt = $db->prepare('SELECT * FROM mytable WHERE foo = ? AND bar = ?');
+$stmt->bindValue(1, 'somestring', SQLITE3_TEXT);
+$stmt->bindValue(2, 42, SQLITE3_INTEGER);
+
+?>
+
+Positional numbering starts at 1.
+===============================================================================
+
+I just want to say again,
+
+Numbering for parameters starts at ONE!
+
+This has caught me out quite a few times!
+===============================================================================
+
+It might be a good idea to feed bindValue the type of the variable manually, or
+you might encounter weird stuff as the passed value is often treated as
+SQLITE3_TEXT and results in buggy queries.
+
+For example:
+<?php
+$st = $db->prepare('SELECT * FROM test WHERE (a+1) = ?');
+$st->bindValue(1, 2);
+?>
+
+Will never return any result as it is treated by SQLite as if the query was
+'SELECT * FROM test WHERE (a+1) = "2"'. Instead you have to set the type
+manually:
+
+<?php
+$st = $db->prepare('SELECT * FROM test WHERE (a+1) = ?');
+$st->bindValue(1, 2, \SQLITE3_INTEGER);
+?>
+
+And it will work. This bug is reported in https://bugs.php.net/bug.php?id=68849
+
+Here is a simple function to help you make bindValue work correctly:
+
+<?php
+function getArgType($arg)
+{
+    switch (gettype($arg))
+    {
+        case 'double': return SQLITE3_FLOAT;
+        case 'integer': return SQLITE3_INTEGER;
+        case 'boolean': return SQLITE3_INTEGER;
+        case 'NULL': return SQLITE3_NULL;
+        case 'string': return SQLITE3_TEXT;
+        default:
+            throw new \InvalidArgumentException('Argument is of invalid type '.
+gettype($arg));
+    }
+}
+?>
+===============================================================================
+
+I used following logic to prepare statements, It handles both Values and Arrays
+( taking help from bohwaz note) :
+
+<?php
+    function getArgType($arg) {
+        switch (gettype($arg)) {
+            case 'double':  return SQLITE3_FLOAT;
+            case 'integer': return SQLITE3_INTEGER;
+            case 'boolean': return SQLITE3_INTEGER;
+            case 'NULL':    return SQLITE3_NULL;
+            case 'string':  return SQLITE3_TEXT;
+            default:
+                throw new \InvalidArgumentException('Argument is of invalid
+type '.gettype($arg));
+        }
+    }
+
+foreach ($params as $index => $val) {
+                // indexing start from 1 in Sqlite statement
+                if (is_array($val)) {
+                    $ok = $stmt->bindParam($index + 1, $val);
+                } else {
+                    $ok = $stmt->bindValue($index + 1, $val, getArgType($val));
+                }
+               
+                if (!$ok) {
+                    throw new Exception("Unable to bind param: $val");
+                }
+            }
+?>

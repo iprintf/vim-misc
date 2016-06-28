@@ -1,0 +1,457 @@
+
+ldap_modify
+
+(PHP 4, PHP 5, PHP 7)
+
+ldap_modify — Modify an LDAP entry
+
+说明
+
+bool ldap_modify ( resource $link_identifier , string $dn , array $entry )
+
+Modify the existing entries in the LDAP directory. The structure of the entry
+is same as in ldap_add().
+
+参数
+
+link_identifier
+
+    An LDAP link identifier, returned by ldap_connect().
+
+dn
+
+    The distinguished name of an LDAP entity.
+
+entry
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+    Note: 此函数可安全用于二进制对象。
+
+参见
+
+  • ldap_rename() - Modify the name of an entry
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+If you want to disable an account in an Active Directory of Windows,
+you may try this (it works for me in a Win2k environment):
+
+(foo.bar should be replaced in "$ldapBase" to the correct
+domain, e.g. "DC=phpfreackx,DC=com" if your domain is phpfreackx.com)
+
+domctrl = domain controller
+domadlogin = domain admin login
+domadpw = domain admin password
+username = loginname of useraccount (e.g. "john.doe")
+enable =1 (if you want to enable it, 0 if it should be disabled)
+
+<?php
+function userchange($username,$enable=1,$domadlogin,$domadpw,$domctrl)
+{
+$ldapServer = $domctrl;
+$ldapBase = 'DC=foo,DC=bar';
+$ds = ldap_connect($ldapServer);
+if (!$ds) {die('Cannot Connect to LDAP server');}
+$ldapBind = ldap_bind($ds,$domadlogin,$domadpw);
+if (!$ldapBind) {die('Cannot Bind to LDAP server');}
+ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
+$sr = ldap_search($ds, $ldapBase, "(samaccountname=$username)");
+$ent= ldap_get_entries($ds,$sr);
+$dn=$ent[0]["dn"];
+// Deactivate
+$ac = $ent[0]["useraccountcontrol"][0];
+$disable=($ac |  2); // set all bits plus bit 1 (=dec2)
+$enable =($ac & ~2); // set all bits minus bit 1 (=dec2)
+$userdata=array();
+if ($enable==1) $new=$enable; else $new=$disable; //enable or disable?
+$userdata["useraccountcontrol"][0]=$new;
+ldap_modify($ds, $dn, $userdata); //change state
+$sr = ldap_search($ds, $ldapBase, "(samaccountname=$username)");
+$ent= ldap_get_entries($ds,$sr);
+$ac = $ent[0]["useraccountcontrol"][0];
+if (($ac & 2)==2) $status=0; else $status=1;
+ldap_close($ds);
+return $status; //return current status (1=enabled, 0=disabled)
+}  
+
+// use this to disable an account:
+// userchange('john.doe@foo.bar',0,'admin@foo.bar',
+'secret','domctrl.foo.bar');
+// ..but this to enable it:
+// userchange('john.doe@foo.bar',1,'admin@foo.bar',
+'secret','domctrl.foo.bar');
+?>
+===============================================================================
+
+If you are trying to change the userPassword attribute when using md5 hashes,
+try the following lines:
+
+$new["userPassword"] = '{md5}' . base64_encode(pack('H*', md5
+($newpass_in_plaintext)));
+ldap_modify($ds, $dn, $new);
+===============================================================================
+
+Some comments on ldap_modify, and especially the user comment from tengel at
+fluid dot com
+
+OpenLDAP 2.1.22
+If an attribute is tagged as MUST in the schema, the attribute must be there.
+Wheter it may contain and empty value depends on the SYNTAX for that attribute.
+
+DirectoryString MAY NOT be empty; OctetString MAY be empty. As far as I can
+see, IA5String MAY NOT be empty.
+
+If an attribute is defined as MAY in the schema, the attribute may or may not
+be there. If it is there, it MAY or MAY NOT be empty, depending on its SYNTAX.
+
+PHP 4.3.1
+
+It seems that ldap_modify() will take an array of attributes to modify.
+
+For multivalued attributes, passing an empty array, wil DELETE the attribute,
+regardless of it's previous value(s), and regardless if the attribute was there
+before the modify.
+
+If the multivalued attribute is defined as MAY, this will work. If the
+attribute is defined as MUST, OpenLDAP will generate the error: 'LDAP error 65:
+Object class violation'
+
+If an attribute's SYNTAX defines that it MAY NOT be empty, trying to add or
+modify the attribute with an empty value will genereate the error: 'LDAP error
+21: Invalid syntax'.
+Also, in the logfile, if set with sufficient debuglevel, the string
+
+    value #0 invalid per syntax
+
+will be present.
+
+Trying to pass an empty array to ldap_add() for a any attribute (multi or
+single valued) will result in the error 'LDAP error 2: Protocol error',
+regardless if the attribute is defined as MUST or MAY.
+
+Note that this differs form passing an array with elements that have no value.
+In the latter case, it depends on the SYNTAX for that attribute if that is
+allowed.
+
+If the attribute is single-valued, passing an array with one element, WILL
+change the value of the attribute. In the user comments on php.net it is
+suggested that if you want to modify a single valued attribute, you must pass a
+string, not an array with one element. My experience is that an array with a
+single element will work just as well.
+
+_Ace
+
+website: http://www.suares.nl * http://www.qwikzite.nl
+===============================================================================
+
+Nick T.'s comment above is out of date.
+The PHP LDAP interface currently supports direct modification of the DN using
+the ldap_rename() function.
+===============================================================================
+
+If You can`t add attribute objectclass to existing object  using ldap_modify -
+use ldap_mod_add - it works.
+===============================================================================
+
+Following goetz at rvs dot uni-hannover dot de's comment, it is not exactly
+true that ldap_modify can't change objectclass.
+
+In fact, it's impossible to add an objectclass which is set as STRUCTURAL in
+the schema description. But you can add an objectclass set as AUXILIARY. See
+OpenLDAP FAQ below for explanation why :
+
+http://www.openldap.org/faq/data/cache/1341.html
+
+For example, if you have an ldap entry of type "device", which is a structural
+objectclass, named "cn=myNetCard,ou=Networks,dc=example,dc=com", you can do
+this :
+
+<?php
+
+$entry["objectclass"][0] = "device";
+$entry["objectclass"][1] = "ieee802Device"; // add an auxiliary objectclass
+$entry["macAddress"][0] = "aa:bb:cc:dd:ee:ff";
+
+ldap_modify ($cnx, "cn=myNetCard,ou=Networks,dc=example,dc=com", $entry);
+?>
+
+But this will not work :
+
+<?php
+
+$entry["objectclass"][0] = "device";
+$entry["objectclass"][1] = "ipNetwork"; // add a structural objectclass
+$entry["ipNetworkNumber"][0] = "1.2.3.4";
+
+ldap_modify ($cnx, "cn=myNetCard,ou=Networks,dc=example,dc=com", $entry);
+?>
+
+You will get the following error : "Cannot modify object class"
+===============================================================================
+
+If you're seeing confusing "Type or value exists" errors from ldap_modify, the
+reason could be that you're attempting to add two identical values for a
+multi-valued attribute.  ie, something like:
+
+<?php
+$le = array("mail" => array("foo@bar.com", "foo@bar.com"));
+$result = ldap_modify($ldap_link, $dn, $le);
+?>
+===============================================================================
+
+If you're writing a multiple values for an attribute with ldap_modify (), the
+function will attempt to write all entries in the value array even if those
+entries are blank.  Setting blank entries to a blank array in the manner used
+for attribute deletion, ie:
+
+$attributes[$attr_name][3] = array ();
+
+results in the string "Array" being written to the directory for that value. 
+The only way I was able to find to do what I wanted - only write the values for
+the attribute that were submitted on the form - was to check if each attribute
+had multiple values and unset () blank values, eg:
+
+                foreach ($attributes as $key => $cur_val) {
+                        if ($cur_val== '') {
+                                $attributes[$key] = array ();
+                        }
+                        if (is_array ($cur_val)) {
+                                foreach ($cur_val as $mv_key => $mv_cur_val) {
+                                       
+                                        if ($mv_cur_val == '') {
+                                                unset ($attributes[$key]
+[$mv_key]);
+                                        }
+                                        else {
+                                                $attributes[$key][$mv_key] =
+$mv_cur_val;                     
+                                        }
+                                }
+                        }
+                }
+===============================================================================
+
+To pinpoint the delete issue:
+
+with newer OpenLdap versions this will fail:
+
+$values["mail"] = "";
+ldap_modify($conn_id, $dn, $values);
+
+or
+$values["mail"][0] = "";
+ldap_modify($conn_id, $dn, $values);
+
+BUT this works:
+
+$values["mail"] = array();
+ldap_modify($conn_id, $dn, $values);
+
+or
+$values["mail"][0] = array();
+ldap_modify($conn_id, $dn, $values);
+===============================================================================
+
+The $entry parameter can be an array of values for an attribute. Just be
+careful that your array's indices are numerically contiguous. For example, when
+using this $entry array, ldap_modify will fail with little explanation:
+
+   $entry = array( 0 => 'foo', 2 => 'bar' );
+
+While this one will work just fine:
+
+   $entry = array( 0 => 'foo', 1 => 'bar' );
+
+Hope this helps someone out.
+===============================================================================
+
+Remember that you can NOT modify the attribute 'objectclass' with ldap_modify!
+
+If you use a search result as basis for your changes, be sure to 'unset()' all
+numbered indices, 'count' indicies AND index 'objectclass' !
+===============================================================================
+
+To delete entries:
+
+$data["description"] = array();
+ldap_modify($conn, $dn,$data);
+===============================================================================
+
+The behaviour of OpenLDAP from 1.x to 2.x changed; in 1.x, when you passed
+ldap_modify the array, if the value was empty that attribute would be deleted. 
+In 2.x, you get an "Invalid Syntax" error and the modify fails.
+
+This requires the ldap_mod_del function; unfortunately, that operation requires
+the attribute to be deleted have it's *old* value specified -- as you can
+imagine, if you're taking input from a CGI form, the attribute to be deleted's
+value is now missing (i.e., the user blanked out that textbox in the form and
+clicked Submit).
+
+So, you're in a bit of a conundrum -- you want to delete "empty" form values,
+but you need their old value to delete them.  There are many ways to handle
+this, but I chose this approach:
+
+<?php
+// The first is what to add, the second to remove
+$entry=array();
+$delval=array();
+
+// Imagine if you will, $o and $title are
+// form fields with text boxes for data
+if($o!="") { $entry["o"]="$o"; } else { $delval[]="o"; }
+if($title!="") { $entry["title"]="$title"; } else { $delval[]="title"; }
+
+// First try the normal modify with $entry
+// $ldap, $dn, $BASEDN are all set up earlier
+if (@ldap_modify($ldap, $dn, $entry)) {
+  // then do the dirty work
+  $filter = sprintf("(&(uid=%s)(sn=%s))",$uid,$sn);
+  $sres = ldap_search($ldap, $BASEDN, $filter, $delval);
+  $delent = ldap_first_entry($ldap, $sres);
+  $delarr = ldap_get_attributes($ldap, $delent);
+  $findel=array();
+  for($i=0; $i<$delarr["count"]; $i++) {
+    $attr = $delarr[$i];
+    $totl = $delarr[$attr]["count"];
+    for($z=0; $z<$totl; $z++) {
+      if ($totl = 1) {
+        $findel[$attr]=$delarr[$attr][$z];
+      } else {
+        $findel[$attr][$z]=$delarr[$attr][$z];
+      }
+    }
+  }
+  if(@ldap_mod_del($ldap, $dn, $findel)) {
+    print("<H3>Modified Entry!</H3>\n");
+    print("<BR>\n");
+  } else {
+    $error=ldap_error($ldap);
+    print("<H3>Attribute Delete Failed!</H3>\n");
+    print("<BR>\n($error)\n");
+  }
+} else {
+  $error=ldap_error($ldap);
+  print("<H3>Modify Failed!</H3>\n");
+  print("<BR>\n($error)\n");
+}
+?>
+===============================================================================
+
+Modifying existing LDAP information using ldap_modify()
+
+The link_identifier must result from a call to connect to the server with
+authority to update entries, usually requiring an authenticated bind - ie you
+provide a suitable dn and password in the ldap_bind() call.
+
+The  dn  must be a single specific dn that exists on the LDAP server.   There
+is no wildcard mechanism in LDAP to globally change multiple dn entries.  
+
+The entry array must be in one of two different forms, according to whether
+just one entry is to be stored in the directory for a particular attribute, or
+whether multiple entries are to be stored for the attribute.
+
+Where a single entry is to be stored for an attribute - say just a single email
+address - then you use the general form
+
+             <?php $newinfo[ <attribute_name> ]="whatever" ; ?>
+
+for example ...
+
+             <?php $newinfo["mail"]="john@myorg.com" ; ?>
+
+Where multiple entries are to be stored for an attribute  -  say a number of
+email addresses for one person  -  then you use the general form
+
+             <?php
+             $newinfo[ <attribute_name> ][0] = "whatever" ;
+             $newinfo[ <attribute_name> ][1] = "another" ;
+             ?>
+
+for example ...
+
+             <?php
+             $newinfo["mail"][0]="johnw@myorg.com" ;
+             $newinfo["mail"][1]="jwaterson@somewhere.org" ;
+             ?>
+
+Further notes on ldap_modify()
+
+The modify call leaves entries for all other attributes unaltered.   So if you
+just want to update the entry for the "mail" attribute, then all that is
+required is:
+
+     <?php
+     $newinfo[mail]="nick@county.gov.uk";
+     ldap_modify($valid_ldaplink, $valid_dn, $newinfo);
+     ?>
+
+However, if there were multiple entries for the mail attribute present on the
+LDAP database when you run the above code, then all the existing mail entries
+would be deleted and be replaced by the single "mail" entry.
+
+If you have reason to expect multiple values for a particular attribute (more
+that one email entry, for example) you should make sure you read all the
+entries from the ldap server first, and then save a modified array.
+
+The PHP LDAP interface does not currently support direct modification of the
+dn.  If the dn needs changing, the only option is to read all entries for the
+dn and save these to a new, modified, dn before deleting the complete entry for
+the original dn.
+===============================================================================
+
+I ran into a rather annoying issue when trying to add a user to a usergroup in
+Active Directory.
+
+Active Directory tends to not be particularly happy when you try modifying the
+"memberOf" attribute (through ldap_mod_add/ldap_mod_replace), and will output a
+warning/error somewhere along the lines of:
+
+Warning: ldap_mod_add(): Modify: Server is unwilling to perform in ...
+
+If you want to add a user to a usergroup, you need to add the user as a member
+of the group, rather than adding to the memberOf attribute of the group:
+
+<?php
+    function ldap_addToGroup($username, $group) {
+        $dn = "CN=$group,OU=Accounts,DC=DC1,DC=DC2"; // distinguished name/DN
+of the group you want to add to
+        $info["member"] = "CN=$username,OU=Accounts,DC=DC1,DC=DC2"; // DN of
+the user you want to add
+        return ldap_modify($ldapconn, $dn, $info);
+    }
+?>
+
+Hope this helps someone.
+===============================================================================
+
+I ran into a rather annoying issue when trying to add a user to a usergroup in
+Active Directory.
+
+Active Directory tends to not be particularly happy when you try modifying the
+"memberOf" attribute (through ldap_mod_add/ldap_mod_replace), and will output a
+warning/error somewhere along the lines of:
+
+Warning: ldap_mod_add(): Modify: Server is unwilling to perform in ...
+
+If you want to add a user to a usergroup, you need to add the user as a member
+of the group, rather than adding to the memberOf attribute of the group:
+
+<?php
+    function ldap_addToGroup($username, $group) {
+        $dn = "CN=$group,OU=Accounts,DC=DC1,DC=DC2"; // distinguished name/DN
+of the group you want to add to
+        $info["member"] = "CN=$username,OU=Accounts,DC=DC1,DC=DC2"; // DN of
+the user you want to add
+        return ldap_modify($ldapconn, $dn, $info);
+}
+?>
+
+Hope this helps someone.

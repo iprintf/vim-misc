@@ -1,0 +1,471 @@
+
+mysql_pconnect
+
+(PHP 4, PHP 5)
+
+mysql_pconnect — 打开一个到 MySQL 服务器的持久连接
+
+说明
+
+resource mysql_pconnect ([ string $server [, string $username [, string
+$password [, int $client_flags ]]]] )
+
+如果成功则返回一个正的 MySQL 持久连接标识符，出错则返回 FALSE。
+
+mysql_pconnect() 建立一个到 MySQL 服务器的连接。如果没有提供可选参数，则使用如
+下默认值：server = 'localhost:3306'，username = 服务器进程所有者的用户名，
+password = 空密码。client_flags 参数可以是以下常量的组合：MYSQL_CLIENT_COMPRESS
+，MYSQL_CLIENT_IGNORE_SPACE 或者 MYSQL_CLIENT_INTERACTIVE。
+
+server 参数也可以包括端口号，例如 "hostname:port"，或者是本机套接字的的路径，例
+如 ":/path/to/socket"。
+
+
+    Note:
+
+    对 ":port" 的支持是 3.0B4 版添加的。
+
+    对 ":/path/to/socket" 的支持是 3.0.10 版添加的。
+
+mysql_pconnect() 和 mysql_connect() 非常相似，但有两个主要区别。
+
+首先，当连接的时候本函数将先尝试寻找一个在同一个主机上用同样的用户名和密码已经
+打开的（持久）连接，如果找到，则返回此连接标识而不打开新连接。
+
+其次，当脚本执行完毕后到 SQL 服务器的连接不会被关闭，此连接将保持打开以备以后使
+用（mysql_close() 不会关闭由 mysql_pconnect() 建立的连接）。
+
+可选参数 client_flags 自 PHP 4.3.0 版起可用。
+
+此种连接称为“持久的”。
+
+    Note:
+
+    注意，此种连接仅能用于模块版本的 PHP。更多信息参见数据库持久连接一节。
+
+Warning
+
+使用持久连接需要调整一些 Apache 和 MySQL 的配置以使不会超出 MySQL 所允许的连接
+数目。
+
+
+User Contributed Notes 28 notes
+
+===============================================================================
+
+If you need to close idle persistent connections, set a low wait_timeout in
+MySQL
+===============================================================================
+
+I had some problems when connecting to a remote server with mysql_pconnect and
+using the flag MYSQL_CLIENT_COMPRESS. Sometimes it connect, but many times it
+give me the error:
+Warning: mysql_pconnect(): Unknown database 'XXXXX'
+
+If you have the same problem, try using mysql_connect instead. It worked fine
+for me. The script will take a long to reconnect each time the page is
+reloaded, but it will transfer data with compression. This is a little more
+secure than to send plain data over the Internet and also more faster when
+transmiting large amount of data.
+===============================================================================
+
+To tell mysql_pconnect to connect to mysql on a port other than the default use
+a colon - eg
+
+mysql_pconnect("127.0.0.1:4444", "user", "pass")
+
+would connect to localhost on port 4444
+
+(useful for ssh tunneling etc)
+===============================================================================
+
+Here's a nifty little class which will load balance across multiple replicated
+MySQL server instances, using persistent connections, automatically removing
+failed MySQL servers from the pool.
+
+You would ONLY use this for queries, never inserts/updates/deletes, UNLESS you
+had a multi-master situation where updates to any database serverautomatically
+replicate to the other servers (I don't know whether that's possible with
+MySQL).
+
+Using this class, you get a connection to a MySQL server like this:
+    $con = MySQLConnectionFactory::create();
+
+Here is the class (you'll need to customize the $SERVERS array for your
+configuration -- note that you would probably use the same username, password
+and database for all of the servers, just changing the host name, but you're
+not forced to use the same ones):
+
+<?php
+class MySQLConnectionFactory {
+    static $SERVERS = array(
+    array(
+        'host' => 'myHost1',
+        'username' => 'myUsername1',
+        'password' => 'myPassword1',
+        'database' => 'myDatabase1'),
+    array(
+        'host' => 'myHost2',
+        'username' => 'myUsername1',
+        'password' => 'myPassword2',
+        'database' => 'myDatabase2')
+    );
+
+    public static function create() {
+    // Figure out which connections are open, automatically opening any
+connections
+    // which are failed or not yet opened but can be (re)established.
+    $cons = array();
+    for ($i = 0, $n = count(MySQLConnectionFactory::$SERVERS); $i < $n; $i++) {
+        $server = MySQLConnectionFactory::$SERVERS[$i];
+        $con = mysql_pconnect($server['host'], $server['username'], $server[
+'password']);
+        if (!($con === false)) {
+        if (mysql_select_db($server['database'], $con) === false) {
+            echo('Could not select database: ' . mysql_error());
+            continue;
+        }
+        $cons[] = $con;
+        }
+    }
+    // If no servers are responding, throw an exception.
+    if (count($cons) == 0) {
+        throw new Exception
+        ('Unable to connect to any database servers - last error: ' . 
+mysql_error());
+    }
+    // Pick a random connection from the list of live connections.
+    $serverIdx = rand(0, count($cons)-1);
+    $con = $cons[$serverIdx];
+    // Return the connection.
+    return $con;
+    }
+}
+?>
+===============================================================================
+
+Be warned if you use different parameters for mysql_pconnect() in different
+scripts on server: PHP can create single persistent connection for every set of
+parameters in each process up to mysql.max_persistent (PHP directive) per
+process. So even if you have MaxClients Apache directive set lesser then
+max_connections MySQL directive, you can easily get Too many connections MySQL
+error.
+
+If mysql.max_persistent is set to other value than -1 (unlimited, default
+value), connections over this limit are silently denied, so use it with care.
+
+Solution: For servers with potentially unlimited set of connection parameters,
+forbid persistent connection with mysql.allow_persistent=Off.
+===============================================================================
+
+in response to uthayakutty76 at yahoo dot com's 
+30-Jun-2003 12:31 post:
+
+-----------------------------------------------------------
+...The problem is that the connection to the MySQL
+servers is interrupted very quickly or there is not
+connection at all. We found out that when using the
+domain of the server instead of "localhost" problems
+occur.....
+-----------------------------------------------------------
+
+try setting the wait_timeout variable in my.cnf for
+mysql very high so the connections aren't ever idle for
+that amount of time.  ridiculous really, but it works for
+localhost or remote database server where as the
+localhost solution only works if the database is local i
+think.
+===============================================================================
+
+PHP 4.1.1 running with Apache under Linux doesn't seem to be doing all
+necessary flushing when handling persistant mysql connections. Try it out for
+yourself. Create a temporary table in a pconnect session, add rows (non
+unique), select/display and drop the table. Now reload your script multiple
+times, you will see that your results are not consistent, even though you are
+creating a new table everytime and dropping it..
+
+I had my share of problems with pconnect and suggest you don't use it unless
+absolutely necessary. In that case make sure you test your results for
+consistency, especially when your queries involve temporary tables or mysql
+session variables.
+
+Bartek Bulzak
+===============================================================================
+
+Here's a recap of important reasons NOT to use persistent connections:
+
+* When you lock a table, normally it is unlocked when the connection closes,
+but since persistent connections do not close, any tables you accidentally
+leave locked will remain locked, and the only way to unlock them is to wait for
+the connection to timeout or kill the process. The same locking problem occurs
+with transactions. (See comments below on 23-Apr-2002 & 12-Jul-2003)
+
+* Normally temporary tables are dropped when the connection closes, but since
+persistent connections do not close, temporary tables aren't so temporary. If
+you do not explicitly drop temporary tables when you are done, that table will
+already exist for a new client reusing the same connection. The same problem
+occurs with setting session variables. (See comments below on 19-Nov-2004 &
+07-Aug-2006)
+
+* If PHP and MySQL are on the same server or local network, the connection time
+may be negligible, in which case there is no advantage to persistent
+connections.
+
+* Apache does not work well with persistent connections. When it receives a
+request from a new client, instead of using one of the available children which
+already has a persistent connection open, it tends to spawn a new child, which
+must then open a new database connection. This causes excess processes which
+are just sleeping, wasting resources, and causing errors when you reach your
+maximum connections, plus it defeats any benefit of persistent connections.
+(See comments below on 03-Feb-2004, and the footnote at http://devzone.zend.com
+/node/view/id/686#fn1)
+===============================================================================
+
+(using PHP v5.3.2)
+This might help other people who are running into a similar issue. I would
+occasionally get this error in my apache error log:
+
+PHP Warning:  mysql_pconnect(): MySQL server has gone away
+
+It appears the persistent connection mysql_pconnect() was returning had timed
+out and mysql_pconnect() didn't detect it. To address this issue I added some
+code to check for this case using mysql_ping() and request another connection
+from mysql_pconnect() if this situation occurred. It appears that the
+combination of the checking for the time out with mysql_ping( ) and
+re-requesting the connection with mysql_pconnect( ) either caused the original
+connection to re-connect or forced mysql_pconnect() to recognize that the
+connection had timed out and request a new one. The documentation for
+mysql_ping( ) says that it will force a re-connect if it detects a timeout,
+however comments on the documentation page mention that this feature has been
+disabled for some time. Anyways here is the code I used, hope it helps:
+
+$dbConnection = mysql_pconnect( $myHostname, $myUsername, $myPassword  );
+
+if ( !mysql_ping( $dbConnection ) )
+{
+   $dbConnection = mysql_pconnect( $myHostname, $myUsername, $myPassword  );
+}
+===============================================================================
+
+If you are using mysql_pconnect(), and say the MySQL server has five persistent
+connection pooled for that client.
+
+Now mysql_pconnect can return any one of them.
+
+So, If you are expecting that mysql_pconnect will return always use the same
+persistent connection, that is not the case.
+
+So, say you are executing after connecting with mysql_pconnect:
+
+set @aa=6;
+
+And in another page you have again done mysql_pconnect, and executed:
+
+select @aa;
+
+That will not necessarily return '6' as the result!
+
+Because the second mysql_pconnect can take another persistent connection from
+that server's connection pool.
+===============================================================================
+
+Be very careful when using persistent connections and temporary tables on
+MySQL: in MySQL, temporary tables are visible only to the currenct connection,
+but if you have a persistent connection the temporary tables will supposedly be
+visible to everybody sharing the same persistent connection. This can lead to
+major trouble. I suggest to use totally random temporary table names when using
+persistent connections to avoid major problems.
+===============================================================================
+
+You also may consider using pconnect if you have transactions that span
+multiple pages. For example, in applications that I develop, I start a
+transaction on the moment I query selecting the data that the user plans on
+editing. I then commit the transactions after the user hits the submit button
+and the data is committed.
+
+I cannot simply use mysql_connect as then the connection would be terminated at
+the end of the page and if I did not commit my transaction, it is automatically
+rolled back.
+===============================================================================
+
+Normally you do NOT want to use mysql_pconnect.  This function is designed for
+environments which have a high overhead to connecting to the database.  In a
+typical MySQL / Apache / PHP environment, Apache will create many child
+processes which lie in idle waiting for a web request to be assigned to them. 
+Each of these child processes will open and hold its own MySQL connection.  So
+if you have a MySQL server which has a limit of 50 connections, but Apache
+keeps more than 50 child processes running, each of these child processes can
+hold a connection to your MySQL server, even while they are idle (idle httpd
+child processes don't lend their MySQL connection to other httpd children, they
+hold their own).  So even if you only have a few pages which actually connect
+to MySQL on a busy site, you can run out of connections, with all of them not
+actually being used. 
+
+In general use mysql_connect() for connecting to MySQL unless that connection
+takes a long time to establish.
+===============================================================================
+
+Be careful using mysql_pconnect. If you are hosting on an ISP, they may frown
+upon you using multiple persistant mysql connections as this consumes resources
+for a longer period of time. If your script crashes, your connection can stay
+open for long periods of time. If there is a loop involved, you could
+accidently eat up all the available connections. That might be considered abuse
+by an ISP and you could get in trouble. Try using mysql_connect first instead.
+90% of the time, a non-persistant mysql_connect call will do the trick just
+fine.
+===============================================================================
+
+Be very careful when using persistent connections on a machine running multiple
+mysql servers. You must specify the correct socket path, otherwise PHP will
+reuse connections irregardless of what server they are connected to. That is,
+it will see an open connection with matching parameters and use it, even if the
+connection is actually for a different server.
+===============================================================================
+
+don't use pconnect in a situation with MySQL running on one host but on
+multiple ports (a multiple database configuration). the connection pooling algo
+in php apparently only keys off of the host, username and password but not the
+port. therefore, if you use the same host, username and password but a
+different port, you might get a connection that is connected to a different
+port than the one you asked for.
+===============================================================================
+
+Persistent connections work well for CGI PHP managed by fastCGI, contrary to
+the suggestion above that they only work for the module version. That's because
+fastCGI keeps PHP processes running between requests. Persistent connections in
+this mode are easily made immune to connection limits too, because you can set
+PHP_FCGI_CHILDREN << mysql's max_connections <<< Apache's MaxClients. This also
+saves resources.
+===============================================================================
+
+pconnect is preferred when you are using a remote database server on a major
+web site. mysql in particular stays happier with 1 open connection as opposed
+to 1000 connections a minute =)
+===============================================================================
+
+You can solve problem with persistent connections setting directive
+mysql.allow_persistent = Off in php configuration file. The users whitch will
+try to create persistant connetion /mysql_pconnect()/ will be connected to db
+with nonpersistant connection /mysql_connect()/
+
+For more info see user notes at section Persistant Connections. http://
+www.php.net/manual/en/features.persistent-connections.php
+--
+http://www.id.com.ua Ilya Rudenko
+===============================================================================
+
+The new mysqlnd library, which replaces the old libmysql, should make
+disappearing connections a thing of the past. It refreshes the connection
+(either change_user or ping) before trying to use it. (It also uses less
+memory, and generally has better performance.) I've only tried it with mysqli,
+but the native extension also uses it. It's available for PHP >= 5.3, MySQL >=
+4.1.
+===============================================================================
+
+If you get an error message which refers to a failure regarding /var/mysql/
+mysql.sock, try changing your php.ini so that mysql.default_socket=/tmp/
+mysql.sock
+===============================================================================
+
+Instead of use wait_timeout, you can set interactive_timeout to short period of
+time (for ex. 20 sec.) this is a lot better solution in apache + mysql
+environment than wait_timeout.
+
+To know more about interactive_timeout - look to mysql documentation.
+===============================================================================
+
+Do not use transactions (e.g. with InnoDB MySQL tables) with persistent
+connections.  If your script stops or exits for any reason, your transaction
+will be left open and your locks will be left on.  You have to reset MySQL to
+release them (so far as I can figure).   They won't ROLLBACK automatically on
+error, like they ought to.   When you restart the script, you'll get a new
+connection, so you can't rollback or commit for the previous script.   Any
+script with a start transaction, rollback, or commit SQL statement should use
+regular (not persistent) connections.   Seems like PHP ought to automatically
+issue a ROLLBACK on any open transactions when a script exits (error or
+otherwise) without a COMMIT.  ZEND's site has a brief blurb on this.  It's OK
+to mix/match so you use a persistent connection for the read stuff, but open a
+new regular connection conditionally (if you have to update, which is usually
+less often).
+===============================================================================
+
+You need to be VERY careful when using LOCK TABLES with persistent
+connections.  If the script terminates before the UNLOCK TABLES is executed,
+the the table(s) will stay locked, and very likely hang future scripts.  This
+is noted in a bug report, but is still not reflected in the documentation:
+http://bugs.php.net/bug.php?id=7634
+===============================================================================
+
+If your MySQL recive this error log: "Got an error reading communication
+packets" see this post: http://marc.theaimsgroup.com/?l=php-dev&m=
+97858932431876&w=2. This patch work property in 4.0.4pl1 (when httpd.conf have
+MaxRequestsPerChild non-cero)
+===============================================================================
+
+I would like to comment on the post from dfischer at qualcomm dot com that
+proposes spanning transactions over multiple application invocations, in case
+someone is bold enough to try it.
+
+I'll assume the table types being used are one of those that support
+transactions, such as InnoDB or BerkeleyDB.
+
+First, there is a question of whether this would work at all.  To work at all,
+the transaction context would have to be preserved across all the invocations
+of the php code through the web server.  Reading the description of http://
+www.php.net/manual/en/features.persistent-connections.php maintaining
+transaction context would be at best a coincidence.  It would be interesting to
+find out that this does work on occasion and to understand the ramifications of
+such behavior.  If I happened to get your connection and my action was a
+cancel, your updates might be gone.
+
+Second, if such a thing did work (occassionally or always), there would be
+performance implications as the underlying database managed transactions that
+were pretty much open-ended.  A few long-running transactions would likely eat
+up many resources in a short time and the likelihood of concurrency conflicts
+could rise.  If the mysql_pconnect behavior is to keep transaction open at the
+end of php processing, then it would probably be better to not define
+transactions when using mysql_pconnect. And, transactions that were never
+closed by code (user went out to lunch and got hit by a bus) could hold
+resources for quite some time (maybe until after rehab).
+
+So, even if such a scheme COULD work, it is not a good idea.  The transaction
+should be committed or rolled back at the end of the user request processing. 
+This allows the DBMS to properly manage resource ultilization and keeps bad
+things from happening to good data.  If mysql_pconnect does not coordinate well
+with the transaction component of the database engine to always end a
+transaction at the end of processing a request, then mysql_pconnect should
+never be used where begin transaction is used.
+===============================================================================
+
+Right after I upgraded to PHP 5.3 I started getting "MySQL server has gone
+away" errors on almost every other page request from the apache server. I tried
+a few ideas that didn't work. Here is the solution: I changed all my
+mysql_pconnect() statements to mysql_connect(). It fixed the problem. For some
+reason PHP 5.3 does not like persistent connections.
+===============================================================================
+
+Be careful when setting variables on a persistent mysql connection. Example:
+// Set result charset to UTF8
+mysql_query("SET SESSION character_set_results = 'UTF8'");
+
+If another script reuses your persistent connection, it will also use the UTF-8
+charset. This created a problem with typo3 and TemplaVoila, which reads
+serialized data from the database. The data is returned as UTF8, but the script
+expects latin1 and dies with a serialize error ("Template Object could not be
+unserialized successfully."). This problem is especially tricky because it
+works on some requests and crashes on others - because the variable is not set
+on all connections in the persistent connection pool.
+
+A possible solution is to reset variables to their default value afterwards:
+$ret = mysql_query("SHOW VARIABLES LIKE 'character_set_results'");
+list($foo, $old_charset) = mysql_fetch_assoc($ret);
+mysql_query("SET SESSION character_set_results = 'UTF8'");
+// do some fancy utf8 stuff
+// ..
+
+// revert to old encoding
+mysql_query("SET SESSION character_set_results = '$old_charset'");
+
+or simply use mysql_connect(), as previously stated it makes more sense in most
+enviroments and there are less things to bother with   (like variables,
+transactions, temporary tables).

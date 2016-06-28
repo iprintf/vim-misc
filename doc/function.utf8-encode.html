@@ -1,0 +1,2528 @@
+
+utf8_encode
+
+(PHP 4, PHP 5, PHP 7)
+
+utf8_encode — 将 ISO-8859-1 编码的字符串转换为 UTF-8 编码
+
+描述
+
+string utf8_encode ( string $data )
+
+该函数将 data 字符串转换为 UTF-8 编码，并返回编码后的字符串。UTF-8 是一种用于将
+宽字符值转换为字节流的 Unicode 的标准机制。UTF-8 对于纯 ASCII 字符来说是透明的
+，且是自同步的（也就是说这使得程序能够得知字符从字节流的何处开始），并可被普通
+字符串比较函数用以比较等操作。PHP 可将 UTF-8 编码为多达四个字节的字符，如：
+
+                         UTF-8 编码
+字节（bytes） 位（bits）                表示
+1             7          0bbbbbbb
+2             11         110bbbbb 10bbbbbb
+3             16         1110bbbb 10bbbbbb 10bbbbbb
+4             21         11110bbb 10bbbbbb 10bbbbbb 10bbbbbb
+
+每个 UTF-8 表示一个能被用以储存字符数据的位。
+
+
+User Contributed Notes 64 notes
+
+===============================================================================
+
+Please note that utf8_encode only converts a string encoded in ISO-8859-1 to
+UTF-8. A more appropriate name for it would be "iso88591_to_utf8". If your text
+is not encoded in  ISO-8859-1, you do not need this function. If your text is
+already in UTF-8, you do not need this function. In fact, applying this
+function to text that is not encoded in ISO-8859-1 will most likely simply
+garble that text.
+
+If you need to convert text from any encoding to any other encoding, look at
+iconv() instead.
+===============================================================================
+
+Walk through nested arrays/objects and utf8 encode all strings.
+
+<?php
+// Usage
+class Foo {
+    public $somevar = 'whoop whoop';
+}
+
+$structure = array(
+    'object' => (object) array(
+        'entry' => 'hello wörld',
+        'another_array' => array(
+            'string',
+            1234,
+            'another string'
+        )
+    ),
+    'string' => 'foo',
+    'foo_object' => new Foo
+);
+
+utf8_encode_deep($structure);
+
+// $structure is now utf8 encoded
+print_r($structure);
+
+// The function
+function utf8_encode_deep(&$input) {
+    if (is_string($input)) {
+        $input = utf8_encode($input);
+    } else if (is_array($input)) {
+        foreach ($input as &$value) {
+            utf8_encode_deep($value);
+        }
+
+        unset($value);
+    } else if (is_object($input)) {
+        $vars = array_keys(get_object_vars($input));
+
+        foreach ($vars as $var) {
+            utf8_encode_deep($input->$var);
+        }
+    }
+}
+?>
+===============================================================================
+
+For reference, it may be insightful to point out that:
+  utf8_encode($s)
+is actually identical to:
+  recode_string('latin1..utf8', $s)
+and:
+  iconv('iso-8859-1', 'utf-8', $s)
+That is, utf8_encode is a specialized case of character set conversions.
+
+If your string to be converted to utf-8 is something other than iso-8859-1
+(such as iso-8859-2 (Polish/Croatian)), you should use recode_string() or iconv
+() instead rather than trying to devise complex str_replace statements.
+===============================================================================
+
+If you need a function which converts a string array into a utf8 encoded string
+array then this function might be useful for you:
+
+<?php
+function utf8_string_array_encode(&$array){
+    $func = function(&$value,&$key){
+        if(is_string($value)){
+            $value = utf8_encode($value);
+        }
+        if(is_string($key)){
+            $key = utf8_encode($key);
+        }
+        if(is_array($value)){
+            utf8_string_array_encode($value);
+        }
+    };
+    array_walk($array,$func);
+    return $array;
+}
+?>
+===============================================================================
+
+Here's some code that addresses the issue that Steven describes in the previous
+comment;
+
+<?php
+
+/* This structure encodes the difference between ISO-8859-1 and Windows-1252,
+   as a map from the UTF-8 encoding of some ISO-8859-1 control characters to
+   the UTF-8 encoding of the non-control characters that Windows-1252 places
+   at the equivalent code points. */
+
+$cp1252_map = array(
+    "\xc2\x80" => "\xe2\x82\xac", /* EURO SIGN */
+    "\xc2\x82" => "\xe2\x80\x9a", /* SINGLE LOW-9 QUOTATION MARK */
+    "\xc2\x83" => "\xc6\x92",     /* LATIN SMALL LETTER F WITH HOOK */
+    "\xc2\x84" => "\xe2\x80\x9e", /* DOUBLE LOW-9 QUOTATION MARK */
+    "\xc2\x85" => "\xe2\x80\xa6", /* HORIZONTAL ELLIPSIS */
+    "\xc2\x86" => "\xe2\x80\xa0", /* DAGGER */
+    "\xc2\x87" => "\xe2\x80\xa1", /* DOUBLE DAGGER */
+    "\xc2\x88" => "\xcb\x86",     /* MODIFIER LETTER CIRCUMFLEX ACCENT */
+    "\xc2\x89" => "\xe2\x80\xb0", /* PER MILLE SIGN */
+    "\xc2\x8a" => "\xc5\xa0",     /* LATIN CAPITAL LETTER S WITH CARON */
+    "\xc2\x8b" => "\xe2\x80\xb9", /* SINGLE LEFT-POINTING ANGLE QUOTATION */
+    "\xc2\x8c" => "\xc5\x92",     /* LATIN CAPITAL LIGATURE OE */
+    "\xc2\x8e" => "\xc5\xbd",     /* LATIN CAPITAL LETTER Z WITH CARON */
+    "\xc2\x91" => "\xe2\x80\x98", /* LEFT SINGLE QUOTATION MARK */
+    "\xc2\x92" => "\xe2\x80\x99", /* RIGHT SINGLE QUOTATION MARK */
+    "\xc2\x93" => "\xe2\x80\x9c", /* LEFT DOUBLE QUOTATION MARK */
+    "\xc2\x94" => "\xe2\x80\x9d", /* RIGHT DOUBLE QUOTATION MARK */
+    "\xc2\x95" => "\xe2\x80\xa2", /* BULLET */
+    "\xc2\x96" => "\xe2\x80\x93", /* EN DASH */
+    "\xc2\x97" => "\xe2\x80\x94", /* EM DASH */
+
+    "\xc2\x98" => "\xcb\x9c",     /* SMALL TILDE */
+    "\xc2\x99" => "\xe2\x84\xa2", /* TRADE MARK SIGN */
+    "\xc2\x9a" => "\xc5\xa1",     /* LATIN SMALL LETTER S WITH CARON */
+    "\xc2\x9b" => "\xe2\x80\xba", /* SINGLE RIGHT-POINTING ANGLE QUOTATION*/
+    "\xc2\x9c" => "\xc5\x93",     /* LATIN SMALL LIGATURE OE */
+    "\xc2\x9e" => "\xc5\xbe",     /* LATIN SMALL LETTER Z WITH CARON */
+    "\xc2\x9f" => "\xc5\xb8"      /* LATIN CAPITAL LETTER Y WITH DIAERESIS*/
+);
+
+function cp1252_to_utf8($str) {
+        global $cp1252_map;
+        return  strtr(utf8_encode($str), $cp1252_map);
+}
+
+?>
+===============================================================================
+
+Avoiding use of preg_match to detect if utf8_encode is needed:
+
+<?php
+                $string = $string_input; // avoid being destructive
+
+                $string = preg_replace("#[\x09\x0A\x0D\x20-\x7E]#"        ,"",
+$string);         // ASCII
+                $string = preg_replace("#[\xC2-\xDF][\x80-\xBF]#"            ,
+"",$string);             // non-overlong 2-byte
+                $string = preg_replace("#\xE0[\xA0-\xBF][\x80-\xBF]#"    ,"",
+$string);     // excluding overlongs
+                $string = preg_replace("#[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}#",""
+,$string);     // straight 3-byte
+                $string = preg_replace("#\xED[\x80-\x9F][\x80-\xBF]#"    ,"",
+$string);     // excluding surrogates
+                $string = preg_replace("#\xF0[\x90-\xBF][\x80-\xBF]{2}#","",
+$string);     // planes 1-3
+                $string = preg_replace("#[\xF1-\xF3][\x80-\xBF]{3}#"    ,"",
+$string);     //  planes 4-15
+                $string = preg_replace("#\xF4[\x80-\x8F][\x80-\xBF]{2}#","",
+$string);     // plane 16
+
+                $rc = ($string == ""?true:false);
+?>
+===============================================================================
+
+This function I use convert Thai font (iso-8859-11) to UTF-8. For my case, It
+work properly. Please try to use this function if you have a problem to convert
+charset iso-8859-11 to UTF-8.
+
+function iso8859_11toUTF8($string) {
+ 
+     if ( ! ereg("[\241-\377]", $string) )
+         return $string;
+
+     $iso8859_11 = array(
+"\xa1" => "\xe0\xb8\x81",
+"\xa2" => "\xe0\xb8\x82",
+"\xa3" => "\xe0\xb8\x83",
+"\xa4" => "\xe0\xb8\x84",
+"\xa5" => "\xe0\xb8\x85",
+"\xa6" => "\xe0\xb8\x86",
+"\xa7" => "\xe0\xb8\x87",
+"\xa8" => "\xe0\xb8\x88",
+"\xa9" => "\xe0\xb8\x89",
+"\xaa" => "\xe0\xb8\x8a",
+"\xab" => "\xe0\xb8\x8b",
+"\xac" => "\xe0\xb8\x8c",
+"\xad" => "\xe0\xb8\x8d",
+"\xae" => "\xe0\xb8\x8e",
+"\xaf" => "\xe0\xb8\x8f",
+"\xb0" => "\xe0\xb8\x90",
+"\xb1" => "\xe0\xb8\x91",
+"\xb2" => "\xe0\xb8\x92",
+"\xb3" => "\xe0\xb8\x93",
+"\xb4" => "\xe0\xb8\x94",
+"\xb5" => "\xe0\xb8\x95",
+"\xb6" => "\xe0\xb8\x96",
+"\xb7" => "\xe0\xb8\x97",
+"\xb8" => "\xe0\xb8\x98",
+"\xb9" => "\xe0\xb8\x99",
+"\xba" => "\xe0\xb8\x9a",
+"\xbb" => "\xe0\xb8\x9b",
+"\xbc" => "\xe0\xb8\x9c",
+"\xbd" => "\xe0\xb8\x9d",
+"\xbe" => "\xe0\xb8\x9e",
+"\xbf" => "\xe0\xb8\x9f",
+"\xc0" => "\xe0\xb8\xa0",
+"\xc1" => "\xe0\xb8\xa1",
+"\xc2" => "\xe0\xb8\xa2",
+"\xc3" => "\xe0\xb8\xa3",
+"\xc4" => "\xe0\xb8\xa4",
+"\xc5" => "\xe0\xb8\xa5",
+"\xc6" => "\xe0\xb8\xa6",
+"\xc7" => "\xe0\xb8\xa7",
+"\xc8" => "\xe0\xb8\xa8",
+"\xc9" => "\xe0\xb8\xa9",
+"\xca" => "\xe0\xb8\xaa",
+"\xcb" => "\xe0\xb8\xab",
+"\xcc" => "\xe0\xb8\xac",
+"\xcd" => "\xe0\xb8\xad",
+"\xce" => "\xe0\xb8\xae",
+"\xcf" => "\xe0\xb8\xaf",
+"\xd0" => "\xe0\xb8\xb0",
+"\xd1" => "\xe0\xb8\xb1",
+"\xd2" => "\xe0\xb8\xb2",
+"\xd3" => "\xe0\xb8\xb3",
+"\xd4" => "\xe0\xb8\xb4",
+"\xd5" => "\xe0\xb8\xb5",
+"\xd6" => "\xe0\xb8\xb6",
+"\xd7" => "\xe0\xb8\xb7",
+"\xd8" => "\xe0\xb8\xb8",
+"\xd9" => "\xe0\xb8\xb9",
+"\xda" => "\xe0\xb8\xba",
+"\xdf" => "\xe0\xb8\xbf",
+"\xe0" => "\xe0\xb9\x80",
+"\xe1" => "\xe0\xb9\x81",
+"\xe2" => "\xe0\xb9\x82",
+"\xe3" => "\xe0\xb9\x83",
+"\xe4" => "\xe0\xb9\x84",
+"\xe5" => "\xe0\xb9\x85",
+"\xe6" => "\xe0\xb9\x86",
+"\xe7" => "\xe0\xb9\x87",
+"\xe8" => "\xe0\xb9\x88",
+"\xe9" => "\xe0\xb9\x89",
+"\xea" => "\xe0\xb9\x8a",
+"\xeb" => "\xe0\xb9\x8b",
+"\xec" => "\xe0\xb9\x8c",
+"\xed" => "\xe0\xb9\x8d",
+"\xee" => "\xe0\xb9\x8e",
+"\xef" => "\xe0\xb9\x8f",
+"\xf0" => "\xe0\xb9\x90",
+"\xf1" => "\xe0\xb9\x91",
+"\xf2" => "\xe0\xb9\x92",
+"\xf3" => "\xe0\xb9\x93",
+"\xf4" => "\xe0\xb9\x94",
+"\xf5" => "\xe0\xb9\x95",
+"\xf6" => "\xe0\xb9\x96",
+"\xf7" => "\xe0\xb9\x97",
+"\xf8" => "\xe0\xb9\x98",
+"\xf9" => "\xe0\xb9\x99",
+"\xfa" => "\xe0\xb9\x9a",
+"\xfb" => "\xe0\xb9\x9b"
+);
+
+     $string=strtr($string,$iso8859_11);
+     return $string;
+}
+
+Suttichai Mesaard-www.ceforce.com
+===============================================================================
+
+If you are looking for a function to replace special characters with the
+hex-utf-8 value (e.g. für Webservice-Security/WSS4J compliancy) you might use
+this:
+
+$textstart = "Größe";
+$utf8 ='';
+$max = strlen($txt);
+
+for ($i = 0; $i < $max; $i++) {
+
+if ($txt{i} == "&"){
+$neu = "&x26;";
+}
+elseif ((ord($txt{$i}) < 32) or (ord($txt{$i}) > 127)){
+$neu = urlencode(utf8_encode($txt{$i}));
+$neu = preg_replace('#\%(..)\%(..)\%(..)#','&#x\1;&#x\2;&#x\3;',$neu);
+$neu = preg_replace('#\%(..)\%(..)#','&#x\1;&#x\2;',$neu);
+$neu = preg_replace('#\%(..)#','&#x\1;',$neu);
+}
+else {
+$neu = $txt{$i};
+}
+       
+$utf8 .= $neu;
+} // for $i
+
+$textnew = $utf8;
+
+In this example $textnew will be "Gr&#xC3;&#xB6;&#xC3;&#x9F;e"
+===============================================================================
+
+// Reads a file story.txt ascii (as typed on keyboard)
+// converts it to Georgian character using utf8 encoding
+// if I am correct(?) just as it should be when typed on Georgian computer
+// it outputs it as an html file
+//
+// http://www.comweb.nl/keys_to_georgian.html
+// http://www.comweb.nl/keys_to_georgian.php
+// http://www.comweb.nl/story.txt
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://
+www.w3.org/TR/html4/loose.dtd">
+
+<HTML>
+<HEAD>
+<TITLE>keys to unicode code</TITLE>
+
+// this meta tag is needed
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" >
+
+// note the sylfean font seems to be standard installed on Windows XP
+// It supports Georgian
+
+<style TYPE="text/css">
+<!--
+body {font-family:sylfaen; }
+-->
+</style>
+</HEAD>
+
+<BODY>
+
+<?
+$eng=array(97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,
+112,113,114,115,116,117,118,119,120,121,122,87,82,84,83,
+67,74,90);
+$geo=array(4304,4305,4330,4307,4308,4324,4306,4336,4312,4335,4313,
+4314,4315,4316,4317,4318,4325,4320,4321,4322,4323,4309,
+4332,4334,4327,4310,4333,4326,4311,4328,4329,4319,4331,
+91,93,59,39,44,46,96);
+
+$fc=file("story.txt");
+foreach($fc as $line)
+{
+   $spacestart=1;
+   for ($i=0; $i<strlen($line); $i+=1)
+   {
+      $character=ord(substr($line,$i,1));
+      $found=0;
+      for ($k=0; $k<count($eng); $k+=1)
+      {
+         if ($eng[$k]==$character)
+         {
+             print code2utf( $geo[$k] );
+             $found=1;
+         }
+      }
+      if ($found==0)
+      {
+         if ($character==126 || $character==32 || $character==10 || $character=
+=9)
+         {
+            if ($character==9)  { print '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'; }
+            if ($character==10) { print "<BR>\n"; }
+            if ($character==32)
+            {
+               if ($spacestart==1) {print '&nbsp;'; } else { print " "; }
+            }
+            if ($character==126){ print "~";      }
+         } else
+         {
+            print substr($line,$i,1);
+         }
+      }
+      if ($character!=32) { $spacestart=0; }
+   }
+}
+
+/**
+* Function coverts number of utf char into that character.
+* Function taken from: http://sk2.php.net/manual/en/function.utf8-encode.php#
+49336
+*
+* @param int $num
+* @return utf8char
+*/
+function code2utf($num)
+{
+   if($num<128)return chr($num);
+   if($num<2048)return chr(($num>>6)+192).chr(($num&63)+128);
+   if($num<65536)return chr(($num>>12)+224).chr((($num>>6)&63)+128).chr(($num&
+63)+128);
+   if($num<2097152)return chr(($num>>18)+240).chr((($num>>12)&63)+128).chr
+((($num>>6)&63)+128) .chr(($num&63)+128);
+   return '';
+}
+?>
+
+</BODY>
+</HTML>
+===============================================================================
+
+My version for converting ISO array keys to utf8:
+
+<?php
+function convertArrayKeysToUtf8(array $array) {
+    $convertedArray = array();
+    foreach($array as $key => $value) {
+      if(!mb_check_encoding($key, 'UTF-8')) $key = utf8_encode($key);
+      if(is_array($value)) $value = $this->convertArrayKeysToUtf8($value);
+
+      $convertedArray[$key] = $value;
+    }
+    return $convertedArray;
+  }
+?>
+===============================================================================
+
+/*
+Every function seen so far is incomplete or resource consumpting. Here are two
+-- integer 2 utf sequence (i3u) and utf sequence to integer (u3i). Below is a
+code snippet that checks well behavior at the range boundaries.
+
+Someday they might be hardcoded into PHP...
+*/
+
+function i3u($i) { // returns UCS-16 or UCS-32 to UTF-8 from an integer
+  $i=(int)$i; // integer?
+  if ($i<0) return false; // positive?
+  if ($i<=0x7f) return chr($i); // range 0
+  if (($i & 0x7fffffff) <> $i) return '?'; // 31 bit?
+  if ($i<=0x7ff) return chr(0xc0 | ($i >> 6)) . chr(0x80 | ($i & 0x3f));
+  if ($i<=0xffff) return chr(0xe0 | ($i >> 12)) . chr(0x80 | ($i >> 6) & 0x3f)
+      . chr(0x80  | $i & 0x3f);
+  if ($i<=0x1fffff) return chr(0xf0 | ($i >> 18)) . chr(0x80 | ($i >> 12) &
+0x3f)
+      . chr(0x80 | ($i >> 6) & 0x3f) . chr(0x80  | $i & 0x3f);
+  if ($i<=0x3ffffff) return chr(0xf8 | ($i >> 24)) . chr(0x80 | ($i >> 18) &
+0x3f)
+      . chr(0x80 | ($i >> 12) & 0x3f) . chr(0x80 | ($i >> 6) & 0x3f) . chr
+(0x80  | $i & 0x3f);
+  return chr(0xfc | ($i >> 30)) . chr(0x80 | ($i >> 24) & 0x3f) . chr(0x80 |
+($i >> 18) & 0x3f)
+      . chr(0x80 | ($i >> 12) & 0x3f) . chr(0x80 | ($i >> 6) & 0x3f) . chr
+(0x80  | $i & 0x3f);
+}
+
+function u3i($s,$strict=1) { // returns integer on valid UTF-8 seq, NULL on
+empty, else FALSE
+  // NOT strict: takes only DATA bits, present or not; strict: length and bits
+checking
+  if ($s=='') return NULL;
+  $l=strlen($s); $o=ord($s{0});
+  if ($o <= 0x7f && $l==1) return $o;
+  if ($l>6 && $strict) return false;
+  if ($strict) for ($i=1;$i<$l;$i++) if (ord($s{$i}) > 0xbf || ord($s{$i})<
+0x80) return false;
+  if ($o < 0xc2) return false; // no-go even if strict=0
+  if ($o <= 0xdf && ($l=2 && $strict)) return (($o & 0x1f) << 6 | (ord($s{1}) &
+0x3f));
+  if ($o <= 0xef && ($l=3 && $strict)) return (($o & 0x0f) << 12 | (ord($s{1})
+& 0x3f) << 6
+     |  (ord($s{2}) & 0x3f));
+  if ($o <= 0xf7 && ($l=4 && $strict)) return (($o & 0x07) << 18 | (ord($s{1})
+& 0x3f) << 12
+     | (ord($s{2}) & 0x3f) << 6 |  (ord($s{3}) & 0x3f));
+  if ($o <= 0xfb && ($l=5 && $strict)) return (($o & 0x03) << 24 | (ord($s{1})
+& 0x3f) << 18
+     | (ord($s{2}) & 0x3f) << 12 | (ord($s{3}) & 0x3f) << 6 |  (ord($s{4}) &
+0x3f));
+  if ($o <= 0xfd && ($l=6 && $strict)) return (($o & 0x01) << 30 | (ord($s{1})
+& 0x3f) << 24
+     | (ord($s{2}) & 0x3f) << 18 | (ord($s{3}) & 0x3f) << 12
+     | (ord($s{4}) & 0x3f) << 6 |  (ord($s{5}) & 0x3f));
+  return false;
+}
+
+// boundary behavior checking
+$do=array(0x7f,0x7ff,0xffff,0x1fffff,0x3ffffff,0x7fffffff);
+foreach ($do as $ii) for ($i=$ii;$i<=$ii+1; $i++) {
+  $o=i3u($i);
+  for ($j=0;$j<strlen($o);$j++) print "O[$j]=" . sprintf('%08b',ord($o{$j})) .
+", ";
+  print "c=$i, o=[$o].\n";
+  print "Back: [$o] => [" . u3i($o) . "]\n";
+}
+===============================================================================
+
+I had some difficulty finding a way to easily write UTF-8 files with the byte
+order mark included. This is the simple solution I have come up with:
+
+<?php
+function writeUTF8File($filename,$content) {
+        $dhandle=fopen($filename,"w");
+        # Now UTF-8 - Add byte order mark
+        fwrite($dhandle, pack("CCC",0xef,0xbb,0xbf));
+        fwrite($dhandle,$content);
+        fclose($dhandle);
+}
+?>
+
+When you read the file back in using fopen, the BOM will also be there. To
+remove it, I also wrote the following function:
+
+<?php
+function removeBOM($str=""){
+        if(substr($str, 0,3) == pack("CCC",0xef,0xbb,0xbf)) {
+                $str=substr($str, 3);
+        }
+        return $str;
+}
+?>
+===============================================================================
+
+<?php
+    /**
+    * Encodes an ISO-8859-1 mixed variable to UTF-8 (PHP 4, PHP 5 compat)
+    * @param    mixed    $input An array, associative or simple
+    * @param    boolean  $encode_keys optional
+    * @return    mixed     ( utf-8 encoded $input)
+    */
+
+    function utf8_encode_mix($input, $encode_keys=false)
+    {
+        if(is_array($input))
+        {
+            $result = array();
+            foreach($input as $k => $v)
+            {               
+                $key = ($encode_keys)? utf8_encode($k) : $k;
+                $result[$key] = utf8_encode_mix( $v, $encode_keys);
+            }
+        }
+        else
+        {
+            $result = utf8_encode($input);
+        }
+
+        return $result;
+    }
+?>
+===============================================================================
+
+i wrote a function to convert encoding utf8 to iso-8859-9. This function is
+very useful if you want to use this for ajax.
+you can apply same way for other languages.
+<?
+function str_encode ($string,$to="iso-8859-9",$from="utf8") {
+    if($to=="iso-8859-9" && $from=="utf8"){
+        $str_array = array(
+       chr(196).chr(177) => chr(253),
+       chr(196).chr(176) => chr(221),
+       chr(195).chr(182) => chr(246),
+       chr(195).chr(150) => chr(214),
+       chr(195).chr(167) => chr(231),
+       chr(195).chr(135) => chr(199),
+       chr(197).chr(159) => chr(254),
+       chr(197).chr(158) => chr(222),
+       chr(196).chr(159) => chr(240),
+       chr(196).chr(158) => chr(208),
+       chr(195).chr(188) => chr(252),
+       chr(195).chr(156) => chr(220)
+       );
+       return str_replace(array_keys($str_array), array_values($str_array),
+$string);
+   
+    }   
+    return $string;
+}
+?>
+===============================================================================
+
+This function may be useful do encode array keys and values [and checks first
+to see if it's already in UTF format]:
+
+<?php
+public static function to_utf8($in)
+{
+        if (is_array($in)) {
+            foreach ($in as $key => $value) {
+                $out[to_utf8($key)] = to_utf8($value);
+            }
+        } elseif(is_string($in)) {
+            if(mb_detect_encoding($in) != "UTF-8")
+                return utf8_encode($in);
+            else
+                return $in;
+        } else {
+            return $in;
+        }
+        return $out;
+}
+?>
+
+Hope this may help.
+
+[NOTE BY danbrown AT php DOT net: Original function written by (cmyk777 AT
+gmail DOT com) on 28-JAN-09.]
+===============================================================================
+
+I recommend using this alternative for every language:
+
+$new=mb_convert_encoding($s,"UTF-8","auto");
+
+Don't forget to set all your pages to "utf-8" encoding, otherwise just use HTML
+entities.
+
+jcn50.
+===============================================================================
+
+if you want to put variables as parameter in a flashfile, i prefer using to
+convert the string with utf8_encode() [or preg_replace, or iconv] and after
+this i encode it with urlencode();
+
+<?php
+     $yourstring="yourstring";
+     $str_utf8=utf8_encode($yourstring);
+     $str_encoded=urlencode($str_utf8);
+     echo "<script language='javascript'>";
+     echo "parameterForFlash='".$str_encoded."';";
+     echo "</script>";
+?>
+
+now you can use the variable (parameterForFlash) in your javascript
+(plugindetection), that writes the flash object/embed.
+===============================================================================
+
+My version of utf8_encode_deep,
+In case you need one that returns a value without changing the original.
+
+        /**
+        * Convert Anything To UTF-8
+        * @param mixed $var The variable you want to convert.
+        * @param boolean $deep Deep convertion? (*Default: TRUE).
+        * @return mixed
+        */
+        function anything_to_utf8($var,$deep=TRUE){
+            if(is_array($var)){
+                foreach($var as $key => $value){
+                    if($deep){
+                        $var[$key] = anything_to_utf8($value,$deep);
+                    }elseif(!is_array($value) && !is_object($value) && !
+mb_detect_encoding($value,'utf-8',true)){
+                         $var[$key] = utf8_encode($var);
+                    }
+                }
+                return $var;
+            }elseif(is_object($var)){
+                foreach($var as $key => $value){
+                    if($deep){
+                        $var->$key = anything_to_utf8($value,$deep);
+                    }elseif(!is_array($value) && !is_object($value) && !
+mb_detect_encoding($value,'utf-8',true)){
+                         $var->$key = utf8_encode($var);
+                    }
+                }
+                return $var;
+            }else{
+                return (!mb_detect_encoding($var,'utf-8',true))?utf8_encode
+($var):$var;
+            }
+        }
+===============================================================================
+
+I tried a lot of things, but this seems to be the final fail save method to
+convert any string to proper UTF-8.
+
+<?php
+function _convert($content) {
+    if(!mb_check_encoding($content, 'UTF-8')
+        OR !($content === mb_convert_encoding(mb_convert_encoding($content, 
+'UTF-32', 'UTF-8' ), 'UTF-8', 'UTF-32'))) {
+
+        $content = mb_convert_encoding($content, 'UTF-8');
+
+        if (mb_check_encoding($content, 'UTF-8')) {
+            // log('Converted to UTF-8');
+        } else {
+            // log('Could not converted to UTF-8');
+        }
+    }
+    return $content;
+}
+?>
+===============================================================================
+
+I found this little function very useful in fixing strings that are not in
+utf-8 but need be converted
+
+<?php
+// Fixes the encoding to uf8
+function fixEncoding($in_str)
+{
+  $cur_encoding = mb_detect_encoding($in_str) ;
+  if($cur_encoding == "UTF-8" && mb_check_encoding($in_str,"UTF-8"))
+    return $in_str;
+  else
+    return utf8_encode($in_str);
+} // fixEncoding
+?>
+===============================================================================
+
+If you are interested in recursively converting ISO-8859-1-encoded arrays into
+UTF-8, then this is one way to do it. Could use a small refactor though. (I
+used it to prepare some ISO-8859-1 arrays for json_encode. Note that for this
+to work your values and for associative arrays also your keys must be
+ISO-8859-1-encoded.)
+
+<?php
+/**
+* (Recursively) utf8_encode each value in an array.
+*
+* @param array $array
+* @return array utf8_encoded
+*/
+
+function utf8_encode_array($array)
+{
+  if (is_array($array))
+  {
+    $result_array = array();
+
+    foreach($array as $key => $value)
+    {
+
+      if (array_type($array) == "map")
+      {
+        // encode both key and value
+
+        if (is_array($value))
+        {
+          // recursion
+          $result_array[utf8_encode($key)] = utf8_encode_array($value);
+        }
+        else
+        {
+          // no recursion
+          if (is_string($value))
+          {
+            $result_array[utf8_encode($key)] = utf8_encode($value);
+          }
+          else
+          {
+            // do not re-encode non-strings, just copy data
+            $result_array[utf8_encode($key)] = $value;
+          }
+
+        }
+
+      }
+
+      else if (array_type($array) == "vector")
+      {
+        // encode value only
+       
+        if (is_array($value))
+        {
+          // recursion
+          $result_array[$key] = utf8_encode_array($value);
+        }
+        else
+        {
+          // no recursion
+         
+          if (is_string($value))
+          {
+            $result_array[$key] = utf8_encode($value);
+          }
+          else
+          {
+            // do not re-encode non-strings, just copy data
+            $result_array[$key] = $value;
+          }
+
+        }
+
+      }
+
+    }
+
+    return $result_array;
+  }
+
+  return false;     // argument is not an array, return false
+}
+
+/**
+* Determines array type ("vector" or "map"). Returns false if not an array at
+all.
+* (I hope a native function will be introduced in some future release of PHP,
+because
+* this check is inefficient and quite costly in worst case scenario.)
+*
+* @param array $array The array to analyze
+* @return string array type ("vector" or "map") or false if not an array
+*/
+
+function array_type($array)
+{
+  if (is_array($array))
+  {
+    $next = 0;
+
+    $return_value = "vector";  // we have a vector until proved otherwise
+
+    foreach ($array as $key => $value)
+    {
+
+      if ($key != $next)
+      {
+        $return_value = "map";  // we have a map
+        break;
+      }
+
+      $next++;
+    }
+   
+    return $return_value;
+  }
+
+  return false;    // not array
+}
+?>
+===============================================================================
+
+Here is a simple function that can help, if you want to know if a string could
+be UTF-8 or not :
+
+<?php
+function seems_utf8($Str) {
+for ($i=0; $i<strlen($Str); $i++) {
+  if (ord($Str[$i]) < 0x80) $n=0; # 0bbbbbbb
+  elseif ((ord($Str[$i]) & 0xE0) == 0xC0) $n=1; # 110bbbbb
+  elseif ((ord($Str[$i]) & 0xF0) == 0xE0) $n=2; # 1110bbbb
+  elseif ((ord($Str[$i]) & 0xF0) == 0xF0) $n=3; # 1111bbbb
+  else return false; # Does not match any model
+  for ($j=0; $j<$n; $j++) { # n octets that match 10bbbbbb follow ?
+   if ((++$i == strlen($Str)) || ((ord($Str[$i]) & 0xC0) != 0x80)) return false
+;
+  }
+}
+return true;
+}
+?>
+===============================================================================
+
+<?php
+// Author akam at akameng dot com
+// Support 6 bit
+function UTF_to_Unicode($input, $array=False) {
+
+$bit1  = pow(64, 0);
+$bit2  = pow(64, 1);
+$bit3  = pow(64, 2);
+$bit4  = pow(64, 3);
+$bit5  = pow(64, 4);
+$bit6  = pow(64, 5);
+
+$value = '';
+$val   = array();
+
+for($i=0; $i< strlen( $input ); $i++){
+
+     $ints = ord ( $input[$i] );
+    
+     $z     = ord ( $input[$i] );
+     $y     = ord ( $input[$i+1] ) - 128;
+     $x     = ord ( $input[$i+2] ) - 128;
+     $w     = ord ( $input[$i+3] ) - 128;
+     $v     = ord ( $input[$i+4] ) - 128;
+     $u     = ord ( $input[$i+5] ) - 128;
+
+     if( $ints >= 0 && $ints <= 127 ){
+        // 1 bit
+        $value .= '&#'.($z * $bit1).';';
+        $val[]  = $value;
+     }
+     if( $ints >= 192 && $ints <= 223 ){
+        // 2 bit
+        $value .= '&#'.(($z-192) * $bit2 + $y * $bit1).';';
+        $val[]  = $value;
+     }   
+     if( $ints >= 224 && $ints <= 239 ){
+        // 3 bit
+        $value .= '&#'.(($z-224) * $bit3 + $y * $bit2 + $x * $bit1).';';
+        $val[]  = $value;
+     }    
+     if( $ints >= 240 && $ints <= 247 ){
+        // 4 bit
+        $value .= '&#'.(($z-240) * $bit4 + $y * $bit3 +
+$x * $bit2 + $w * $bit1).';';
+        $val[]  = $value;       
+     }    
+     if( $ints >= 248 && $ints <= 251 ){
+        // 5 bit
+        $value .= '&#'.(($z-248) * $bit5 + $y * $bit4
++ $x * $bit3 + $w * $bit2 + $v * $bit1).';';
+        $val[]  = $value;  
+     }
+     if( $ints == 252 && $ints == 253 ){
+        // 6 bit
+        $value .= '&#'.(($z-252) * $bit6 + $y * $bit5
++ $x * $bit4 + $w * $bit3 + $v * $bit2 + $u * $bit1).';';
+        $val[]  = $value;
+     }
+     if( $ints == 254 || $ints == 255 ){
+       echo 'Wrong Result!<br>';
+     }
+    
+}
+
+if( $array === False ){
+    return $unicode = $value;
+}
+if($array === True ){
+     $val     = str_replace('&#', '', $value);
+     $val     = explode(';', $val);
+     $len = count($val);
+     unset($val[$len-1]);
+    
+     return $unicode = $val;
+}
+
+}
+
+
+function Unicode_to_UTF( $input, $array=TRUE){
+
+     $utf = '';
+    if(!is_array($input)){
+       $input     = str_replace('&#', '', $input);
+       $input     = explode(';', $input);
+       $len = count($input);
+       unset($input[$len-1]);
+    }
+    for($i=0; $i < count($input); $i++){
+   
+    if ( $input[$i] <128 ){
+       $byte1 = $input[$i];
+       $utf  .= chr($byte1);
+    }
+    if ( $input[$i] >=128 && $input[$i] <=2047 ){
+   
+       $byte1 = 192 + (int)($input[$i] / 64);
+       $byte2 = 128 + ($input[$i] % 64);
+       $utf  .= chr($byte1).chr($byte2);
+    }
+    if ( $input[$i] >=2048 && $input[$i] <=65535){
+   
+       $byte1 = 224 + (int)($input[$i] / 4096);
+       $byte2 = 128 + ((int)($input[$i] / 64) % 64);
+       $byte3 = 128 + ($input[$i] % 64);
+      
+       $utf  .= chr($byte1).chr($byte2).chr($byte3);
+    }
+    if ( $input[$i] >=65536 && $input[$i] <=2097151){
+   
+       $byte1 = 240 + (int)($input[$i] / 262144);
+       $byte2 = 128 + ((int)($input[$i] / 4096) % 64);
+       $byte3 = 128 + ((int)($input[$i] / 64) % 64);
+       $byte4 = 128 + ($input[$i] % 64);
+       $utf  .= chr($byte1).chr($byte2).chr($byte3).
+chr($byte4);
+    }
+    if ( $input[$i] >=2097152 && $input[$i] <=67108863){
+   
+       $byte1 = 248 + (int)($input[$i] / 16777216);
+       $byte2 = 128 + ((int)($input[$i] / 262144) % 64);
+       $byte3 = 128 + ((int)($input[$i] / 4096) % 64);
+       $byte4 = 128 + ((int)($input[$i] / 64) % 64);
+       $byte5 = 128 + ($input[$i] % 64);
+       $utf  .= chr($byte1).chr($byte2).chr($byte3).
+chr($byte4).chr($byte5);
+    }
+    if ( $input[$i] >=67108864 && $input[$i] <=2147483647){
+   
+       $byte1 = 252 + ($input[$i] / 1073741824);
+       $byte2 = 128 + (($input[$i] / 16777216) % 64);
+       $byte3 = 128 + (($input[$i] / 262144) % 64);
+       $byte4 = 128 + (($input[$i] / 4096) % 64);
+       $byte5 = 128 + (($input[$i] / 64) % 64);
+       $byte6 = 128 + ($input[$i] % 64);
+       $utf  .= chr($byte1).chr($byte2).chr($byte3).
+chr($byte4).chr($byte5).chr($byte6);
+    }
+   }
+   return $utf;
+}
+?>
+===============================================================================
+
+Re the previous post about converting GB2312 code to Unicode code which
+displayed the following function:
+
+<?
+// Program by sadly (www.phpx.com)
+
+function gb2unicode($gb)
+{
+   if(!trim($gb))
+    return $gb;
+   $filename="gb2312.txt";
+   $tmp=file($filename);
+   $codetable=array();
+   while(list($key,$value)=each($tmp))
+    $codetable[hexdec(substr($value,0,6))]=substr($value,9,4);
+   $utf="";
+   while($gb)
+    {
+      if (ord(substr($gb,0,1))>127)
+     {
+        $this=substr($gb,0,2);
+        $gb=substr($gb,2,strlen($gb));
+        $utf.="&#x".$codetable[hexdec(bin2hex($this))-0x8080].";";
+      }
+     else
+     {
+      $gb=substr($gb,1,strlen($gb));
+      $utf.=substr($gb,0,1);
+     }
+     }
+  return $utf;
+}
+?>
+
+I found that a small change was needed in the code to properly handle latin
+characters embedded in the middle of gb2312 text, as when the text includes a
+URL or email address. Just reverse the two lines in the part of the statement
+above that handles ord vals !>127.
+
+Change:
+
+$gb=substr($gb,1,strlen($gb));
+$utf.=substr($gb,0,1);
+
+to:
+
+$utf.=substr($gb,0,1);
+$gb=substr($gb,1,strlen($gb));
+
+In the original function, the first latin chacter was dropped and it was not
+converting the first non-latin character after the latin text (everything was
+shifted one character too far to the right). Reversing those two lines makes it
+work correctly in every example I have tried.
+
+Also, the source of the gb2312.txt file needed for this to work has changed.
+You can find it a couple places:
+
+http://tcl.apache.org/sources/tcl/tools/encoding/gb2312.txt
+ftp://ftp.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/GB/GB2312.TXT
+===============================================================================
+
+that isUTF8 function is a killer...
+
+wouldn't something like
+
+if ( preg_match( "~(\x00[\x80-\xff]|[\x00-\x07][\x00-\xff]~", $string ) ) { /*
+is utf */ };
+
+be a lot more efficient? it doesn't take into account all the ranges, but it
+has to be a better method and a simple start since it'll quit on the first
+successful match. think of encoding and decoding a 1mb string--not good. i'm
+having to work with +20 meg xml files.
+===============================================================================
+
+I was searching for a function similar to Javascript's unescape(). In most
+cases it is OK to use url_decode() function but not if you've got UTF
+characters in the strings. They are converted into %uXXXX entities that
+url_decode() cannot handle.
+I googled the net and found a function which actualy converts these entities
+into HTML entities (&#xxx;) that your browser can show correctly. If you're OK
+with that, the function can be found here: http://pure-essence.net/stuff/code/
+utf8RawUrlDecode.phps
+
+But it was not OK with me because I needed a string in my charset to make some
+comparations and other stuff. So I have modified the above function and in
+conjuction with code2utf() function mentioned in some other note here, I have
+managed to achieve my goal:
+
+<?php
+/**
+* Function converts an Javascript escaped string back into a string with
+specified charset (default is UTF-8).
+* Modified function from http://pure-essence.net/stuff/code/
+utf8RawUrlDecode.phps
+*
+* @param string $source escaped with Javascript's escape() function
+* @param string $iconv_to destination character set will be used as second
+paramether in the iconv function. Default is UTF-8.
+* @return string
+*/
+function unescape($source, $iconv_to = 'UTF-8') {
+    $decodedStr = '';
+    $pos = 0;
+    $len = strlen ($source);
+    while ($pos < $len) {
+        $charAt = substr ($source, $pos, 1);
+        if ($charAt == '%') {
+            $pos++;
+            $charAt = substr ($source, $pos, 1);
+            if ($charAt == 'u') {
+                // we got a unicode character
+                $pos++;
+                $unicodeHexVal = substr ($source, $pos, 4);
+                $unicode = hexdec ($unicodeHexVal);
+                $decodedStr .= code2utf($unicode);
+                $pos += 4;
+            }
+            else {
+                // we have an escaped ascii character
+                $hexVal = substr ($source, $pos, 2);
+                $decodedStr .= chr (hexdec ($hexVal));
+                $pos += 2;
+            }
+        }
+        else {
+            $decodedStr .= $charAt;
+            $pos++;
+        }
+    }
+
+    if ($iconv_to != "UTF-8") {
+        $decodedStr = iconv("UTF-8", $iconv_to, $decodedStr);
+    }
+   
+    return $decodedStr;
+}
+
+/**
+* Function coverts number of utf char into that character.
+* Function taken from: http://sk2.php.net/manual/en/function.utf8-encode.php#
+49336
+*
+* @param int $num
+* @return utf8char
+*/
+function code2utf($num){
+    if($num<128)return chr($num);
+    if($num<2048)return chr(($num>>6)+192).chr(($num&63)+128);
+    if($num<65536)return chr(($num>>12)+224).chr((($num>>6)&63)+128).chr(($num&
+63)+128);
+    if($num<2097152)return chr(($num>>18)+240).chr((($num>>12)&63)+128).chr(((
+$num>>6)&63)+128) .chr(($num&63)+128);
+    return '';
+}
+?>
+===============================================================================
+
+Loading variables in flash
+
+you can lost a lot of hours if your charset is not iso-88951 and you cant' see
+your characters in flash
+
+you must use iconv instead with your codepage
+(for example windows-1251 for ukrainian, russian)
+
+$fw = fopen("flash_input.txt", "w");
+if( $fw )
+{
+    $utf = iconv("windows-1251","UTF-8",$variable_value);
+    $out = 'variable_name='.$utf;
+    fputs($fw, $out);
+    fclose($fw);
+}
+
+and no urlecode is needed if you save data in file!
+===============================================================================
+
+The following Perl regular expression tests if a string is well-formed Unicode
+UTF-8 (Broken up after each | since long lines are not permitted here. Please
+join as a single line, no spaces, before use.):
+
+^([\x00-\x7f]|
+[\xc2-\xdf][\x80-\xbf]|
+\xe0[\xa0-\xbf][\x80-\xbf]|
+[\xe1-\xec][\x80-\xbf]{2}|
+\xed[\x80-\x9f][\x80-\xbf]|
+[\xee-\xef][\x80-\xbf]{2}|
+f0[\x90-\xbf][\x80-\xbf]{2}|
+[\xf1-\xf3][\x80-\xbf]{3}|
+\xf4[\x80-\x8f][\x80-\xbf]{2})*$
+
+NOTE: This strictly follows the Unicode standard 4.0, as described in chapter
+3.9, table 3-6, "Well-formed UTF-8 byte sequences" ( http://www.unicode.org/
+versions/Unicode4.0.0/ch03.pdf#G31703 ).
+
+ISO-10646, a super-set of Unicode, uses UTF-8 (there called "UCS", see http://
+www.unicode.org/faq/utf_bom.html#1 ) in a relaxed variant that supports a
+31-bit space encoded into up to six bytes instead of Unicode's 21 bits in up to
+four bytes. To check for ISO-10646 UTF-8, use the following Perl regular
+expression (again, broken up, see above):
+
+^([\x00-\x7f]|
+[\xc0-\xdf][\x80-\xbf]|
+[\xe0-\xef][\x80-\xbf]{2}|
+[\xf0-\xf7][\x80-\xbf]{3}|
+[\xf8-\xfb][\x80-\xbf]{4}|
+[\xfc-\xfd][\x80-\xbf]{5})*$
+
+The following function may be used with above expressions for a quick UTF-8
+test, e.g. to distinguish ISO-8859-1-data from UTF-8-data if submitted from a
+<form accept-charset="utf-8,iso-8859-1" method=..>.
+
+function is_utf8($string) {
+   return (preg_match('/[insert regular expression here]/', $string) === 1);
+}
+===============================================================================
+
+Here's a function I made to know if one string or textfile is already encoded
+in UTF8 :
+
+<?php
+/**
+* Returns <kbd>true</kbd> if the string or array of string is encoded in UTF8.
+*
+* Example of use. If you want to know if a file is saved in UTF8 format :
+* <code> $array = file('one file.txt');
+* $isUTF8 = isUTF8($array);
+* if (!$isUTF8) --> we need to apply utf8_encode() to be in UTF8
+* else --> we are in UTF8 :)
+* </code>
+* @param mixed A string, or an array from a file() function.
+* @return boolean
+*/
+function isUTF8($string)
+{
+    if (is_array($string))
+    {
+        $enc = implode('', $string);
+        return @!((ord($enc[0]) != 239) && (ord($enc[1]) != 187) && (ord($enc[2
+]) != 191));
+    }
+    else
+    {
+        return (utf8_encode(utf8_decode($string)) == $string);
+    }   
+}
+?>
+===============================================================================
+
+Sniplet to convert ASCII coded text to UTF-8:
+
+$text= preg_replace ('/([\x80-\xff])/se', "pack (\"C*\", (ord ($1) >> 6) |
+0xc0, (ord ($1) & 0x3f) | 0x80)", $text);
+===============================================================================
+
+A few bugs in your example code:
+
+function code2utf($num){
+  if($num<128)return chr($num);
+  if($num<2048)return chr(($num>>6)+192).chr(($num&63)+128);
+  if($num<65536)return chr(($num>>12)+224).chr((($num>>6)&63)+128).chr(($num&
+63)+128);
+  if($num<2097152)return chr(($num>>18)+240).chr((($num>>12)&63)+128).chr
+((($num>>6)&63)+128) .chr(($num&63)+128);
+  return '';
+}
+===============================================================================
+
+regarding the above code2utf function...
+
+> romans at void dot lv
+> 02-Oct-2002 09:59
+> Here is optimized function which converts
+> binary UTF symbol code into unicoded string....
+
+Thanks for providing your nice conversion code, however due to some missing
+parenthesis 4-byte utf-8 chars are not converted properly.
+
+Here is a corrected version of the code2utf function:
+
+function code2utf($num){
+  if($num<128)return chr($num);
+  if($num<1024)return chr(($num>>6)+192).chr(($num&63)+128);
+  if($num<32768)return chr(($num>>12)+224).chr((($num>>6)&63)+128).chr(($num&
+63)+128);
+  if($num<2097152)return chr(($num>>18)+240).chr((($num>>12)&63)+128).chr
+((($num>>6)&63)+128) .chr(($num&63)+128);
+  return '';
+}
+
+regards
+Scho Fei
+===============================================================================
+
+creating utf-8 xml files:
+this is something that has wasted a lot of my time, I hope this will spare you
+the headaches:
+
+my method consists of creating an xml template that will look like this (this
+is probably optional, I'm sure you can use good ol' print or echo statements):
+
+xml_tpl.php
+<?php
+header("Content-Type: text/html;charset=ISO-8859-1");
+print "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n";
+$names=array('jack','bob','vanessa','catherine','valerie');
+?>
+<parent>
+<?php foreach($names as $name) {?>
+    <child name="<?php print $name?>" />
+<?php } ?>
+</parent>
+?>
+
+from a function or a method I include the previous template and trap the
+outputted content in an output buffer. The buffured content is then inserted
+into a file:
+
+<?php
+function create_xml(){
+    ob_start();
+    include "xml_php.php";
+    $trapped_content=ob_get_contents();
+    ob_end_clean();
+    $file_path= "./somefile.xml";
+    $file_handle=fopen($somefile,'w');
+    fwrite($file_handle,utf8_encode($trapped_content));
+}
+
+?>
+
+Some side notes:
+- note that the utf8_encode function goes inside the fwrite() function.
+- when troubleshooting, make sure to transfer text file (xml included) and
+scripts in ascii mode when using ftp. For some unknown reason my ftp client did
+not have xml set as an ascii transfer candidate and was automatically
+tranfering them in binary. That little "feature" ended up costing me hours of
+frustration, as the encoding information would just "vanish" between transfer
+and I kept scratching my head as to why manually created utf8 files were not
+behaving as they should.
+===============================================================================
+
+// Validate Unicode UTF-8 Version 4
+// This function takes as reference the table 3.6 found at http://
+www.unicode.org/versions/Unicode4.0.0/ch03.pdf
+// It also flags overlong bytes as error
+
+function is_validUTF8($str)
+{
+    // values of -1 represent disalloweded values for the first bytes in
+current UTF-8
+    static $trailing_bytes = array (
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+        2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+3,3,3,3,3,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+    );
+
+    $ups = unpack('C*', $str);
+    if (!($aCnt = count($ups))) return true; // Empty string *is* valid UTF-8
+    for ($i = 1; $i <= $aCnt;)
+    {
+        if (!($tbytes = $trailing_bytes[($b1 = $ups[$i++])])) continue;
+        if ($tbytes == -1) return false;
+       
+        $first = true;
+        while ($tbytes > 0 && $i <= $aCnt)
+        {
+            $cbyte = $ups[$i++];
+            if (($cbyte & 0xC0) != 0x80) return false;
+           
+            if ($first)
+            {
+                switch ($b1)
+                {
+                    case 0xE0:
+                        if ($cbyte < 0xA0) return false;
+                        break;
+                    case 0xED:
+                        if ($cbyte > 0x9F) return false;
+                        break;
+                    case 0xF0:
+                        if ($cbyte < 0x90) return false;
+                        break;
+                    case 0xF4:
+                        if ($cbyte > 0x8F) return false;
+                        break;
+                    default:
+                        break;
+                }
+                $first = false;
+            }
+            $tbytes--;
+        }
+        if ($tbytes) return false; // incomplete sequence at EOS
+    }       
+    return true;
+}
+===============================================================================
+
+If you haven't guessed already: If the UTF-8 character has no representation in
+the ISO-8859-1 codepage, a ? will be returned. You might want to wrap a
+function around this to make sure you aren't saving a bunch of ???? into your
+database.
+===============================================================================
+
+Note that you should only use utf8_encode() on ISO-8859-1 data, and not on data
+using the Windows-1252 codepage. Microsoft's Windows-1252 codepage contains
+ISO-8859-1, but it includes several characters in the range 0x80-0x9F whose
+codepoints in Unicode do not match the byte's value (in Unicode, codepoints
+U+80 - U+9F are unassigned).
+
+utf8_encode() simply assumes the bytes integer value is the codepoint number in
+Unicode.
+
+E.g. in 1252, byte 0x80 is the euro sign, which is U+20AC. The same goes for
+curly quotes, em dashes, etc.
+
+utf8_encode() will convert 0x80 into U+0080 (an unassigned codepoint) rather
+than U+20AC.
+
+To convert 1252 to UTF-8, use iconv, recode or mbstring.
+===============================================================================
+
+I often need to convert multi language text sent to me for use in websites and
+other apps into UTF8 encoded so I can insert it into source code and databases.
+
+I knocked up a small web page with its charset set to UTF8 then set it up so I
+can paste from the original doc (eg word or excel) and have the page return the
+UTF8 encoded version.
+
+Of course the browser will convert the unicode to UTF8 for you as part of the
+submit (I use IE5 or better for this) then all you have to do in the PHP is
+encode the UTF8 so the browser will show it in its raw form.
+
+Its a bit bulky but I just convert ALL character to html numbered entities
+(brute force and ignorance does it again.)
+
+I've used this to encode everything from Hebrew to Japanese without problems
+
+<?
+header("Content-Type: text/plain; charset=utf-8");
+$code = (get_magic_quotes_gpc())?stripslashes($GLOBALS[code]):$GLOBALS[code];
+?>
+<html>
+<head>
+    <title>UTF8 ENCODER PAGE</title>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+</head>
+<body>
+<form method=post action="?seed=<?=time()?>">
+    Original Unicode<br />
+    <textarea name="code" cols="80" rows="10"><?=$code?></textarea><br />
+    Encoded UTF8<br />
+    <textarea name="encd" cols="80" rows="10"><?
+        for ($i = 0; $i < strlen($code); $i++) {
+            echo '&#'.ord(substr($code,$i,1));
+        }
+    ?></textarea><br />
+    <input type="submit" value="encode">
+</form>
+</body>
+</html>
+===============================================================================
+
+If you encoded data with utf8_encode function and you would like to decode it
+in javascript use library found here: http://www.webtoolkit.info/. There is
+encoder too.
+===============================================================================
+
+In reply to Cundle:
+
+Note: The BOM is completely unnecessary in UTF-8. UTF-8 is interpreted the same
+way regardless of endianness, e.g. Λ (U+039B, GREEK CAPITAL LETTER LAMDA) is
+represented as the octets 0xCE, 0x9B, always in that order.
+
+Extra note: UTF-16 and UCS-2 are different. The same letter would be encoded as
+0x03 0x9B on big-endian (e.g. Motorola) architecture, but 0x9B 0x03 on
+little-endian (e.g Intel) architecture.
+
+But in any case, there's nothing wrong with putting a BOM at the beginning of a
+UTF-8 encoded file. It is just treated as U+FEFF Zero Width No-Break Space.
+===============================================================================
+
+Good news is that utf8_encode (like UTF-8) passes '<', '>', '/', '\'', '"',
+etc., so you are free to utf8_encode complete blocks of html text that includes
+tags.
+Bad news is that UTF-8 is stupid enough so that utf8_encode(utf8_encode($str))
+!= utf8_encode($str) in most of the cases. What you can do is write utf8_ensure
+like:
+
+function utf8_ensure($str) {
+    return seems_utf8($str)? $str: utf8_encode($str);
+}
+
+Comes handy when your view library tries to encode the same text multiple
+times.
+===============================================================================
+
+IF you don´t use the function from ethan dot nelson at ltd dot org in a class,
+you´ll get an error, so please try
+
+function utf_prepare(&$array)
+{
+    foreach($array AS $key => &$value)
+    {
+        if (is_array($value))
+        {
+            utf_prepare($value);
+        } else
+        {
+            $value = utf8_encode($value);
+        }
+    }
+}
+===============================================================================
+
+Here's my function to know if one string is encoded in UTF8.
+
+If we encode in UTF8 a string or text file that is already encoded in UTF8,
+it's expected to find the character ' ' ( ALT+159)  in the final string.
+
+<?php
+
+function isUTF8($string)
+{
+    $string_utf8 = utf8_encode($string);
+    if( strpos($string_utf8," ",0) !== false ) // " " is ALT+159
+         return true;  // the original string was utf8
+    else
+         return false; // otherwise
+}
+
+?>
+
+regards
+Miguel D az
+===============================================================================
+
+Hebrew!! What a language. I had some trouble placing the Hebrew in a javascript
+based drop down menu, the text appeared as UTF8 so I made this function to
+overcome the problem (Not talking about efficiency)
+
+function rtf_heb($string)
+    {
+    $array = split (" ",$string) ;
+    foreach ($array as $VAL)
+        {
+        $VAL = str_replace("&#1488"," ",$VAL);
+        $VAL = str_replace("&#1489"," ",$VAL);
+        $VAL = str_replace("&#1490"," ",$VAL);
+        $VAL = str_replace("&#1491"," ",$VAL);
+        $VAL = str_replace("&#1492"," ",$VAL);
+        $VAL = str_replace("&#1493"," ",$VAL);
+        $VAL = str_replace("&#1494"," ",$VAL);
+        $VAL = str_replace("&#1495"," ",$VAL);
+        $VAL = str_replace("&#1496"," ",$VAL);
+        $VAL = str_replace("&#1497"," ",$VAL);
+        $VAL = str_replace("&#1499"," ",$VAL);
+        $VAL = str_replace("&#1500"," ",$VAL);
+        $VAL = str_replace("&#1502"," ",$VAL);
+        $VAL = str_replace("&#1504"," ",$VAL);
+        $VAL = str_replace("&#1505"," ",$VAL);
+        $VAL = str_replace("&#1506"," ",$VAL);
+        $VAL = str_replace("&#1508"," ",$VAL);
+        $VAL = str_replace("&#1510"," ",$VAL);
+        $VAL = str_replace("&#1511"," ",$VAL);
+        $VAL = str_replace("&#1512"," ",$VAL);
+        $VAL = str_replace("&#1513"," ",$VAL);
+        $VAL = str_replace("&#1514"," ",$VAL);
+        $VAL = str_replace("&#1498"," ",$VAL);
+        $VAL = str_replace("&#1507"," ",$VAL);
+        $VAL = str_replace("&#1503"," ",$VAL);
+        $VAL = str_replace("&#1501"," ",$VAL);
+        $VAL = str_replace("&#1509"," ",$VAL);
+        $VAL = str_replace(";","",$VAL);
+        $send_VAR .= $VAL." ";
+       
+        }
+        return $send_VAR;
+    }
+===============================================================================
+
+There is a function for converting GB2312 code to Unicode code.It maybe useful
+for programming on XML/WML in non-English lanaguages.
+
+<?
+// Program by sadly (www.phpx.com)
+
+function gb2unicode($gb)
+{
+   if(!trim($gb))
+    return $gb;
+   $filename="gb2312.txt";
+   $tmp=file($filename);
+   $codetable=array();
+   while(list($key,$value)=each($tmp))
+    $codetable[hexdec(substr($value,0,6))]=substr($value,9,4);
+   $utf="";
+   while($gb)
+    {
+      if (ord(substr($gb,0,1))>127)
+     {
+        $this=substr($gb,0,2);
+        $gb=substr($gb,2,strlen($gb));
+        $utf.="&#x".$codetable[hexdec(bin2hex($this))-0x8080].";";
+      }
+     else
+     {
+      $gb=substr($gb,1,strlen($gb));
+      $utf.=substr($gb,0,1);
+     }
+     }
+  return $utf;
+}
+?>
+
+This function requires a code list of gb2312,you can download it at
+ftp://ftp.unicode.org/Public/MAPPINGS/EASTASIA/GB/GB2312.TXT
+===============================================================================
+
+This does the same thing as some of the posts below (minus the keys), but I
+thought I'd share anyway cause it is slightly more elegant.  Also, its a good
+example using references such that this could be used as a callback function.
+
+  function utf_prepare(&$array) {
+
+    foreach($array AS $key => &$value) {
+
+      if (is_array($value)) {
+        $this->utf_prepare($value);
+      } else {
+        $value = utf8_encode($value);
+      }
+
+    }
+
+  }
+===============================================================================
+
+/*Here I have a class that will convert ISCII (Indian Standard Code for
+Information Interchange) devnagiri (Hindi) string to unicode string. /*
+
+<?php
+
+  class iscii2utf8 {
+
+      var $map;
+
+      function iscii2utf8() {
+
+          $this->map = array (
+                   "a0" =>  '63'  ,
+                 "a1" => '2305' ,
+                 "a2" => '2306' ,
+                 "a3" => '2307' ,
+                 "a4" => '2309' ,
+                 "a5" => '2310' ,
+                 "a6" => '2311' ,
+                 "a7" => '2312' ,
+                 "a8" => '2313' ,
+                 "a9" => '2314' ,
+                 "aa" => '2315' ,
+                 "ab" => '2318' ,
+                 "ac" => '2319' ,
+                 "ad" => '2320' ,
+                 "ae" => '2317' ,
+                 "af" => '2322' ,
+                 "b0" => '2323' ,
+                 "b1" => '2324' ,
+                 "b2" => '2321' ,
+                 "b3" => '2325' ,
+                 "b4" => '2326' ,
+                 "b5" => '2327' ,
+                 "b6" => '2328' ,
+                 "b7" => '2329' ,
+                 "b8" => '2330' ,
+                 "b9" => '2331' ,
+                 "ba" => '2332' ,
+                 "bb" => '2333' ,
+                 "bc" => '2334' ,
+                 "bd" => '2335' ,
+                 "be" => '2336' ,
+                 "bf" => '2337' ,
+                 "c0" => '2338' ,
+                 "c1" => '2339' ,
+                 "c2" => '2340' ,
+                 "c3" => '2341' ,
+                 "c4" => '2342' ,
+                 "c5" => '2343' ,
+                 "c6" => '2344' ,
+                 "c7" => '2345' ,
+                 "c8" => '2346' ,
+                 "c9" => '2347' ,
+                 "ca" => '2348' ,
+                 "cb" => '2349' ,
+                 "cc" => '2350' ,
+                 "cd" => '2351' ,
+                 "ce" => '2399' ,
+                 "cf" => '2352' ,
+                 "d0" => '2353' ,
+                 "d1" => '2354' ,
+                 "d2" => '2355' ,
+                 "d3" => '2356' ,
+                 "d4" => '2357' ,
+                 "d5" => '2358' ,
+                 "d6" => '2359' ,
+                 "d7" => '2360' ,
+                 "d8" => '2361' ,
+                 "d9" =>  '63'  ,
+                 "da" => '2366' ,
+                 "db" => '2367' ,
+                 "dc" => '2368' ,
+                 "dd" => '2369' ,
+                 "de" => '2370' ,
+                 "df" => '2371' ,
+                 "e0" => '2374' ,
+                 "e1" => '2375' ,
+                 "e2" => '2376' ,
+                 "e3" => '2373' ,
+                 "e4" => '2378' ,
+                 "e5" => '2379' ,
+                 "e6" => '2380' ,
+                 "e7" => '2377' ,
+                 "e8" => '2381' ,
+                 "e9" =>  '63'  ,
+                 "ea" => '2404' ,
+                 "eb" =>  '63'  ,
+                 "ec" =>  '63'  ,
+                 "ed" =>  '63'  ,
+                 "ee" =>  '63'  ,
+                 "ef" =>  '63'  ,
+                 "f0" =>  '63'  ,
+                 "f1" => '2406' ,
+                 "f2" => '2407' ,
+                 "f3" => '2408' ,
+                 "f4" => '2409' ,
+                 "f5" => '2410' ,
+                 "f6" => '2411' ,
+                 "f7" => '2412' ,
+                 "f8" => '2413' ,
+                 "f9" => '2414' ,
+                 "fa" => '2415' ,
+                 "fb" =>  '63'  ,
+                 "fc" =>  '63'  ,
+                 "fd" =>  '63'  ,
+                 "fe" =>  '63'  ,
+                 "ff" =>  '63'  ,);
+        }
+
+        function code2utf($num){
+
+             //Returns the utf string corresponding to the unicode value
+             //courtesy - romans@void.lv
+
+             if($num<128)return chr($num);
+             if($num<1024)return chr(($num>>6)+192).chr(($num&63)+128);
+             if($num<32768)return chr(($num>>12)+224).chr((($num>>6)&63)+128).
+chr(($num&63)+128);
+             if($num<2097152)return chr($num>>18+240).chr((($num>>12)&63)+128).
+chr(($num>>6)&63+128). chr($num&63+128);
+             return '';
+
+        }
+
+        function convertstring($iscii) {
+            //Returs utf8 string equibalent of given iscii string
+           
+            $str = "";
+            for($i = 0; $i<strlen($iscii); $i++) {
+
+                $c = dechex(ord(substr($iscii,$i,1)));
+                if (isset($this->map[$c] )) {
+                    $s = $this->code2utf($this->map[$c]);
+                    $str .= ($s == "?")?"":$s;
+                    }
+                else {
+                   $str .= substr($iscii,$i,1);
+                   }
+
+            }
+
+            return $str;
+        }
+
+    }
+
+?>
+===============================================================================
+
+BTW, the 21-bit range is pretty old news.  Unicode 3.x uses a 31bit encoding
+scheme that allows for 2 billion characters.
+
+I'll post an enhanced encoder soon.  In the meanwhile here's the current
+encoding scheme: http://www.cl.cam.ac.uk/~mgk25/unicode.html#utf-8
+
+Ronen
+===============================================================================
+
+if you try to pass data to a flash movie with the
+actionscripts functions loadVars or sendAndLoad give this a try,
+if you have problems with special chars like &auml; &ouml; ....
+
+echo "&data1=".urlencode(utf8_encode("   "))
+    ."&data2=".urlencode(utf8_encode("   "));
+
+greets
+
+js
+===============================================================================
+
+simple HTML to UTF-8 conversion:
+
+function html_to_utf8 ($data)
+    {
+    return preg_replace("/\\&\\#([0-9]{3,10})\\;/e", '_html_to_utf8("\\1")',
+$data);
+    }
+
+function _html_to_utf8 ($data)
+    {
+    if ($data > 127)
+        {
+        $i = 5;
+        while (($i--) > 0)
+            {
+            if ($data != ($a = $data % ($p = pow(64, $i))))
+                {
+                $ret = chr(base_convert(str_pad(str_repeat(1, $i + 1), 8, "0"),
+2, 10) + (($data - $a) / $p));
+                for ($i; $i > 0; $i--)
+                    $ret .= chr(128 + ((($data % pow(64, $i)) - ($data % ($p =
+pow(64, $i - 1)))) / $p));
+                break;
+                }
+            }
+        }
+        else
+        $ret = "&#$data;";
+    return $ret;
+    }
+
+Example:
+echo html_to_utf8("a b &#269; &#263; &#382; &#12371; &#12395; &#12385; &#12431;
+()[]{}!#$?* &lt; &#62;");
+
+Output:
+a b č ć ž こにちわ ()[]{}!#$?* &lt; &#62;
+===============================================================================
+
+Here is optimized function which converts binary UTF symbol code into unicoded
+string.
+
+function code2utf($num){
+  if($num<128)return chr($num);
+  if($num<1024)return chr(($num>>6)+192).chr(($num&63)+128);
+  if($num<32768)return chr(($num>>12)+224).chr((($num>>6)&63)+128).chr(($num&
+63)+128);
+  if($num<2097152)return chr($num>>18+240).chr((($num>>12)&63)+128).chr(($num>>
+6)&63+128). chr($num&63+128);
+  return '';
+}
+===============================================================================
+
+To make utf8_encode and utf8_decode support other than iso-8859-1 encodings,
+you can easily define your encoding in the PHP source.
+In the file PHP_SOURCE/ext/xml/xml.c add the following code, for e.g. greek
+iso-8859-7:
+
+DEFINE TWO NEW FUNCTIONS UP TOP:
+inline static unsigned short xml_encode_iso_8859_7(unsigned char);
+inline static char xml_decode_iso_8859_7(unsigned short);
+
+AND THEN IMPLEMENT THEM BELOW:
+/* {{{ xml_encode_iso_8859_7() - Dimitris Daskopoulos 28/8/02 */
+/* map iso-8859-7 chars to Unicode chars */
+inline static unsigned short xml_encode_iso_8859_7(unsigned char c)
+{
+        if (c < 0x80) { /* low-ASCII, leave as is */
+                return (unsigned short)c;
+        } else { /* Greek character in high-ASCII */
+                /* map to UCS greek range (U+0310..03ff) */
+                /* assume that c < 0xff */
+                return (unsigned short)(c + 720);
+        }
+}
+/* }}} */
+
+/* {{{ xml_decode_iso_8859_7() - Dimitris Daskopoulos 28/8/02 */
+/* map Unicode chars to iso-8859-7 chars */
+inline static char xml_decode_iso_8859_7(unsigned short c)
+{
+        if (c < 0x100) { /* char in latin chart, leave as is */
+                return (char)c;
+        } else if (c > 0x030f && c < 0x0400) { /* char in greek chart */
+                /* map back to ISO-8859-7 greek (high-ASCII) */
+                return (char)(c - 720);
+        } else { /* char not in latin or greek Unicode charts */
+                /* return question mark character */
+                return (char)('?');
+        }
+}
+/* }}} */
+
+These two work fine for greek iso-8859-7, but studying http://www.unicode.org/
+charts you
+can implement mappings between unicode and other iso-8859-x quite easily.
+
+In both functions (utf8_encode and utf8_decode), change the requested encoding
+to the one you prefer, e.g.
+
+encoded = xml_utf8_encode(Z_STRVAL_PP(arg), Z_STRLEN_PP(arg), &len,
+"ISO-8859-7");
+
+decoded = xml_utf8_decode(Z_STRVAL_PP(arg), Z_STRLEN_PP(arg), &len,
+"ISO-8859-7");
+
+Make sure you add the new encoding
+in the structure, by entering a new
+row with the official name (ISO-8859-7), and the names of the
+two functions you have just defined:
+xml_encoding xml_encodings[] = {
+        { "ISO-8859-1", xml_decode_iso_8859_1, xml_encode_iso_8859_1 },
+        { "US-ASCII",   xml_decode_us_ascii,   xml_encode_us_ascii   },
+        { "UTF-8",      NULL,                  NULL                  },
+        { "ISO-8859-7", xml_decode_iso_8859_7, xml_encode_iso_8859_7 },
+        { NULL,         NULL,                  NULL                  }
+};
+
+Finally, the following is probably not necessary, but I changed the default
+encoding (found in 2 spots in this file) to whatever encoding you prefer in
+your
+pages, e.g.:
+XML(default_encoding) = "ISO-8859-7";
+
+This solution is a little messy,
+since the utf8_encode function does not accept an argument for choosing the
+encoding method to use but hardwires the encoding method in the source code.
+Maybe PHP developers will provide this option in future releases. Until then,
+this is a quick and dirty solution that will work for
+localized PHP pages.
+
+Dimitris Daskopoulos
+===============================================================================
+
+For XML generation, if you want non-ASCII ISO-8859-1 characters within text and
+attributes, you don't absolutely need UTF-8 encoding:
+
+The optional XML declaration can change the default encoding for characters
+from UTF-8 to ISO-8859-1:
+
+<?xml version="1.0" encoding="iso-8859-1" ?>
+
+This can save a lot of PHP code if you just want to generate ISO-8859-1 text
+and attribute values...
+
+XML specification requires that all parsers support both the UTF-8 encoding (by
+default), and the ISO-8859-1 character set. Other character sets may be
+supported also by specifying them in the encoding attribute of the leading XML
+declaration (but the target parser must support this character set to allow
+automatic conversion of the source text into Unicode character entities.
+===============================================================================
+
+To write an XML element $title containing "exotic" (eg. non ASCII   &    ...) 2
+solutions I found :
+Fastest :
+$xml .= "<title><![CDATA[" . $title ."]]></title>\n"
+
+or cleanest :
+$xml .= "<title>".utf8_encode(htmlspecialchars($title))."</title>\n"
+
+After that, your xml can be parsed without errors.
+===============================================================================
+
+The following function will utf-8 encode unicode entities &#nnn(nn); with n=
+{0..9}
+
+/**
+* takes a string of unicode entities and converts it to a utf-8 encoded string
+* each unicode entitiy has the form &#nnn(nn); n={0..9} and can be displayed by
+utf-8 supporting
+* browsers.  Ascii will not be modified.
+* @param $source string of unicode entities [STRING]
+* @return a utf-8 encoded string [STRING]
+* @access public
+*/
+function utf8Encode ($source) {
+    $utf8Str = '';
+    $entityArray = explode ("&#", $source);
+    $size = count ($entityArray);
+    for ($i = 0; $i < $size; $i++) {
+        $subStr = $entityArray[$i];
+        $nonEntity = strstr ($subStr, ';');
+        if ($nonEntity !== false) {
+            $unicode = intval (substr ($subStr, 0, (strpos ($subStr, ';') +
+1)));
+            // determine how many chars are needed to reprsent this unicode
+char
+            if ($unicode < 128) {
+                $utf8Substring = chr ($unicode);
+            }
+            else if ($unicode >= 128 && $unicode < 2048) {
+                $binVal = str_pad (decbin ($unicode), 11, "0", STR_PAD_LEFT);
+                $binPart1 = substr ($binVal, 0, 5);
+                $binPart2 = substr ($binVal, 5);
+           
+                $char1 = chr (192 + bindec ($binPart1));
+                $char2 = chr (128 + bindec ($binPart2));
+                $utf8Substring = $char1 . $char2;
+            }
+            else if ($unicode >= 2048 && $unicode < 65536) {
+                $binVal = str_pad (decbin ($unicode), 16, "0", STR_PAD_LEFT);
+                $binPart1 = substr ($binVal, 0, 4);
+                $binPart2 = substr ($binVal, 4, 6);
+                $binPart3 = substr ($binVal, 10);
+           
+                $char1 = chr (224 + bindec ($binPart1));
+                $char2 = chr (128 + bindec ($binPart2));
+                $char3 = chr (128 + bindec ($binPart3));
+                $utf8Substring = $char1 . $char2 . $char3;
+            }
+            else {
+                $binVal = str_pad (decbin ($unicode), 21, "0", STR_PAD_LEFT);
+                $binPart1 = substr ($binVal, 0, 3);
+                $binPart2 = substr ($binVal, 3, 6);
+                $binPart3 = substr ($binVal, 9, 6);
+                $binPart4 = substr ($binVal, 15);
+       
+                $char1 = chr (240 + bindec ($binPart1));
+                $char2 = chr (128 + bindec ($binPart2));
+                $char3 = chr (128 + bindec ($binPart3));
+                $char4 = chr (128 + bindec ($binPart4));
+                $utf8Substring = $char1 . $char2 . $char3 . $char4;
+            }
+           
+            if (strlen ($nonEntity) > 1)
+                $nonEntity = substr ($nonEntity, 1); // chop the first char (';
+')
+            else
+                $nonEntity = '';
+
+            $utf8Str .= $utf8Substring . $nonEntity;
+        }
+        else {
+            $utf8Str .= $subStr;
+        }
+    }
+
+    return $utf8Str;
+}
+       
+Ronen.
+===============================================================================
+
+This will also do the job for those who're interested:
+
+<?
+
+function utf8toiso8859($string)
+{   
+  $returns = "";
+  $UTF8len = array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5, 6);
+  $pos = 0;
+  $antal = strlen($string);
+ 
+  do
+  {
+    $c = ord($string[$pos]);
+    $len = $UTF8len[($c >> 2) & 0x3F];
+    switch ($len)
+    {
+      case 6:
+        $u = $c & 0x01;
+        break;
+      case 5:
+        $u = $c & 0x03;
+        break;
+      case 4:
+        $u = $c & 0x07;
+        break;
+      case 3:
+        $u = $c & 0x0F;
+        break;
+      case 2:
+        $u = $c & 0x1F;
+        break;
+      case 1:
+        $u = $c & 0x7F;
+        break;
+      case 0:  /* unexpected start of a new character */
+        $u = $c & 0x3F;
+        $len = 5;
+        break;
+    }
+    while (--$len && (++$pos < $antal && $c =
+ord($string[$pos])))
+    {
+      if (($c & 0xC0) == 0x80)
+        $u = ($u << 6) | ($c & 0x3F);
+      else
+      { /* unexpected start of a new character */
+        $pos--;
+        break;
+      }
+    }
+    if ($u <= 0xFF)
+      $returns .= chr($u);
+    else
+      $returns .= '?';
+  } while (++$pos < $antal);
+  return $returns;
+}
+
+?>
+===============================================================================
+
+...or just use this simple piece of code to check valid utf-8 string:
+
+<?php
+    /**
+     * Returns true if $string is valid UTF-8 and false otherwise.
+     *
+     * @since        1.14
+     * @param [mixed] $string     string to be tested
+     * @subpackage
+     */
+    function is_utf8($string) {
+      
+        // From http://w3.org/International/questions/qa-forms-utf-8.html
+        return preg_match('%^(?:
+              [\x09\x0A\x0D\x20-\x7E]            # ASCII
+            | [\xC2-\xDF][\x80-\xBF]             # non-overlong 2-byte
+            |  \xE0[\xA0-\xBF][\x80-\xBF]        # excluding overlongs
+            | [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}  # straight 3-byte
+            |  \xED[\x80-\x9F][\x80-\xBF]        # excluding surrogates
+            |  \xF0[\x90-\xBF][\x80-\xBF]{2}     # planes 1-3
+            | [\xF1-\xF3][\x80-\xBF]{3}          # planes 4-15
+            |  \xF4[\x80-\x8F][\x80-\xBF]{2}     # plane 16
+        )*$%xs', $string);
+      
+    }
+?>
+===============================================================================
+
+With This Script you can convert a lot of files in
+subfolders and convert to UTF8 without problems!
+
+I thought about that when I was converting an eclipse
+Project to UTF-8 and I loose all the Accentuation O.o
+
+But with this script YOU WILL NOT! ;-)
+
+I Make this based on Aidan Kehoe's Script and webmaster at
+asylum-et dot com of http://www.php.net/scandir:
+
+<?php
+ini_set("implicit_flush", "on");
+ini_set("max_execution_time", 0);
+ini_set("register_argc_argv", "on");
+ini_set("html_errors", "Off");
+
+function cp1252_to_utf8($str) {
+    $cp1252_map = array ("\xc2\x80" => "\xe2\x82\xac",
+    "\xc2\x82" => "\xe2\x80\x9a",
+    "\xc2\x83" => "\xc6\x92",    
+    "\xc2\x84" => "\xe2\x80\x9e",
+    "\xc2\x85" => "\xe2\x80\xa6",
+    "\xc2\x86" => "\xe2\x80\xa0",
+    "\xc2\x87" => "\xe2\x80\xa1",
+    "\xc2\x88" => "\xcb\x86",
+    "\xc2\x89" => "\xe2\x80\xb0",
+    "\xc2\x8a" => "\xc5\xa0",
+    "\xc2\x8b" => "\xe2\x80\xb9",
+    "\xc2\x8c" => "\xc5\x92",
+    "\xc2\x8e" => "\xc5\xbd",
+    "\xc2\x91" => "\xe2\x80\x98",
+    "\xc2\x92" => "\xe2\x80\x99",
+    "\xc2\x93" => "\xe2\x80\x9c",
+    "\xc2\x94" => "\xe2\x80\x9d",
+    "\xc2\x95" => "\xe2\x80\xa2",
+    "\xc2\x96" => "\xe2\x80\x93",
+    "\xc2\x97" => "\xe2\x80\x94",
+
+    "\xc2\x98" => "\xcb\x9c",
+    "\xc2\x99" => "\xe2\x84\xa2",
+    "\xc2\x9a" => "\xc5\xa1",
+    "\xc2\x9b" => "\xe2\x80\xba",
+    "\xc2\x9c" => "\xc5\x93",
+    "\xc2\x9e" => "\xc5\xbe",
+    "\xc2\x9f" => "\xc5\xb8"
+);
+    return strtr ( utf8_encode ( $str ), $cp1252_map );
+}
+function rscandir($base="", &$data=array()) {
+
+  $array = array_diff(scandir($base), array(".", ".."));
+ 
+  foreach($array as $value) :
+
+    if (is_dir($base.$value)) :
+      //$data[] = $base.$value."/";
+      $data = rscandir($base.$value."/", $data);
+    
+    elseif (is_file($base.$value) &&
+!eregi(".jpg|.gif|.png|.ttf|.dataModel|.wsdlDataModel
+|.project|.jsdtscope|.prefs|.name|.container|
+.exe|.bat|.cmd|.src|.dll|.ini|.swf|.fla|.bmp\$",
+$value)) : /* where you put the unwanted extensions  */
+    echo "Converting to UTF8 " . $base.$value . "\r\n"; 
+  
+file_put_contents(
+        $base.$value,
+            cp1252_to_utf8(
+            file_get_contents($base.$value)));
+
+    
+    endif;
+  
+  endforeach;
+
+  return $data;
+
+}
+echo "Type a Folder (With a Slash in end): ";
+$folder = trim(fgets(STDIN));
+
+rscandir($folder);
+
+?>
+
+You can put this on windows Dir and put a Batch like this:
+
+@echo off
+php -n C:\windows\ConvertUTF8.php
+pause
+
+So you can convert your files from any where, just type on
+Execute Command Like: ConvertFilesToUTF8
+
+I think this will help everyone! Enjoy ;-)
+
+P.s: I remove the comments becouse the wordwrap
+===============================================================================
+
+to encode a string only if it is not yet UTF-8, the most elegant solution i
+found is:
+
+<?php
+//$s is a string from whatever source
+mb_detect_encoding($s, "UTF-8") == "UTF-8" ? : $s = utf8_encode($s);
+?>
+
+hope it helps
+===============================================================================
+
+I think this is a reasonable port of Perl's Encoding::FixLatin by Grant McLean,
+which converts a string with mixed encodings (ASCII, ISO-8859-1, CP1252, and
+UTF-8) to UTF-8.
+
+<?php
+
+function init_byte_map(){
+  global $byte_map;
+  for($x=128;$x<256;++$x){
+    $byte_map[chr($x)]=utf8_encode(chr($x));
+  }
+  $cp1252_map=array(
+    "\x80"=>"\xE2\x82\xAC",    // EURO SIGN
+    "\x82" => "\xE2\x80\x9A",  // SINGLE LOW-9 QUOTATION MARK
+    "\x83" => "\xC6\x92",      // LATIN SMALL LETTER F WITH HOOK
+    "\x84" => "\xE2\x80\x9E",  // DOUBLE LOW-9 QUOTATION MARK
+    "\x85" => "\xE2\x80\xA6",  // HORIZONTAL ELLIPSIS
+    "\x86" => "\xE2\x80\xA0",  // DAGGER
+    "\x87" => "\xE2\x80\xA1",  // DOUBLE DAGGER
+    "\x88" => "\xCB\x86",      // MODIFIER LETTER CIRCUMFLEX ACCENT
+    "\x89" => "\xE2\x80\xB0",  // PER MILLE SIGN
+    "\x8A" => "\xC5\xA0",      // LATIN CAPITAL LETTER S WITH CARON
+    "\x8B" => "\xE2\x80\xB9",  // SINGLE LEFT-POINTING ANGLE QUOTATION MARK
+    "\x8C" => "\xC5\x92",      // LATIN CAPITAL LIGATURE OE
+    "\x8E" => "\xC5\xBD",      // LATIN CAPITAL LETTER Z WITH CARON
+    "\x91" => "\xE2\x80\x98",  // LEFT SINGLE QUOTATION MARK
+    "\x92" => "\xE2\x80\x99",  // RIGHT SINGLE QUOTATION MARK
+    "\x93" => "\xE2\x80\x9C",  // LEFT DOUBLE QUOTATION MARK
+    "\x94" => "\xE2\x80\x9D",  // RIGHT DOUBLE QUOTATION MARK
+    "\x95" => "\xE2\x80\xA2",  // BULLET
+    "\x96" => "\xE2\x80\x93",  // EN DASH
+    "\x97" => "\xE2\x80\x94",  // EM DASH
+    "\x98" => "\xCB\x9C",      // SMALL TILDE
+    "\x99" => "\xE2\x84\xA2",  // TRADE MARK SIGN
+    "\x9A" => "\xC5\xA1",      // LATIN SMALL LETTER S WITH CARON
+    "\x9B" => "\xE2\x80\xBA",  // SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
+    "\x9C" => "\xC5\x93",      // LATIN SMALL LIGATURE OE
+    "\x9E" => "\xC5\xBE",      // LATIN SMALL LETTER Z WITH CARON
+    "\x9F" => "\xC5\xB8"       // LATIN CAPITAL LETTER Y WITH DIAERESIS
+  );
+  foreach($cp1252_map as $k=>$v){
+    $byte_map[$k]=$v;
+  }
+}
+
+function fix_latin($instr){
+  if(mb_check_encoding($instr,'UTF-8'))return $instr; // no need for the rest
+if it's all valid UTF-8 already
+  global $nibble_good_chars,$byte_map;
+  $outstr='';
+  $char='';
+  $rest='';
+  while((strlen($instr))>0){
+    if(1==preg_match($nibble_good_chars,$input,$match)){
+      $char=$match[1];
+      $rest=$match[2];
+      $outstr.=$char;
+    }elseif(1==preg_match('@^(.)(.*)$@s',$input,$match)){
+      $char=$match[1];
+      $rest=$match[2];
+      $outstr.=$byte_map[$char];
+    }
+    $instr=$rest;
+  }
+  return $outstr;
+}
+
+$byte_map=array();
+init_byte_map();
+$ascii_char='[\x00-\x7F]';
+$cont_byte='[\x80-\xBF]';
+$utf8_2='[\xC0-\xDF]'.$cont_byte;
+$utf8_3='[\xE0-\xEF]'.$cont_byte.'{2}';
+$utf8_4='[\xF0-\xF7]'.$cont_byte.'{3}';
+$utf8_5='[\xF8-\xFB]'.$cont_byte.'{4}';
+$nibble_good_chars = "@^($ascii_char+|$utf8_2|$utf8_3|$utf8_4|$utf8_5)(.*)$@s";
+
+?>
+
+Then just call fix_latin wherever you need it.
+===============================================================================
+
+You can use this simple code to convert win-1251 into Unicode.
+
+    function rus2uni($str,$isTo = true)
+    {
+        $arr = array('ё'=>'&#x451;','Ё'=>'&#x401;');
+        for($i=192;$i<256;$i++)
+            $arr[chr($i)] = '&#x4'.dechex($i-176).';';
+        $str =preg_replace(array('@([а-я]) @i','@ ([а-я])@i'),array('$1&#x0a0;
+','&#x0a0;$1'),$str);
+        return strtr($str,$isTo?$arr:array_flip($arr));
+    }
+
+That is useful for xml_parser (to parse windows-1251 files like utf-8).
+===============================================================================
+
+I just read what I wrote, sorry for the typos it was a long day:
+
+here's the rewritten code:
+
+xml_tpl.php
+<?php
+    header("Content-Type: text/html;charset=ISO-8859-1");
+    print "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n";
+    $names=array('jack','bob','vanessa','catherine','valerie');
+?>
+<parent>
+<?php foreach($names as $name) {?>
+    <child name="<?php print $name?>" />
+<?php } ?>
+</parent>
+
+<?php
+function create_xml(){
+    ob_start();
+    include "xml_tpl.php";
+    $trapped_content=ob_get_contents();
+    ob_end_clean();
+    $file_path= "./somefile.xml";
+    $file_handle=fopen($file_path,'w');
+    fwrite($file_handle,utf8_encode($trapped_content));
+}
+
+?>
+===============================================================================
+
+Here's my is_utf8 function, to detect valid UTF-8 text.
+
+<?php
+function is_utf8($str) {
+    $c=0; $b=0;
+    $bits=0;
+    $len=strlen($str);
+    for($i=0; $i<$len; $i++){
+        $c=ord($str[$i]);
+        if ($c >= 128) {
+            if(($c >= 254)) return false;
+            elseif($c >= 252) $bits=6;
+            elseif($c >= 248) $bits=5;
+            elseif($c >= 240) $bits=4;
+            elseif($c >= 224) $bits=3;
+            elseif($c >= 192) $bits=2;
+            else return false;
+            if(($i+$bits) > $len) return false;
+            while($bits > 1){
+                $i++;
+                $b=ord($str[$i]);
+                if($b < 128 || $b > 191) return false;
+                $bits--;
+            }
+        }
+    }
+    return true;
+}
+
+?>
+
+[NOTE BY danbrown AT php DOT net: Contains a bugfix supplied by "svenmika" on
+09-JUL-09 with the following note: "A value of exactly 128 (binary 10000000) in
+the first byte of a character is invalid."]
+===============================================================================
+
+another nice way to implement an isUTF8 function ...
+
+<?php
+
+function isUTF8($string)
+{
+    return (utf8_encode(utf8_decode($string)) == $string);
+}
+
+?>
+===============================================================================
+
+In addition to my previous post. If your values are already in utf-8 maybe you
+want to utf8_encode array keys only. This will do it:
+
+<?php
+/**
+* (Recursively) utf8_encode all array keys.
+*
+* @param array $array
+* @return array with utf8_encoded keys
+*/
+
+function utf8_encode_array_keys($array)
+{
+  $array_type = array_type($array);
+
+  if ($array_type == "map")
+  {
+    $result_array = array();
+
+    foreach($array as $key => $value)
+    {
+      if (is_array($value))
+      {
+        // recursion
+        $result_array[utf8_encode($key)] = utf8_encode_array_keys($value);
+      }
+      else
+      {
+        // value is not an array, no recursion
+        $result_array[utf8_encode($key)] = $value;
+      }
+    }
+   
+    return $result_array;
+  }
+
+  else if ($array_type == "vector")
+  {
+    // do not encode anything, just follow the value if it is an array
+    $result_array = array();
+   
+    foreach ($array as $key => $value)
+    {
+      if (is_array($value))
+      {
+        // recursion
+        $result_array[$key] = utf8_encode_array_keys($value);
+      }
+      else
+      {
+        // value is not an array, no recursion
+        $result_array[$key] = $value;
+      }
+    }
+   
+    return $result_array;
+  }
+
+  return false;     // argument is not an array, return false
+}
+?>
+
+Also note that both this operation (with keys only) and the operation with both
+keys and values can be reversed by replacing "encode" by "decode".

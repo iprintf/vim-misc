@@ -1,0 +1,335 @@
+
+mb_substr
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+mb_substr — 获取字符串的部分
+
+说明
+
+string mb_substr ( string $str , int $start [, int $length = NULL [, string
+$encoding = mb_internal_encoding() ]] )
+
+根据字符数执行一个多字节安全的 substr() 操作。位置是从 str 的开始位置进行计数。
+第一个字符的位置是 0。第二个字符的位置是 1，以此类推。
+
+参数
+
+str
+
+    从该 string 中提取子字符串。
+
+start
+
+    str 中要使用的第一个字符的位置。
+
+length
+
+    str 中要使用的最大字符数。 If omitted or NULL is passed, extract all
+    characters to the end of the string.
+
+encoding
+
+    encoding 参数为字符编码。如果省略，则使用内部字符编码。
+
+返回值
+
+mb_substr() 函数根据 start 和 length 参数返回 str 中指定的部分。
+
+参见
+
+  • mb_strcut() - 获取字符的一部分
+  • mb_internal_encoding() - 设置/获取内部字符编码
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+Passing null as length will not make mb_substr use it's default, instead it
+will interpret it as 0.
+<?php
+mb_substr($str,$start,null,$encoding); //Returns '' (empty string) just like
+substr()
+?>
+Instead use:
+<?php
+mb_substr($str,$start,mb_strlen($str),$encoding);
+?>
+===============================================================================
+
+As you often need to iterate over UTF-8 characters inside a string, you might
+be tempted to use mb_substr($text,$i,1).
+The problem with this is that there is no "magic" way to find $i-th character
+inside UTF-8 string, other than reading it byte by byte from the begining. Thus
+a loop which calls mb_substr($text,$i,1) N times for all possible N values of
+$i, will take much longer than expected. The larger the $i gets, the longer is
+the search for $i-th letter. As characters are between 1 to 6 bytes long, one
+can convince oneself, that the execution time of such loop is actually Theta(N^
+2), which can be really slow even for moderately long texts.
+One way to work around it is to first split your text into an array of letters
+using some smart preprocessing, and only then iterate over the array.
+Here is the idea:
+<?php
+class Strings
+{
+  public static function len($a){
+    return mb_strlen($a,'UTF-8');
+  }
+  public static function charAt($a,$i){
+    return self::substr($a,$i,1);
+  }
+  public static function substr($a,$x,$y=null){
+    if($y===NULL){
+      $y=self::len($a);
+    }
+    return mb_substr($a,$x,$y,'UTF-8');
+  }
+  public static function letters($a){
+    $len = self::len($a);
+    if($len==0){
+      return array();
+    }else if($len == 1){
+      return array($a);
+    }else{
+      return Arrays::concat(
+        self::letters(self::substr($a,0,$len>>1)),
+        self::letters(self::substr($a,$len>>1))
+      );
+    }
+  }
+?>
+As you can see, the Strings::letters($text) split the text recursively into two
+parts. Each level of the recursion requires time linear in the length of the
+string, and there is logarithmic number of levels, so the total runtime is O(N
+log N), which is still more than theoretically optimal O(N), but sadly this is
+the best idea I've got.
+===============================================================================
+
+Thanks Darien from /freenode #php for the following example (a little bit
+changed).
+
+It just prints the 6th character of $string.
+You can replace the digits by the same in japanese, chinese or whatever
+language to make a test, it works perfect.
+
+<?php
+mb_internal_encoding("UTF-8");
+$string = "0123456789";
+$mystring = mb_substr($string,5,1);
+echo $mystring;
+?>
+
+(I couldn't replace 0123456789 by chinese numbers for example here, because
+it's automatically converted into latin digits on this website, look :
+&#38646;&#19968;&#20108;&#19977;&#22235;
+&#20116;&#20845;&#19971;&#20843;&#20061;)
+
+gilv
+===============================================================================
+
+I'm trying to capitalize only the first character of the string and tried some
+of the examples above but they didn't work. It seems mb_substr() cannot
+calculate the length of the string in multi-byte encoding (UTF-8) and it should
+be set explicitly. Here is the corrected version:
+
+<?php
+function mb_ucfirst($str, $enc = 'utf-8') {
+    return mb_strtoupper(mb_substr($str, 0, 1, $enc), $enc).mb_substr($str, 1, 
+mb_strlen($str, $enc), $enc);
+}
+?>
+
+cheers!
+===============================================================================
+
+If start  is negative, the returned string will start at the start'th character
+from the end of string
+===============================================================================
+
+you can make mb_substr working faster with long strings with usage of ucs-2
+encoding.
+
+i have written similar thing in mb_convert_encoding page several years ago, and
+qbolec has written explanation and a solution about this topic in this page.
+
+<?php
+
+header('Content-Type: text/html; charset=utf-8');
+echo '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" >';
+
+$corpus_short=str_repeat('тест Тест ',1000);
+mb_internal_encoding('utf-8');
+
+$t1=microtime(true);
+$textlen=mb_strlen($corpus_short);
+$substr_len=3;
+for($i=0;$i<$textlen-$substr_len+1;$i++){
+    $substr=mb_substr($corpus_short,$i,$substr_len);
+}
+echo 'mb_substr, utf8: '.(microtime(true)-$t1);
+
+echo '<br>';
+
+$corpus_short_utf16=mb_convert_encoding($corpus_short,'utf-16','utf-8');
+mb_internal_encoding('utf-16');
+
+$t1=microtime(true);
+$textlen=mb_strlen($corpus_short_utf16);
+$substr_len=3;
+for($i=0;$i<$textlen-$substr_len+1;$i++){
+    $substr=mb_substr($corpus_short_utf16,$i,$substr_len);
+}
+echo 'mb_substr, utf16: '.(microtime(true)-$t1);
+
+echo '<br>';
+
+$corpus_short_ucs2=mb_convert_encoding($corpus_short,'ucs2','utf-8');
+mb_internal_encoding('ucs2');
+
+$t1=microtime(true);
+$textlen=mb_strlen($corpus_short_ucs2);
+$substr_len=3;
+for($i=0;$i<$textlen-$substr_len+1;$i++){
+    $substr=mb_substr($corpus_short_ucs2,$i,$substr_len);
+}
+echo 'mb_substr, ucs2: '.(microtime(true)-$t1);
+
+?>
+
+output:
+mb_substr, utf8: 0.26405191421509
+mb_substr, utf16: 1.0428597927094
+mb_substr, ucs2: 0.0046970844268799
+===============================================================================
+
+quick and dirty loop through multibyte string
+<?php
+function get_character_classes($string, $encoding = "UTF-8") {
+    $current_encoding = mb_internal_encoding();
+    mb_internal_encoding($encoding);
+    $has = array();
+    $stringlength = mb_strlen($string, $encoding);
+    for ($i=0; $i < $stringlength; $i++) {
+        $c = mb_substr($string, $i, 1);
+        if (($c >= "0") && ($c <= "9")) {
+            $has['numeric'] = "numeric";
+        } else if (($c >= "a") && ($c <= "z")) {
+            $has['alpha'] = "alpha";
+            $has['alphalower'] = 'alphalower';
+        } else if (($c >= "A") && ($c <= "Z")) {
+            $has['alpha'] = "alpha";
+            $has['alphaupper'] = "alphaupper";
+        } else if (($c == "$") || ($c == "£")) {
+            $has['currency'] = "currency";
+        } else if (($c == ".") && ($has['decimal'])) {
+            $has['decimals'] = "decimals";
+        } else if ($c == ".") {
+            $has['decimal'] = "decimal";
+        } else if ($c == ",") {
+            $has['comma'] = "comma";
+        } else if ($c == "-") {
+            $has['dash'] = "dash";
+        } else if ($c == " ") {
+            $has['space'] = "space";
+        } else if ($c == "/") {
+            $has['slash'] = "slash";
+        } else if ($c == ":") {
+            $has['colon'] = "colon";
+        } else if (($c >= " ") && ($c <= "~")) {
+            $has['ascii'] = "ascii";
+        } else {
+            $has['binary'] = "binary";
+        }
+    }
+    mb_internal_encoding($current_encoding);
+   
+    return $has;
+}
+
+$string = "1234asdfA£^_{}|}~žščř";
+echo print_r(get_character_classes($string), true);
+?>
+
+Array
+(
+    [numeric] => numeric
+    [alpha] => alpha
+    [alphalower] => alphalower
+    [alphaupper] => alphaupper
+    [currency] => currency
+    [ascii] => ascii
+    [binary] => binary
+)
+===============================================================================
+
+Note: If borders are out of string - mb_string() returns empty _string_, when
+function substr() returns _boolean_ false in this case.
+Keep this in mind when using "===" comparisions.
+
+Example code:
+<?php
+
+var_dump( substr( 'abc', 5, 2 ) ); // returns "false"
+var_dump( mb_substr( 'abc', 5, 2 ) ); // returns ""
+
+?>
+
+It's especially confusing when using mbstring with function overloading turned
+on.
+===============================================================================
+
+A serious pitfall when using mb_substr() set to HTML-ENTITIES encoding is that
+the function performs a number of conversions before returning the value, the
+worst one being that html special characters are not just counted but decoded.
+
+<?php
+
+mb_internal_encoding("ISO-8859-1"); echo mb_internal_encoding(),"\n<br><br>\n";
+
+$a='j&uuml;st &#228; &quot; simple &quot; &#26085;&#26412; &lt;b&gt;test&lt;/b&
+gt;';
+
+echo mb_substr($a,0),"\n<br><br>\n";
+// page source: j&uuml;st &#228; &quot; simple &quot; &#26085;&#26412; &lt;b&
+gt;test&lt;/b&gt;
+
+echo mb_substr($a,0,strlen($a),'HTML-ENTITIES');
+// page source: j&uuml;st &auml; " simple " &#26085;&#26412; <b>test</b>
+
+?>
+===============================================================================
+
+Starting in PHP 5.4.8 passing a null as a default value to mb_substr() and
+mb_strcut() will work as expected.
+===============================================================================
+
+First letter in upper case <hr />
+
+<?php
+header ('Content-type: text/html; charset=utf-8');
+
+if (isset($_POST['check']) && !empty($_POST['check'])) {
+    echo htmlspecialchars(ucfirst_utf8($_POST['check']));
+} else {
+    echo htmlspecialchars(ucfirst_utf8('Žąsinų'));
+}
+
+function ucfirst_utf8($str) {
+    if (mb_check_encoding($str,'UTF-8')) {
+        $first = mb_substr(
+            mb_strtoupper($str, "utf-8"),0,1,'utf-8'
+        );
+        return $first.mb_substr(
+            mb_strtolower($str,"utf-8"),1,mb_strlen($str),'utf-8'
+        );
+    } else {
+        return $str;
+    }
+}
+?>
+
+<form method="post" action="" >
+    <input type="input" name="check" />
+    <input type="submit" />
+</form>

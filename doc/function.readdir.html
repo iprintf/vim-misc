@@ -1,0 +1,1060 @@
+
+readdir
+
+(PHP 4, PHP 5, PHP 7)
+
+readdir — 从目录句柄中读取条目
+
+说明
+
+string readdir ([ resource $dir_handle ] )
+
+返回目录中下一个文件的文件名。文件名以在文件系统中的排序返回。
+
+参数
+
+dir_handle
+
+    目录句柄的 resource，之前由 opendir() 打开
+
+返回值
+
+成功则返回文件名或者在失败时返回 FALSE
+
+Warning
+
+此函数可能返回布尔值 FALSE，但也可能返回等同于 FALSE 的非布尔值。请阅读布尔类型
+章节以获取更多信息。应使用 === 运算符来测试此函数的返回值。
+
+范例
+
+Example #1 列出目录中的所有文件
+
+请留意下面例子中检查 readdir() 返回值的风格。这里明确地测试返回值是否全等于（值
+和类型都相同——更多信息参见比较运算符）FALSE，否则任何目录项的名称求值为 FALSE
+的都会导致循环停止（例如一个目录名为“0”）。
+
+<?php
+// 注意在 4.0.0-RC2 之前不存在 !== 运算符
+
+if ($handle = opendir('/path/to/files')) {
+    echo "Directory handle: $handle\n";
+    echo "Files:\n";
+
+    /* 这是正确地遍历目录方法 */
+    while (false !== ($file = readdir($handle))) {
+        echo "$file\n";
+    }
+
+    /* 这是错误地遍历目录的方法 */
+    while ($file = readdir($handle)) {
+        echo "$file\n";
+    }
+
+    closedir($handle);
+}
+?>
+
+Example #2 列出当前目录的所有文件并去掉 . 和 ..
+
+<?php
+if ($handle = opendir('.')) {
+    while (false !== ($file = readdir($handle))) {
+        if ($file != "." && $file != "..") {
+            echo "$file\n";
+        }
+    }
+    closedir($handle);
+}
+?>
+
+参见
+
+  • is_dir() - 判断给定文件名是否是一个目录
+  • glob() - 寻找与模式匹配的文件路径
+  • opendir() - 打开目录句柄
+  • scandir() - 列出指定路径中的文件和目录
+
+
+User Contributed Notes 28 notes
+
+===============================================================================
+
+A function I created to non-recursively get the path of all files and folders
+including sub-directories of a given folder.
+Though I have not tested it completely, it seems to be working.
+
+<?php
+
+/**
+* Finds path, relative to the given root folder, of all files and directories
+in the given directory and its sub-directories non recursively.
+* Will return an array of the form
+* array(
+*   'files' => [],
+*   'dirs'  => [],
+* )
+* @author sreekumar
+* @param string $root
+* @result array
+*/
+function read_all_files($root = '.'){
+  $files  = array('files'=>array(), 'dirs'=>array());
+  $directories  = array();
+  $last_letter  = $root[strlen($root)-1];
+  $root  = ($last_letter == '\\' || $last_letter == '/') ? $root : $root.
+DIRECTORY_SEPARATOR;
+ 
+  $directories[]  = $root;
+ 
+  while (sizeof($directories)) {
+    $dir  = array_pop($directories);
+    if ($handle = opendir($dir)) {
+      while (false !== ($file = readdir($handle))) {
+        if ($file == '.' || $file == '..') {
+          continue;
+        }
+        $file  = $dir.$file;
+        if (is_dir($file)) {
+          $directory_path = $file.DIRECTORY_SEPARATOR;
+          array_push($directories, $directory_path);
+          $files['dirs'][]  = $directory_path;
+        } elseif (is_file($file)) {
+          $files['files'][]  = $file;
+        }
+      }
+      closedir($handle);
+    }
+  }
+ 
+  return $files;
+}
+?>
+===============================================================================
+
+A variation on listing all the files in a directory recursively. The code
+illustrates a basic technique : the use of an auxiliary function. It avoids
+building temporary lists which are merged on the way back. Note that the array
+which collects the information must be passed by reference.
+
+<?php
+function listdir($dir='.') {
+    if (!is_dir($dir)) {
+        return false;
+    }
+   
+    $files = array();
+    listdiraux($dir, $files);
+
+    return $files;
+}
+
+function listdiraux($dir, &$files) {
+    $handle = opendir($dir);
+    while (($file = readdir($handle)) !== false) {
+        if ($file == '.' || $file == '..') {
+            continue;
+        }
+        $filepath = $dir == '.' ? $file : $dir . '/' . $file;
+        if (is_link($filepath))
+            continue;
+        if (is_file($filepath))
+            $files[] = $filepath;
+        else if (is_dir($filepath))
+            listdiraux($filepath, $files);
+    }
+    closedir($handle);
+}
+
+$files = listdir('.');
+sort($files, SORT_LOCALE_STRING);
+
+foreach ($files as $f) {
+    echo  $f, "\n";
+}
+?>
+===============================================================================
+
+Looking through the examples, I can't see any that do a simple check on the
+value of the directory resource that opendir returns and is subsequently used
+by readdir.
+
+If opendir returns false, and you simply pass this to the readdir call in the
+while loop, you will get an infinite loop.
+
+A simple test helps prevent this:
+
+<?php
+
+$dir = opendir($path);
+while ($dir && ($file = readdir($dir)) !== false) {
+  // do stuff
+}
+
+?>
+===============================================================================
+
+code:
+
+<?php
+
+        function permission($filename)
+        {
+            $perms = fileperms($filename);
+
+            if     (($perms & 0xC000) == 0xC000) { $info = 's'; }
+            elseif (($perms & 0xA000) == 0xA000) { $info = 'l'; }
+            elseif (($perms & 0x8000) == 0x8000) { $info = '-'; }
+            elseif (($perms & 0x6000) == 0x6000) { $info = 'b'; }
+            elseif (($perms & 0x4000) == 0x4000) { $info = 'd'; }
+            elseif (($perms & 0x2000) == 0x2000) { $info = 'c'; }
+            elseif (($perms & 0x1000) == 0x1000) { $info = 'p'; }
+            else                                 { $info = 'u'; }
+
+            // владелец
+            $info .= (($perms & 0x0100) ? 'r' : '-');
+            $info .= (($perms & 0x0080) ? 'w' : '-');
+            $info .= (($perms & 0x0040) ? (($perms & 0x0800) ? 's' : 'x' ) : ((
+$perms & 0x0800) ? 'S' : '-'));
+
+            // группа
+            $info .= (($perms & 0x0020) ? 'r' : '-');
+            $info .= (($perms & 0x0010) ? 'w' : '-');
+            $info .= (($perms & 0x0008) ? (($perms & 0x0400) ? 's' : 'x' ) : ((
+$perms & 0x0400) ? 'S' : '-'));
+
+            // все
+            $info .= (($perms & 0x0004) ? 'r' : '-');
+            $info .= (($perms & 0x0002) ? 'w' : '-');
+            $info .= (($perms & 0x0001) ? (($perms & 0x0200) ? 't' : 'x' ) : ((
+$perms & 0x0200) ? 'T' : '-'));
+
+            return $info;
+        }
+
+        function dir_list($dir)
+        {
+            if ($dir[strlen($dir)-1] != '/') $dir .= '/';
+
+            if (!is_dir($dir)) return array();
+
+            $dir_handle  = opendir($dir);
+            $dir_objects = array();
+            while ($object = readdir($dir_handle))
+                if (!in_array($object, array('.','..')))
+                {
+                    $filename    = $dir . $object;
+                    $file_object = array(
+                                            'name' => $object,
+                                            'size' => filesize($filename),
+                                            'perm' => permission($filename),
+                                            'type' => filetype($filename),
+                                            'time' => date("d F Y H:i:s", 
+filemtime($filename))
+                                        );
+                    $dir_objects[] = $file_object;
+                }
+
+            return $dir_objects;
+        }
+
+?>
+
+call:
+
+<?php
+
+        print_r(dir_list('/path/to/you/dir/'));
+
+?>
+
+output sample:
+
+Array
+(
+    [0] => Array
+        (
+            [name] => api
+            [size] => 0
+            [perm] => drwxrwxrwx
+            [type] => dir
+            [time] => 28 May 2007 01:55:02
+        )
+
+    [1] => Array
+        (
+            [name] => classes
+            [size] => 0
+            [perm] => drwxrwxrwx
+            [type] => dir
+            [time] => 26 May 2007 00:56:44
+        )
+
+    [2] => Array
+        (
+            [name] => config.inc.php
+            [size] => 143
+            [perm] => -rw-rw-rw-
+            [type] => file
+            [time] => 26 May 2007 13:13:19
+        )
+
+    [3] => Array
+        (
+            [name] => index.php
+            [size] => 131
+            [perm] => -rw-rw-rw-
+            [type] => file
+            [time] => 26 May 2007 22:15:18
+        )
+
+    [4] => Array
+        (
+            [name] => modules
+            [size] => 0
+            [perm] => drwxrwxrwx
+            [type] => dir
+            [time] => 28 May 2007 00:47:40
+        )
+
+    [5] => Array
+        (
+            [name] => temp
+            [size] => 0
+            [perm] => drwxrwxrwx
+            [type] => dir
+            [time] => 28 May 2007 04:49:33
+        )
+
+)
+===============================================================================
+
+<?php
+
+// Sample function to recursively return all files within a directory.
+// http://www.pgregg.com/projects/php/code/recursive_readdir.phps
+
+Function listdir($start_dir='.') {
+
+  $files = array();
+  if (is_dir($start_dir)) {
+    $fh = opendir($start_dir);
+    while (($file = readdir($fh)) !== false) {
+      # loop through the files, skipping . and .., and recursing if necessary
+      if (strcmp($file, '.')==0 || strcmp($file, '..')==0) continue;
+      $filepath = $start_dir . '/' . $file;
+      if ( is_dir($filepath) )
+        $files = array_merge($files, listdir($filepath));
+      else
+        array_push($files, $filepath);
+    }
+    closedir($fh);
+  } else {
+    # false if the function was called with an invalid non-directory argument
+    $files = false;
+  }
+
+  return $files;
+
+}
+
+$files = listdir('.');
+print_r($files);
+?>
+===============================================================================
+
+Here is an updated version of preg_find() [which has been linked from the glob
+() man page for years] - this function should provide most of what you want
+back from reading files, directories, different sorting methods, recursion, and
+perhaps most powerful of all the ability to pattern match with a PCRE regex.
+
+You can get preg_find here: http://www.pgregg.com/projects/php/preg_find/
+preg_find.php.txt
+or if you prefer colourful .phps format: http://www.pgregg.com/projects/php/
+preg_find/preg_find.phps
+or scoll down to the end of this note.
+
+I wrote several examples on how to use it on my blog at: http://www.pgregg.com/
+forums/viewtopic.php?tid=73
+
+simple glob() type replacement:
+$files = preg_find('/./', $dir);
+
+recursive?
+$files = preg_find('/./', $dir, PREG_FIND_RECURSIVE);
+
+pattern match? find all .php files:
+$files = preg_find('/\.php$/D', $dir, PREG_FIND_RECURSIVE);
+
+sorted alphabetically?
+$files = preg_find('/\.php$/D', $dir, PREG_FIND_RECURSIVE|PREG_FIND_SORTKEYS);
+
+sorted in by filesize, in descending order?
+$files = preg_find('/./', $dir,
+  PREG_FIND_RECURSIVE|PREG_FIND_RETURNASSOC |PREG_FIND_SORTFILESIZE|
+PREG_FIND_SORTDESC);
+$files=array_keys($files);
+
+sorted by date modified?
+$files = preg_find('/./', $dir,
+  PREG_FIND_RECURSIVE|PREG_FIND_RETURNASSOC |PREG_FIND_SORTMODIFIED);
+$files=array_keys($files);
+
+Ok, the PHP note says my note is too long, so please click on one of the above
+links to get it.
+===============================================================================
+
+## List and Rename  all files on recursive directories with "recursive
+directory name" as template + filename
+## Advice:  other files in the same directory will result in a warning
+## scriptname : Recursive Dir_Renfiles_dirname-filename.php
+
+<?php
+if ($handle = opendir('.')) {
+    while (false !== ($file = readdir($handle))) {
+                if ($file != "." && $file != ".." && $file != "Recursive
+Dir_Renfiles_dirname-filename.php") {
+                    echo "$file";
+        echo "<br>";
+                    $count = -1;
+                     $handle2 = @opendir($file);
+                        while (false !== ($file2 = @readdir($handle2))) {
+                        echo "$file2";     
+                        if ($count <10 ){ @rename("$file/$file2", "$file/$file"
+."_$file2");}
+                        else { @rename("$file/$file2", "$file/$file"."_$file2"
+);}
+                        echo "<br>";
+                         $count = $count + 1;
+                            }
+             echo "<br>";
+        }
+    }
+    closedir($handle);
+}
+?>
+===============================================================================
+
+A very flexible function to recursively list all files in a directory with the
+option to perform a custom set of actions on those files and/or include extra
+information about them in the returned data.
+
+----------
+
+SYNTAX:
+   $array = process_dir ( $dir , $recursive = FALSE )
+        $dir  (STRING)   =  Directory to process
+  $recursive  (BOOLEAN)  =  [Optional] Recursive if set to TRUE
+
+RETURN VALUES:
+  The function returns an indexed array, one entry for every file. Each entry
+is an associative array, containing the basic information 'filename' (name of
+file) and 'dirpath' (directory component of path to file), and any additional
+keys you configure. Returns FALSE on failure.
+
+----------
+
+  To allow you to configure another key, the entry for each file is stored in
+an array, "$entry" for each iteration. You can easily return any additional
+data for a given file using $entry['keyname'] = ... (Note that this data can be
+any variable type - string, bool, float, resource etc)
+
+  There is a string variable "$path" available, which contains the full path of
+the current file, relative to the initial "$dir" supplied at function call.
+This data is also available in it's constituent parts, "$dir" and "$file".
+Actions for each file can be constructed on the basis of these variables. The
+variables "$list", "$handle" and "$recursive" should not be used within your
+code.
+
+----------
+
+Simply insert you code into the sections indicated by the comments below and
+your away!
+
+The following example returns filename, filepath, and file modified time (in a
+human-readable string) for all items, filesize for all files but not
+directories, and a resource stream for all files with 'log' in the filename
+(but not *.log files).
+
+<?php
+
+  function process_dir($dir,$recursive = FALSE) {
+    if (is_dir($dir)) {
+      for ($list = array(),$handle = opendir($dir); (FALSE !== ($file = readdir
+($handle)));) {
+        if (($file != '.' && $file != '..') && (file_exists($path = $dir.'/'.
+$file))) {
+          if (is_dir($path) && ($recursive)) {
+            $list = array_merge($list, process_dir($path, TRUE));
+          } else {
+            $entry = array('filename' => $file, 'dirpath' => $dir);
+
+//---------------------------------------------------------//
+//                     - SECTION 1 -                       //
+//          Actions to be performed on ALL ITEMS           //
+//-----------------    Begin Editable    ------------------//
+
+  $entry['modtime'] = filemtime($path);
+
+//-----------------     End Editable     ------------------//
+            do if (!is_dir($path)) {
+//---------------------------------------------------------//
+//                     - SECTION 2 -                       //
+//         Actions to be performed on FILES ONLY           //
+//-----------------    Begin Editable    ------------------//
+
+  $entry['size'] = filesize($path);
+  if (strstr(pathinfo($path,PATHINFO_BASENAME),'log')) {
+    if (!$entry['handle'] = fopen($path,r)) $entry['handle'] = "FAIL";
+  }
+ 
+//-----------------     End Editable     ------------------//
+              break;
+            } else {
+//---------------------------------------------------------//
+//                     - SECTION 3 -                       //
+//       Actions to be performed on DIRECTORIES ONLY       //
+//-----------------    Begin Editable    ------------------//
+
+//-----------------     End Editable     ------------------//
+              break;
+            } while (FALSE);
+            $list[] = $entry;
+          }
+        }
+      }
+      closedir($handle);
+      return $list;
+    } else return FALSE;
+  }
+   
+  $result = process_dir('C:/webserver/Apache2/httpdocs/processdir',TRUE);
+
+// Output each opened file and then close
+  foreach ($result as $file) {
+    if (is_resource($file['handle'])) {
+        echo "\n\nFILE (" . $file['dirpath'].'/'.$file['filename'] . "):\n\n" .
+fread($file['handle'], filesize($file['dirpath'].'/'.$file['filename']));
+        fclose($file['handle']);
+    }
+  }
+
+?>
+===============================================================================
+
+Below will return an array of file names and folders in directory
+
+<?php
+function ReadFolderDirectory($dir = "root_dir/here")
+    {
+        $listDir = array();
+        if($handler = opendir($dir)) {
+            while (($sub = readdir($handler)) !== FALSE) {
+                if ($sub != "." && $sub != ".." && $sub != "Thumb.db") {
+                    if(is_file($dir."/".$sub)) {
+                        $listDir[] = $sub;
+                    }elseif(is_dir($dir."/".$sub)){
+                        $listDir[$sub] = $this->ReadFolderDirectory($dir."/".
+$sub);
+                    }
+                }
+            }   
+            closedir($handler);
+        }
+        return $listDir;   
+    }
+?>
+===============================================================================
+
+If dir_handle is not a proper resource, null will be returned instead of false.
+===============================================================================
+
+loop through folders and sub folders with option to remove specific files.
+
+<?php
+function listFolderFiles($dir,$exclude){
+    $ffs = scandir($dir);
+    echo '<ul class="ulli">';
+    foreach($ffs as $ff){
+        if(is_array($exclude) and !in_array($ff,$exclude)){
+            if($ff != '.' && $ff != '..'){
+            if(!is_dir($dir.'/'.$ff)){
+            echo '<li><a href="edit_page.php?path='.ltrim($dir.'/'.$ff,'./').
+'">'.$ff.'</a>';
+            } else {
+            echo '<li>'.$ff;   
+            }
+            if(is_dir($dir.'/'.$ff)) listFolderFiles($dir.'/'.$ff,$exclude);
+            echo '</li>';
+            }
+        }
+    }
+    echo '</ul>';
+}
+
+listFolderFiles('.',array('index.php','edit_page.php'));
+?>
+===============================================================================
+
+this function recurrsively goes to a particular depth and stops after the depth
+is reached.
+
+function read_path($root = '.', $depth = 1) {
+        if($depth == 0) {
+            return;
+        }
+        $last_letter  = $root[strlen($root)-1];
+          $root  = ($last_letter == '\\' || $last_letter == '/') ? $root :
+$root.DIRECTORY_SEPARATOR;
+          $files  = array('files'=>array(), 'dirs'=>array());
+          if ($handle = opendir($root)) {
+              while (false !== ($file = readdir($handle))) {
+                if ($file == '.' || $file == '..') {
+                      continue;
+                }
+                $file  = $root.$file;
+                if (is_dir($file)) {
+                      $directory_path = $file.DIRECTORY_SEPARATOR;
+                    $files['dirs'][$directory_path]  = NULL;
+                } elseif (is_file($file)) {
+                    $files['files'][]  = $file;
+                }
+              }
+              closedir($handle);
+        }
+          $done = [$root=>$files];
+          foreach ($done[$root]['dirs'] as $key=>$value) {
+              $done[$root]['dirs'][$key] = $this->read_path($key, $depth-1);
+          }
+          return $done[$root];
+    }
+===============================================================================
+
+I'm on 5.4.21 this function returns null after . and .. on an empty directory. 
+ZendServer for IBMi
+===============================================================================
+
+Please note that readdir() doesn't mean in alphabetical order everytime while
+it sorts in directory order which means "ls -U" in linux
+===============================================================================
+
+Warning when using readdir() on certain versions of CentOS on NFS-mounted
+directories:
+
+This is not a bug with PHP's readdir, but a bug with certain versions of
+CentOS's readdir implementation.  According to Post #6213 in the CentOS Bugs
+forum, when using CentOS kernel versions 2.6.18-348 through 2.6.18-348.3.1,
+invoking readdir on an NFS-mounted directory may not return all the entries. 
+Since PHP's readdir() uses this library, the issue is manifest in PHP as well.
+
+According to the post, upgrading to version 2.6.18-348.4.1.el5 should solve the
+issue, though I haven't tried it.
+
+glob() does NOT seem to suffer from this same vulnerability.
+===============================================================================
+
+Here's a handy function you can use to list the files in the directory you
+specify, their type (dir or file) and whether they are hidden.
+You could modify it to do other things too.
+
+<?php
+function listDirs($where){
+echo "<table border=\"1\"><tr><td><b>Name</b></td><td><b>Type</b></td>";
+echo "<td><b>Invisible (Hidden)?</b></td></tr>";
+    $itemHandler=opendir($where);
+    $i=0;
+    while(($item=readdir($itemHandler)) !== false){
+        if(substr($item, 0, 1)!="."){
+            if(is_dir($item)){
+                echo "<tr><td>$item</td><td>Directory</td><td>No</td></tr>";
+            }else{
+                echo "<tr><td>$item</td><td>File</td><td>No</td></tr>";
+            }
+            $i++;
+        }else{
+            if(is_dir($item)){
+                echo "<tr><td>$item</td><td>Directory</td><td>Yes</td></tr>";
+            }else{
+                echo "<tr><td>$item</td><td>File</td><td>Yes</td></tr>";
+            }
+            $i++;
+        }
+       }
+echo "</table>";
+}
+?>
+Then call it like this.
+<?php
+listDirs(DIR);
+?>
+Example:
+<?php
+listDirs("/tests/directorylisting");
+?>
+
+You get a table like this.
+
+Name    Type    Invisible (Hidden)?
+.    Directory    Yes
+..    Directory    Yes
+.DS_Store    File    Yes
+.localized    File    Yes
+index.php    File    No
+OOOLS    Directory    No
+QwerpWiki.php    File    No
+===============================================================================
+
+readdir_recursive() is a recursive readdir() that returns filespecs not
+filenames.
+
+<?php
+
+define('SEEK', 'the grail');
+define('ORIGIN', "C:\\Documents and Settings\\myname\\My Documents");
+$hits = array();
+$handles = array(ORIGIN=>opendir(ORIGIN)); // Associate handle with its
+(absolute) path.
+////\\\\ "$handles" is special to
+//                 \\\\\\\\\////////
+while ($filespec = readdir_recursive($handles)) {
+    $out = array();
+    $cmd = "c:\\cygwin\\bin\\strings '$filespec' | c:\\cygwin\\bin\\grep -li ".
+SEEK;
+    $lastLine = exec($cmd, $out, $status);
+    // echo "out is ". implode(' ', $out) .", lastLine is $lastLine, status is
+$status\n";
+
+    if (strstr(' '. implode(' ', $out), '(standard input)')) { // Hit.
+       $hits[] = $filespec;
+    }
+}
+
+echo "'".SEEK."' found in files: <br/>\n". implode("<br/>\n", $hits);
+
+/**
+* Return unique filespecs under given directory tree until all found.
+*
+* To use: while ($filespec = readdir_recursive(array($dir="\\path\\to\\folder"
+=> opendir($dir)))) { ...
+*
+* @param mixed $seed Array(<path>=><resource>) on 1st call | false during
+recursion.
+* @return mixed $filespec String | false
+*/
+function readdir_recursive($seed = false)
+{
+    global $handles; // ("global" instead of "static" because with latter,
+    // assignments go out of scope when function executions end (via return
+$filespec;).)
+   
+    // $seed is only true (ie, includes a directory path specified by the user)
+    // when readdir_recursive() is executing for the 1st time.
+    if ($seed) {
+        $handles = $seed;
+    }
+    assert('is_array($handles)');
+
+    if (empty($handles)) {
+        return false; // All done.
+    }
+
+    // Advance the current($handles) handle to a new file or folder.
+    $file = readdir(current($handles));
+    $filespec = key($handles) ."\\". $file;
+    if (false===$file) { // End of current($handles) directory reached.
+
+        // The current element, an exhausted handle, is the last element.
+        array_pop($handles); // Discard exhausted handle. (This also sets array
+pointer to array beginning.)
+        end($handles);
+        // echo "\nUp to element ". key($handles) .'=>'. current($handles) ."\
+n";
+
+        return readdir_recursive(); // Resume finding files in a higher level
+directory.
+
+    } elseif (is_file($filespec)) {
+        return $filespec;
+
+    } else { // $file is a directory: Recurse.
+        if ($file!=='.' && $file!=='..') { // Non-pointer directory reached.
+            // Add this subdirectory to the list that must be traversed.
+            $handles[$filespec] = opendir($filespec);
+            next($handles); // Prepare to proceed to the appended subdirectory.
+        }
+        return readdir_recursive();
+    }
+}
+===============================================================================
+
+Thought I would include what I wrote to get a random image from a directory.
+
+<?php
+$image_dir = 'images';
+$count = 0;
+if ($handle = opendir($image_dir)) {
+    $retval = array();
+    while (false !== ($file = readdir($handle))) {
+        if (($file <> ".") && ($file <> "..")) {
+        $retval[$count] = $file;
+        $count = $count + 1;
+            }
+    }
+
+    closedir($handle);
+}
+shuffle($retval);
+$current_image = $retval[0];
+?>
+
+[NOTE BY danbrown AT php DOT net: Contains a bugfix/typofix inspired by 'ffd8'
+on 19-JUN-09.]
+===============================================================================
+
+This is a nice quick full dir read - sorry for my bad english ;)
+
+<?php
+function ReadDirs($dir,$em){
+    if ($handle = opendir($dir)) {
+    while (false !== ($file = readdir($handle))) {
+        if ($file != "." && $file != ".." && $file != "Thumb.db") {
+            if(is_dir($dir.$file)){
+                echo $em."&raquo; ".$file.'<br>';
+                ReadDirs($dir.$file."/",$em."&nbsp;&nbsp;");
+            }
+        }
+    }
+    closedir($handle);
+    }
+}
+?>
+===============================================================================
+
+It should work, but it'll be better to read section 13.1.3 Cache-control
+Mechanisms of RFC 2616 available at http://rfc.net/rfc2616.html before you
+start with confusing proxies on the way from you and the client.
+
+Reading it is the best way to learn how proxies work, what should you do to
+modify cache-related headers of your documents and what you should never do
+again. :-)
+
+And of course not reading RFCs is the best way to never learn how internet
+works and the best way to behave like Microsoft corp.
+
+Have a nice day!
+Jirka Pech
+===============================================================================
+
+Get all files on recursive directories in single array.
+
+<?php
+/*
+* mrlemonade ~
+*/
+
+function getFilesFromDir($dir) {
+
+  $files = array();
+  if ($handle = opendir($dir)) {
+    while (false !== ($file = readdir($handle))) {
+        if ($file != "." && $file != "..") {
+            if(is_dir($dir.'/'.$file)) {
+                $dir2 = $dir.'/'.$file;
+                $files[] = getFilesFromDir($dir2);
+            }
+            else {
+              $files[] = $dir.'/'.$file;
+            }
+        }
+    }
+    closedir($handle);
+  }
+
+  return array_flat($files);
+}
+
+function array_flat($array) {
+
+  foreach($array as $a) {
+    if(is_array($a)) {
+      $tmp = array_merge($tmp, array_flat($a));
+    }
+    else {
+      $tmp[] = $a;
+    }
+  }
+
+  return $tmp;
+}
+
+// Usage
+$dir = '/data';
+$foo = getFilesFromDir($dir);
+
+print_r($foo);
+?>
+===============================================================================
+
+This function is used to display random image i.e. at header position of a
+site. It reads the whole directory and then randomly print the image. I think
+it may be useful for someone.
+
+<?php
+if ($handle = opendir('images/')) {
+   $dir_array = array();
+    while (false !== ($file = readdir($handle))) {
+        if($file!="." && $file!=".."){
+            $dir_array[] = $file;
+        }
+    }
+    echo $dir_array[rand(0,count($dir_array)-1)];
+    closedir($handle);
+}
+?>
+===============================================================================
+
+I haven't tested this yet, but it seems like it'll do just fine if you need
+files of a certain extension:
+
+<?php
+$dh = opendir($options['inputDir']);
+$files = array();
+while (($filename = readdir($dh)) !== false)
+{
+    if (substr($filename, strrpos($filename, '.')) == $options['inputExt'])
+    {
+        $files[] = $filename;
+    }
+}
+closedir($dh);
+?>
+===============================================================================
+
+this simple function will index the directories and sub-directories of a given
+dir
+
+<?php
+function get_dirs($dir){
+    global $dirs;
+    if (!isset($dirs)){$dirs = '';}
+    if(substr($dir,-1) !== '\\'){$dir .= '\\';}
+    if ($handle = opendir($dir)){
+        while (false !== ($file = readdir($handle))){
+            if (filetype($dir.$file) === 'dir' && $file != "." && $file != ".."
+){
+                clearstatcache();
+                $dirs .= $file . "\n";
+                get_dirs($dir . $file);
+            }
+        }
+        closedir($handle);
+    }
+    return $dirs;
+}
+?>
+===============================================================================
+
+Handy little function that returns the number of files (not directories) that
+exists under a directory.
+Choose if you want the function to recurse through sub-directories with the
+second parameter -
+the default mode (false) is just to count the files directly under the supplied
+path.
+
+<?php
+
+  /**
+   * Return the number of files that resides under a directory.
+   *
+   * @return integer
+   * @param    string (required)   The directory you want to start in
+   * @param    boolean (optional)  Recursive counting. Default to FALSE.
+   * @param    integer (optional)  Initial value of file count
+   */ 
+
+  function num_files($dir, $recursive=false, $counter=0) {
+    static $counter;
+    if(is_dir($dir)) {
+      if($dh = opendir($dir)) {
+        while(($file = readdir($dh)) !== false) {
+          if($file != "." && $file != "..") {
+              $counter = (is_dir($dir."/".$file)) ? num_files($dir."/".$file, 
+$recursive, $counter) : $counter+1;
+          }
+        }
+        closedir($dh);
+      }
+    }
+    return $counter;
+  }
+
+  // Usage:
+  $nfiles = num_files("/home/kchr", true); // count all files that resides
+under /home/kchr, including subdirs
+  $nfiles = num_files("/tmp"); // count the files directly under /tmp
+
+?>
+===============================================================================
+
+Here's an easy way to output the contents as a list of download links.
+
+<?php
+$count = 0;
+if ($handle = opendir('.')) {
+    while (false !== ($file = readdir($handle))) {
+        if ($file != "." && $file != "..") {$count++;
+            print("<a href=\"".$file."\">".$file."</a><br />\n");
+        }
+    }
+echo '<br /><br /><a href="..">Return</a>';
+    closedir($handle);
+}
+?>
+
+and simply use $count to list the overall number of files.
+===============================================================================
+
+Yet another view files by extension
+
+/* NOTE:
+*  /a-d = do not include directories
+*  /b   = show files in bare mode ( no dates or filesize )
+*/
+
+<?php
+$dir = '.\\img\\';    // reminder: escape your slashes
+$filetype = "*.png";
+$filelist = shell_exec( "dir {$dir}{$filetype} /a-d /b" );
+$file_arr = explode( "\n", $filelist );
+array_pop( $file_arr ); // last line is always blank
+print_r( $file_arr );
+?>
+===============================================================================
+
+A simple directory browser... that handles the windows charset in filenames (it
+should work for every iso-8859-1 characters).
+<?php
+$basepath = realpath("./pub/");  // Root directory
+$path = realpath($basepath.$_GET["path"]);  // Requested  path
+$relativepath = "./".substr_replace( $path, "", 0, strlen( $basepath ) );
+if( "/" == substr( $relativepath, -1 )) {  // Remove the trailing slash
+  $relativepath = substr( $relativepath, 0, -1 );
+}
+
+$dh = opendir( $path );
+  while( false !== ($file = readdir( $dh ))) {
+   if("." == $file) {continue;}
+   // converts the filename to utf8
+   $file_utf8 = iconv( "iso-8859-1", "utf-8", $file );
+   // encode the path ('path' part: already utf8; 'filename' part: still
+iso-8859-1)
+   $link = str_replace( "%2F", "/", rawurlencode( "{$relativepath}/" )) . 
+rawurlencode( utf8_decode( "{$file_utf8}" ));
+   if( is_dir( "{$path}/{$file}" )) {
+    echo "<a href=\"?path={$link}&amp;\">{$file_utf8}</a><br/>"
+   } else {
+    echo "<a href=\"{$link}&amp;\">{$file_utf8}</a><br/>"
+   }
+  }
+}
+?>

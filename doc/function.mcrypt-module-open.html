@@ -1,0 +1,291 @@
+
+mcrypt_module_open
+
+(PHP 4 >= 4.0.2, PHP 5, PHP 7)
+
+mcrypt_module_open — 打开算法和模式对应的模块
+
+说明
+
+resource mcrypt_module_open ( string $algorithm , string $algorithm_directory ,
+string $mode , string $mode_directory )
+
+本函数打开指定算法和模式对应的模块。算法名称可以是字符串，例如 "twofish"，也可
+以是 MCRYPT_ciphername 常量。调用 mcrypt_module_close() 函数可以关闭模块。
+
+参数
+
+algorithm
+
+    MCRYPT_ciphername 常量中的一个，或者是字符串值的算法名称。
+
+algorithm_directory
+
+    algorithm_directory 参数指示加密模块的位置。如果你提供此参数，则使用你指定
+    的值。如果将此参数设置为空字符串（""），将使用 php.ini 中的
+    mcrypt.algorithms_dir 。如果不指定此参数，则使用 libmcrypt 的编译路径（通常
+    是 /usr/local/lib/libmcrypt）。
+
+mode
+
+    MCRYPT_MODE_modename 常量中的一个，或以下字符串中的一个："ecb"，"cbc"，
+    "cfb"，"ofb"，"nofb" 和 "stream"。
+
+mode_directory
+
+    algorithm_directory 参数指示加密模式的位置。如果你提供此参数，则使用你指定
+    的值。如果将此参数设置为空字符串（""），将使用 php.ini 中的
+    mcrypt.modes_dir 。如果不指定此参数，则使用 libmcrypt 的编译路径（通常是 /
+    usr/local/lib/libmcrypt）。
+
+返回值
+
+成功则返回加密描述符，如果发生错误则返回 FALSE。
+
+范例
+
+Example #1 mcrypt_module_open() 例程
+
+<?php
+    $td = mcrypt_module_open(MCRYPT_DES, '',
+        MCRYPT_MODE_ECB, '/usr/lib/mcrypt-modes');
+
+    $td = mcrypt_module_open('rijndael-256', '', 'ofb', '');
+?>
+
+例程中的第一行从默认目录打开 DES 加密算法，从 /usr/lib/mcrypt-modes 目录打开
+ECB 模式。第二个示例中，使用字符串形式表示算法和模式，这种形式仅适用于
+libmcrypt 2.4.x 或 2.5.x 版本。
+
+Example #2 在加密中使用 mcrypt_module_open()
+
+<?php
+    /* 打开加密算法和模式 */
+    $td = mcrypt_module_open('rijndael-256', '', 'ofb', '');
+
+    /* 创建初始向量，并且检测密钥长度。 
+     * Windows 平台请使用 MCRYPT_RAND。 */
+    $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_DEV_RANDOM);
+    $ks = mcrypt_enc_get_key_size($td);
+
+    /* 创建密钥 */
+    $key = substr(md5('very secret key'), 0, $ks);
+
+    /* 初始化加密 */
+    mcrypt_generic_init($td, $key, $iv);
+
+    /* 加密数据 */
+    $encrypted = mcrypt_generic($td, 'This is very important data');
+
+    /* 结束加密，执行清理工作 */
+    mcrypt_generic_deinit($td);
+
+    /* 初始化解密模块 */
+    mcrypt_generic_init($td, $key, $iv);
+
+    /* 解密数据 */
+    $decrypted = mdecrypt_generic($td, $encrypted);
+
+    /* 结束解密，执行清理工作，并且关闭模块 */
+    mcrypt_generic_deinit($td);
+    mcrypt_module_close($td);
+
+    /* 显示文本 */
+    echo trim($decrypted) . "\n";
+?>
+
+参见
+
+  • mcrypt_module_close() - 关闭加密模块
+  • mcrypt_generic() - 加密数据
+  • mdecrypt_generic() - 解密数据
+  • mcrypt_generic_init() - 初始化加密所需的缓冲区
+  • mcrypt_generic_deinit() - 对加密模块进行清理工作
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Also it should be pointed that md5() and/or sha1() should not be used while
+forming your key for the mcrypt. This is so because hex encoding uses a set of
+only 16 characters [0-9a-f], which is equivalent to 4 bits, and thus halve the
+strength of your encryption: 4 x 32 = 128-bit.
+
+I have re-wrote the example shown, so here is my suggestion to get real 256-bit
+encryption:
+
+<?php
+$key1 = "this is a secret key";
+$key2 = "this is the second secret key";
+$input = "Let us meet at 9 o'clock at the secret place.";
+$length = strlen($input);
+
+    /* Open the cipher */
+    $td = mcrypt_module_open('rijndael-256', '', 'cbc', '');
+
+    /* Create the IV and determine the keysize length, use MCRYPT_RAND
+     * on Windows instead */
+    $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_RAND);
+    $ks = mcrypt_enc_get_key_size($td);
+
+    /* Create key */
+    $key1 = md5($key1);
+    $key2 = md5($key2);
+
+    $key = substr($key1, 0, $ks/2) . substr(strtoupper($key2), (round(strlen(
+$key2) / 2)), $ks/2);
+
+    $key = substr($key.$key1.$key2.strtoupper($key1),0,$ks);
+
+    /* Intialize encryption */
+    mcrypt_generic_init($td, $key, $iv);
+
+    /* Encrypt data */
+    $encrypted = mcrypt_generic($td, $input);
+
+    /* Terminate encryption handler */
+    mcrypt_generic_deinit($td);
+
+    /* Initialize encryption module for decryption */
+    mcrypt_generic_init($td, $key, $iv);
+
+    /* Decrypt encrypted string */
+    $decrypted = mdecrypt_generic($td, $encrypted);
+
+    /* Terminate decryption handle and close module */
+    mcrypt_generic_deinit($td);
+    mcrypt_module_close($td);
+
+    /* Show string */
+    echo "Text: ".substr($decrypted,0,$length) . "<br>";
+    echo "Encoded: ".$encrypted ."<br>";
+    echo "<br>key1: $key1 <br>key2: $key2<br>created key: $key";
+?>
+===============================================================================
+
+for errors like
+' mcrypt_module_open(): Could not open encryption module in '
+
+Make sure you're using the right name. The page giving the list of ciphers is
+NOT the right way to say each cipher (shown here http://www.php.net/manual/en/
+mcrypt.ciphers.php).
+
+In order to see what ones are supported, try phpinfo(); and look under mcrypt
+to find something like this
+
+mcrypt support => enabled
+mcrypt_filter support => enabled
+Version => 2.5.8
+Api No => 20021217
+Supported ciphers => cast-128 gost rijndael-128 twofish arcfour cast-256 loki97
+rijndael-192 saferplus wake blowfish-compat des rijndael-256
+serpent xtea blowfish enigma rc2 tripledes
+Supported modes => cbc cfb ctr ecb ncfb nofb ofb stream
+===============================================================================
+
+Follow up to anonymous with Windows' mcrypt_module_open() errors:
+
+<?php
+$M = mcrypt_list_modes();
+$A = mcrypt_list_algorithms();
+foreach ($M as $m)
+    foreach ($A as $a) {
+        $t = @mcrypt_module_open($a,'',$m,'');
+        print "$m, $a = ";
+        print ($t)?"ok":"nope";
+        print "<br>";
+    }
+?>
+
+This will show that not all modes work with all algorithmns. Cygwin also has no
+'libmcrypt.dll' and it too will work with only some combinations.
+
+(First tries just happened to be one of the ones that did not work!)
+===============================================================================
+
+Keep in mind that the mcrypt functions do not implement padding like e.g. pkcs#
+5. This causes the problem with zero bytes at the end and the sting cannot be
+correctly decoded in other environments.
+
+For an example how to add pkcs 5 padding, see ref.mcrypt.php
+===============================================================================
+
+about the previous comments on hex formatting and capitalization as a way to
+improve the key:
+
+this would seem pretty obvious, but it is a choice to be limited to only hex
+characters ([0-9a-z]); you can get the original RAW output from md5() or sha1()
+and not the default readable hex formatting.
+
+the result of a raw output will be 16 o 20 (depending on the hash function
+being used) series of chars in the range 0-255. way better than [0-9a-z] and
+even [0-9a-zA-Z].
+
+16 or 20 is generally lower than the maximum key lenght ($ks in the example),
+but you can append two or more keys together:
+
+<?php
+$human_key1 = 'something very secret';
+$human_key2 = 'something else very secret';
+
+// 40 bytes binary key using two "human readable" keys and sha1.
+$bigger_binary_key = sha1($human_key1, true) . sha1($human_key2, true);
+
+// then just use it as you would (extract taken from the example)
+$key = substr($bigger_binary_key, 0, $ks);
+?>
+
+... or you can automatically split one large "human key" into two or more
+parts, hash those parts with sha1 (raw output!) and merge them together again
+(in original order or rearrange, salt, transform them as you like) to get a
+binary key of 40, 60, 80 or more chars depending on the number of parts the
+secret key has been splitted =)
+===============================================================================
+
+Doing a trim($decrypted) will remove the null padding that may occur as a
+result of decryption.
+
+The problem is if you're encrypting something like a MSWord document which can
+commonly end with nulls. The result $decrypted will be smaller than the
+original cleartext - which will then fail to open in MSOffice.
+
+To get around this, make sure you store the length of the original cleartext,
+and when you decrypt it, do:
+
+$decrypted = substr(mdecrypt_generic($td, $encrypted), 0, $originalLength);
+===============================================================================
+
+A slight improvement of dinamic's function to create a key:
+
+I think the weak point is that capitals are always used in the same part of the
+string. The following code capitalizes random characters of the string, making
+the key less predictable:
+
+<?php
+$key = substr($key1, 0, $ks/2) . substr($key2, (round(strlen($key2) / 2)), $ks/
+2);
+$key = substr($key.$key1.$key2.$key1,0,$ks);
+
+$buffer = str_split($key);
+
+$limit = count($buffer)-1;
+srand((float)microtime() * 1000000);
+
+$end = rand(0, $limit);
+$a = 0;
+
+// replace random chars with capitals
+while ($a < $end) {   
+    list($usec, $sec) = explode(' ', microtime());
+        $seed = ((float)$sec) + ((float) $usec * 100000);
+    mt_srand($seed);
+   
+    $index = mt_rand(0,$limit);
+   
+    $buffer[$index] = strtoupper($buffer[$index]);
+    $a++;
+}
+
+$key = join('', $buffer);
+?>

@@ -1,0 +1,198 @@
+
+MongoCollection::findAndModify
+
+(PECL mongo >=1.3.0)
+
+MongoCollection::findAndModify — Update a document and return it
+
+说明
+
+public array MongoCollection::findAndModify ( array $query [, array $update [, 
+array $fields [, array $options ]]] )
+
+The findAndModify command atomically modifies and returns a single document. By
+default, the returned document does not include the modifications made on the
+update. To return the document with the modifications made on the update, use
+the new option.
+
+参数
+
+query
+
+    The query criteria to search for.
+
+update
+
+    The update criteria.
+
+fields
+
+    Optionally only return these fields.
+
+options
+
+    An array of options to apply, such as remove the match document from the DB
+    and return it.
+
+    Option                                 说明
+    sort    Determines which document the operation will modify if the query
+    array   selects multiple documents. findAndModify will modify the first
+            document in the sort order specified by this argument.
+    remove  Optional if update field exists. When TRUE, removes the selected
+    boolean document. The default is FALSE.
+    update  Optional if remove field exists. Performs an update of the selected
+    array   document.
+    new     Optional. When TRUE, returns the modified document rather than the
+    boolean original. The findAndModify method ignores the new option for
+            remove operations. The default is FALSE.
+            Optional. Used in conjunction with the update field. When TRUE, the
+    upsert  findAndModify command creates a new document if the query returns
+    boolean no documents. The default is false. In MongoDB 2.2, the
+            findAndModify command returns NULL when upsert is TRUE.
+
+返回值
+
+Returns the original document, or the modified document when new is set.
+
+错误／异常
+
+Throws MongoResultException on failure.
+
+范例
+
+Example #1 MongoCollection::findAndModify() example
+
+<?php
+$m = new Mongo;
+$col = $m->selectDB("test")->jobs;
+
+$col->insert(array(
+     "name" => "Next promo",
+     "inprogress" => false,
+     "priority" => 0,
+     "tasks" => array( "select product", "add inventory", "do placement"),
+) );
+
+$col->insert(array(
+     "name" => "Biz report",
+     "inprogress" => false,
+     "priority" => 1,
+     "tasks" => array( "run sales report", "email report" )
+) );
+
+$col->insert(array(
+     "name" => "Biz report",
+     "inprogress" => false,
+     "priority" => 2,
+     "tasks" => array( "run marketing report", "email report" )
+    ),
+    array("w" => 1)
+);
+
+
+
+$retval = $col->findAndModify(
+     array("inprogress" => false, "name" => "Biz report"),
+     array('$set' => array('inprogress' => true, "started" => new MongoDate
+())),
+     null,
+     array(
+        "sort" => array("priority" => -1),
+        "new" => true,
+    )
+);
+
+var_dump($retval);
+?>
+
+以上例程的输出类似于：
+
+array(6) {
+  ["_id"]=>
+  object(MongoId)#7 (1) {
+    ["$id"]=>
+    string(24) "5091b5b244415e8cc3000002"
+  }
+  ["inprogress"]=>
+  bool(true)
+  ["name"]=>
+  string(10) "Biz report"
+  ["priority"]=>
+  int(2)
+  ["started"]=>
+  object(MongoDate)#8 (2) {
+    ["sec"]=>
+    int(1351726514)
+    ["usec"]=>
+    int(925000)
+  }
+  ["tasks"]=>
+  array(2) {
+    [0]=>
+    string(20) "run marketing report"
+    [1]=>
+    string(12) "email report"
+  }
+}
+
+Example #2 MongoCollection::findAndModify() error handling
+
+<?php
+$m = new Mongo;
+$col = $m->selectDB("test")->jobs;
+try {
+    $retval = $col->findAndModify(
+         array("inprogress" => false, "name" => "Next promo"),
+         array('$pop' => array("tasks" => -1)),
+         array("tasks" => array('$pop' => array("stuff"))),
+         array("new" => true)
+    );
+} catch(MongoResultException $e) {
+    echo $e->getCode(), " : ", $e->getMessage(), "\n";
+    var_dump($e->getDocument());
+}
+
+?>
+
+以上例程的输出类似于：
+
+13097 : exception: Unsupported projection option: $pop
+array(3) {
+  ["errmsg"]=>
+  string(46) "exception: Unsupported projection option: $pop"
+  ["code"]=>
+  int(13097)
+  ["ok"]=>
+  float(0)
+}
+
+参见
+
+  • The MongoDB » findAndModify command docs
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+There is an easy way to find and replace by _id :
+
+<?php
+// ...
+
+// Selecting unparsed lines
+$cursor = $collection->find(array("mydata_isParsed" => array('$ne' => 1)));
+
+// Doing our stuff
+foreach($cursor as $document) {
+    // should always be ok, just in case
+    if (!isset($document["mydata_isParsed"])) {
+        // ... do some stuff
+
+        // flag as parsed and update line
+        $document["mydata_isParsed"] = 1;
+        $idField = '$id';
+        $collection->findAndModify(array("_id" => new MongoId($document["_id"]
+->$idField)), $document);
+    }
+}

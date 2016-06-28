@@ -1,0 +1,393 @@
+
+ssh2_connect
+
+(PECL ssh2 >= 0.9.0)
+
+ssh2_connect — Connect to an SSH server
+
+说明
+
+resource ssh2_connect ( string $host [, int $port = 22 [, array $methods [, 
+array $callbacks ]]] )
+
+Establish a connection to a remote SSH server.
+
+Once connected, the client should verify the server's hostkey using 
+ssh2_fingerprint(), then authenticate using either password or public key.
+
+参数
+
+host
+
+port
+
+methods
+
+    methods may be an associative array with up to four parameters as described
+    below.
+
+     methods may be an associative array with any or all of the following
+                                  parameters.
+         Index               Meaning                 Supported Values*
+                     List of key exchange    diffie-hellman-group1-sha1,
+    kex              methods to advertise,   diffie-hellman-group14-sha1, and
+                     comma separated in      diffie-hellman-group-exchange-sha1
+                     order of preference.
+                     List of hostkey methods
+    hostkey          to advertise, comma     ssh-rsa and ssh-dss
+                     separated in order of
+                     preference.
+                     Associative array
+                     containing crypt,
+                     compression, and
+    client_to_server message authentication   
+                     code (MAC) method
+                     preferences for
+                     messages sent from
+                     client to server.
+                     Associative array
+                     containing crypt,
+                     compression, and
+    server_to_client message authentication   
+                     code (MAC) method
+                     preferences for
+                     messages sent from
+                     server to client.
+
+    * - Supported Values are dependent on methods supported by underlying
+    library. See » libssh2 documentation for additional information.
+
+    client_to_server and server_to_client may be an associative array with
+                    any or all of the following parameters.
+    Index           Meaning                       Supported Values*
+          List of crypto methods to    rijndael-cbc@lysator.liu.se, aes256-cbc,
+    crypt advertise, comma separated   aes192-cbc, aes128-cbc, 3des-cbc,
+          in order of preference.      blowfish-cbc, cast128-cbc, arcfour, and
+                                       none**
+          List of compression methods
+    comp  to advertise, comma          zlib and none
+          separated in order of
+          preference.
+          List of MAC methods to       hmac-sha1, hmac-sha1-96, hmac-ripemd160,
+    mac   advertise, comma separated   hmac-ripemd160@openssh.com, and none**
+          in order of preference.
+
+        Note: Crypt and MAC method "none"
+
+        For security reasons, none is disabled by the underlying » libssh2
+        library unless explicitly enabled during build time by using the
+        appropriate ./configure options. See documentation for the underlying
+        library for more information.
+
+callbacks
+
+    callbacks may be an associative array with any or all of the following
+    parameters.
+
+                             Callbacks parameters
+      Index                        Meaning                        Prototype
+    ignore     Name of function to call when an                void ignore_cb
+               SSH2_MSG_IGNORE packet is received              ($message)
+                                                               void debug_cb
+    debug      Name of function to call when an SSH2_MSG_DEBUG ($message,
+               packet is received                              $language,
+                                                               $always_display)
+               Name of function to call when a packet is
+               received but the message authentication code    bool macerror_cb
+    macerror   failed. If the callback returns TRUE, the       ($packet)
+               mismatch will be ignored, otherwise the
+               connection will be terminated.
+                                                               void
+               Name of function to call when an                disconnect_cb
+    disconnect SSH2_MSG_DISCONNECT packet is received          ($reason,
+                                                               $message,
+                                                               $language)
+
+返回值
+
+Returns a resource on success, or FALSE on error.
+
+范例
+
+Example #1 ssh2_connect() example
+
+Open a connection forcing 3des-cbc when sending packets, any strength aes
+cipher when receiving packets, no compression in either direction, and Group1
+key exchange.
+
+<?php
+/* Notify the user if the server terminates the connection */
+function my_ssh_disconnect($reason, $message, $language) {
+  printf("Server disconnected with reason code [%d] and message: %s\n",
+         $reason, $message);
+}
+
+$methods = array(
+  'kex' => 'diffie-hellman-group1-sha1',
+  'client_to_server' => array(
+    'crypt' => '3des-cbc',
+    'comp' => 'none'),
+  'server_to_client' => array(
+    'crypt' => 'aes256-cbc,aes192-cbc,aes128-cbc',
+    'comp' => 'none'));
+
+$callbacks = array('disconnect' => 'my_ssh_disconnect');
+
+$connection = ssh2_connect('shell.example.com', 22, $methods, $callbacks);
+if (!$connection) die('Connection failed');
+?>
+
+参见
+
+  • ssh2_fingerprint() - Retrieve fingerprint of remote server
+  • ssh2_auth_none() - Authenticate as "none"
+  • ssh2_auth_password() - Authenticate over SSH using a plain password
+  • ssh2_auth_pubkey_file() - Authenticate using a public key
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+Due to a lack of complete examples, here's a simple SSH2 class for connecting
+to a server, authenticating with public key authentication, verifying the
+server's fingerprint, issuing commands and reading their STDOUT and properly
+disconnecting.  Note: You may need to make sure you commands produce output so
+the response can be pulled.  Some people suggest that the command is not
+executed until you pull the response back.
+<?php
+class NiceSSH {
+    // SSH Host
+    private $ssh_host = 'myserver.example.com';
+    // SSH Port
+    private $ssh_port = 22;
+    // SSH Server Fingerprint
+    private $ssh_server_fp = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    // SSH Username
+    private $ssh_auth_user = 'username';
+    // SSH Public Key File
+    private $ssh_auth_pub = '/home/username/.ssh/id_rsa.pub';
+    // SSH Private Key File
+    private $ssh_auth_priv = '/home/username/.ssh/id_rsa';
+    // SSH Private Key Passphrase (null == no passphrase)
+    private $ssh_auth_pass;
+    // SSH Connection
+    private $connection;
+   
+    public function connect() {
+        if (!($this->connection = ssh2_connect($this->ssh_host, $this->ssh_port
+))) {
+            throw new Exception('Cannot connect to server');
+        }
+        $fingerprint = ssh2_fingerprint($this->connection, SSH2_FINGERPRINT_MD5
+| SSH2_FINGERPRINT_HEX);
+        if (strcmp($this->ssh_server_fp, $fingerprint) !== 0) {
+            throw new Exception('Unable to verify server identity!');
+        }
+        if (!ssh2_auth_pubkey_file($this->connection, $this->ssh_auth_user, 
+$this->ssh_auth_pub, $this->ssh_auth_priv, $this->ssh_auth_pass)) {
+            throw new Exception('Autentication rejected by server');
+        }
+    }
+    public function exec($cmd) {
+        if (!($stream = ssh2_exec($this->connection, $cmd))) {
+            throw new Exception('SSH command failed');
+        }
+        stream_set_blocking($stream, true);
+        $data = "";
+        while ($buf = fread($stream, 4096)) {
+            $data .= $buf;
+        }
+        fclose($stream);
+        return $data;
+    }
+    public function disconnect() {
+        $this->exec('echo "EXITING" && exit;');
+        $this->connection = null;
+    }
+    public function __destruct() {
+        $this->disconnect();
+    }
+}
+?>
+
+[EDIT BY danbrown AT php DOT net: Contains two bugfixes suggested by 'AlainC'
+in user note #109185 (removed) on 26-JUN-2012.]
+===============================================================================
+
+Be careful when providing a specific hostkey order.
+
+<?php
+ssh2_connect('IP', 'port', array('hostkey'=>'ssh-rsa, ssh-dss'));
+?>
+
+Will only work when the public key of the server is RSA, and not DSA also as
+expected. This is caused by the empty space before the "ssh-dss".
+
+So a similar code:
+
+<?php
+ssh2_connect('IP', 'port',   array('hostkey'=>'ssh-rsa,ssh-dss'));
+?>
+
+Will work. The HOSTKEY method is overriden using exactly what you write, so no
+empty spaces are allowed.
+
+This took me some time that you could save ;)
+===============================================================================
+
+Warning! If you open a ssh connection and execute an external program opening
+another ssh connection it may result in very strange behavior.
+
+I used an sftp connection to get a file list and used "exec" to download the
+files afterwards with an external sftp. lftp downloaded zeros with no comment,
+psftp exits with error code 11 most of the time, but sometimes it works -
+probably depending on how quickly php collects garbage and closes the unused
+connection first.
+
+As there is no function to close a connection, you need to be sure to destroy
+all references (unset) to close it.
+===============================================================================
+
+Hi,
+If you are having problems with running a ssh2 session and it waits forever
+during the execution of stream_get_contents, it might be because the remote
+system has run the command and is now sitting at a # prompt waiting for the
+next command.  I had this issue on a HP MSA box, here is the code to get around
+the issue.
+
+Assuming you are connected with your authentication method and $ssh contains
+the handle.
+
+<?php
+$command = "check disk";
+// Open a nice large window to stop wrapping
+$stream = ssh2_shell ($ssh, 'xterm', null, 200, 200, SSH2_TERM_UNIT_CHARS);
+
+// Hook into the error stream
+$errorStream = ssh2_fetch_stream($stream, SSH2_STREAM_STDERR); 
+
+// Block the streams so we wait until they complete
+stream_set_blocking ($stream, true);
+stream_set_blocking($errorStream, true);
+
+// Send the commands to the terminal
+fwrite ($stream, $command . PHP_EOL );
+
+// Wait give the terminal a chance to accept and start processing the command,
+this is a slow storage device after all
+sleep(2);
+
+// IMPORTANT BIT!!  Send exit to the terminal to close the connection BEFORE WE
+WAIT FOR THE STREAM
+fwrite ($stream, "exit" . PHP_EOL );
+sleep (2);
+
+// Print the output
+echo stream_get_contents($stream);
+$errortext=stream_get_contents($errorStream);
+
+if (strlen($errortext) > 0) {
+          // Error Data
+         echo "Error Data: $errortext";
+         exit (1);
+}
+
+// All Good
+exit (0);
+
+?>
+
+You can't use ssh2_exec with this method (well at lease I couldn't) because on
+executing the first command the stream gets blocked and then you can't run the
+exit command, whereas a terminal seems to use one session.
+
+I hope this helps someone.
+===============================================================================
+
+With Sara's help, I have the following SS2 class that is quite flexible. If
+anyone improves it, please feel free to let me know.
+
+<?php
+
+// ssh protocols
+// note: once openShell method is used, cmdExec does not work
+
+class ssh2 {
+
+  private $host = 'host';
+  private $user = 'user';
+  private $port = '22';
+  private $password = 'password';
+  private $con = null;
+  private $shell_type = 'xterm';
+  private $shell = null;
+  private $log = '';
+
+  function __construct($host='', $port=''  ) {
+
+     if( $host!='' ) $this->host  = $host;
+     if( $port!='' ) $this->port  = $port;
+
+     $this->con  = ssh2_connect($this->host, $this->port);
+     if( !$this->con ) {
+       $this->log .= "Connection failed !";
+     }
+
+  }
+
+  function authPassword( $user = '', $password = '' ) {
+
+     if( $user!='' ) $this->user  = $user;
+     if( $password!='' ) $this->password  = $password;
+
+     if( !ssh2_auth_password( $this->con, $this->user, $this->password ) ) {
+       $this->log .= "Authorization failed !";
+     }
+
+  }
+
+  function openShell( $shell_type = '' ) {
+
+        if ( $shell_type != '' ) $this->shell_type = $shell_type;
+    $this->shell = ssh2_shell( $this->con,  $this->shell_type );
+    if( !$this->shell ) $this->log .= " Shell connection failed !";
+
+  }
+
+  function writeShell( $command = '' ) {
+
+    fwrite($this->shell, $command."\n");
+
+  }
+
+  function cmdExec( ) {
+
+        $argc = func_num_args();
+        $argv = func_get_args();
+
+    $cmd = '';
+    for( $i=0; $i<$argc ; $i++) {
+        if( $i != ($argc-1) ) {
+          $cmd .= $argv[$i]." && ";
+        }else{
+          $cmd .= $argv[$i];
+        }
+    }
+    echo $cmd;
+
+        $stream = ssh2_exec( $this->con, $cmd );
+    stream_set_blocking( $stream, true );
+    return fread( $stream, 4096 );
+
+  }
+
+  function getLog() {
+
+     return $this->log;
+
+  }
+
+}
+
+?>

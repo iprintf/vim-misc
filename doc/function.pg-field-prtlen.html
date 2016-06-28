@@ -1,0 +1,106 @@
+
+pg_field_prtlen
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pg_field_prtlen — 返回打印出来的长度
+
+说明
+
+int pg_field_prtlen ( resource $result , int $row_number , string $field_name )
+
+pg_field_prtlen() 返回 PostgreSQL result 中得到的值实际上打印出来的长度（字符数
+）。行编号从 0 开始。如果出错本函数返回 -1。
+
+例子参见 pg_field_name() 页。
+
+    Note:
+
+    本函数以前的名字为 pg_field_prtlen()。
+
+参见 pg_field_size()。
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+If you update the query to this:
+
+$s = "SELECT a.attname AS name, t.typname AS type, a.attlen AS size,
+a.atttypmod AS len, a.attstorage AS i
+   FROM pg_attribute a , pg_class c, pg_type t
+   WHERE c.relname = '$TABLE'
+   AND a.attrelid = c.oid AND a.atttypid = t.oid and a.attnum > 0 and not
+a.attisdropped";
+
+You get postgres to filter out the 'postgres' columns and get only your columns
+back.
+===============================================================================
+
+Or even easier to keep things simple on fetching
+
+SELECT a.attname AS name, t.typname AS type, a.attstorage AS i,
+    CASE WHEN a.attlen = -1 THEN a.atttypmod ELSE a.attlen END AS size
+    FROM pg_attribute a , pg_class c, pg_type t
+    WHERE c.relname = 'moo_members'
+    AND a.attrelid = c.oid AND a.atttypid = t.oid and a.attnum > 0 and not
+a.attisdropped
+===============================================================================
+
+mysql_field_len () function and more for postgres ...
+
+problems ...
+* pg_field_prtlen ... gives the actual size of the field back (it shows the
+count of the content allready inside the field - not the possible max-len)
+* pg_filed_size ... can't be used for varchar or bpchar fields
+
+...but there is a way to get the real-max-length of a field in postgreSQL via
+the system tables:
+
+//returns an array with infos of every field in the table (name, type, length,
+size)
+function SQLConstructFieldsInfo($TABLE, $DBCON)
+{
+    $s="SELECT a.attname AS name, t.typname AS type, a.attlen AS size,
+a.atttypmod AS len, a.attstorage AS i
+    FROM pg_attribute a , pg_class c, pg_type t
+    WHERE c.relname = '$TABLE' 
+    AND a.attrelid = c.oid AND a.atttypid = t.oid";
+   
+    if ($r = pg_query($DBCON,$s))
+    {
+        $i=0;
+        while ($q = pg_fetch_assoc($r))
+        {
+               $a[$i]["type"]=$q["type"];
+               $a[$i]["name"]=$q["name"];
+               if($q["len"]<0 && $q["i"]!="x")
+               {
+                   // in case of digits if needed ... (+1 for negative values)
+                   $a[$i]["len"]=(strlen(pow(2,($q["size"]*8)))+1);
+               }
+               else
+               {
+                   $a[$i]["len"]=$q["len"];
+               }
+               $a[$i]["size"]=$q["size"];
+            $i++;           
+        }
+        return $a;
+    }
+    return null;
+}
+
+// usage
+$DBCON=pg_connect("host=YOUR-HOST port=YOUR-PORT dbname=YOUR-DB user=YOUR-USER
+password=YOUR-PASS");
+$TABLE="YOUR-TABLENAME";
+$RET=SQLConstructFieldsInfo($TABLE, $DBCON);
+
+$j = count($RET);
+for ($i=0; $i < $j; $i++)
+{
+    echo "<br>$i name=".$RET[$i]["name"]." type=".$RET[$i]["type"]." length=
+".$RET[$i]["len"]." size=".$RET[$i]["size"]." bytes";
+}

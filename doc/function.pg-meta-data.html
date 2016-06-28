@@ -1,0 +1,177 @@
+
+pg_meta_data
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+pg_meta_data — 获得表的元数据
+
+说明
+
+array pg_meta_data ( resource $connection , string $table_name )
+
+pg_metadata() 以数组形式返回 table_name 表的定义。
+
+Warning
+
+此函数是实验性的。此函数的表象，包括名称及其相关文档都可能在未来的 PHP 发布版本
+中未通知就被修改。使用本函数风险自担。
+
+参数
+
+connection
+
+    PostgreSQL database connection resource.
+
+table_name
+
+    The name of the table.
+
+返回值
+
+以数组 array 形式返回表的定义，如果出错则返回 FALSE。
+
+范例
+
+Example #1 取得表的元数据
+
+<?php
+  $dbconn = pg_connect("dbname=publisher") or die("Could not connect");
+
+  $meta = pg_meta_data($dbconn, 'authors');
+  if (is_array($meta)) {
+      echo '<pre>';
+      var_dump($meta);
+      echo '</pre>';
+  }
+?>
+
+以上例程会输出：
+
+array(3) {
+["author"]=>
+array(5) {
+  ["num"]=>
+  int(1)
+  ["type"]=>
+  string(7) "varchar"
+  ["len"]=>
+  int(-1)
+  ["not null"]=>
+  bool(false)
+  ["has default"]=>
+  bool(false)
+}
+["year"]=>
+array(5) {
+  ["num"]=>
+  int(2)
+  ["type"]=>
+  string(4) "int2"
+  ["len"]=>
+  int(2)
+  ["not null"]=>
+  bool(false)
+  ["has default"]=>
+  bool(false)
+}
+["title"]=>
+array(5) {
+  ["num"]=>
+  int(3)
+  ["type"]=>
+  string(7) "varchar"
+  ["len"]=>
+  int(-1)
+  ["not null"]=>
+  bool(false)
+  ["has default"]=>
+  bool(false)
+}
+}
+
+参见
+
+  • pg_convert() - 将关联的数组值转换为适合 SQL 语句的格式。
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+You can get some possibly more useful information with the query:
+
+SELECT table_name, column_name, data_type, character_maximum_length FROM
+information_schema.columns WHERE table_name='tablename';
+===============================================================================
+
+This function seems to be case-sensitive on tablename (php-4.3.1)
+
+The Array returned is of the following structure
+['field name'] => Array
+   (
+     ['num'] => Field number starting at 1
+     ['type'] => data type, eg varchar, int4
+     ['len'] => internal storage size of field. -1 for varying
+     ['not null'] => boolean
+     ['has default'] => boolean
+   )
+     ......
+
+for Varied size datatypes (varchar, text, etc)
+you can get the max data length from the system table pg_attribute.atttypmod -4
+eg.
+select attnum, attname , atttypmod -4 as field_len
+from pg_attribute, pg_class
+where relname='$tablename'
+and attrelid=relfilenode
+and attnum>=1
+===============================================================================
+
+The built in function does not provide any support for selecting a schema.  If
+you need schema support and do not want to alter your SEARCH_PATH, the
+following function can provide it:
+
+function meta_data($table, $schema = 'public')
+    {
+$result = pg_query_params("SELECT a.attname, a.attnum, t.typname, a.attlen,
+a.attnotNULL, a.atthasdef, a.attndims
+FROM pg_class as c, pg_attribute a, pg_type t, pg_namespace n
+WHERE a.attnum > 0
+AND a.attrelid = c.oid
+AND c.relname = $1
+AND a.atttypid = t.oid
+AND n.oid = c.relnamespace
+AND n.nspname = $2
+ORDER BY a.attnum", array($table, $schema));
+$fields = array();
+while($row = pg_fetch_array()) {
+$fields['attname'] = $row;
+}
+        return $fields;
+    }
+===============================================================================
+
+When querying on meta data from a temp table, the meta data seems to persist
+even if a fresh connection is established, where the temp table no longer
+exists.
+
+For example, if you create a connection and a temp table like so:
+$dbconn1 = pg_connect('blah blah', , PGSQL_CONNECT_FORCE_NEW);
+pg_exec($dbconn1,'create temp table foo as select 'foo' as namecol, 'bar' as
+valcol');
+
+Then create a new connection
+
+$dbconn2 = pg_connect('blah blah', , PGSQL_CONNECT_FORCE_NEW);
+
+And query the meta data for table 'foo' in this new connection, it will report
+the facts about this table:
+pg_meta_data($dbconn2,'foo');
+
+"'Array ( [foo] => Array ( [num] => 1 [type] => varchar... "
+
+However, trying to remove this table:
+pg_exec($dbconn,'drop table foo');
+
+Throws an error:
+pg_exec(): Query failed: ERROR: table "foo" does not exist in ...

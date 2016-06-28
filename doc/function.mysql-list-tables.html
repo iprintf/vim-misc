@@ -1,0 +1,415 @@
+
+mysql_list_tables
+
+(PHP 4, PHP 5)
+
+mysql_list_tables — 列出 MySQL 数据库中的表
+
+说明
+
+resource mysql_list_tables ( string $database [, resource $link_identifier ] )
+
+mysql_list_tables() 接受一个数据库名并返回和 mysql_query() 函数很相似的一个结果
+指针。用 mysql_tablename() 函数来遍历此结果指针，或者任何使用结果表的函数，例如
+mysql_fetch_array()。
+
+database 参数是需要被取得其中的的表名的数据库名。如果失败 mysql_list_tables()
+返回 FALSE。
+
+为向下兼容仍然可以使用本函数的别名 mysql_listtables()，但反对这样做。
+
+    Note: 该函数已经被删除了，请不要再使用该函数。您可以用命令 SHOW TABLES FROM
+    DATABASE 来实现该函数的功能。
+
+Example #1 mysql_list_tables() 例子
+
+<?php
+    $dbname = 'mysql_dbname';
+
+    if (!mysql_connect('mysql_host', 'mysql_user', 'mysql_password')) {
+        print 'Could not connect to mysql';
+        exit;
+    }
+
+    $result = mysql_list_tables($dbname);
+
+    if (!$result) {
+        print "DB Error, could not list tables\n";
+        print 'MySQL Error: ' . mysql_error();
+        exit;
+    }
+
+    while ($row = mysql_fetch_row($result)) {
+        print "Table: $row[0]\n";
+    }
+
+    mysql_free_result($result);
+?>
+
+参见 mysql_list_dbs() 和 mysql_tablename()。
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Here is a way to show al the tables and have the function to drop them...
+
+<?php
+
+echo "<p align=\"left\">";
+//this is the connection file for the database....
+$connectfile = "connect.php";
+require $connectfile;
+
+$dbname = 'DATABASE NAME';
+
+$result = mysql_list_tables($dbname);
+
+echo "<table width=\"75%\" border=\"0\">";
+echo  "<tr bgcolor=\"#993333\"> ";
+echo    "<td><font face=\"Verdana, Arial, Helvetica, sans-serif\" size=\"-1\"
+color=\"#FFFFFF\">Table name:</font></td>";
+echo    "<td><font face=\"Verdana, Arial, Helvetica, sans-serif\" size=\"-1\"
+color=\"#FFFFFF\">Delete?</font></td>";
+echo  "</tr>";
+ 
+    if (!$result) {
+        print "DB Error, could not list tables\n";
+        print 'MySQL Error: ' . mysql_error();
+        exit;
+    }
+   
+    while ($row = mysql_fetch_row($result)) {
+        echo "<tr bgcolor=\"#CCCCCC\">";
+echo    "<td>";
+           print "$row[0]\n";
+echo    "</td>";
+
+echo    "<td>";
+echo    "<a href=\"$PHP_SELF?action=delete&table=";
+         print "$row[0]\n";
+echo    "\">Yes?</a>";
+
+echo    "</td>";
+
+echo "</tr>";
+       
+       
+    }
+
+    mysql_free_result($result);
+
+//Delete
+if($action=="delete")
+{
+$deleteIt=mysql_query("DROP TABLE $table");
+if($deleteIt)
+{
+echo "The table \"";
+echo "$table\" has been deleted with succes!<br>";
+}
+else
+{
+echo "An error has occured...please try again<br>";
+}
+}
+ 
+?>
+===============================================================================
+
+You can also do this with function mysql_query(). It's better because
+mysql_list_tables is old function and you can stop showing errors.
+
+function mysql_table_exists($dbLink, $database, $tableName)
+{
+   $tables = array();
+   $tablesResult = mysql_query("SHOW TABLES FROM $database;", $dbLink);
+   while ($row = mysql_fetch_row($tablesResult)) $tables[] = $row[0];
+    if (!$result) {
+    }
+   return(in_array($tableName, $tables));
+}
+===============================================================================
+
+okay everybody, the fastest, most accurate, safest method:
+
+function mysql_table_exists($table, $link)
+{
+     $exists = mysql_query("SELECT 1 FROM `$table` LIMIT 0", $link);
+      if ($exists) return true;
+     return false;
+}
+
+Note the "LIMIT 0", I mean come on, people, can't get much faster than that! :)
+As far as a query goes, this does absolutely nothing. But it has the ability to
+fail if the table doesnt exist, and that's all you need!
+===============================================================================
+
+Actually, the initially posted SELECT COUNT(*) approach is flawless. SELECT
+COUNT(*) will provide one and only one row in response unless you can't select
+from the table at all. Even a brand new (empty) table responds with one row to
+tell you there are 0 records.
+
+While other approaches here are certainly functional, the major problem comes
+up when you want to do something like check a database to ensure that all the
+tables you need exist, as I needed to do earlier today. I wrote a function
+called tables_needed() that would take an array of table names -- $check -- and
+return either an array of tables that did not exist, or FALSE if they were all
+there. With mysql_list_tables(), I came up with this in the central block of
+code (after validating parameters, opening a connection, selecting a database,
+and doing what most people would call far too much error checking):
+
+if($result=mysql_list_tables($dbase,$conn))
+{   // $count is the number of tables in the database
+    $count=mysql_num_rows($result);
+    for($x=0;$x<$count;$x++)
+    {
+        $tables[$x]=mysql_tablename($result,$x);
+    }
+    mysql_free_result($result);
+    // LOTS more comparisons here
+    $exist=array_intersect($tables,$check);
+    $notexist=array_diff($exist,$check);
+    if(count($notexist)==0)
+    {
+        $notexist=FALSE;
+    }
+}
+
+The problem with this approach is that performance degrades with the number of
+tables in the database. Using the "SELECT COUNT(*)" approach, performance only
+degrades with the number of tables you *care* about:
+
+// $count is the number of tables you *need*
+$count=count($check);
+for($x=0;$x<$count;$x++)
+{
+    if(mysql_query("SELECT COUNT(*) FROM ".$check[$x],$conn)==FALSE)
+    {
+        $notexist[count($notexist)]=$check[$x];
+    }
+}
+if(count($notexist)==0)
+{
+    $notexist=FALSE;
+}
+
+While the increase in speed here means virtually nothing to the average user
+who has a database-driven backend on his personal web site to handle a
+guestbook and forum that might get a couple hundred hits a week, it means
+EVERYTHING to the professional who has to handle tens of millions of hits a
+day... where a single extra millisecond on the query turns into more than a
+full day of processing time. Developing good habits when they don't matter
+keeps you from having bad habits when they *do* matter.
+===============================================================================
+
+<?
+/*
+   Function that returns whole size of a given MySQL database
+   Returns false if no db by that name is found
+*/
+
+  function getdbsize($tdb) {
+    $db_host='localhost';
+    $db_usr='USER';
+    $db_pwd='XXXXXXXX';
+    $db = mysql_connect($db_host, $db_usr, $db_pwd) or die ("Error connecting
+to MySQL Server!\n");
+    mysql_select_db($tdb, $db);
+
+    $sql_result = "SHOW TABLE STATUS FROM " .$tdb;
+    $result = mysql_query($sql_result);
+    mysql_close($db);
+
+    if($result) {
+        $size = 0;
+        while ($data = mysql_fetch_array($result)) {
+             $size = $size + $data["Data_length"] + $data["Index_length"];
+        }
+        return $size;
+    }
+    else {
+        return FALSE;
+    }
+  }
+
+?>
+
+<?
+/*
+   Implementation example
+*/
+
+  $tmp = getdbsize("DATABASE_NAME");
+  if (!$tmp) { echo "ERROR!"; }
+  else { echo $tmp; }
+?>
+===============================================================================
+
+I was in need of a way to create a database, complete with tables from a .sql
+file. Well, since PHP/mySQL doesn't allow that it seems, the next best idea was
+to create an empty template database and 'clone & rename it'. Guess what? There
+is no mysql_clone_db() function or any SQL 'CREATE DATABASE USING TEMPLATEDB'
+command. grrr...
+
+So, this is the hack solution I came up with:
+
+$V2DB = "V2_SL".$CompanyID;
+
+$result = mysql_create_db($V2DB, $linkI);
+if (!$result) $errorstring .= "Error creating ".$V2DB." database<BR>\
+n".mysql_errno($linkI).": ".mysql_error($linkI)."<BR>\n";
+
+mysql_select_db ($V2DB, $linkI) or die ("Could not select ".$V2DB." Database");
+
+//You must have already created the "V2_Template" database.
+//This will make a clone of it, including data.
+
+$tableResult = mysql_list_tables ("V2_Template");
+while ($row = mysql_fetch_row($tableResult))
+{
+    $tsql = "CREATE TABLE ".$V2DB.".".$row[0]." AS SELECT * FROM
+V2_Template.".$row[0];
+    echo $tsql."<BR>\n";
+    $tresult = mysql_query($tsql,$linkI);
+    if (!$tresult) $errorstring .= "Error creating ".$V2DB.".".$row[0]." table
+<BR>\n".mysql_errno($linkI).": ".mysql_error($linkI)."<BR>\n";
+}
+===============================================================================
+
+A better alternative to mysql_list_tables() would be the following mysql_tables
+() function.
+
+<?php
+/**
+* Better alternative to mysql_list_tables (deprecated)
+*/
+function mysql_tables($database='')
+{
+    $tables = array();
+    $list_tables_sql = "SHOW TABLES FROM {$database};";
+    $result = mysql_query($list_tables_sql);
+    if($result)
+    while($table = mysql_fetch_row($result))
+    {
+        $tables[] = $table[0];
+    }
+    return $tables;
+}
+
+# Usage example
+$tables = mysql_tables($database_local);
+?>
+===============================================================================
+
+Getting the database status:
+<?
+// Get database status by DtTvB
+// Connect first
+mysql_connect   ('*********', '*********', '********');
+mysql_select_db ('*********');
+
+// Get the list of tables
+$sql  = 'SHOW TABLES FROM *********';
+if (!$result = mysql_query($sql)) { die ('Error getting table list (' . $sql .
+' :: ' . mysql_error() . ')'); }
+
+// Make the list of tables an array
+$tablerow = array();
+while ($row = mysql_fetch_array($result)) { $tablerow[] = $row; }
+
+// Define variables...
+$total_tables       = count($tablerow);
+$statrow            = array();
+$total_rows         = 0;
+$total_rows_average = 0;
+$sizeo              = 0;
+
+// Get the status of each table
+for ($i = 0; $i < count($tablerow); $i++) {
+    // Query the status...
+    $sql = "SHOW TABLE STATUS LIKE '{$tablerow[$i][0]}';";
+    if (!$result = mysql_query($sql)) { die ('Error getting table status (' .
+$sql . ' :: ' . mysql_error() . ')'); }
+    // Get the status array of this table
+    $table_info = mysql_fetch_array($result);
+    // Add them to the total results
+    $total_rows         += $table_info[3];
+    $total_rows_average += $table_info[4];
+    $sizeo              += $table_info[5];
+}
+
+// Function to calculate size of the file
+function c2s($bs) {
+         if ($bs < 964)     { return round($bs)           . " Bytes"; }
+    else if ($bs < 1000000) { return round($bs/1024,2)    . " KB"   ; }
+    else                    { return round($bs/1048576,2) . " MB"   ; }
+}
+
+// Echo the result!!!!!!!!!
+echo "{$total_rows} rows in {$total_tables} tables";
+echo "<br>Average size in each row: " . c2s($total_rows_average/$total_tables);
+echo "<br>Average size in each table: " . c2s($sizeo/$total_tables);
+echo "<br>Database size: " . c2s($sizeo);
+
+// Close the connection
+mysql_close();
+?>
+===============================================================================
+
+Worth noting for beginners: using a row count to test for the existence of a
+table only works if the table actually contains data, otherwise the test will
+return false even if the table exists.
+===============================================================================
+
+The example by PHP-Guy to determine if a table exists is interesting and useful
+(thanx), except for one tiny detail.  The function 'mysql_list_tables()'
+returns table names in lower case even when tables are created with mixed
+case.  To get around this problem, add the 'strtolower()' function in the last
+line as follows:
+
+return(in_array(strtolower($tableName), $tables));
+===============================================================================
+
+Even though php guy's solution is probably the fastest here's another one just
+for the heck of it...
+I use this function to check whether a table exists. If not it's created.
+
+mysql_connect("server","usr","pwd")
+    or die("Couldn't connect!");
+mysql_select_db("mydb");
+
+$tbl_exists = mysql_query("DESCRIBE sometable");
+if (!$tbl_exists) {
+mysql_query("CREATE TABLE sometable (id int(4) not null primary key,
+somevalue varchar(50) not null)");
+}
+===============================================================================
+
+You can also use mysql_fetch_object if you consider a specialty: The name of
+the object-var is
+
+Tables_in_xxxxx
+
+where xxxxx is the name of the database.
+
+i.e. use
+
+$result = mysql_list_tables($dbname);
+$varname="Tables_in_".$dbname;
+while ($row = mysql_fetch_object($result)) {
+   echo $row->$varname;
+};
+===============================================================================
+
+<?
+// here is a much more elegant method to check if a table exists ( no error
+generate)
+
+if( mysql_num_rows( mysql_query("SHOW TABLES LIKE '".$table."'")))
+{
+//...
+}
+
+?>

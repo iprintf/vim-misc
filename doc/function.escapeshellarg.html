@@ -1,0 +1,165 @@
+
+escapeshellarg
+
+(PHP 4 >= 4.0.3, PHP 5, PHP 7)
+
+escapeshellarg — 把字符串转码为可以在 shell 命令里使用的参数
+
+说明
+
+string escapeshellarg ( string $arg )
+
+escapeshellarg() 将给字符串增加一个单引号并且能引用或者转码任何已经存在的单引号
+，这样以确保能够直接将一个字符串传入 shell 函数，并且还是确保安全的。对于用户输
+入的部分参数就应该使用这个函数。shell 函数包含 exec(), system() 执行运算符。
+
+参数
+
+arg
+
+    需要被转码的参数。
+
+返回值
+
+转换之后字符串。
+
+范例
+
+Example #1 escapeshellarg() 的例子
+
+<?php
+system('ls '.escapeshellarg($dir));
+?>
+
+参见
+
+  • escapeshellcmd() - shell 元字符转义
+  • exec() - 执行一个外部程序
+  • popen() - 打开进程文件指针
+  • system() - 执行外部程序，并且显示输出
+  • 执行运算符
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+When escapeshellarg() was stripping my non-ASCII characters from a UTF-8
+string, adding the following fixed the problem:
+
+<?php
+setlocale(LC_CTYPE, "en_US.UTF-8");
+?>
+===============================================================================
+
+Under Windows, this function puts string into double-quotes, not single, and
+replaces %(percent sign) with a space, that's why it's impossible to pass a
+filename with percents in its name through this function.
+===============================================================================
+
+Most of the comments above have misunderstood this function. It does not need
+to escape characters such as '$' and '`' - it uses the fact that the shell does
+not treat any characters as special inside single quotes (except the single
+quote character itself). The correct way to use this function is to call it on
+a variable that is intended to be passed to a command-line program as a single
+argument to that program - you do not call it on command-line as a whole.
+
+The person above who comments that this function behaves badly if given the
+empty string as input is correct - this is a bug. It should indeed return two
+single quotes in this case.
+===============================================================================
+
+The reason why % are replaced with space on windows is that it is impossible in
+cmd.exe to escape or quote them so that environment variables are not
+expanded.  If for instance %path% is in your argument it will always be
+expanded, so the only safe thing to do is to replace % with something else.
+
+Alternatively, you could wipe the environment before making the call to exec(),
+but that has its side-effects.
+===============================================================================
+
+Take care if using escapeshellarg() on serialized objects. Serialized objects
+contain null bytes, and escapeshellarg stops on the first null byte so you will
+not receive the full argument. (I consider this a bug, though not sure what it
+should do in this case. Probably serialize shouldn't have used null bytes, but
+too late for that now).
+The workaround I've found to pass serialized objects on the command line is to
+base64_encode() them first and decode on the other side.
+===============================================================================
+
+When running a string of LaTeX code containing hyphens through as an argument
+to pdflatex escaped using this command, it will result in failure.
+===============================================================================
+
+This function does not escape $ it seems. This lets user embed shell variables
+such as $PATH into commands, which you may or may not want to allow.  I'm using
+shell_exec() because I need the entire command as one string, and need access
+to the stdout data as one string as well.
+===============================================================================
+
+the best alternative to escapeshellarg() for windows i've come up with is this:
+<?php
+function w32escapeshellarg($s)
+{ return '"' . addcslashes($s, '\\"') . '"'; }
+?>
+===============================================================================
+
+If escapeshellarg() function removes your accents (like á, a with an 'accute')
+from the given string, ensure your LC_ALL variable is correct. If using it via
+web, you need to restart Apache or the corresponding web server after setting
+LC_ALL with a export LC_ALL=es_ES.utf8 (for example) from your shell.
+===============================================================================
+
+Here's a quick and dirty replacement of this function in case you need to deal
+with special characters.
+
+<?php
+/**
+* An ugly, non-ASCII-character safe replacement of escapeshellarg().
+*/
+function escapeshellarg_special($file) {
+  return "'" . str_replace("'", "'\"'\"'", $file) . "'";
+}
+?>
+===============================================================================
+
+If escapeshellarg() returned something on a null input it would probably break
+more programs than it helps. Even if it's two "'s or two ''s, this function
+wouldn't work the way it's supposed to (that is, returning nothing).
+
+However, most people do not put "" into their commands but I can see where it
+might be useful at the same time.
+Perhaps an option in the command that would return the type of null we want. I
+might want the null character to be returned, someone else might want '', and
+someone else might want nothing at all.
+===============================================================================
+
+i also thought the output was gonna be between 's because that's the way
+windows handles arguments with spaces in them. i think we have a unix <>
+windows misunderstanding here...
+===============================================================================
+
+The comment from 'rmays at castlecomm dot com' is incorrect: single quotes
+cannot be backslash-escaped inside a single-quoted string when constructing a
+shell argument. The output from this function is in fact correct. It drops out
+of the single-quoted string, includes a literal single quote with a
+backslash-escape, then resumes the single-quoted string. Observe:
+
+[shellarg.php]
+<?php
+
+system("echo ' single quote\'d '");
+system("echo ' single quote'\''d '");
+?>
+
+$ php shellarg.php
+sh: -c: line 0: unexpected EOF while looking for matching `''
+sh: -c: line 1: syntax error: unexpected end of file
+single quote'd
+===============================================================================
+
+in regards to the bug returning no string where it should return "" or '', just
+do
+<?php
+shell_exec("example ". (($arg=escapeshellarg($arg))? $arg : "''"));
+?>

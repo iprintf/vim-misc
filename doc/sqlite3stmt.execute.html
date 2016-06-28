@@ -1,0 +1,93 @@
+
+SQLite3Stmt::execute
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+SQLite3Stmt::execute — Executes a prepared statement and returns a result set
+object
+
+说明
+
+public SQLite3Result SQLite3Stmt::execute ( void )
+
+Executes a prepared statement and returns a result set object.
+
+参数
+
+此函数没有参数。
+
+返回值
+
+Returns an SQLite3Result object on successful execution of the prepared
+statement, FALSE on failure.
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+There's currently an issue in the SQLite3 PHP binding (not SQLite3 itself) that
+causes all queries to be executed twice. It has apparently existed for quite a
+while.
+
+See here for more info: https://bugs.php.net/bug.php?id=64531
+
+Before discovering the above, I posted this: http://stackoverflow.com/questions
+/36617708/
+odd-behavior-with-sqlite3-non-select-prepared-transactions-and-fetcharray
+(includes copy-paste bug demo)
+
+Workaround: I strongly recommend wrapping any code that might run fetchArray()
+on non-SELECT query results inside a numColumns() check, like this:
+
+<?php
+
+$op = $db->prepare(...);
+
+$r = $op->execute(); // query #1
+
+if ($r->numColumns()) { // returns column count, here being used as true/false
+test
+  while ($row = $r->fetchArray(SQLITE3_ASSOC)) { // query #2
+    // your code here
+  }
+}
+
+?>
+
+To clarify:
+
+- Query #1 is where the SQLite3 query is executed the first time, query #2 is
+where the query is executed again. Yes, *everything* is executed twice; this is
+the bug.
+
+- If your code will only read from and not alter the database (so, a SELECT
+that won't cause database-altering triggers to run, for example), you're fine.
+Your query runs twice but it doesn't alter the result.
+
+- If your code will write to the database - for example an INSERT - you MUST
+not run fetchArray() (and execute the query again) if the number of columns is
+zero.
+
+- It's not documented in the manual but over here -http://php.net/manual/en/
+book.sqlite3.php#113144 - user 'bohwaz' mentions that there's also a
+SQLite3Stmt::readOnly() function since PHP 5.3.11 which will tell you if you
+just wrote to the DB. This is currently undocumented but might be a more
+appropriate alternative to numColumns() (I'm not sure what it does, it might be
+the same).
+
+You might prefer PDO for higher-volume work with SQLite3. This binding is
+ironically lighter-weight and provides direct access to some SQLite3-specific
+primitives and behavior... but it runs all queries twice.
+
+[[Note to moderators (this section may be deleted once it has been read; I'm
+also fine with feedback on the following):
+
+- Please don't consider this comment a bug report - I just want others to be
+aware of this issue so they don't have to bumble around for hours scratching
+their heads. :P
+
+- As of the submission date of this comment, there's a unapproved diff for this
+page stuck in DocBook so I can't add something like "due to bug #64531, you are
+recommended to wrap fetchArray() inside numColumns()...", which I think would
+carry more weight than this comment until this bug is fixed.]]

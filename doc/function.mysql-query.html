@@ -1,0 +1,704 @@
+
+mysql_query
+
+(PHP 4, PHP 5)
+
+mysql_query — 发送一条 MySQL 查询
+
+Warning
+
+本扩展自 PHP 5.5.0 起已废弃，并在将来会被移除。应使用 MySQLi 或 PDO_MySQL 扩展
+来替换之。参见 MySQL：选择 API 指南以及相关 FAQ 以获取更多信息。用以替代本函数
+的有：
+
+  • mysqli_query()
+  • PDO::query()
+
+说明
+
+resource mysql_query ( string $query [, resource $link_identifier = NULL ] )
+
+mysql_query() 向与指定的 link_identifier 关联的服务器中的当前活动数据库发送一条
+查询（不支持多条查询）。
+
+参数
+
+query
+
+    SQL 查询语句
+
+    查询字符串不应以分号结束。查询中被嵌入的数据应该正确地转义。
+
+link_identifier
+
+    MySQL 连接。如不指定连接标识，则使用由 mysql_connect() 最近打开的连接。如果
+    没有找到该连接，会尝试不带参数调用 mysql_connect() 来创建。如没有找到连接或
+    无法建立连接，则会生成 E_WARNING 级别的错误。
+
+返回值
+
+mysql_query() 仅对 SELECT，SHOW，DESCRIBE, EXPLAIN 和其他语句语句返回一个 
+resource，如果查询出现错误则返回 FALSE。
+
+对于其它类型的 SQL 语句，比如INSERT, UPDATE, DELETE, DROP 之类， mysql_query()
+在执行成功时返回 TRUE，出错时返回 FALSE。
+
+返回的结果资源应该传递给 mysql_fetch_array() 和其他函数来处理结果表,取出返回的
+数据。
+
+假定查询成功，可以调用 mysql_num_rows() 来查看对应于 SELECT 语句返回了多少行，
+或者调用 mysql_affected_rows() 来查看对应于 DELETE，INSERT，REPLACE 或 UPDATE
+语句影响到了多少行。
+
+如果没有权限访问查询语句中引用的表时，mysql_query() 也会返回 FALSE。
+
+范例
+
+Example #1 无效的查询
+
+以下查询语法上有错，因此 mysql_query() 失败并返回 FALSE。
+
+<?php
+$result = mysql_query('SELECT * WHERE 1=1');
+if (!$result) {
+    die('Invalid query: ' . mysql_error());
+}
+
+?>
+
+Example #2 有效的查询
+
+以下查询语法正确，所以 mysql_query() 返回了一个 resource。
+
+<?php
+// 这应该由用户提供,下面是一个示例
+$firstname = 'fred';
+$lastname  = 'fox';
+
+// 构造查询
+// 这是执行 SQL 最好的方式
+// 更多例子参见 mysql_real_escape_string()
+$query = sprintf("SELECT firstname, lastname, address, age FROM friends 
+    WHERE firstname='%s' AND lastname='%s'",
+    mysql_real_escape_string($firstname),
+    mysql_real_escape_string($lastname));
+
+// 执行查询
+$result = mysql_query($query);
+
+// 检查结果
+// 下面显示了实际发送给 MySQL 的查询，以及出现的错误。这对调试很有帮助。
+if (!$result) {
+    $message  = 'Invalid query: ' . mysql_error() . "\n";
+    $message .= 'Whole query: ' . $query;
+    die($message);
+}
+
+// 结果的使用
+// 尝试 print $result 并不会取出结果资源中的信息
+// 所以必须至少使用其中一个 mysql 结果函数
+// 参见 mysql_result(), mysql_fetch_array(), mysql_fetch_row() 等。
+while ($row = mysql_fetch_assoc($result)) {
+    echo $row['firstname'];
+    echo $row['lastname'];
+    echo $row['address'];
+    echo $row['age'];
+}
+
+// 释放关联结果集的资源
+// 在脚本结束的时候会自动进行
+mysql_free_result($result);
+?>
+
+参见
+
+  • mysql_connect() - 打开一个到 MySQL 服务器的连接
+  • mysql_error() - 返回上一个 MySQL 操作产生的文本错误信息
+  • mysql_real_escape_string() - 转义 SQL 语句中使用的字符串中的特殊字符，并考
+    虑到连接的当前字符集
+  • mysql_result() - 取得结果数据
+  • mysql_fetch_assoc() - 从结果集中取得一行作为关联数组
+  • mysql_unbuffered_query() - 向 MySQL 发送一条 SQL 查询，并不获取和缓存结果的
+    行
+
+
+User Contributed Notes 25 notes
+
+===============================================================================
+
+Simulating an atomic operation for application locks using mysql.
+
+$link = mysql_connect('localhost', 'user', 'pass');
+if (!$link) {
+    die('Not connected : ' . mysql_error());
+}
+
+// make foo the current db
+$db_selected = mysql_select_db('foo', $link);
+if (!$db_selected) {
+    die ('Can\'t use foo : ' . mysql_error());
+}
+
+$q = "update `table` set `LOCK`='F' where `ID`='1'";
+$lock = mysql_affected_rows();
+
+If we assume
+     NOT LOCKED = "" (empty string)
+     LOCKED = 'F'
+
+then if the column LOCK had a value other than F (normally should be an empty
+string) the update statement sets it to F and set the affected rows to 1. Which
+mean than we got the lock.
+If affected rows return 0 then the value of that column was already F and
+somebody else has the lock.
+
+The secret lies in the following statement taken from the mysql manual:
+"If you set a column to the value it currently has, MySQL notices this and does
+not update it."
+
+Of course all this is possible if the all application processes agree on the
+locking algorithm.
+===============================================================================
+
+Use this to neatly insert data into a mysql table:
+
+<?php
+function mysql_insert($table, $inserts) {
+    $values = array_map('mysql_real_escape_string', array_values($inserts));
+    $keys = array_keys($inserts);
+       
+    return mysql_query('INSERT INTO `'.$table.'` (`'.implode('`,`', $keys).'`)
+VALUES (\''.implode('\',\'', $values).'\')');
+}
+?>
+
+For example:
+
+<?php
+
+mysql_insert('cars', array(
+    'make' => 'Aston Martin',
+    'model' => 'DB9',
+    'year' => '2009',
+));
+?>
+===============================================================================
+
+mysql_query doesnt support multiple queries, a way round this is to use innodb
+and transactions
+
+this db class/function will accept an array of arrays of querys, it will auto
+check every line for affected rows in db, if one is 0 it will rollback and
+return false, else it will commit and return true, the call to the function is
+simple and is easy to read etc
+----------
+
+class MySQLDB
+{
+   private $connection;          // The MySQL database connection
+
+   /* Class constructor */
+   function MySQLDB(){
+      /* Make connection to database */
+      $this->connection = mysql_connect(DB_SERVER, DB_USER, DB_PASS) or die
+(mysql_error());
+      mysql_select_db(DB_NAME, $this->connection) or die(mysql_error());
+   }
+
+   /* Transactions functions */
+
+   function begin(){
+      $null = mysql_query("START TRANSACTION", $this->connection);
+      return mysql_query("BEGIN", $this->connection);
+   }
+
+   function commit(){
+      return mysql_query("COMMIT", $this->connection);
+   }
+  
+   function rollback(){
+      return mysql_query("ROLLBACK", $this->connection);
+   }
+
+   function transaction($q_array){
+         $retval = 1;
+
+      $this->begin();
+
+         foreach($q_array as $qa){
+            $result = mysql_query($qa['query'], $this->connection);
+            if(mysql_affected_rows() == 0){ $retval = 0; }
+         }
+
+      if($retval == 0){
+         $this->rollback();
+         return false;
+      }else{
+         $this->commit();
+         return true;
+      }
+   }
+
+};
+
+/* Create database connection object */
+$database = new MySQLDB;
+
+// then from anywhere else simply put the transaction queries in an array or
+arrays like this:
+
+   function function(){
+      global $database;
+
+      $q = array (
+         array("query" => "UPDATE table WHERE something = 'something'"),
+         array("query" => "UPDATE table WHERE something_else =
+'something_else'"),
+         array("query" => "DELETE FROM table WHERE something_else2 =
+'something_else2'"),
+      );
+
+      $database->transaction($q);
+
+   }
+===============================================================================
+
+Keep in mind when dealing with PHP & MySQL that sending a null-terminated
+string to a MySQL query can be misleading if you use echo($sql) in PHP because
+the null terminator may not be visible.
+
+For example (this assumes connection is already made),
+$string1 = "mystring\0";
+$string2 = "mystring";
+
+$query1 = "SELECT * FROM table WHERE mystring='".$string1."'"
+$query2 = "SELECT * FROM table WHERE mystring='".$string2."'"
+
+$result1 = mysql_query($query1);
+
+$result2 = mysql_query($query2);
+
+//$result1 IS NOT EQUAL TO $result2 but will not provide an error
+
+//but printing these queries to the screen will provide the same result
+echo($result1);
+echo($result2);
+
+Not knowing this could lead to some mind-numbing troubleshooting when dealing
+with any strings with a null terminator.  So now you know! :)
+===============================================================================
+
+Until this function prohibits them, watch out for SQL comments (--) in your
+input.
+===============================================================================
+
+When you run a select statement and receive a response, the data types of your
+response will be a string regardless of the data type of the column.
+
+<?php
+// Query to select an int column
+$query = 'SELECT user_id FROM users WHERE user_id = 1';
+$result = mysql_query($query);
+$array = mysql_fetch_assoc($result);
+
+// Echoes: string
+echo gettype($array['user_id']);
+?>
+===============================================================================
+
+For all you programmers out there getting the 'Command out of synch' errors
+when executing a stored procedure call:
+
+There are known bugs related to this issue, and the best workaround for
+avoiding this error seems to be switching to mysqli.
+
+Still, I needed mysql to also handle these calls correctly.
+The error is normally related to wrong function call sequences, though the bug
+report at  http://bugs.php.net/bug.php?id=39727 shows otherwise.
+
+For me, after commenting out hundreds of lines and several introspection calls
+to parse the procedure information (using information_schema and 'SHOW'
+extensions), I still got the same error.
+The first result is returned, because I initiated my connection using the
+MYSQL_MULTI_RESULTS value of 131072 (forget this and you will never get any
+output, but an error message stating mysql cannot return results in this
+context)
+
+After testing with this code (sproc2 simply calls 'SELECT * FROM sometable'), I
+found the error must be in the mysql library/extension. Somehow, mysql does not
+handle multiple resultsets correctly, or is at least missing some functionality
+related to handling multiple results.
+
+<?php
+    //...
+    $rs = mysql_query('CALL sproc2(500)');
+    while (($row=mysql_fetch_assoc($rs))!==false) {
+        print_r($row);
+    }
+    mysql_free_result($rs);
+
+    $rs = mysql_query('CALL sproc2(500)');
+    print mysql_error(); //the notorious 'command out of synch' message :(
+    while (($row=mysql_fetch_assoc($rs))!==false) {
+        print_r($row);
+    }
+    mysql_free_result($rs);
+?>
+
+After spending hours debugging my code (the full library is already over the
+MB), the only solution seemed to be to CLOSE the connection after the first
+call, and reopening it before the second.
+
+So if you ever make a uniform database accessing interface and implement stored
+procedures/prepared statements (or classes for it), this could be a solution if
+you really wish to enable stored procedures.
+
+Still, be aware that this is really a serious flaw in your design (and IMHO,
+the mysql extension)
+
+Also see the documentation for mysqli on mysqli_query, which seems to be
+working fine.
+===============================================================================
+
+Regarding the idea for returning all possible values of an enum field, the
+mySQL manual says that "SHOW COLUMNS FROM table LIKE column" should be used to
+do this.
+
+The function below (presumes db connection) will return an array of the
+possible values of an enum.
+
+function GetEnumValues($Table,$Column)
+    {
+    $dbSQL = "SHOW COLUMNS FROM ".$Table." LIKE '".$Column."'";
+    $dbQuery = mysql_query($dbSQL);
+
+    $dbRow = mysql_fetch_assoc($dbQuery);
+    $EnumValues = $dbRow["Type"];
+
+    $EnumValues = substr($EnumValues, 6, strlen($EnumValues)-8);
+    $EnumValues = str_replace("','",",",$EnumValues);
+
+    return explode(",",$EnumValues);
+    }
+
+Cavaets:
+
+1) If the LIKE matches more than one column you get the enum from the first, so
+be careful with the $Column argument
+2) You can't have ',' as part of one of the enums (I guess mySQL would escape
+this, but I haven't tried)
+3) If the field isn't an enum you'll get garbage back!
+
+This is just a quick example to show how to do it, some tidying up needs to be
+done (ie checking if the field is actually an enum) before it is perfect.
+===============================================================================
+
+It should be noted that mysql_query can generate an E_WARNING (not
+documented).  The warning that I hit was when the db user did not have
+permission to execute a UDF.
+
+Expected behavior would be like an Invalid SQL statement, where there is no
+E_WARNING generated by mysql_query.
+
+Warning: mysql_query() [function.mysql-query]: Unable to save result set in
+filename.php
+
+The mysql_errno is 1370 and the mysql_error is:
+
+execute command denied to user 'username'@'%' for routine 'database_name.MyUDF'
+===============================================================================
+
+this could be a nice way to print values from 2 tables with a foreign key. i
+have not yet tested correctly but it should work fine.
+
+$buscar = mysql_query("SELECT k.*, e.Clasificacion FROM cat_plan_k k,
+cat_equipo e WHERE Tipo='$tipo' AND k.ID_Eq=a.ID_Eq");
+    while ($row=mysql_fetch_array($buscar))
+        {
+            $nombre = "e.Clasificacion";
+            $row[$nombre] = $Clasific; echo $row[$nombre].'convertido en
+'.$Clasific;
+        }         
+    mysql_free_result($buscar);
+===============================================================================
+
+here's a script for parsing a *.sql file (tested only on dumps created with
+phpMyAdmin) which is short and simple (why do people say "here's a short and
+simple script" and it has a 100 lines?). the script skips comments and allows ;
+to be present within the querys
+
+<?php
+  function parse_mysql_dump($url){
+    $file_content = file($url);
+    $query = "";
+    foreach($file_content as $sql_line){
+      if(trim($sql_line) != "" && strpos($sql_line, "--") === false){
+        $query .= $sql_line;
+        if(preg_match("/;[\040]*\$/", $sql_line)){
+          $result = mysql_query($query)or die(mysql_error());
+          $query = "";
+        }
+      }
+    }
+  }
+?>
+===============================================================================
+
+If, like me, you come from perl, you may not like having to use sprintf to
+'simulate' placeholders that the DBI package from perl provides. I have created
+the following wrapper function for mysql_query() that allows you to use '?'
+characters to substitute values in your DB queries. Note that this is not how
+DBI in perl handles placeholders, but it's pretty similar.
+
+<?php
+    // mysql_query() wrapper. takes two arguments. first
+    // is the query with '?' placeholders in it. second argument
+    // is an array containing the values to substitute in place
+    // of the placeholders (in order, of course).
+    function mysql_prepare ($query, $phs = array()) {
+        foreach ($phs as $ph) {
+            $ph = "'" . mysql_real_escape_string($ph) . "'";
+            $query = substr_replace(
+                $query, $ph, strpos($query, '?'), 1
+            );
+        }
+
+        return mysql_query($query);
+    }
+
+    // sample usage
+    list($user, $passwd) = array('myuser', 'mypass');
+
+    $sth = mysql_prepare(
+        'select userid from users where userid=? and passwd=?',
+        array($user, sha1($passwd))
+    );
+    $row = mysql_fetch_row($sth);
+
+    // successfull username & password authentication
+    if ($row !== false) {
+        echo "logging in as '{$row[0]}'!\n";
+    }
+
+    // oops, wrong userid or passwd
+    else {
+        echo "Invalid username and password combination.\n";
+    }
+?>
+===============================================================================
+
+Dunno if is it a bug but when you are working with replications servers and
+work with multiple databases queries if you don't select the database it will
+only insert,update,delete into the master and bypass the slave, I think it its
+because it doesn't insert the sql on the binary log so the work around its to
+just call mysql_select_db
+MYSQL : 5.0.51a-log
+PHP: 5.2.6
+Example:
+<?php
+#Inserts only to master
+$link=mysql_connect('host','user','pass');
+$sql ="INSERT INTO mysql.host (host) VALUES ('localhost');"
+var_dump(mysql_query($sql,$link));
+
+#The Working Way Master - Slave
+$link2=mysql_connect('host','user','pass');
+$select_db = mysql_select_db('mysql', $link2);
+var_dump(mysql_query($sql,$link2));  
+?>
+===============================================================================
+
+Here's a parameterised query function for MySQL similar to pg_query_params,
+I've been using something similar for a while now and while there is a slight
+drop in speed, it's far better than making a mistake escaping the parameters of
+your query and allowing an SQL injection attack on your server.
+
+<?php   # Parameterised query implementation for MySQL (similar PostgreSQL's
+PHP function pg_query_params)
+        # Example: mysql_query_params( "SELECT * FROM my_table WHERE col1=$1
+AND col2=$2", array( 42, "It's ok" ) );
+
+        if( !function_exists( 'mysql_query_params' ) ) {
+
+                function mysql_query_params__callback( $at ) {
+                        global $mysql_query_params__parameters;
+                        return $mysql_query_params__parameters[ $at[1]-1 ];
+                }
+
+                function mysql_query_params( $query, $parameters=array(), 
+$database=false ) {
+
+                        // Escape parameters as required & build parameters for
+callback function
+                        global $mysql_query_params__parameters;
+                        foreach( $parameters as $k=>$v )
+                                $parameters[$k] = ( is_int( $v ) ? $v : ( NULL=
+==$v ? 'NULL' : "'".mysql_real_escape_string( $v )."'" ) );
+                        $mysql_query_params__parameters = $parameters;
+
+                        // Call using mysql_query
+                        if( false===$database )
+                                return mysql_query( preg_replace_callback( '/\$
+([0-9]+)/', 'mysql_query_params__callback', $query ) );
+                        else    return mysql_query( preg_replace_callback( '/\$
+([0-9]+)/', 'mysql_query_params__callback', $query ), $database );
+
+                }
+        }
+
+?>
+===============================================================================
+
+When trying to INSERT or UPDATE and trying to put a large amount of text or
+data (blob) into a mysql table you might run into problems.
+
+In mysql.err you might see:
+Packet too large (73904)
+
+To fix you just have to start up mysql with the option -O max_allowed_packet=
+maxsize
+
+You would just replace maxsize with the max size you want to insert, the
+default is 65536
+===============================================================================
+
+Note that the 'source' command used in the mysql client program is *not* a
+feature of the server but of the client.
+This means that you cannot do
+   mysql_query('source myfile.sql');
+You will get a syntax error. Use LOAD DATA INFILE as an alternative.
+===============================================================================
+
+I believe there is a typo in celtic at raven-blue dot com version with:
+
+if (($sql != "") && (substr($tsl, 0, 2) != "--") && (substr($tsl, 0, 1) != "#
+")) {
+
+I think you really ment:
+
+if (($tsl != "") && (substr($tsl, 0, 2) != "--") && (substr($tsl, 0, 1) != "#
+")) {
+
+I changed the $sql to $tsl
+===============================================================================
+
+The following query is not valid as expected:
+<?php
+$username = 'dicteworld';
+$username{4} = '';
+$sql = "SELECT * FROM `user` WHERE `User` = '$username'";
+print($sql); // Result: SELECT * FROM `user` WHERE `User` = 'dictworld'
+$res = mysql_query($query);
+$row = mysql_fetch_array($res);
+print_r($row);// Result: still return Array(), supposed that the user
+'dictworld' exists.
+?>
+Pay more attention that null string '' is equivalent to '\0',therefore SQL
+statement above is equivalent to SELECT * FROM `user` WHERE `User` = 'dict\
+0world',though printing string is right.
+===============================================================================
+
+I much prefer to use the same syntax for single INSERT, REPLACE and UPDATE
+queries as it is easier to read and keeps my code shorter (no seperate building
+of insert and update values)
+
+INSERT INTO table SET x='1', y=3
+UPDATE table SET x='2' WHERE y=3
+
+So if your using a function to build your query, you will only ever need to
+code the "field=value, field2=value2" part for any query.
+===============================================================================
+
+When processing a RENAME TABLE query, PHP apparently always returns false, no
+matter if the query was successfully processed or not.
+===============================================================================
+
+One way to reduce the dangers of queries like the dlete command above that
+dletes the whole DB is to use limits wherever possible.
+
+EG. If you have a routine that is only deisnged to delete 1 record, add 'LIMIT
+1' to the end of the command. This way you'll only lose one record if someone
+does something stupid.
+
+You should also check all input, especially if it is sent using GET. ie. make
+sure that $_GET['id'] is not NULL or == "", is a number that is positive, not 0
+(generally, I know this doesn't apply to some table types, but it applies to
+the default) and is within the valid range for that field.
+
+Just don't trust ANY data that is sent to your script.
+
+HTH
+Allen
+===============================================================================
+
+For those of you whom spent hours bashing your brains against the keyboard
+wondering why your non-English characters are output as question marks... Try
+the following:
+
+<?php
+
+$db = mysql_connect('YOUR_DB_ADDRESS','YOUR_DB_USER','YOUR_DB_PASS') or die(
+"Database error");
+mysql_select_db('YOUR_DB', $db);
+
+//SOLUTION::  add this comment before your 1st query -- force multiLanuage
+support
+$result = mysql_query("set names 'utf8'");
+
+$query = "select * from YOUR_DB_TABLE";
+$result = mysql_query($query);
+
+//-THE_REST_IS_UP_TO_YOU-
+
+?>
+
+Simply run the query "set names 'utf8' " against the MySQL DB and your output
+should appear correct.
+===============================================================================
+
+Windows programmers, keep in mind that although table names in Windows queries
+are not case sensitive, many *NIX versions of Mysql require the correct table
+name case (perhaps others as well). So you're better off using the right case
+from the beginning, in case you ever decide to go with a *NIX server.
+===============================================================================
+
+I think it's important to note (for newbies, like me especially) that an empty
+result is not the same as an error:
+<?php
+/* 'bar' is an empty table in the db */
+$rs = mysql_query("SELECT `foo` FROM `bar`")
+if($rs) {
+  echo mysql_num_rows($rs); //outputs: 0
+}
+
+/* malformed query /*
+$rs = mysql_query("SELECT `foo` FRO `bar`");
+if($rs) {
+  echo "This will never be echoed";
+}
+?>
+===============================================================================
+
+If you need to execute sevaral SQL commands in a row (usually called batcg SQL)
+using PHP you canot use mysql_query() since it can execute single command only.
+
+Here is simple but effective function that can run batch SQL commands. Take
+cere, if string contains semicolon (;) anywhere except as command delimiter
+(within string expression for example) function will not work.
+
+function mysql_exec_batch ($p_query, $p_transaction_safe = true) {
+  if ($p_transaction_safe) {
+      $p_query = 'START TRANSACTION;' . $p_query . '; COMMIT;';
+    };
+  $query_split = preg_split ("/[;]+/", $p_query);
+  foreach ($query_split as $command_line) {
+    $command_line = trim($command_line);
+    if ($command_line != '') {
+      $query_result = mysql_query($command_line);
+      if ($query_result == 0) {
+        break;
+      };
+    };
+  };
+  return $query_result;
+}

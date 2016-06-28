@@ -1,0 +1,401 @@
+
+DirectoryIterator::__construct
+
+(PHP 5, PHP 7)
+
+DirectoryIterator::__construct — Constructs a new directory iterator from a
+path
+
+说明
+
+public DirectoryIterator::__construct ( string $path )
+
+Constructs a new directory iterator from a path.
+
+参数
+
+path
+
+    The path of the directory to traverse.
+
+错误／异常
+
+Throws an UnexpectedValueException if the path cannot be opened.
+
+Throws a RuntimeException if the path is an empty string.
+
+更新日志
+
+版本                               说明
+5.3.0 Throws UnexpectedValueException if the path cannot be opened.
+5.1.3 Throws RuntimeException if the path is an empty string.
+5.1.0 Throws RuntimeException on error. Previously, threw Exception.
+
+范例
+
+Example #1 A DirectoryIterator::__construct() example
+
+This example will list the contents of the directory containing the script.
+
+<?php
+$dir = new DirectoryIterator(dirname(__FILE__));
+foreach ($dir as $fileinfo) {
+    if (!$fileinfo->isDot()) {
+        var_dump($fileinfo->getFilename());
+    }
+}
+?>
+
+参见
+
+  • SplFileInfo
+  • Iterator
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+Here's all-in-one DirectoryIterator:
+
+<?php
+
+/**
+* Real Recursive Directory Iterator
+*/
+class RRDI extends RecursiveIteratorIterator {
+  /**
+   * Creates Real Recursive Directory Iterator
+   * @param string $path
+   * @param int $flags
+   * @return DirectoryIterator
+   */
+  public function __construct($path, $flags = 0) {
+    parent::__construct(new RecursiveDirectoryIterator($path, $flags));
+  }
+}
+
+/**
+* Real RecursiveDirectoryIterator Filtered Class
+* Returns only those items which filenames match given regex
+*/
+class AdvancedDirectoryIterator extends FilterIterator {
+  /**
+   * Regex storage
+   * @var string
+   */
+  private $regex;
+  /**
+   * Creates new AdvancedDirectoryIterator
+   * @param string $path, prefix with '-R ' for recursive, postfix with /
+[wildcards] for matching
+   * @param int $flags
+   * @return DirectoryIterator
+   */
+  public function  __construct($path, $flags = 0) {
+    if (strpos($path, '-R ') === 0) { $recursive = true; $path = substr($path, 
+3); }
+    if (preg_match('~/?([^/]*\*[^/]*)$~', $path, $matches)) { // matched
+wildcards in filename
+      $path = substr($path, 0, -strlen($matches[1]) - 1); // strip wildcards
+part from path
+      $this->regex = '~^' . str_replace('*', '.*', str_replace('.', '\.', 
+$matches[1])) . '$~'; // convert wildcards to regex
+      if (!$path) $path = '.'; // if no path given, we assume CWD
+    }
+    parent::__construct($recursive ? new RRDI($path, $flags) : new 
+DirectoryIterator($path));
+  }
+  /**
+   * Checks for regex in current filename, or matches all if no regex specified
+   * @return bool
+   */
+  public function accept() { // FilterIterator method
+    return $this->regex === null ? true : preg_match($this->regex, $this->
+getInnerIterator()->getFilename());
+  }
+}
+
+?>
+
+Some examples:
+
+<?php
+
+/* @var $i DirectoryIterator */
+
+foreach (new AdvancedDirectoryIterator('.') as $i) echo $i->getPathname() . '
+<br/>';
+// will output all files and directories in CWD
+
+foreach (new AdvancedDirectoryIterator('-R *.php') as $i) echo $i->getPathname
+() . '<br/>';
+// will output all php files in CWD and all subdirectories
+
+foreach (new AdvancedDirectoryIterator('-R js/jquery-*.js') as $i) echo $i->
+getPathname() . '<br/>';
+// will output all jQuery versions in directory js, or throw an exception if
+directory js doesn't exist
+
+?>
+
+Pretty cool, huh? :)
+===============================================================================
+
+Don't store DirectoryIterator objects for later; you will get an error saying
+"too many open files" when you store more than the operating system limit
+(usually 256 or 1024).
+
+For example, this will yield an error if the directory has too many files:
+
+<?php
+$files = array();
+foreach (new DirectoryIterator('myDir') as $file) {
+  $files[] = $file;
+}
+?>
+
+Presumably, this approach is memory intensive as well.
+===============================================================================
+
+I need to traverse recursively through a directory tree and get all
+sub-directory paths and has written a snippet to do that.
+
+<?php
+$path = "D:\webroot\phpvietnamcms";
+foreach (new RecursiveIteratorIterator(
+           new RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::
+KEY_AS_PATHNAME), RecursiveIteratorIterator::CHILD_FIRST) as $file => $info) {
+    if ($info->isDir())
+    {
+        echo $file."<br />";
+    }
+}
+
+?>
+===============================================================================
+
+I needed to match in directory tree file name(s) by regular expression. Code is
+based on Marcus Börger class DirectoryTreeIterator http://cvs.php.net/
+viewvc.cgi/php-src/ext/spl/examples/ and on examples given in his lecture
+Introduction to object oriented PHP at PHP Quebec conference 2007 http://
+talks.somabo.de/
+<?php
+class KeyFilter extends FilterIterator
+{
+  private $_rx;
+ 
+  function __construct(Iterator $it, $regex)
+  {
+    parent::__construct($it);
+    $this->_rx= $regex;
+  }
+
+  function accept()
+  {
+    return ereg($this->_rx,$this->getInnerIterator()->key());
+  }
+
+  protected function __clone() {
+    return false;
+  }
+}
+
+class DirMach extends KeyFilter
+{
+  function __construct($path , $regex)
+  {
+    parent::__construct(
+    new DirectoryTreeIterator($path), $regex);
+  }
+
+  function current()
+  {
+    return parent::key();
+  }
+
+  function key()
+  {
+    return parent::key();
+  }
+}
+
+class DirectoryTreeIterator extends RecursiveIteratorIterator
+{
+    /** Construct from a path.
+     * @param $path directory to iterate
+     */
+    function __construct($path)
+    {
+     try {
+      parent::__construct(
+            new RecursiveCachingIterator(
+                new RecursiveDirectoryIterator($path, 
+RecursiveDirectoryIterator::KEY_AS_FILENAME
+                ),
+                CachingIterator::CALL_TOSTRING|CachingIterator::CATCH_GET_CHILD
+            ),
+            parent::SELF_FIRST
+        );
+     } catch(Exception $e) {
+       echo $e->getMessage();
+       exit;
+     }
+    }
+
+    /** @return the current element prefixed with ASCII graphics
+     */   
+    function current()
+    {
+      if ($this->hasChildren())
+        $this->next(); 
+      return $this->key();
+    }
+
+    /** Aggregates the inner iterator
+     */   
+    function __call($func, $params)
+    {
+      return call_user_func_array(array($this->getSubIterator(), $func), 
+$params);
+    }
+}
+$PathToSearch = 'path_to_search';
+$regex = 'regular_expression';
+$FileList = new DirMach($PathToSearch, $regex);
+foreach ($FileList as $file) {
+  $match[] = $file;
+}
+echo '<pre>';
+var_dump($match);
+echo '</pre>';
+?>
+===============================================================================
+
+The use of this class is rather simple
+<?php
+$dataDir  = dirname(__FILE__).'/world_vest_base/';
+   
+try
+{
+      $dir  = new DirectoryIterator($dataDir);
+
+      foreach ($dir as $file)
+      {
+        $fileName = $file->getFilename();
+      }
+}
+catch (Exception $ex)
+{
+
+}
+
+?>
+
+If $dataDir is null, a Runtime Exception will throws a message like this:
+Directory name must not be empty.
+
+If $dataDir does not exist, that message will look like this:  failed to open
+dir: No such file or directory.
+
+Please be careful in case you are looking for filenames in that directory
+because DirectoryIterator will return a very special symbolic filenames: . and
+.. You must do a check to ignore them before dealing with real file names.
+
+$dir is a DirectoryIterator object
+===============================================================================
+
+udvig dot ericson at gmail dot com
+29-Jul-2006 07:48
+
+In response to the comment below from udvig. The Example ist wrong, here is the
+right one:
+
+<?php
+$dir = new DirectoryIterator("/tmp");
+foreach ($dir as $file) {
+   if ($file->isDot()) {
+       continue;
+   }
+   echo $file->getFilename() . "\n";
+}
+?>
+===============================================================================
+
+In response to the comment below, you don't have to simulate a foreach(),
+DirectoryIterator obviously inherits SPL's Iterator interface, therefore:
+
+<?php
+$dir = new DirectoryIterator("/tmp");
+foreach ($dir as $file) {
+    if ($dir->isDot()) {
+        continue;
+    }
+    echo $file . "\n";
+}
+?>
+===============================================================================
+
+We can now replace the old fashioned way of listing the content from a
+directory!
+
+the old way:
+<?php
+if ($handle = opendir('/home/fernando/temp')) {
+    while (false !== ($file = readdir($handle))) {
+        if ($file != "." && $file != "..") {
+            print "$file <br />";
+        }
+    }
+    closedir($handle);
+}
+?>
+
+the new way:
+<?php
+$dir = new DirectoryIterator('/home/fernando/temp');
+while($dir->valid()) {
+    if(!$dir->isDot()) {
+        print $dir->current()."<br />";
+    }
+    $dir->next();
+}
+?>
+===============================================================================
+
+I wrote a function for finding all files in the current and in subdirectories.
+
+The Code:
+<?php
+function getFiles(&$rdi,$depth=0) {
+
+    if (!is_object($rdi))
+        return;
+       
+    for ($rdi->rewind();$rdi->valid();$rdi->next()) {
+       
+        if ($rdi->isDot())
+            continue;
+       
+        if ($rdi->isDir() || $rdi->isFile()) {
+           
+            for ($i = 0; $i<=$depth;++$i)
+                echo '&nbsp;&nbsp;&nbsp;';
+               
+            echo $rdi->current().'<br />';
+           
+            if ($rdi->hasChildren())
+                getFiles($rdi->getChildren(),1+$depth);
+        }
+    }
+}
+
+getFiles(new RecursiveDirectoryIterator('.'));
+?>
+===============================================================================
+
+The documentation for DirectoryIterator is sparse. I found this nice overview:
+http://www.jellyandcustard.com/2006/05/18
+/using-directoryiterator-to-list-files-in-php
+
+(The above is one line, but I'm not allowed to post it like that)

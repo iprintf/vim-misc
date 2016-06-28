@@ -1,0 +1,386 @@
+
+MongoDB::command
+
+(PECL mongo >=0.9.2)
+
+MongoDB::command — 执行一条 Mongo 指令
+
+说明
+
+public array MongoDB::command ( array $command [, array $options = array() ] )
+
+几乎所有不属于CRUD操作的事情都可以通过一条“数据库指令”完成。需要知道数据库的版
+本？有一条指令可以实现。需要进行一次聚合？有一条指令可以实现。想要提高日志级别
+？有一条指令可以实现。我想你已经领会到了。
+
+该方法等同于：
+<?php
+
+public function command($data) {
+    return $this->selectCollection('$cmd')->findOne($data);
+}
+
+?>
+
+参数
+
+command
+
+    要发送的指令
+
+options
+
+    该参数是一个具有以下形式的关联数组： array("optionname" => <boolean>, ...)
+    ，现在支持的选项有：
+      □ "timeout"
+
+        Integer, defaults to MongoCursor::$timeout. If "safe" is set, this sets
+        how long (in milliseconds) for the client to wait for a database
+        response. If the database does not respond within the timeout period, a
+        MongoCursorTimeoutException will be thrown.
+
+更新日志
+
+版本                    说明
+1.2.0 添加 options 参数，和一个选项:"timeout"。
+
+返回值
+
+返回数据库响应。每个响应都不会超过一个文档的大小，也就是不会超过16MB。结果文档
+的结构与执行的指令有关,但大部分结果都有 ok 字段来表示成功还是失败。以及 results
+字段包含一个结果文档数组。
+
+范例
+
+Example #1 MongoDB::command() "distinct"实例
+
+查找一个键的所有不重复值
+
+<?php
+
+$people = $db->people;
+
+$people->insert(array("name" => "Joe", "age" => 4));
+$people->insert(array("name" => "Sally", "age" => 22));
+$people->insert(array("name" => "Dave", "age" => 22));
+$people->insert(array("name" => "Molly", "age" => 87));
+
+$ages = $db->command(array("distinct" => "people", "key" => "age"));
+
+foreach ($ages['values'] as $age) {
+    echo "$age\n";
+}
+
+?>
+
+以上例程的输出类似于：
+
+
+4
+22
+87
+
+Example #2 MongoDB::command() "distinct"实例
+
+查找一个键的所有不重复值，并且这些值大于等于18
+
+<?php
+
+$people = $db->people;
+
+$people->insert(array("name" => "Joe", "age" => 4));
+$people->insert(array("name" => "Sally", "age" => 22));
+$people->insert(array("name" => "Dave", "age" => 22));
+$people->insert(array("name" => "Molly", "age" => 87));
+
+$ages = $db->command(
+    array(
+        "distinct" => "people",
+        "key" => "age", 
+        "query" => array("age" => array('$gte' => 18))
+    )
+);  
+
+foreach ($ages['values'] as $age) {
+    echo "$age\n";
+}
+
+?>
+
+以上例程的输出类似于：
+
+
+22
+87
+
+Example #3 MongoDB::command() MapReduce实例
+
+获取所有有type=sale这样的"event"的用户，以及他们分别有几个这样的"event"（注:此
+处的event是一个集合的名字）
+
+<?php
+
+// sample event document
+$events->insert(array("user_id" => $id, 
+    "type" => $type, 
+    "time" => new MongoDate(), 
+    "desc" => $description));
+
+// construct map and reduce functions
+$map = new MongoCode("function() { emit(this.user_id,1); }");
+$reduce = new MongoCode("function(k, vals) { ".
+    "var sum = 0;".
+    "for (var i in vals) {".
+        "sum += vals[i];". 
+    "}".
+    "return sum; }");
+
+$sales = $db->command(array(
+    "mapreduce" => "events", 
+    "map" => $map,
+    "reduce" => $reduce,
+    "query" => array("type" => "sale"),
+    "out" => array("merge" => "eventCounts")));
+
+$users = $db->selectCollection($sales['result'])->find();
+
+foreach ($users as $user) {
+    echo "{$user['_id']} had {$user['value']} sale(s).\n";
+}
+
+?>
+
+以上例程的输出类似于：
+
+
+User 47cc67093475061e3d9536d2 had 3 sale(s).
+User 49902cde5162504500b45c2c had 14 sale(s).
+User 4af467e4fd543cce7b0ea8e2 had 1 sale(s).
+
+
+    Note: 使用 MongoCode
+
+    这个例子使用了 MongoCode，它还可以接受一个作用域参数。然而，现在 MongoDB 还
+    不支持在 MapReduce 中使用它，如果你需要在MapReduce函数里用一个客户端参数，
+    那么你可以在使用MapReduce的时候用“optional scope”字段把它们添加到全局作用域
+    中，参考 » MapReduce文档来获得更多信息。
+
+    Note: out 参数
+
+    1.8.0以前，out 参数是可选的，如果你不使用它，MapReduce的结果将被写入一个临
+    时集合里，这个临时集合会在连接关闭后删除。 1.8.0以后，out 参数是必须的，参
+    考 » MapReduce documentation 来获得更多信息。
+
+Example #4 MongoDB::command() "textSearch"实例
+
+在MongoDB 2.4以上版本中使用全文检索功能（之前的版本不支持全文检索）。
+
+<?php
+$m = new MongoClient();
+$d = $m->demo;
+$c = $d->planets;
+
+$c->insert(array("name" => "Mercury", "desc" => 
+"Mercury is the smallest and closest to the Sun"));
+$c->insert(array("name" => "Venus", "desc" => 
+"Venus is the second planet from the Sun, orbiting it every 224.7 Earth days."
+));
+$c->insert(array("name" => "Earth", "desc" => 
+"Earth is the the densest of the eight planets in the Solar System."));
+$c->insert(array("name" => "Mars", "desc" => 
+"Mars is named after the Roman god of war."));
+
+$c->ensureIndex(array('desc' => 'text'));
+
+$r = $d->command(array("text" => "planets", 'search' => "sun" ));
+print_r($r);
+?>
+
+以上例程的输出类似于：
+
+
+Array
+(
+[queryDebugString] => sun||||||
+[language] => english
+[results] => Array
+(
+[0] => Array
+(
+[score] => 0.625
+[obj] => Array
+(
+[_id] => MongoId Object
+(
+[$id] => 517549d944670a4a5cb3059a
+)
+
+[name] => Mercury
+[desc] => Mercury is the smallest and closest to the Sun
+)
+
+)
+
+[1] => Array
+(
+[score] => 0.55
+[obj] => Array
+(
+[_id] => MongoId Object
+(
+[$id] => 517549d944670a4a5cb3059b
+)
+
+[name] => Venus
+[desc] => Venus is the second planet from the Sun, orbiting it every 224.7
+Earth days.
+)
+
+)
+
+)
+
+[stats] => Array
+(
+[nscanned] => 2
+[nscannedObjects] => 0
+[n] => 2
+[nfound] => 2
+[timeMicros] => 95
+)
+
+[ok] => 1
+)
+
+Example #5 MongoDB::command() "geoNear"实例
+
+这个实例说明了如何使用 geoNear 指令。
+
+<?php
+$m = new MongoClient();
+$d = $m->demo;
+$c = $d->poiConcat;
+
+$r = $d->command(array(
+    'geoNear' => "poiConcat",      // 在 poiConcat 集合中
+    'near' => array(-0.08, 51.48), // 搜索 51.48°N, 0.08°E 附近
+    'spherical' => true,           // 启用特殊搜索
+    'num' => 5,                    // 最多返回5个文档
+));
+print_r($r);
+?>
+
+参见
+
+  • MongoCollection::aggregate() - Perform an aggregation using the aggregation
+    framework
+  • MongoCollection::findAndModify() - Update a document and return it
+  • MongoCollection::group() - Performs an operation similar to SQL's GROUP BY
+    command
+
+MongoDB 核心文档的 » 数据库指令，以及这些特定指令的文档 » findAndModify、
+» getLastError、 » repairDatabase （还有很多其他指令，这只是一些例子）
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+rename a collection:
+
+<?php
+$m = new Mongo();
+$adminDB = $m->admin; //require admin priviledge
+
+//rename collection 'colA' in db 'yourdbA' to collection 'colB' in another db
+'yourdbB'
+
+$res = $adminDB->command(array(
+    "renameCollection" => "yourdbA.colA",
+    "to" => "yourdbB.colB"
+));
+
+var_dump($res);
+?>
+===============================================================================
+
+Command of Mongo 2.4 Text Search feature.
+
+<?php
+$result = $db->command(
+    array(
+        'text' => 'bar', //this is the name of the collection where we are
+searching
+        'search' => 'hotel', //the string to search
+        'limit' => 5, //the number of results, by default is 1000
+        'project' => Array( //the fields to retrieve from db
+            'title' => 1
+        )
+    )
+);
+===============================================================================
+
+I tried to write MapReduce. Unfortunately, out => array('replace' =>
+'collName') did not work for me. Instead, the below code works
+
+<?php
+$mongo->command(array(
+     'mapreduce' => 'events',
+     'map' => $map,
+     'reduce' => $reduce,
+     'out' => 'mapReduceEventStats'
+));
+?>
+===============================================================================
+
+> Need to know the database version? There's a command for that.
+
+We didn't find it - ended up using either;
+
+<?php
+$m = new Mongo();
+
+$adminDB = $m->admin; //require admin priviledge
+
+$mongodb_info = $adminDB->command(array('buildinfo'=>true));
+$mongodb_version = $mongodb_info['version'];
+
+print_r($mongodb_info);
+?>
+
+or
+
+<?php
+$v = `mongo --version`;
+print_r($v);
+?>
+===============================================================================
+
+$db=new new Mongo();
+
+Copy old_db to new_db
+
+$responseCopy = $db->admin->command(array(
+    'copydb' => 1,
+    'fromhost' => 'localhost',
+    'fromdb' => 'old_db',
+    'todb' =>'new_db'
+    ));
+
+Now drop old_db
+
+if($responseCopy['ok']==1){
+$responseDrop=$db->old_db->command(array('dropDatabase' => 1));
+//OR
+$responseDrop =$db->old_db->drop();
+}
+
+Show Output
+
+print_r($responseCopy);
+print_r($responseDrop);
+
+Output will be something like this
+
+Array ( [ok] => 1 )
+Array ( [dropped] => old_db [ok] => 1 )

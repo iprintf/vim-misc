@@ -1,0 +1,257 @@
+
+pg_pconnect
+
+(PHP 4, PHP 5, PHP 7)
+
+pg_pconnect — 打开一个持久的 PostgreSQL 连接
+
+说明
+
+resource pg_pconnect ( string $connection_string [, int $connect_type ] )
+
+pg_pconnect() 打开一个到 PostgreSQL 数据库的持久连接。返回其它 PostgreSQL 函数
+所需要的连接资源号。
+
+If a second call is made to pg_pconnect() with the same connection_string as an
+existing connection, the existing connection will be returned unless you pass
+PGSQL_CONNECT_FORCE_NEW as connect_type.
+
+要打开持久连接功能，php.ini 中的 pgsql.allow_persistent 参数必须为 "On"（也是默
+认值）。最大持久连接数目由 php.ini 中的 pgsql.max_persistent 参数定义（默认为
+-1 表示没有限制）。所有连接的数目可由 php.ini 中的 pgsql.max_links 参数设置。
+
+pg_close() 不能关闭由 pg_pconnect() 打开的持久连接。
+
+参数
+
+connection_string
+
+    The connection_string can be empty to use all default parameters, or it can
+    contain one or more parameter settings separated by whitespace. Each
+    parameter setting is in the form keyword = value. Spaces around the equal
+    sign are optional. To write an empty value or a value containing spaces,
+    surround it with single quotes, e.g., keyword = 'a value'. Single quotes
+    and backslashes within the value must be escaped with a backslash, i.e., \'
+    and \.
+
+    The currently recognized parameter keywords are: host, hostaddr, port,
+    dbname, user, password, connect_timeout, options, tty (ignored), sslmode,
+    requiressl (deprecated in favor of sslmode), and service. Which of these
+    arguments exist depends on your PostgreSQL version.
+
+connect_type
+
+    If PGSQL_CONNECT_FORCE_NEW is passed, then a new connection is created,
+    even if the connection_string is identical to an existing connection.
+
+返回值
+
+PostgreSQL connection resource on success, FALSE on failure.
+
+范例
+
+Example #1 Using pg_pconnect()
+
+<?php
+$dbconn = pg_pconnect("dbname=mary");
+//connect to a database named "mary"
+
+$dbconn2 = pg_pconnect("host=localhost port=5432 dbname=mary");
+// connect to a database named "mary" on "localhost" at port "5432"
+
+$dbconn3 = pg_pconnect("host=sheep port=5432 dbname=mary user=lamb password=
+foo");
+//
+connect to a database named "mary" on the host "sheep" with a username and password
+
+$conn_string = "host=sheep port=5432 dbname=test user=lamb password=bar";
+$dbconn4 = pg_pconnect($conn_string);
+//
+connect to a database named "test" on the host "sheep" with a username and password
+?>
+
+参见
+
+  • pg_connect() - 打开一个 PostgreSQL 连接
+  • 持久数据库连接
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+How to reset persistent connections:
+
+killall -USR1 httpd
+===============================================================================
+
+You should not use pg_pconnect - it's broken. It will work but it doesn't
+really pool, and it's behaviour is unpredictable. It will only make you rise
+the max_connections parameter in postgresql.conf file until you run out of
+resources (which will slow your database down).
+
+If you have many concurrent connections to your database, you should use the
+PostgreSQL connection pooler PgBouncer (developed by the Skype-team). When
+using pgbouncer, make sure you use pg_connect and NOT pg_pconnect. Also, make
+sure you close your connections with pg_close.
+
+* PGBouncer homepage:
+http://developer.skype.com/SkypeGarage/DbProjects/PgBouncer
+
+* PostgreSQL pooling article by Last.fm:
+http://www.last.fm/user/Russ/journal/2008/02/21
+/zd_postgres_connection_pools:_pgpool_vs._pgbouncer
+===============================================================================
+
+For resetting an apache web server and in same time the persistent connections
+you may use :
+./apachectl graceful
+===============================================================================
+
+Instead of reducing MaxClients in apache you may try to
+reduce pgsql.max_links in php to at least the number of
+postmasters. It should work and leave
+you with more available httpds for static html pages.
+===============================================================================
+
+Be careful when using Apache/PHP dynamic module/PostgreSQL :
+in httpd.conf (Apache conf) default MaxClients is 150, whereas default PG's
+max_connections is 32 which is much fewer than 150. You have to set
+max_connections to at least MaxClients (and pg's shared_buffers to
+2*max_connections at least) to avoid PG's errors with pg_pconnect like :
+"Sorry, too many clients already connected"
+===============================================================================
+
+To setup a high availability server with apache as a static module and
+postgreSQL, change httpd.conf and set MaxClients to less than max postgreSQL
+simultaneous connections (like 32 or 64).
+This way pg_pconnect will allways return a valid handle under heavy traffic or
+under a request flow attack without wasting resources and without connection
+problems.
+===============================================================================
+
+If a transaction is in progress when page processing ends, is it aborted before
+the connection placed bak in the pool? Or is the connection added "as is"?
+
+It would seem that the correct thing to do is to always 'ABORT' before adding
+to the pool.
+
+As a note, this would be a good time to check and see if the connection is
+still open before readding it. Thus allowing closed connections to be cleaned
+up over time, instead of hanging around for ever as they do now.
+===============================================================================
+
+<?php
+//
+// Using pg_pconnect in a class.
+//
+// Why this? Because the manual says:
+//
+//   If a second call is made to pg_pconnect() with the same
+//   connection_string as an existing connection, the existing
+//   connection will be returned unless you pass
+//   PGSQL_CONNECT_FORCE_NEW as connect_type.
+//
+// This is not always true.
+//
+/**
+* MyClassA creates a postgresql connection using pg_pconnect
+* and stores the resulting resource id to $this->conn
+*/
+class MyClassA
+{
+    function __construct($connection_string)
+    {
+        $this->conn =
+            pg_pconnect($connection_string)
+                or die('Wrong CONN_STRING');
+    }
+}
+
+//
+// Showing current php.ini settings to be sure
+// that persistent connections s  are allowed.
+// -1 means 'unlimited'
+//
+echo '<br>pgsql.allow_persistent: ' . ini_get('pgsql.allow_persistent');
+echo '<br>pgsql.max_persistent: ' . ini_get('pgsql.max_persistent');
+echo '<br>pgsql.max_links: ' . ini_get('pgsql.max_links');
+echo '<br><br>';
+
+// setting one custom connection string for all objects
+// (modify $connection_string to fit your needs)
+$connection_string =
+    'host=localhost port=5432' .
+    ' dbname=test user=test password=test';
+
+// 
+// Creating 10 MyClassA objects using the same $connection_string
+//
+$objArr = Array();
+for ($i = 0; $i < 10; $i++)
+{
+    $objArr[] = new MyClassA($connection_string);
+}
+
+//
+// Human readable result:
+//
+foreach($objArr as $id => $object)
+{
+    printf(
+        '%s: Object %s: using db %s<br>',
+        get_class($object), $id, $object->conn
+    );
+}
+
+/* ------------------------------------------------------------- */
+// The result
+// pgsql.allow_persistent: 1
+// pgsql.max_persistent: -1
+// pgsql.max_links: -1
+//
+// MyClassA: Object 0: using db Resource id #2
+// MyClassA: Object 1: using db Resource id #3
+// MyClassA: Object 2: using db Resource id #4
+// MyClassA: Object 3: using db Resource id #5
+// MyClassA: Object 4: using db Resource id #6
+// MyClassA: Object 5: using db Resource id #7
+// MyClassA: Object 6: using db Resource id #8
+// MyClassA: Object 7: using db Resource id #9
+// MyClassA: Object 8: using db Resource id #10
+// MyClassA: Object 9: using db Resource id #11
+//
+/* ------------------------------------------------------------- */
+//
+// Each MyClassA object will use its _own_ database Resource id
+//
+?>
+===============================================================================
+
+As of Aug 2007, some suggestions from the postgresql forums
+on pg_pconnect(), faster postgres connections, and connection pooling:
+
+Summary:
+http://archives.postgresql.org/pgsql-general/2007-08/msg01406.php
+
+Good details: http://archives.postgresql.org/pgsql-general/2007-08/msg00660.php
+Also: http://archives.postgresql.org/pgsql-general/2007-08/msg01489.php
+===============================================================================
+
+A contribution to the transaction issue raised by "garrett at bgb dot cc".
+
+In a German book about PostgreSQL in connection with PHP (Cornelia Boenigk,
+PostgreSQL - Grundlagen, Praxis, Anwendungsentwicklung mit PHP) one can read in
+chapter 19.3 about persistent connections:
+If the page processing aborts and the transaction is not finished yet, the next
+script using the same persistent connection will be considered as the
+continuation of the transaction. In particular a lock of a table will persist.
+The explanation is as follows: After the abort of the script no COMMIT or
+ROLLBACK was sent to the db server.
+
+The author describes a hint to avoid the scenario above:
+You can create a function for resolving transactions and locks erroneously not
+closed. For invoking the function after execution of a script it has to be
+registered with the function register_shutdown_function():
+
+http://de2.php.net/manual/en/function.register-shutdown-function.php

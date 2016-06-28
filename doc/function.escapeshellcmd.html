@@ -1,0 +1,286 @@
+
+escapeshellcmd
+
+(PHP 4, PHP 5, PHP 7)
+
+escapeshellcmd — shell 元字符转义
+
+说明
+
+string escapeshellcmd ( string $command )
+
+escapeshellcmd() 对字符串中可能会欺骗 shell 命令执行任意命令的字符进行转义。此
+函数保证用户输入的数据在传送到 exec() 或 system() 函数，或者执行操作符之前进行
+转义。
+
+反斜线（\）会在以下字符之前插入： #&;`|*?~<>^()[]{}$\, \x0A 和 \xFF。 ' 和 " 仅
+在不配对儿的时候被转义。在 Windows 平台上，所有这些字符以及 % 都会被空格代替。
+（译注：实际测试发现在 Windows 平台是前缀 ^ 来转义的。）
+
+参数
+
+command
+
+    要转义的命令。
+
+返回值
+
+转义后的字符串。
+
+范例
+
+Example #1 escapeshellcmd() example
+
+<?php
+// 我们故意允许任意数量的参数
+$command = './configure '.$_POST['configure_options'];
+
+$escaped_command = escapeshellcmd($command);
+ 
+system($escaped_command);
+?>
+
+Warning
+
+escapeshellcmd() 应被用在完整的命令字符串上。即使如此，攻击者还是可以传入任意数
+量的参数。请使用 escapeshellarg() 函数对单个参数进行转义。
+
+参见
+
+  • escapeshellarg() - 把字符串转码为可以在 shell 命令里使用的参数
+  • exec() - 执行一个外部程序
+  • popen() - 打开进程文件指针
+  • system() - 执行外部程序，并且显示输出
+  • 执行运算符
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+There is a quirk to be aware of regarding use of echo. If you have a command
+which you want to execute which takes input from STDIN, you would normally do:
+
+<?php $output = shell_exec("echo $input | /the/command"); ?>
+
+Unfortunately, this is a *bad idea* and will make your script unportable,
+providing a very hard-to-trace bug on some systems. Depending on how the server
+is set up, /bin/sh will either call /bin/bash or /bin/dash, and these have very
+different versions of echo. Never use echo; use printf instead which is
+consistent. How do you escape for printf? Do this:
+
+<?php
+$input = 'string to be passed *exactly* to the command';
+//Escape only what is needed to get by PHP's parser; we want
+//the string data PHP is holding in its buffer to be passed
+//exactly to stdin buffer of the command.
+$cmd = str_replace(array('\\', '%'), array('\\\\', '%%'), $input);
+$cmd = escapeshellarg($cmd);
+
+$output = shell_exec("printf $cmd | /path/to/command");
+?>
+
+For the paranoid, this torture test verifies that both shell escaping and
+printf's own escaping are handled correctly. Use with confidence!
+
+<?php
+
+$test = 'stuff bash interprets, space: # & ; ` | * ? ~ < > ^ ( ) [ ] { } $ \ \
+x0A \xFF. \' " %'.PHP_EOL.
+        'stuff bash interprets, no space: #&;`|*?~<>^()[]{}$\\x0A\xFF.\'\"%'.
+PHP_EOL.
+        'stuff bash interprets, with leading backslash: \# \& \; \` \| \* \? \~
+\< \> \^ \( \) \[ \] \{ \} \$ \\\ \\\x0A \\\xFF. \\\' \" \%'.PHP_EOL.
+        'printf codes: % \ (used to form %.0#-*+d, or \\ \a \b \f \n \r \t \v \
+" \? \062 \0062 \x032 \u0032 and \U00000032)';
+
+echo "These are the strings we are testing with:".PHP_EOL.$test.PHP_EOL;
+$cmd = $test;
+$cmd = str_replace(array('\\', '%'), array('\\\\', '%%'), $test);
+$cmd = escapeshellarg($cmd);
+
+echo PHP_EOL."This is the output using the escaping mechanism given:".PHP_EOL;
+echo `printf $cmd | cat`.PHP_EOL;
+
+echo PHP_EOL."They should match exactly".PHP_EOL;
+?>
+===============================================================================
+
+Mind it does not escape ! (exclamation mark). So if you want to i.e. printf()
+commands for later use in shell (i.e. by pasting to the console) you need to
+escape all exclamation marks or shell will try to process ! as history
+reference. This approach shall suffice:
+
+<?php $scaped = str_replace('!', '\!', escapeshellarg( $str ) ); ?>
+===============================================================================
+
+"normal any user on linux can view almost any directory so:
+ls / -als will print a complete list of any file in the linux filesystem
+including its size, security and hidden files as well."
+ls / -alsR is the whole filesystem.
+===============================================================================
+
+This function does not work as shown in the php.net examples.
+
+If you put your encoded filename into double-quotes as they suggest, then it
+will break on certain characters in filenames, such as ampersand.
+
+For example if you have a filename called "foo & bar.jpg" and you use this
+function on it, your resulting filename when double-quoted will produce this
+and not be found:
+
+"foo \& bar.jpg"
+
+If you need to have a single argument where spaces are included then do not use
+this function with added double-quotes, use escapeshellarg() which encloses the
+whole string in single quotes.
+
+I do not understand which purpose this particular function is intended for.  I
+can't see any use for it, unless you pass it through another function and
+convert spaces " " to "\ ", which would allow you to use the string directly on
+the command line.
+===============================================================================
+
+Well guys, i find it very hard that escapeshellarg and escapeshellcmd are
+forcely run when passing a command to exec, system or popen, when safe_mode is
+turned on.
+
+Right now, i did not find any working solution to pass commands like this:
+cmd -arg1 -arg2 "<BLA varname=\"varvalue\" varname1=\"varvalue1\" />"
+
+it is just the case, that the parameter for arg2 which is a string that looks
+like an HTML-Tag with various attributes set, all attributes of the string in
+arg2 gets splitted by the whitespaces within. this wont happen with safe_mode
+turned off, so it must be one of the escapefunctions, that breaks
+functionality.
+
+In order to circumvent this, i have made a temporary solution, which
+dynamically creates a skriptfile (by fopen), which just contains the whole
+command with arguments, and then execute that skriptfile. i dont like that
+solution, but in the other hand, safe_mode cannot be easily turned off on that
+server.
+===============================================================================
+
+escaping strings for a shell is tricky.
+
+  If your target system is windows give up now.  windows isn't even self
+consisitent in how to escape stuff.
+
+  if unix convert everything to octal - although this is hardest to implement
+it's the easiest to implement correctly - there are no special cases..
+.
+===============================================================================
+
+This function is great -- except when you need to legitimately use an escaped
+character as part of your command.  The code below leaves the parts of the
+command that are enclosed within single quotes alone, but escapes the rest eg:
+
+"echo Never use the '<blink>' tag ; cat /etc/passwd"
+becomes:
+"echo Never use the '<blink>' tag \; cat /etc/passwd"
+and not:
+"echo Never use the '\<blink\>' tag \; cat /etc/passwd"
+
+i.e, we really want the ';' escaped, but not the HTML tag.  I really needed the
+code below in order to run the external ImageMagick's 'convert' command
+properly and safely...
+
+<?php
+
+// Escape whole string
+$cmdQ = escapeshellcmd($cmd);
+
+// Build array of quoted parts, and the same escaped
+preg_match_all('/\'[^\']+\'/', $cmd, $matches);
+$matches = current($matches);
+$quoted = array();
+foreach( $matches as $match )
+    $quoted[escapeshellcmd($match)] = $match;
+
+// Replace sections that were single quoted with original content
+foreach( $quoted as $search => $replace )
+    $cmdQ = str_replace( $search, $replace, $cmdQ );
+
+return $cmdQ;
+
+?>
+===============================================================================
+
+I've got a php script that needs to pass a username and password via exec to a
+perl script.  The problem is valid password characters were getting escaped...
+
+Here's a little perl function I wrote to fix it.
+
+sub unescape_string {
+      my $string = shift;
+      # all these interpolated regex's are slow, so if there's no
+      # backslash in the string don't bother with it
+      # index() is faster then a regex
+      if ( ! index($string,'\\\\') ) {
+         return $string;
+      }
+      my @characters = ('#', '&', ';', '`', '|', '*', '?', '~', '<', '>', '^',
+'(', ')',
+                        '[', ']', '{', '}', '$', '\\', ',', ' ', '\x0A', '\xFF'
+);
+      my $character;
+      foreach $character (@characters) {
+         $character = quotemeta($character);
+         my $pattern = "\\\\(" . $character . ")";
+         $string =~ s/$pattern/$1/g;
+      }
+      return $string;
+}
+
+Hope this is useful.
+===============================================================================
+
+the main reason for quoting a command is that it not multiple  command can be
+joined. i don't know for sure if this is the right syntax but remeber that this
+can do some nice security breaks. here's one way of how to know exactly what
+your trying to break into for.
+
+normal any user on linux can view almost any directory so:
+ls / -als will print a complete list of any file in the linux filesystem
+including its size, security and hidden files as well.
+
+now the output would only become known to php and never will the user be able
+to view this data unless the php script would actual start to print it out.
+like passtru does!! but a good php coder knows never to use passtru unless not
+otherwise possible.
+
+but what would happen if you can direct the output from ls also from that same
+commandline to a file in the webroot most webserver still default their
+base-webroot to /var/www/ so storing it there in text file to download it later
+and you can simply take coffee while checking wich files can be read by php
+security mode and then simply use the cp command to copy those to the webroot
+and download them to your own hard-disk. without a list of the files you can
+only guess where to copy from! and thats harder then guessing the root
+password.
+
+so if the first command was quoted it is not possible to attach another command
+because of a syntax error. think of all the thinks you can do once you got a
+complete list of every file on the filesystem. including mounted once via NFS
+and others. security starts at keeping the door hidden.
+
+also another nice command for hanging the webserver can be "php <?php while(
+true){ exec('ls / -als'); }; ?>" this keeps creating a file list on the entire
+filesystem wich not only keeps the hard-disk(s) bussy but also memory and cpu  
+wich must store the returned list. so keeping in mind not all command accepted
+from users can be used blind.
+
+actualy never accept any command from external sources only proven built-in
+predefined commands should be executed.
+===============================================================================
+
+To extract an archive file to a specific folder using exec() :
+
+<?php
+$result = exec(escapeshellcmd("tar -xvvf /path/to/archive.tar -C /path/to/
+extract/to/"));
+?>
+
+escapeshellcmd() is used here because I am getting the file path via user input
+/ upload.
+
+DT

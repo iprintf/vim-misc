@@ -1,0 +1,868 @@
+
+rename
+
+(PHP 4, PHP 5, PHP 7)
+
+rename — 重命名一个文件或目录
+
+说明
+
+bool rename ( string $oldname , string $newname [, resource $context ] )
+
+尝试把 oldname 重命名为 newname。
+
+参数
+
+oldname
+
+        Note:
+
+        用于 oldname 中的封装协议必须和用于 newname 中的相匹配。
+
+newname
+
+    新的名字。
+
+context
+
+
+        Note: 在 PHP 5.0.0 中增加了对上下文（Context）的支持。有关上下文（
+        Context）的说明参见 Streams。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+5.3.1 可以在 Windows 上跨驱动器 rename() 文件。
+5.0.0 rename() 也可用于某些 URL 封装协议。参见支持的协议和封装协议的列表看看 
+      rename() 支持哪些 URL 封装协议。
+      在有适当权限的时候 rename() 已经能够在基于 *nix 的系统中跨磁盘分区重命名
+4.3.3 文件。Warnings may be generated if the destination filesystem doesn't
+      permit chown() or chmod() system calls to be made on files — for example,
+      if the destination filesystem is a FAT filesystem.
+
+范例
+
+Example #1 rename() 例子
+
+<?php
+rename("/tmp/tmp_file.txt", "/home/user/login/docs/my_file.txt");
+?>
+
+参见
+
+  • copy() - 拷贝文件
+  • unlink() - 删除文件
+  • move_uploaded_file() - 将上传的文件移动到新位置
+
+
+User Contributed Notes 40 notes
+
+===============================================================================
+
+Code first, then explanation.
+
+<?php
+
+rename ("/folder/file.ext", "newfile.ext");
+
+?>
+
+That doesn't rename the file within the folder, as you might assume, instead,
+it moves the file to whatever the PHP working directory is... Chances are
+you'll not find it in your FTP tree. Instead, use the following:
+
+<?php
+
+rename ("/folder/file.ext", "/folder/newfile.ext");
+
+?>
+===============================================================================
+
+For those who are still confused about the behavior of rename() in Linux and
+Windows (Windows XP) when target destination exists:
+
+I have tested rename($oldName, $targetName) in PHP 5.3.0 and PHP 5.2.9 on both
+OS and find that if a file named $targetName does exist before, it will be
+overwritten with the content of $oldName
+===============================================================================
+
+Hello!
+For unix/linux users: it is usefull to know that if you use rename() for a
+directory, the new one will be created with the current umask!
+===============================================================================
+
+rename() is working on Linux/UNIX but not working on Windows on a directory
+containing a file formerly opened within the same script. The problem persists
+even after properly closing the file and flushing the buffer.
+
+<?php
+$fp = fopen ("./dir/ex.txt" , "r+");
+$text = fread($fp, filesize("../dir/ex.txt"));
+ftruncate($fp, 0);
+$text2 = "some value";
+fwrite ($fp,  $text2 );
+fflush($fp);
+fclose ($fp);
+if (is_resource($fp))
+    fclose($fp);
+rename ("./dir", ".dir2"); // will give a «permission denied» error
+?>
+
+Strangely it seem that the rename command is  executed BEFORE the handle
+closing on Windows.
+
+Inserting a sleep() command before the renaming cures the problem.
+
+<?php
+$fp = fopen ("./dir/ex.txt" , "r+");
+$text = fread($fp, filesize("../dir/ex.txt"));
+ftruncate($fp, 0);
+$text2 = "some value";
+fwrite ($fp,  $text2 );
+fflush($fp);
+fclose ($fp);
+if (is_resource($fp))
+    fclose($fp);
+sleep(1);    // this does the trick
+rename ("./dir", ".dir2"); //no error
+?>
+===============================================================================
+
+If by any chance you end up with something equivalent to this:
+
+<?php
+rename('/foo/bar','/foo/bar');
+?>
+
+It returns true. It's not documented.
+===============================================================================
+
+Note, that on Unix, a rename is a beautiful way of getting atomic updates to
+files.
+
+Just copy the old contents (if necessary), and write the new contents into a
+new file, then rename over the original file.
+
+Any processes reading from the file will continue to do so, any processes
+trying to open the file while you're writing to it will get the old file
+(because you'll be writing to a temp file), and there is no "intermediate" time
+between there being a file, and there not being a file (or there being half a
+file).
+
+Oh, and this only works if you have the temp file and the destination file on
+the same filesystem (eg. partition/hard-disk).
+===============================================================================
+
+rename() fails with PHP4 and PHP5 under Windows if the destination file exists,
+regardless of file permission settings. I now use a function similar to that of
+ddoyle [at] canadalawbook [dot] ca, which first tries rename(), checks if it
+returned FALSE and then uses copy()/unlink() if it failed.
+
+However, copy() is, unlike rename(), NOT useable for "atomic updates". Another
+process may actually access the destination file while copy() is working. In
+such a case, the other process with perceive the file as empty or with
+incomplete content ("half written").
+===============================================================================
+
+As described from the unlink() page:
+You have to release any handles to the file before you can rename it (True on
+Windows, at least).
+This will NOT work, you'll receive permission denied errors:
+<?php
+    $fileHand = fopen('tempFile.txt', 'r');
+    rename( 'tempFile.txt', 'tempFile2.txt' ); // Permission Denied!
+?>
+
+Simply close the handle to fix this:
+<?php
+    $fileHand = fopen('tempFile.txt', 'r');
+    fclose($fileHand);
+    rename( 'tempFile.txt', 'tempFile2.txt' );
+?>
+
+This has me scratching my head for some time, as the handle was opened at the
+top of a marge function, and the rename was at the bottom.
+===============================================================================
+
+If you use SplFileObject for the same file which
+you want to rename you have to remove SplFileObject objec first.
+
+<?php
+
+$filePath = 'testFile.txt';
+$fileObj = new SplFileObject(  $filePath  );
+rename( $filePath, 'newName.txt'  );
+
+// You will get - Permission denied error
+
+$filePath = 'testFile.txt';
+$fileObj = new SplFileObject( 'filePath.txt' );
+$fileObj = null;
+rename( $filePath, 'newName.txt'  );
+
+// and now it is working.
+?>
+===============================================================================
+
+From the Changelog notes:
+
+"Warnings may be generated if the destination filesystem doesn't permit chown()
+or chmod() system calls to be made on files — for example, if the destination
+filesystem is a FAT filesystem."
+
+More explicitly, rename() may still return (bool) true, despite the warnings
+that result from the underlying calls to chown() or chmod(). This behavior can
+be misleading absent a deeper understanding of the underlying mechanics. To
+rename across filesystems, PHP "fakes it" by calling copy(), unlink(), chown(),
+and chmod() (not necessarily in that order). See PHP bug #50676 for more
+information.
+
+On UNIX-like operating systems, filesystems may be mounted with an explicit uid
+and/or gid (for example, with mount options "uid=someuser,gid=somegroup").
+Attempting to call rename() with such a destination filesystem will cause an
+"Operation not permitted" warning, even though the file is indeed renamed and
+rename() returns (bool) true.
+
+This is not a bug. Either handle the warning as is appropriate to your
+use-case, or call copy() and then unlink(), which will avoid the doomed calls
+to chown() and chmod(), thereby eliminating the warning.
+===============================================================================
+
+I needed to move a file to another folder regardless if that file existed in
+the target already so I wrote a small piece to append a unique number to each
+file.
+
+$rem = $_GET['file'];
+$ticket = uniqid(rand(), true);
+
+rename("$rem", "www/home/storefile/$ticket$rem");
+
+the output looks like this - 6881432893ad4925a1.70147481filename.txt
+
+This also helps if you want different versions of the file stored.
+===============================================================================
+
+Important note - rename() does NOT work for *directories* across filesystems or
+devices. Only *files*
+
+You will get two warnings:
+"PHP Warning:  rename(): The first argument to copy() function cannot be a
+directory in <whatever> on line <whatever>"
+"PHP Warning:  rename(t2,/var/run/test/t2): Invalid cross-device link in
+<whatever> on line <whatever>"
+
+The copy() mentioned I assume is C's copy() and not PHP's copy() function.
+There is an associated bug in the Ubuntu bug system for this as well, that was
+escalated to bugs.php.net:
+https://bugs.php.net/bug.php?id=54097
+
+The only workarounds right now I believe is using PHP copy($source, $dest) and
+then on success, PHP unlink($source), or doing system("mv $source $dest") which
+is hokey, and should be surrounded by quotes for paths with spaces or other
+shell metacharacters, and possibly escaped for security.
+===============================================================================
+
+Note that this WILL NOT WORK if trying to rename a directory to a network
+share.
+
+e.g.
+rename('/home/user/me/dir1', '/mnt/shares/nfsmount/dir2')
+
+will create a file called 'dir2' on the share and not a directory.
+
+This caught me out and my (quickest) solution was to use an exec and mv
+command:
+
+<?php
+$cmd = 'mv "/home/user/me/dir1" "/mnt/shares/nfsmount/dir2"';
+exec($cmd, $output, $return_val);
+
+if ($return_val == 0) {
+   echo "success";
+} else {
+   echo "failed";
+}
+?>
+===============================================================================
+
+rename() definitely does not follow the *nix rename convention on WinXP with
+PHP 5.  If the $newname exists, it will return FALSE and $oldname and $newname
+will remain in their original state.  You can do something like this instead:
+
+function rename_win($oldfile,$newfile) {
+   if (!rename($oldfile,$newfile)) {
+      if (copy ($oldfile,$newfile)) {
+         unlink($oldfile);
+         return TRUE;
+      }
+      return FALSE;
+   }
+   return TRUE;
+}
+===============================================================================
+
+If $source is a valid folder, what do you think this does:
+
+<?php
+rename($source, '@');
+?>
+
+In 99% of the time you will get a warning, and $source remains untouched.
+
+However, if you're working on Windows, and on a mapped network drive
+occasionally $source will be moved to folder '@' which will be located at PHP's
+working directory.
+
+How about this:
+
+<?php
+rename($source, $source . '\folder1');
+?>
+
+This makes $source inaccessible.
+
+Of course, it's stupid to move $source into a sub-folder like that. I'd expect
+an error. Yet, no error or warning. And the script "freezes".
+
+I had few instances where rename simply deleted files & folders. I have not
+been able figure out why.
+
+In a nut shell, be-careful when using rename.
+===============================================================================
+
+[Editor note: this works because SplFileObject has the __toString() method
+which returns the file path]
+
+Note that you can pass an SplFileInfo object as either argument:
+
+<?php
+# Assume a file 'foo' in the current directory
+
+rename('foo', new SplFileInfo('bar'));
+
+# foo is now bar!
+
+rename(new SplFileInfo('bar'), 'foo');
+
+# bar is now foo again
+?>
+===============================================================================
+
+on windows (XP, vista, 7...) http://fr.wikipedia.org/wiki/Windows-1252", if
+your file name contains accent, it doesn't work basically. So use iconv
+function to convert from utf-8 to cp1252 as bellow :
+<?php
+
+$nomfichierinitial=iconv("UTF-8", "CP1252", "C:\\wamp\\www\\tést.txt");
+$nomfichierfinal="C:\\wamp\\www\\test.txt";
+rename($nomfichierinitial, $nomfichierfinal);
+?>
+===============================================================================
+
+I could not get this to work at first, then saw that I was using a site url
+constant ahead of my target folder/filename. After re-reading the example I
+changed my constant to a filesystem type, like <?php rename( old_filename.ext, 
+$_SERVER['DOCUMENT_ROOT']"/target/folder/my_new_filename.ext"); ?> and it
+worked like a charm.
+===============================================================================
+
+When I'm using unlink() or rename() with a SSH2.SFTP wrapper, both functions
+always return FALSE (but without a warning) even on success.
+
+Example:
+
+$connection = ssh2_connect(SERVER_NAME, PORT);
+ssh2_auth_password($connection, USERNAME, PASSWORD);
+$sftp = ssh2_sftp($connection);
+
+unlink("ssh2.sftp://$sftp/" . REMOTE_DIRECTORY . FILENAME); // returns FALSE on
+success and on failure
+
+rename("ssh2.sftp://$sftp/" . REMOTE_DIRECTORY . OLD_FILENAME, "ssh2.sftp://
+$sftp/" . REMOTE_DIRECTORY . NEW_FILENAME); // returns FALSE on success and on
+failure
+===============================================================================
+
+Actually, I'm pretty sure that rename follows the convention of *nix rename(2)
+in overwriting the destination if it exists atomically (meaning that no other
+process will see the destination cease to exist, even for an instant).  This is
+useful because it allows you to build a file as a temp file, then rename it to
+where you want it to be, and nobody sees the file when it's half done.
+
+Probably rename($old, $new) with an existing new was caused by permission
+problems.  I bet the other problems you had were the result of not calling
+clearstatcache(), which can cause PHP to act like a file exists though it has
+since been deleted.
+===============================================================================
+
+- rename extension of files
+
+changeext($directory, $ext1, $ext2, $verbose)
+
+i wrote this function to rename the extention of some files in a folder and
+sub-folders inside it ..
+
+parameter 1 :  the directory name
+parameter 2 :  the first extention wich we want to replace
+parameter 3 :  the new extention of files
+
+for a simple usage call the function :
+changeext('dir', 'html', 'php',  'false');
+
+to change evry file name with extention html  into php  in the directory  dir
+
+<?php
+
+function changeext($directory, $ext1, $ext2, $verbose = false) {
+  $num = 0;
+  if($curdir = opendir($directory)) {
+   while($file = readdir($curdir)) {
+     if($file != '.' && $file != '..') {
+
+       $srcfile = $directory . '/' . $file;
+       $string  = "$file";
+       $str     = strlen($ext1);
+       $str++;
+       $newfile = substr($string, 0, -$str);
+       $newfile = $newfile.'.'.$ext2;
+       $dstfile = $directory . '/' . $newfile;
+
+       if (eregi("\.$ext1",$file)) { # Look at only files with a pre-defined
+extension
+       $fileHand = fopen($srcfile, 'r');
+       fclose($fileHand);
+       rename($srcfile, $dstfile );
+       }
+
+       if(is_dir($srcfile)) {
+         $num += changeext($srcfile, $ext1, $ext2, $verbose);
+       }
+     }
+   }
+   closedir($curdir);
+  }
+  return $num;
+}
+
+changeext('dir', 'html', 'php',  'false');
+
+?>
+
+to remove the extention of files , just leave the parameter $ext2 blank ''
+===============================================================================
+
+This was a fun one-- on Win XP, rename throws a "permission deined" if you try
+to rename across volumes.. i.e. rename("c:\windows\temp\x.txt", "g:\
+destination") will fail.
+===============================================================================
+
+As of PHP 5.1.4 compiled on a mac, using rename with spaces one should just use
+the space.   Take for example:
+
+rename("/tmp/somefile.tar", "/mnt/laptop storage/somefile.tar");
+
+If you use the backslash, like if you were cd-ing to the directory, rename will
+fail.  Example:
+
+rename("/tmp/somefile.tar", "/mnt/laptop\ storage/somefile.tar");
+
+While not really a bug, it did confuse me for a little bit while working on a
+backup script.
+===============================================================================
+
+It is unclear what encoding the arguments of rename should have; For PHP 4.3,
+on a HFS+ filesystems, rename() did not handle UTF-8 strings, and returned an
+error.
+===============================================================================
+
+To anyone wondering, rename($old, $new) returns FALSE if $new already exists. 
+My script called for overwriting the file if it existed so I did this:
+
+if(file_exists($new)) { unlink($new); }
+$ok = rename($old, $new);
+
+This did not work as expected.  If $new actually existed then it worked fine. 
+That is the file found at path $new was deleted and replaced with the file
+found at path $old.  However, if $new did NOT exist then the result was the
+file at  path $old vanished into oblivion.  After debugging a bit, it seems
+that rename() was getting executed before the if-statement.  So rename() moved
+$old to $new, THEN the if-statement evaluated to true and deleted the file I
+just moved.  Anyway, this fixed it:
+
+if(file_exists($new)) {
+    unlink($new);
+    $ok = rename($old, $new);
+} else { $ok = rename($old, $new); }
+
+Very strange ... I hope this helps somebody
+===============================================================================
+
+I have programmed a really nice program that remotely lets you manage files as
+if you have direct access to them (http://sourceforge.net/projects/filemanage/
+). I have a bunch of really handy functions to do just about anything to files
+or directories. In it I just finished redevloping the directory move function
+to utilize PHP's rename() since it is way more efficient than a copy/delete
+process. It goes through (recursivly) and renames all the files to a new
+location instead of copying them. It recreates the directory structure in the
+new location. It also allows you to overwrite the existing files, or not.
+Here is the function I made; it will likely need tweaking to work as a
+standalone script, since it relies of variables set by my program (eg: loc1 --
+which dynamically changes in my program):
+
+<?PHP
+  // loc1 is the path on the computer to the base directory that may be moved
+define('loc1', 'C:/Program Files/Apache Group/Apache/htdocs', true);
+
+  // move a directory and all subdirectories and files (recursive)
+  // void dirmv( str 'source directory', str 'destination directory' [, bool
+'overwrite existing files' [, str 'location within the directory (for recurse)
+']] )
+function dirmv($source, $dest, $overwrite = false, $funcloc = NULL){
+
+  if(is_null($funcloc)){
+    $dest .= '/' . strrev(substr(strrev($source), 0, strpos(strrev($source), '/
+')));
+    $funcloc = '/';
+  }
+
+  if(!is_dir(loc1 . $dest . $funcloc))
+    mkdir(loc1 . $dest . $funcloc); // make subdirectory before subdirectory is
+copied
+
+  if($handle = opendir(loc1 . $source . $funcloc)){ // if the folder
+exploration is sucsessful, continue
+    while(false !== ($file = readdir($handle))){ // as long as storing the next
+file to $file is successful, continue
+      if($file != '.' && $file != '..'){
+        $path  = $source . $funcloc . $file;
+        $path2 = $dest . $funcloc . $file;
+
+        if(is_file(loc1 . $path)){
+          if(!is_file(loc1 . $path2)){
+            if(!@rename(loc1 . $path, loc1 . $path2)){
+              echo '<font color="red">File ('.$path.') could not be moved,
+likely a permissions problem.</font>';
+            }
+          } elseif($overwrite){
+            if(!@unlink(loc1 . $path2)){
+              echo 'Unable to overwrite file ("'.$path2.'"), likely to be a
+permissions problem.';
+            } else
+              if(!@rename(loc1 . $path, loc1 . $path2)){
+                echo '<font color="red">File ('.$path.') could not be moved
+while overwritting, likely a permissions problem.</font>';
+              }
+          }
+        } elseif(is_dir(loc1 . $path)){
+          dirmv($source, $dest, $overwrite, $funcloc . $file . '/'); //recurse!
+          rmdir(loc1 . $path);
+        }
+      }
+    }
+    closedir($handle);
+  }
+} // end of dirmv()
+?>
+
+This new function will be in 0.9.7 (the next release of File Manage) which
+should release sometime early February.
+Hope this helps some people.
+===============================================================================
+
+Remark for "php at stock-consulting dot com"'s note:
+This depends on the operating system.
+On windows-systems you can't rename a file to an existing destination (ok, with
+tools you can - but they unlink the exisiting one before).
+===============================================================================
+
+If you rename one directory to another where the second directory exists as an
+empty directory it will not complain.
+
+Not what I expected.
+
+[pearcec@abe tmp]$ mkdir test1
+[pearcec@abe tmp]$ mkdir test2
+[pearcec@abe tmp]$ touch test1/test
+[pearcec@abe tmp]$ php
+<?php
+rename("test1","test2");
+?>
+X-Powered-By: PHP/4.0.5
+Content-type: text/html
+
+[pearcec@abe tmp]$ ls -al
+total 12
+drwxr-xr-x    3 pearcec  commnav      4096 Jun 15 13:17 .
+drwxr-xr-x   18 pearcec  commnav      4096 Jun 15 13:15 ..
+drwxr-xr-x    2 pearcec  commnav      4096 Jun 15 13:16 test2
+[pearcec@abe tmp]$ ls -la test2/
+total 8
+drwxr-xr-x    2 pearcec  commnav      4096 Jun 15 13:16 .
+drwxr-xr-x    3 pearcec  commnav      4096 Jun 15 13:17 ..
+-rw-r--r--    1 pearcec  commnav         0 Jun 15 13:16 test
+[pearcec@abe tmp]$
+===============================================================================
+
+This code renames all  files and folders in a specific directory to lower case:
+
+<?php
+$path = "my_doc";
+
+function getDirectory( $path = '.', $level = 0 ){
+
+    $ignore = array( 'cgi-bin', '.', '..' );
+
+    $dh = @opendir( $path );
+   
+    while( false !== ( $file = readdir( $dh ) ) )
+    {
+        if( !in_array( $file, $ignore ) )
+        {
+            $spaces = str_repeat( '&nbsp;', ( $level * 4 ) );
+            if( is_dir( "$path/$file" ) )
+            {
+                echo "<strong>$spaces $file</strong><br />";
+                rename($path."\\".$file, strtolower($path."\\".$file));
+                getDirectory( "$path/$file", ($level+1) );
+               
+            }
+            else {
+                echo "$spaces $file<br />";
+                rename($path."\\".$file, strtolower($path."\\".$file));
+            }
+        }  
+    }
+    closedir( $dh );
+}
+
+getDirectory( $path , 0 )
+
+?>
+===============================================================================
+
+Interesting to note that if you are trying to rename a file within a folder
+adding a slash in front of the folder (even if the folder is in the root of
+your server) will not work.
+
+in other words, if you have the folder "tmp" in your server's root:
+
+<?php
+rename("/tmp/tmp_file.txt", "/tmp/my_file.txt"); // will not work
+
+rename("tmp/tmp_file.txt", "tmp/my_file.txt"); // WILL work!
+?>
+===============================================================================
+
+Until recently you could end the dirname your wanted to rename to with a slash:
+
+rename("mydir/my2nddir/","mydir/my3nddir/")
+
+But now it doesn't work (php warns that it is unable to access mydir/my3nddir
+/).
+
+So always leave out a final slash in your dirname:
+
+rename("mydir/my2nddir","mydir/my3nddir")
+
+The same goes for mkdir().
+===============================================================================
+
+In Windows, on FAT32, rename will fail with "bad file descriptor" if the
+underlying short (8.3) file name of the file to rename is the same as the new
+file name. For example, attempting to rename "Oxygène.m3u" to "Oxygene.m3u"
+will fail if the 8.3 name of "Oxygène.m3u" is "OXYGENE.M3U" (which is very
+likely), as Windows will take both names as belonging to the same file. To
+solve this you must first rename the file to an intermediate name and then
+rename it to the intended name. To see the short (8.3) file names in a
+directory you can type DIR /X on a cmd box.
+===============================================================================
+
+On WinXP/PHP 5+, not only does rename()  not follow the *nix rename as noted
+below, but other things (do not) happen.  If you're trying to rename a
+directory, files within the directory will NOT be present in the renamed
+directory, though sub-directories WILL be present.  Ultra-strange.  And as
+noted, your 'old' directory will remain on the server totally intact, which can
+be very confusing.
+
+To try and rename a folder on XP via PHP, I wound up using a workaround: first
+i used the copydirr() function posted by makarenkoa at ukrpost dot net on the
+"copy" page of the online manual to copy all folders and files within the
+original directory to the new one... and then to delete the original directory
+(and all files/folders beneath it), i used the delDir() function corrected by
+czambran at gmail dot com on the "rmdir" page of the online manual.  Why didn't
+I use unlink()?  Because, unlink does NOT work on Windows systems either (and
+even if it did work, its not recursive without extra coding).
+
+So, all in all, rename() is pretty much a useless function if you are intending
+to rename a folder on an XP box.
+===============================================================================
+
+For those encountering the error:
+No error in "path/to/script/file" at line XX
+
+Check that the new filename (or both for safety) do not contain characters
+forbidden by the system.
+
+For example, forbidden characters in filenames on Windows:
+http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
+
+Hope this helps!
+===============================================================================
+
+This is an update to the code provided by dev at islam-soft dot com, which
+renames all files in a directory with a given extension to have a different
+extension.
+
+I updated four things: Most important, added a check to make sure the extension
+matched ONLY the end of the filename (the original caused me a number of
+headaches when it started matching things in the middle of filenames instead of
+at the end where a proper extension belongs), 2nd added some feedback about
+what is going on, if you choose verbose mode=TRUE, 3rd added the "testing"
+parameter so you can do a test run before committing for real, 4th added an
+error message if a rename fails.
+
+parameter 1 :  the directory name
+parameter 2 :  the first extension which we want to replace
+parameter 3 :  the new extension of files
+parameter 4 :  verbose? (true/false)
+parameter 5 :  testing? (true/false)--if true, won't actually rename anything;
+if you do verbose=TRUE and testing=TRUE you can see what will happen before
+committing to it with testing=FALSE.
+
+Return is the number of files renamed.
+
+for a simple usage call the function :
+changeext('my/directory', 'html', 'php',  false, false);
+
+This changes every file name with extension html  into php  in the directory 
+my/directory
+
+<?PHP
+
+//changes files in $directory with extension $ext1 to have extension $ext2
+//note that if file.ext2 already exists it will simply be over-written
+function changeext($directory, $ext1, $ext2, $verbose = false, $testing=true) {
+  if ($verbose && $testing) { echo "Testing only . . . <br />";}
+  $num = 0;
+  if($curdir = opendir($directory)) {
+   if ($verbose) echo "Opening $directory . . .<br />";
+   while($file = readdir($curdir)) {
+     if($file != '.' && $file != '..') {
+
+       $srcfile = $directory . '/' . $file;
+       $string  = "$file";
+       $str     = strlen($ext1);
+       $str++;
+       $newfile = substr($string, 0, -$str);
+       $newfile = $newfile.'.'.$ext2;
+       $dstfile = $directory . '/' . $newfile;
+
+       if (eregi("\.$ext1". '$' ,$file)) { # Look at only files with a
+pre-defined extension, '$' ensures the ext is only at they end of the filename
+
+         //I think the next two lines are unnecessary but they
+         //don't hurt anything so I'm leaving them
+         $fileHand = fopen($srcfile, 'r');
+         fclose($fileHand);
+
+         if (!$testing) {
+            $result=rename($srcfile, $dstfile );
+            if (!$result) echo "ERROR renaming $srcfile -> $dstfile<br />";
+         }
+      
+
+         if ($verbose) echo "$srcfile -> $dstfile<br />";
+       }
+
+       if(is_dir($srcfile)) {
+         $num += changeext($srcfile, $ext1, $ext2, $verbose, $testing);
+       }
+     }
+   }
+   closedir($curdir);
+  }
+  return $num;
+}
+
+$testing=true;
+$verbose=true;
+
+//example usages, first run with $testing set to false, then change $testing to
+true to do them for real:
+//changeext('your/directory', 'php', 'html', $verbose,  $testing);
+//changeext('your/directory', 'html', 'php',  $verbose, $testing);
+===============================================================================
+
+a simpler code for changing file extentions of multiple files in your working
+directory.
+
+#!/usr/bin/php
+<?php
+//What?        Quick CLI-tool to rename the file extensions of multiple files
+(in working directory) matching the pattern.
+//Author?      ZuZi
+//Date?        2013/02/14
+if($argv[1] && $argv[2]){
+    foreach (glob("*.$argv[1]") as $filename) {
+        echo ("change $filename to ".substr($filename,0,-(strlen($argv[1])))."
+$argv[2]\n");
+        rename("$filename", substr($filename,0,-(strlen($argv[1])))."$argv[2]"
+);
+    }
+}else
+exit("\nERROR: ARGUMENTS MISSING!\n\nChanges the extension of all files
+matching <source> to <target>, in working directory.\n
+usage:    changeFileType source target \n\n");
+?>
+===============================================================================
+
+You can always chdir() to the parent directory of what you're renaming, and
+rename the directory or file directly.  For example:
+
+$oldWD = getcwd();
+chdir($dirWhereRenameeIs);
+rename($oldFilename, $newFilename);
+chdir($oldWD);
+===============================================================================
+
+This might be a similar problem to what happened to:
+
+jmalinsky at gmail dot com
+10-Dec-2005 08:41
+
+Apparently rename() will fail on filenames that are too large and emit an
+E_WARNING.
+
+I was using rename() 'batch-move' a bunch of images. These files were lost in
+translation; in other words: deleted. One file, however, was moved but the
+filename was truncated. Weird. Why one or two files while the rest were
+deleted. This was being attempted on a Windows box.
+
+I hope this helps anyone. If anyone has an explanation please feel free to
+email me. But if you're one of those idiots who *thinks* they're better than
+everyone and you *think* you know everything, don't bother.
+===============================================================================
+
+> rename() may now be able to rename files across partitions on *nix based
+systems
+
+seems it's not true, because
+PHP Fatal error:  Uncaught exception 'Exception' with message 'rename(/tmp/
+tables_new/#translit.csv,/home/crmdev/www/bpl-syrena/tables_new/#translit.csv):
+Operation not permitted'
+===============================================================================
+
+> rename() may now be able to rename files across partitions on *nix based
+systems
+Seems it's not true.
+PHP Fatal error:  Uncaught exception 'Exception' with message 'rename(/tmp/
+tables_new/#translit.csv,/home/crmdev/www/bpl-syrena/tables_new/#translit.csv):
+Operation not permitted'
+
+$ mount
+/dev/mapper/fedora00-root on / type ext4 (rw,relatime,seclabel,data=ordered)
+tmpfs on /tmp type tmpfs (rw,seclabel)

@@ -1,0 +1,273 @@
+
+ldap_get_values_len
+
+(PHP 4, PHP 5, PHP 7)
+
+ldap_get_values_len — Get all binary values from a result entry
+
+说明
+
+array ldap_get_values_len ( resource $link_identifier , resource
+$result_entry_identifier , string $attribute )
+
+Reads all the values of the attribute in the entry in the result.
+
+This function is used exactly like ldap_get_values() except that it handles
+binary data and not string data.
+
+参数
+
+link_identifier
+
+    An LDAP link identifier, returned by ldap_connect().
+
+result_entry_identifier
+
+attribute
+
+返回值
+
+Returns an array of values for the attribute on success and FALSE on error.
+Individual values are accessed by integer index in the array. The first index
+is 0. The number of values can be found by indexing "count" in the resultant
+array.
+
+参见
+
+  • ldap_get_values() - Get all values from a result entry
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+Just a minor update to the note below from "jhgustafsson" regarding the
+"objectGUID" field...
+
+Going a step further, sometimes its useful to display this GUID as a String,
+and Microsoft has a support article and script detailing how to convert
+objectGUID from Hex to String. That article is here: http://
+support.microsoft.com/default.aspx?scid=kb%3Ben-us%3B325649
+
+Below is a PHP function that does the same thing as Microsoft's VB script, it
+takes input of objectGUID in binary format and returns it formatted as a string
+(after converting it to Hex as a middle step). This will return the exact
+"objectGUID" value that is displayed for any Active Directory object in ADUC.
+
+Example output: 3f79048f-42cd-4c77-8426-835cd9f8a3ad
+
+function GUIDtoStr($binary_guid) {
+  $hex_guid = unpack("H*hex", $binary_guid);
+  $hex = $hex_guid["hex"];
+ 
+  $hex1 = substr($hex, -26, 2) . substr($hex, -28, 2) . substr($hex, -30, 2) .
+substr($hex, -32, 2);
+  $hex2 = substr($hex, -22, 2) . substr($hex, -24, 2);
+  $hex3 = substr($hex, -18, 2) . substr($hex, -20, 2);
+  $hex4 = substr($hex, -16, 4);
+  $hex5 = substr($hex, -12, 12);
+
+  $guid_str = $hex1 . "-" . $hex2 . "-" . $hex3 . "-" . $hex4 . "-" . $hex5;
+
+  return $guid_str;
+}
+===============================================================================
+
+Revisiting the question of converting a binary objectGUID to a string, there's
+a simpler method that doesn't involve a lot of string manipulation:
+
+function GUIDtoStr($binary_guid) {
+  $unpacked = unpack('Va/v2b/n2c/Nd', $binary_guid);
+  return sprintf('%08X-%04X-%04X-%04X-%04X%08X', $unpacked['a'], $unpacked
+['b1'], $unpacked['b2'], $unpacked['c1'], $unpacked['c2'], $unpacked['d']);
+}
+
+You can of course replace "X" with "x" in the sprintf format string if you
+prefer lower-case hex digits.
+===============================================================================
+
+I had a lot of issues with decoding errors using ldap_get_values_len() and
+found a of unanswered calls for help on a lot of forums.
+
+The error message is - Warning: ldap_get_values(): Cannot get the value(s) of
+attribute Decoding error in xxx.php.
+
+It appears that this error seems to cover a multitude sins including simple
+typos in the attribute name.
+
+After using PHP to list the attributes of a particular record I noticed that
+the attribute userCertificate wasn't listed simply as userCertificate but
+userCertificate;binary instead.  I wrote this into my code and all was fixed.
+
+So my code looks as follows.
+
+<?php
+        if (!$val = @ldap_get_values_len($con, $entry, "$attribute;binary"))
+                die ('Error retrieving value (' . ldap_error($con) . ')');
+?>
+
+I hope this saves someone the pain I went through trawling Google for an
+answer.
+===============================================================================
+
+To elaborate on rcrow's post, if you want to convert the objectSID value to a
+usable string (from Active Directory) the following function will do the trick
+(this was borrowed from another section of the manual, just thought I'd add it
+here):
+
+// Returns the textual SID
+function bin_to_str_sid($binsid) {
+    $hex_sid = bin2hex($binsid);
+    $rev = hexdec(substr($hex_sid, 0, 2));
+    $subcount = hexdec(substr($hex_sid, 2, 2));
+    $auth = hexdec(substr($hex_sid, 4, 12));
+    $result    = "$rev-$auth";
+
+    for ($x=0;$x < $subcount; $x++) {
+        $subauth[$x] =
+            hexdec($this->little_endian(substr($hex_sid, 16 + ($x * 8), 8)));
+        $result .= "-" . $subauth[$x];
+    }
+
+    // Cheat by tacking on the S-
+    return 'S-' . $result;
+}
+
+// Converts a little-endian hex-number to one, that 'hexdec' can convert
+function little_endian($hex) {
+    for ($x = strlen($hex) - 2; $x >= 0; $x = $x - 2) {
+        $result .= substr($hex, $x, 2);
+    }
+    return $result;
+}
+
+This function is not related to the ldap_get_values_len function but is still
+helpful if you want to convert the objectGUID binary value to a string format
+(converted from some vbscript provided by Richard Mueller):
+
+// This function will convert a binary value guid into a valid string.
+function bin_to_str_guid($object_guid) {
+    $hex_guid = bin2hex($object_guid);
+    $hex_guid_to_guid_str = '';
+    for($k = 1; $k <= 4; ++$k) {
+        $hex_guid_to_guid_str .= substr($hex_guid, 8 - 2 * $k, 2);
+    }
+    $hex_guid_to_guid_str .= '-';
+    for($k = 1; $k <= 2; ++$k) {
+        $hex_guid_to_guid_str .= substr($hex_guid, 12 - 2 * $k, 2);
+    }
+    $hex_guid_to_guid_str .= '-';
+    for($k = 1; $k <= 2; ++$k) {
+        $hex_guid_to_guid_str .= substr($hex_guid, 16 - 2 * $k, 2);
+    }
+    $hex_guid_to_guid_str .= '-' . substr($hex_guid, 16, 4);
+    $hex_guid_to_guid_str .= '-' . substr($hex_guid, 20);
+
+    return strtoupper($hex_guid_to_guid_str);
+}
+
+Here's an example on how to use both:
+
+$filter="samaccountname=".$username;
+$fields=array("objectguid","objectsid");
+
+//establish the connection and specify the base_dn first. there are a lot of
+examples in the manual for this
+
+$sr=ldap_search($this->_conn,$this->_base_dn,$filter,$fields);
+$entries = ldap_get_entries($this->_conn, $sr);
+
+if (in_array("objectguid", $fields)) {
+    $entries[0]["objectguid"][0]=
+        $this->bin_to_str_guid($entries[0]["objectguid"][0]);
+}
+
+if (in_array("objectsid", $fields)) {
+    $entry = ldap_first_entry($this->_conn, $sr);
+    $objectsid_binary = ldap_get_values_len($this->_conn, $entry, "objectsid");
+    $entries[0]["objectsid"][0] = $this->bin_to_str_sid($objectsid_binary[0]);
+}
+
+Hope this helps someone!
+===============================================================================
+
+Tried a couple of different ways to do this but this seems to work best:
+
+<?php
+$info = ldap_first_entry($ds,$sr);
+
+// get it binary-safe.
+$bin_guid = ldap_get_values_len($ds,$info,"objectguid");
+
+// convert to hex, bin2hex failed here for me. Unpack() seems to work though.
+$hex_guid = unpack("H*hex", $bin_guid[0]);
+?>
+===============================================================================
+
+no more need to use ldap_get_values_len (). ldap_get_attributes() works well
+now.
+
+<?php
+$attrs = ldap_get_attributes($this->cid, $this->re);
+$hex_Sid= bin2hex($attrs['objectSid'][0]); //returns
+010500000000000515000000c94d7d363d787b17e77b80109d060000
+$hex_GUID= bin2hex($attrs['objectGUID'][0]); //returns
+710234bbc2abc148ade8c1f9b4567b24
+?>
+===============================================================================
+
+One more function to add that complements the bin_to_str_guid function I posted
+below:
+
+// This function will convert a string GUID value into a HEX value to search
+AD.
+function str_to_hex_guid($str_guid) {
+    $str_guid = str_replace('-', '', $str_guid);
+
+    $octet_str = substr($str_guid, 6, 2);
+    $octet_str .= substr($str_guid, 4, 2);
+    $octet_str .= substr($str_guid, 2, 2);
+    $octet_str .= substr($str_guid, 0, 2);
+    $octet_str .= substr($str_guid, 10, 2);
+    $octet_str .= substr($str_guid, 8, 2);
+    $octet_str .= substr($str_guid, 14, 2);
+    $octet_str .= substr($str_guid, 12, 2);
+    $octet_str .= substr($str_guid, 16, strlen($str_guid));
+
+    return $octet_str;
+}
+
+If you want to convert the string GUID back to the HEX format (required if you
+want to search AD based on the GUID string, make sure you escape the HEX string
+with double backslashes when searching -- ie. \\AE\\0F\\88...).
+===============================================================================
+
+If you are trying to access BINARY DATA, such as ObjectSID within LDAP, you
+must first get an individual entry, as stated under ldap_get_values() function
+-- "This call needs a result_entry_identifier, so needs to be preceded by one
+of the ldap search calls and one of the calls to get an individual entry."
+
+The following code snippet will get the LDAP objectSID for a specific user.
+
+<?php
+/* Get the binary objectsid entry                                           */
+/* Be sure that you have included the binary field in your ldap_search.    */
+$criteria =  "samaccountname=$ldapUser";
+$justthese = array("memberOf", "objectsid");
+   
+$ldapSearchResult = ldap_search($ldapConnectionResult, $ldapBase, $criteria, 
+$justthese);
+ 
+if (ldap_count_entries($ldapConnectionResult, $ldapSearchResult)){
+     $ldapResults = ldap_get_entries($ldapConnectionResult, $ldapSearchResult);
+
+   $entry = ldap_first_entry($ldapConnectionResult, $ldapSearchResult);
+   $ldapBinary = ldap_get_values_len ($ldapConnectionResult, $entry, 
+"objectsid");
+
+/* your code here */
+ 
+}
+?>
+
+You then can use something like bin2hex to put the data in a more usable form.

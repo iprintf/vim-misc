@@ -1,0 +1,548 @@
+
+mysql_num_rows
+
+(PHP 4, PHP 5)
+
+mysql_num_rows — 取得结果集中行的数目
+
+说明
+
+int mysql_num_rows ( resource $result )
+
+mysql_num_rows() 返回结果集中行的数目。此命令仅对 SELECT 语句有效。要取得被
+INSERT，UPDATE 或者 DELETE 查询所影响到的行的数目，用 mysql_affected_rows()。
+
+Example #1 mysql_num_rows() 例子
+
+<?php
+
+$link = mysql_connect("localhost", "mysql_user", "mysql_password");
+mysql_select_db("database", $link);
+
+$result = mysql_query("SELECT * FROM table1", $link);
+$num_rows = mysql_num_rows($result);
+
+echo "$num_rows Rows\n";
+
+?>
+
+    Note:
+
+    如果使用 mysql_unbuffered_query()，则直到结果集中的所有行都被提取后 
+    mysql_num_rows() 才能返回正确的值。
+
+参见 mysql_affected_rows()，mysql_connect()，mysql_data_seek()，mysql_select_db
+() 和 mysql_query()。
+
+为向下兼容仍然可以使用 mysql_numrows()，但反对这样做。
+
+
+User Contributed Notes 22 notes
+
+===============================================================================
+
+I may indeed be the only one ever to encounter this - however if you have a
+myisam table with one row, and you search with valid table and column name for
+a result where you might expect 0 rows, you will not get 0, you will get 1,
+which is the myisam optimised response when a table has 0 or one rows.  Under
+"5.2.4 How MySQL Optimises WHERE Clauses" it reads:
+
+*Early detection of invalid constant expressions. MySQL quickly detects that
+some SELECT statements are impossible and returns no rows.
+
+and
+
+*All constant tables are read first, before any other tables in the query. A
+constant table is:
+1) An empty table or a table with 1 row.
+2) A table that is used with a WHERE clause on a UNIQUE index, or a PRIMARY
+KEY, where all index parts are used with constant expressions and the index
+parts are defined as NOT NULL.
+
+Hopefully this will keep someone from staying up all night with 1146 errors,
+unless I am completely mistaken in thinking I have this figured out.
+===============================================================================
+
+Some user comments on this page, and some resources including the FAQ at :
+
+http://www.faqts.com/knowledge_base/view.phtml/aid/114/fid/12 suggest using
+count(*) to count the number of rows
+
+This is not a particularly universal solution, and those who read these
+comments on this page should also be aware that
+
+select count(*) may not give correct results if you are using "group by" or
+"having" in your query, as count(*) is an agregate function and resets eachtime
+a group-by column changes.
+
+select sum(..) ... left join .. group by ... having ...
+
+can be an alternative to sub-selects in mysql 3, and such queries cannot have
+the select fields replaced by count(*) to give good results, it just doesn't
+work.
+
+Sam
+===============================================================================
+
+Re my last entry:
+
+This seems the best workaround to get an 'ordinary' loop going, with
+possibility of altering output according to row number
+(eg laying out a schedule)
+
+$rowno=mysql_num_rows($result);
+
+for ($i=0; $i<mysql_num_rows($result); $i++) {
+$row = mysql_fetch_assoc($result);
+
+print "<div class=\"showing\">";
+print "<b>".$row['timeon']."-".$row['timeoff']."</b> ".$row['event']."<br />;
+if ($i!=$rowno-1) {
+    print "other-html-within-sched-here</div>";
+    } 
+else print "end-last-entry-html-here</div>";
+}  //close loop
+===============================================================================
+
+In response to oran at trifeed dot com:
+
+You are only experiencing this behaviour because you have not given your
+FOUND_ROWS() result an alias:
+
+$qry = mysql_query ( 'SELECT FOUND_ROWS() AS total' );
+$rst = mysql_fetch_array ( $qry, MYSQL_ASSOC );
+echo $rst['total'];
+
+Sean :)
+===============================================================================
+
+For me
+
+SELECT SQL_CALC_FOUND_ROWS together with
+SELECT FOUND_ROWS()
+
+Only worked with the following syntax:
+$result = @mysql_query($query);
+$resultTotal = @mysql_query("SELECT FOUND_ROWS()");
+$res=    mysql_fetch_array($resultTotal);
+echo $res['FOUND_ROWS()'];
+
+hope it helped
+
+oran
+http://www.trifeed.com
+===============================================================================
+
+Regarding SQL count(), see this faq :
+* http://www.faqts.com/knowledge_base/view.phtml/aid/114/fid/12
+Note: If you already have a $result, use mysql_num_rows() on it otherwise use
+SQL count().  Don't SELECT data just for a count.
+===============================================================================
+
+In Reply to the last post: This may not always work correctly, as $object->
+doesExist would contain a result, not a boolean value. A better way (using the
+same method) would be using a cast:
+
+<?php
+class Object {
+  var $doesExist = false;
+
+  [...]
+  function load() {
+    $result = mysql_query('...');
+    $this->doesExist = (bool) ($res = mysql_fetch_array($result))
+    [...]
+  }
+}
+?>
+===============================================================================
+
+In preventing the race condition for the SQL_CALC_FOUND_ROWS and FOUND_ROWS()
+operations, it can become complicated and somewhat kludgy to include the
+FOUND_ROWS() result in the actual result set, especially for complex queries
+and/or result ordering. The query gets more complex, you may have trouble
+isolating/excluding the FOUND_ROWS() result, and mysql_num_rows() will return
+the number of actual results + 1, all of which makes your code messier and
+harder to read. However, the race condition is real and must be dealt with.
+
+A alternative and cleaner method is to explicitly lock the table using a WRITE
+lock (preventing other processes from reading/writing to the table). The
+downsides I can see are a performance hit, and your mysql user must have lock
+permissions.
+
+<?php
+    // excuse the use of mysqli instead of mysql
+
+    $mysqli->query("LOCK TABLE t WRITE");
+    $results = $mysqli->query("SELECT id FROM t LIMIT 0,10");
+    $totalNumResults = array_pop($mysqli->query("SELECT FOUND_ROWS()")->
+fetch_row());
+    $mysqli->query("UNLOCK TABLES");
+?>
+
+Now you may iterate through the results just like any other result set.
+===============================================================================
+
+MySQL 4.0 supports a fabulous new feature that allows you to get the number of
+rows that would have been returned if the query did not have a LIMIT clause. 
+To use it, you need to add SQL_CALC_FOUND_ROWS to the query, e.g.
+
+$sql = "Select SQL_CALC_FOUND_ROWS * from table where state='CA' limit 50";
+$result = mysql_query($sql);
+
+$sql = "Select FOUND_ROWS()";
+$count_result = mysql_query($sql);
+
+You now have the total number of rows in table that match the criteria.  This
+is great for knowing the total number of records when browsing through a list.
+===============================================================================
+
+A pity there seems no way of getting the CURRENT  row number that's under
+iteration in a typical loop,
+such as:
+while ($row = mysql_fetch_assoc($result)) { }
+
+After all there is an array of row arrays, as signified by
+mysql_num_rows($result):
+
+Say this gives "40 rows" : it would be useful to know when the iteration is on
+row 39.
+
+The nearest seems to be "data seek":but it connects directly to a
+row number eg (from mysql_data_seek page)
+
+for ($i = mysql_num_rows($result) - 1; $i >= 0; $i--) {
+   if (!mysql_data_seek($result, $i)) {
+       echo "Cannot seek to row $i: " . mysql_error() . "\n";
+       continue;
+   }
+
+= it still wouldn't solve knowing what row number you're on in an ordinary
+loop.
+
+One reason for this situation is the php fetch (fetch-a-single-row)
+construction, without any reasonable FOR loop possibility with row numbers.
+
+Suggestion:
+$Rows[$i] possibility where
+$i would be the row number
+
+$Rows[$row[], $row[], $row[].....]
+             0            1            2     etc
+
+-- the excellent retrieval WITHIN a row ( $row[$i] ),
+while certainly more important,  is not matched by
+similar possibilities for rows themselves.
+
+and Count($result) doesnt work of course, $result being a
+mere ticket-identifier...
+
+Peter T
+===============================================================================
+
+It is faster to run second query "select count(...) from ... ", than adding
+SQL_CALC_FOUND_ROWS to your first query, and then using select FOUND_ROWS() +
+mysql_num_rows().
+===============================================================================
+
+Object oriented version of wil1488 at gmail dot com's comment for counting
+table rows:
+<?php
+$result = $mysqli->query("SELECT COUNT(*) as TOTALFOUND from table");
+$row_array=$result->fetch_array(MYSQLI_ASSOC);
+print($row_array['TOTALFOUND']);
+?>
+===============================================================================
+
+Actually I am a little ashamed to be saying this, but I stand corrected about a
+rather old note I posted on 17-Jul-2007 06:44.
+
+Using SQL_CALC_FOUND_ROWS and FOUND_ROWS( ) will NOT trigger a race condition
+on MySQL, as that would pretty much defy their entire purpose.
+
+The results for their usage is actually unique per connection session as it is
+impossible for processes to share anything in PHP. As far as PHP is concerned,
+each request represents a new connection to MySQL as each request is isolated
+to its own process.
+
+To simulate this, create the following script:
+
+<?php
+
+$Handle = mysql_connect( "localhost" , "root" , "" );
+mysql_select_db( "lls" );
+
+if( isset( $_GET[ 'Sleep' ] ) ) {
+    mysql_query( "SELECT SQL_CALC_FOUND_ROWS `bid` From `blocks` Limit 1" );
+} else {
+    mysql_query( "SELECT SQL_CALC_FOUND_ROWS `aid` From `access` Limit 1" );
+}
+
+if( isset( $_GET[ 'Sleep' ] ) ) {
+    sleep( 10 ); // Simulate another HTTP request coming in.
+    $Result = mysql_query( "SELECT FOUND_ROWS( )" );
+    print_r( mysql_fetch_array( $Result ) );
+}
+
+mysql_close( );
+
+?>
+
+Set the connection and query information for something that matches your
+environment.
+
+Run the script once with the Sleep query string and once again without it. Its
+important to run them both at the same time. Use Apache ab or something
+similar, or even easier, just open two browser tabs. For example:
+
+http://localhost/Script.php?Sleep=10
+http://localhost/Script.php
+
+If a race condition existed, the results of the first instance of the script
+would equal the results of the second instance of the script.
+
+For example, the second instance of the script will execute the following SQL
+query:
+
+<?php
+
+mysql_query( "SELECT SQL_CALC_FOUND_ROWS `aid` From `access` Limit 1" );
+
+?>
+
+This happens while the first instance of the script is sleeping. If a race
+condition existed, when the first instance of the script wakes up, the result
+of the FOUND_ROWS( ) it executes should be the number of rows in the SQL query
+the second instance of the script executed.
+
+But when you run them, this is not the case. The first instance of the script
+returns the number of rows of its OWN query, which is:
+
+<?php
+
+mysql_query( "SELECT SQL_CALC_FOUND_ROWS `bid` From `blocks` Limit 1" );
+
+?>
+
+So it turns out NO race condition exists, and every solution presented to
+combat this "issue" are pretty much not needed.
+
+Good Luck,
+===============================================================================
+
+When mysql.trace_mode = On, SELECT FOUND_ROWS() allway returns 0.  It looks
+like a bug.
+
+In detail:
+
+If you have a table with 5 rows and issue:
+
+SELECT SQL_CALC_FOUND_ROWS * FROM table LIMIT 1;
+
+mysql_num_rows() returns 1 as expected.
+
+If you issue "SELECT FOUND_ROWS()" just in sequence, in the same connection
+resource, it allways returns 0 rather than expected 5.
+
+Just switch mysql.trace_mode to Off and things will work.
+===============================================================================
+
+A note on the following usage; that suggest to use several MySQL Functions to
+get the number of Table Records.
+
+You may be familiar with following:
+
+<?php
+
+$sqlQuery = 'Select SQL_CALC_FOUND_ROWS `MyField` From `MyTable` Limit 1;';
+
+$sqlQuery_1 = 'Select FOUND_ROWS( );';
+
+?>
+
+I omitted the actual connection to MySQL and the execution of the query, but
+you get the idea.
+
+I did some tests and on a fairly high traffic web site, one that executes
+several queries quite often and found that using this combination of MySQL
+Functions can actually result in wrong results.
+
+For example, assume I have two queries to get the number of Table Records in
+two different Tables. So in essence, we are executing 4 queries ( 2 queries for
+each Table ).
+
+If two different requests come in through PHP, your going to run into problems.
+Note than when I mean request, I mean two different clients requesting your PHP
+page.
+
+---------------
+Request 1:
+---------------
+
+Execute: SQL_CALC_FOUND_ROWS On Table 1
+
+---------------
+Request 2:
+---------------
+
+Execute: SQL_CALC_FOUND_ROWS On Table 2
+
+---------------
+Request 1:
+---------------
+
+Execute: Select FOUND_ROWS( )
+
+At this point, you see the race condition that occurred. While Request 1 was
+being executed, Request 2 came in.
+
+At this point Request 1 will return the number of Table Records in Table 2 and
+not Table 1 as expected!
+
+Why? Because MySQL does not differ between requests. Each query is in a queue
+waiting its turn. As soon as its turn comes in it will be executed my MySQL.
+
+The MySQL Function Select FOUND_ROWS( ) will return the result of the last
+SQL_CALC_FOUND_ROWS!
+
+Keep in mind.
+===============================================================================
+
+<?
+$strQuery="SELECT * FROM `tabel`";
+$strResult = mysql_query($strQuery);
+$Aantalvelden = mysql_num_fields($strResult);
+$Aantalrijen=mysql_num_rows($strResult);
+
+echo "<table border='1'><tr>";
+for($ikolom=0;$ikolom<$Aantalvelden;$ikolom++){
+$strVeldnaam = mysql_field_name($strResult,$ikolom);
+echo "<td>$strVeldnaam</td>" ;
+}
+echo "</tr>";
+
+for($ir=0;$irij<$Aantalrijen;$irij++){
+echo "<tr>";
+for($ikolom=0;$ikolom<$Aantalvelden;$ikolom++){
+$strKolomwaarde = mysql_result($strResult,$irij,$ikolom);
+echo "<td>$strKolomwaarde</td>";
+}
+}
+echo "</table>";
+?>
+===============================================================================
+
+Improvement to chrisdberry82 at gmail dot com's code:
+
+<?php
+$sql = "
+SELECT SQL_CALC_FOUND_ROWS
+  '0', z.id
+FROM
+  zoom AS z
+LIMIT
+  0,6
+UNION
+  SELECT
+    '1', FOUND_ROWS()
+ORDER BY `0` DESC , RAND()";
+?>
+
+You can see, that you can even ORDER the final result anyway you like ;)
+Then you can fetch the result like this:
+<?php
+$res = mysql_query($sql);
+$count = mysql_fetch_assoc($res);
+while($row = mysql_fetch_assoc($res)){
+unset($row["0"]); //get rid of the "sorting col"
+print_r($row); //or whatever ;)
+}
+echo $count["id"]; // the total number of rows
+?>
+
+And you got rid of the lousy IFs ;)
+===============================================================================
+
+In Reply to the last post: This may not always work correctly, as $object->
+doesExist would contain a result, not a boolean value. A better way (using the
+same method) would be using a cast:
+
+<?php
+class Object {
+  var $doesExist = false;
+
+  [...]
+  function load() {
+    $result = mysql_query('...');
+    $this->doesExist = (bool) ($res = mysql_fetch_array($result))
+    [...]
+  }
+}
+?>
+
+johannes
+===============================================================================
+
+To use SQL COUNT function, without select the source...
+
+see an example:
+
+<?
+//MAKE THE CONNECTION WITH DATABASE
+
+$my_table = mysql_query("SELECT COUNT(*) as TOTALFOUND from table", $link); //
+EXECUTE SQL CODE
+Note: will return the total on TOTALFOUND
+
+print (mysql_result($my_table,0,"TOTALFOUND")); //use the field camp to get the
+total from your SQL query!
+?>
+
+Thanks, good luck.
+===============================================================================
+
+In one of my applications, I had to let an object know wether it exists in the
+database or not. I found a cheap solution w/o the usage of mysql_num_rows():
+
+<?php
+class Object {
+  var $doesExist = false;
+
+  [...]
+  function load() {
+    $result = mysql_query('...');
+    $this->doesExist = ($res = mysql_fetch_array($result))
+    [...]
+  }
+}
+?>
+===============================================================================
+
+The following code can wrap it all up in a single query so you don't have to
+worry about multiple client requests:
+
+$stmtMain = $mysqli->prepare("SELECT SQL_CALC_FOUND_ROWS jobid,title FROM
+tbljobs
+    LIMIT ?, ? UNION SELECT FOUND_ROWS(),'!!IgnoreCount!!';")
+
+Then iterate through the results with something like:
+
+while ($stmtMain->fetch() && $strResultTitle !="!!IgnoreCount!!") { 
+//do stuff
+}
+($strResultSector == '!!IgnoreCount!!')? $intTotal = $intResultCount : 1;
+===============================================================================
+
+A small tip concerning SQL_CALC_FOUND_ROWS and FOUND_ROWS()
+
+Remember that you can us "AS" when working with mysql_fetch_assoc.
+
+$sql="
+    SELECT
+        FOUND_ROWS() AS `found_rows`;
+";
+$result = mysql_query($sql);
+$myrow = mysql_fetch_assoc($result);
+$row_count = $myrow['found_rows'];
+
+echo $row_count;

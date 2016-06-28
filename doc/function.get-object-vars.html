@@ -1,0 +1,1537 @@
+
+get_object_vars
+
+(PHP 4, PHP 5, PHP 7)
+
+get_object_vars — 返回由对象属性组成的关联数组
+
+说明
+
+array get_object_vars ( object $obj )
+
+返回由 obj 指定的对象中定义的属性组成的关联数组。
+
+    Note:
+
+    在 PHP 4.2.0 之前的版本中，如果在 obj 对象实例中声明的变量没有被赋值，则它
+    们将不会在返回的数组中。而在 PHP 4.2.0 之后，这些变量作为键名将被赋予 NULL
+    值。
+
+Example #1 使用 get_object_vars()
+
+<?php
+class Point2D {
+    var $x, $y;
+    var $label;
+
+    function Point2D($x, $y)
+    {
+        $this->x = $x;
+        $this->y = $y;
+    }
+
+    function setLabel($label)
+    {
+        $this->label = $label;
+    }
+
+    function getPoint()
+    {
+        return array("x" => $this->x,
+                     "y" => $this->y,
+                     "label" => $this->label);
+    }
+}
+
+// "$label" is declared but not defined
+$p1 = new Point2D(1.233, 3.445);
+print_r(get_object_vars($p1));
+
+$p1->setLabel("point #1");
+print_r(get_object_vars($p1));
+
+?>
+
+以上例程会输出：
+
+ Array
+ (
+     [x] => 1.233
+     [y] => 3.445
+     [label] =>
+ )
+
+ Array
+ (
+     [x] => 1.233
+     [y] => 3.445
+     [label] => point #1
+ )
+
+参见 get_class_methods() 和 get_class_vars()。
+
+参数
+
+object
+
+    An object instance.
+
+返回值
+
+Returns an associative array of defined object accessible non-static properties
+for the specified object in scope. If a property have not been assigned a
+value, it will be returned with a NULL value.
+
+更新日志
+
+  版本                                    说明
+5.3.0    This function now returns NULL if the object isn't an object.
+prior to If the object isn't an object, then get_object_vars() would return
+5.3.0    FALSE
+prior to If the variables declared in the class of which the object is an
+4.2.0    instance, have not been assigned a value, those will not be returned
+         in the array
+
+范例
+
+Example #2 Use of get_object_vars()
+
+<?php
+
+class foo {
+    private $a;
+    public $b = 1;
+    public $c;
+    private $d;
+    static $e;
+   
+    public function test() {
+        var_dump(get_object_vars($this));
+    }
+}
+
+$test = new foo;
+var_dump(get_object_vars($test));
+
+$test->test();
+
+?>
+
+以上例程会输出：
+
+array(2) {
+  ["b"]=>
+  int(1)
+  ["c"]=>
+  NULL
+}
+array(4) {
+  ["a"]=>
+  NULL
+  ["b"]=>
+  int(1)
+  ["c"]=>
+  NULL
+  ["d"]=>
+  NULL
+}
+
+参见
+
+  • get_class_methods() - 返回由类的方法名组成的数组
+  • get_class_vars() - 返回由类的默认属性组成的数组
+
+
+User Contributed Notes 38 notes
+
+===============================================================================
+
+You can still cast the object to an array to get all its members and see its
+visibility. Example:
+
+<?php
+
+class Potatoe {
+    public $skin;
+    protected $meat;
+    private $roots;
+
+    function __construct ( $s, $m, $r ) {
+        $this->skin = $s;
+        $this->meat = $m;
+        $this->roots = $r;
+    }
+}
+
+$Obj = new Potatoe ( 1, 2, 3 );
+
+echo "<pre>\n";
+echo "Using get_object_vars:\n";
+
+$vars = get_object_vars ( $Obj );
+print_r ( $vars );
+
+echo "\n\nUsing array cast:\n";
+
+$Arr = (array)$Obj;
+print_r ( $Arr );
+
+?>
+
+This will returns:
+
+Using get_object_vars:
+Array
+(
+    [skin] => 1
+)
+
+Using array cast:
+Array
+(
+    [skin] => 1
+    [ * meat] => 2
+    [ Potatoe roots] => 3
+)
+
+As you can see, you can obtain the visibility for each member from this cast.
+That which seems to be spaces into array keys are '\0' characters, so the
+general rule to parse keys seems to be:
+
+Public members: member_name
+Protected memebers: \0*\0member_name
+Private members: \0Class_name\0member_name
+
+I've wroten a obj2array function that creates entries without visibility for
+each key, so you can handle them into the array as it were within the object:
+
+<?php
+
+function obj2array ( &$Instance ) {
+    $clone = (array) $Instance;
+    $rtn = array ();
+    $rtn['___SOURCE_KEYS_'] = $clone;
+
+    while ( list ($key, $value) = each ($clone) ) {
+        $aux = explode ("\0", $key);
+        $newkey = $aux[count($aux)-1];
+        $rtn[$newkey] = &$rtn['___SOURCE_KEYS_'][$key];
+    }
+
+    return $rtn;
+}
+
+?>
+
+I've created also a <i>bless</i> function that works similar to Perl's bless,
+so you can further recast the array converting it in an object of an specific
+class:
+
+<?php
+
+function bless ( &$Instance, $Class ) {
+    if ( ! (is_array ($Instance) ) ) {
+        return NULL;
+    }
+
+    // First get source keys if available
+    if ( isset ($Instance['___SOURCE_KEYS_'])) {
+        $Instance = $Instance['___SOURCE_KEYS_'];
+    }
+
+    // Get serialization data from array
+    $serdata = serialize ( $Instance );
+
+    list ($array_params, $array_elems) = explode ('{', $serdata, 2);
+    list ($array_tag, $array_count) = explode (':', $array_params, 3 );
+    $serdata = "O:".strlen ($Class).":\"$Class\":$array_count:{".$array_elems;
+
+    $Instance = unserialize ( $serdata );
+    return $Instance;
+}
+?>
+
+With these ones you can do things like:
+
+<?php
+
+define("SFCMS_DIR", dirname(__FILE__)."/..");
+require_once (SFCMS_DIR."/Misc/bless.php");
+
+class Potatoe {
+    public $skin;
+    protected $meat;
+    private $roots;
+
+    function __construct ( $s, $m, $r ) {
+        $this->skin = $s;
+        $this->meat = $m;
+        $this->roots = $r;
+    }
+
+    function PrintAll () {
+        echo "skin = ".$this->skin."\n";
+        echo "meat = ".$this->meat."\n";
+        echo "roots = ".$this->roots."\n";
+    }
+}
+
+$Obj = new Potatoe ( 1, 2, 3 );
+
+echo "<pre>\n";
+echo "Using get_object_vars:\n";
+
+$vars = get_object_vars ( $Obj );
+print_r ( $vars );
+
+echo "\n\nUsing obj2array func:\n";
+
+$Arr = obj2array($Obj);
+print_r ( $Arr );
+
+echo "\n\nSetting all members to 0.\n";
+$Arr['skin']=0;
+$Arr['meat']=0;
+$Arr['roots']=0;
+
+echo "Converting the array into an instance of the original class.\n";
+bless ( $Arr, Potatoe );
+
+if ( is_object ($Arr) ) {
+    echo "\$Arr is now an object.\n";
+    if ( $Arr instanceof Potatoe ) {
+        echo "\$Arr is an instance of Potatoe class.\n";
+    }
+}
+
+$Arr->PrintAll();
+
+?>
+===============================================================================
+
+Hi all, I just wrote a function which dumps all the object propreties and its
+associations recursively into an array. Here it is..
+<?php
+function object_to_array($obj) {
+        $_arr = is_object($obj) ? get_object_vars($obj) : $obj;
+        foreach ($_arr as $key => $val) {
+                $val = (is_array($val) || is_object($val)) ? object_to_array(
+$val) : $val;
+                $arr[$key] = $val;
+        }
+        return $arr;
+}
+?>
+
+Example:
+You have an object like this:
+fruitsbasket Object
+(
+    [Fruits] => Array
+        (
+            [0] => fruits Object
+                (
+                    [_name] => Mango
+                    [_color] => Green
+                    [_weight] => 10
+                )
+
+            [1] => fruits Object
+                (
+                    [_name] => Apple
+                    [_color] => Red
+                    [_weight] => 15
+                )
+
+            [2] => fruits Object
+                (
+                    [_name] => Grape
+                    [_color] => Purple
+                    [_weight] => 5
+                )
+
+        )
+
+    [total_weight] => 30
+)
+
+just do:
+<?php
+$the_array = object_to_array($the_object);
+print_r($the_array);
+?>
+
+it will produce an array:
+Array
+(
+    [Fruits] => Array
+        (
+            [0] => Array
+                (
+                    [_name] => Mango
+                    [_color] => Green
+                    [_weight] => 10
+                )
+
+            [1] => Array
+                (
+                    [_name] => Apple
+                    [_color] => Red
+                    [_weight] => 15
+                )
+
+            [2] => Array
+                (
+                    [_name] => Grape
+                    [_color] => Purple
+                    [_weight] => 5
+                )
+
+        )
+
+    [total_weight] => 30
+)
+
+I wish function like this could be usefull for you all. :)
+===============================================================================
+
+You can use call_user_func() to return public variables from inside the class:
+
+class Test {
+    protected $protected;
+    public $public;
+    private $private;
+
+    public function getPublicVars () {
+        return call_user_func('get_object_vars', $this);
+    }
+}
+
+$test = new Test();
+var_dump($test->getPublicVars()); // array("public" => NULL)
+===============================================================================
+
+get_object_vars() has confusing behaviour when called as get_object_vars($this)
+or similar: since a method inside a class definition can access private vars,
+apparently so can get_object_vars(), so it returns private vars as well.
+
+A simple workaround is to define a method that in itself calls get_object_vars,
+like:
+
+<?php
+function getPublicObjectVars($obj) {
+  return get_object_vars($obj);
+}
+
+class Smth {
+  private $notShown = 1;
+  public $shown = 2;
+
+  function test() {
+    $vars = get_object_vars($this); // includes 'notShown'
+    $vars = getPublicObjectVars($this); // only 'shown'
+  }
+
+}
+?>
+===============================================================================
+
+A simple way to call this function within an Object and to only export the
+*public* params would be to artificially change the scope - for example with a
+closure in php 5.3:
+
+<?php
+class Example
+{
+    public $publicSetting = 'public';
+    protected $protectedSetting = 'protected';
+    private $privateSetting = 'private';
+   
+    public function showEverything()
+    {
+        return get_object_vars($this);
+    }
+   
+    public function showMyPublicsOnly()
+    {
+        $me = $this;
+        $publics = function() use ($me) {
+            return get_object_vars($me);
+        };
+        return $publics();
+    }
+}
+?>
+===============================================================================
+
+actually, it's not entirely true that php5 will only return public
+members....php5 will return any variable IT HAS ACCESS TO
+
+In other words, if you do a get_class_variables($this) inside a class, you'll
+get everything - public, private, the whole shebang...really annoying since you
+can't check to see what's private/public without using reflection
+===============================================================================
+
+If your object contains a reference, beware that you might get references for
+all object properties in the array values, thus when changing values in the
+array, they may change the object too (confirmed and not yet fixed PHP bug
+https://bugs.php.net/bug.php?id=66961 affecting all PHP versions up to at least
+5.6.2 and 5.5.18 and 5.4.34).
+
+This 10-years old comment tried reporting this: http://php.net/manual/en/
+function.get-object-vars.php#40515 but its exemple was incomplete. See bug
+report for example.
+===============================================================================
+
+function to convert object (with children) to an (associative) array ...
+recusive
+
+<?php
+
+// ---------------------------------------------------------
+// ----- object_to_array_recusive --- function (PHP) ------
+// --------------------------------------------------------
+// -- arg1:  $object  =  (PHP Object with Children)
+// -- arg2:  $assoc   =  (TRUE / FALSE) - optional
+// -- arg3:  $empty   =  ('' or NULL) - optional
+// --------------------------------------------------------
+// ----- return: Array from Object --- (associative) ------
+// --------------------------------------------------------
+
+function object_to_array_recusive ( $object, $assoc=1, $empty='' )
+{
+    $out_arr = array();
+    $assoc = (!empty($assoc)) ? TRUE : FALSE;
+   
+    if (!empty($object)) {
+       
+        $arrObj = is_object($object) ? get_object_vars($object) : $object;
+   
+        $i=0;
+        foreach ($arrObj as $key => $val) {
+            $akey = ($assoc !== FALSE) ? $key : $i;
+              if (is_array($val) || is_object($val)) {
+                $out_arr[$key] = (empty($val)) ? $empty : 
+object_to_array_recusive($val);
+              }
+              else {
+                $out_arr[$key] = (empty($val)) ? $empty : (string)$val;
+              }
+        $i++;
+        }
+
+    }
+
+    return $out_arr;
+}
+
+// --------------------------------------------------------
+// --------------------------------------------------------
+
+?>
+
+Example / Usage:
+
+a) return an associative (recusive) array from object
+
+$new_arr1 = object_to_array_recusive($my_object);
+// --- or --- object_to_array_recusive($my_object,TRUE);
+// --- or --- object_to_array_recusive($my_object,1);
+
+b) return a numeric  (recusive) array from object (set 2nd argument = FALSE)
+
+$new_arr2 = object_to_array_recusive($my_object,FALSE);
+
+you can pre-set the Array-Value of Empty (Sub-) Objects in 3rd argument
+($empty)
+// --- eg: NULL --- object_to_array_recusive($my_object,1,NULL);
+===============================================================================
+
+Just thought I would pass this on.
+
+Working with PHP 5.2.4
+
+In Windows this works by reading the vars from the passed in object and copying
+them to the vars of the current object.
+
+    public function copyMe(User $user) {
+        $varArray = get_object_vars($this);
+        $copyVarArray = get_object_vars($user);
+        foreach ($varArray as $key=>$value) {
+            $this->$key = $copyVarArray[$key];
+        }
+    }
+
+This did not work in Linux, I had to add another function to return the array
+of vars. Calling get_array_vars on the passed in object would return an empty
+array.
+
+        public function copyMe(User $user) {
+        $varArray = $this->getArray();
+        $copyVarArray = $user->getArray();
+        foreach ($varArray as $key=>$value) {
+            $this->$key = $copyVarArray[$key];
+        }
+    }
+
+    public function getArray() {
+        return get_object_vars($this);
+    }
+===============================================================================
+
+more strange, strange behaviour:
+
+if you are trying to deep-copy an object with get_object_vars(), strange
+behaviour can accidentally clobber your original object properties.  please
+read very, very carefully:
+
+get_object_vars() may either return references to *or* deep copies of the
+object's properties *depending on whether that property has been set with the
+-> operator*.   (this behaviour probably varies per php platform and os so
+please confirm for yourself.)
+
+furthermore, consider
+  $properties = get_object_vars($obj);
+normally, unset()ting a reference does not affect the original, i.e. $ref =
+NULL; is not the same as unset($ref); per the references documentation. 
+However, if you have this strange references version and you unset() an array
+element of $properties, it will *SET THE OBJECT PROPERTY TO NULL*, which is not
+how references normally work. 
+
+even stranger behaviour comes into effect that i can only express with an
+example.  please test this with your version and OS and proceed very carefully:
+-->
+<?php
+echo "<pre>\n";
+
+class Lump
+{
+   var $size = 'average';
+
+   function & copy()
+   {  // return a deep copy
+      $copy = new Lump();  
+      $properties = get_object_vars($this);
+      foreach( array_keys( $properties ) as $property ){
+         $copy->$property = $properties[$property];  // deep, right?
+      }
+      return $copy;
+   }
+
+}
+
+$lump = new Lump();
+
+$lump->size = 'huge';  // <--- this line changes everything
+// comment above line out, and see the difference
+// also, try substituting another property for 'size'
+
+$properties = get_object_vars($lump);
+$properties['size'] = 'small'; // this behavior varies
+
+echo "after changing the properties array:\n";
+var_dump( $lump ); 
+// it's either big or small (never huge) depending on
+// whether you commented-out the indicated line
+
+//------------- let's try using our copy() method
+
+$original_lump = new Lump();
+$original_lump->size = 'huge'; // this line changes the behaviour
+$other_lump =& $original_lump->copy();
+unset( $other_lump->size );
+echo "after unsetting in copy:\n";
+var_dump( $original_lump ); // i'm afraid so -- original value clobbered !
+
+echo "</pre>\n";
+?>
+code till dawn,
+   mark meves
+===============================================================================
+
+If you're using the SPL ArrayObject class (or similar, or the ArrayAccess
+interface), you may have noticed that it's difficult to loop through an
+object's properties. 
+
+get_object_vars does not return the properties of an ArrayObject.  The only
+workaround I can see is to use get_class_vars.
+
+<?php
+$obj = new ArrayObject();
+$obj->foo = "bar";
+$obj[] = "1";
+$obj[] = "2";
+foreach($obj as $key => $value) {
+// will iterate over the array, iterating over "1" and "2", but ignoring $obj->
+foo
+}
+
+var_dump($obj); // dumps the array values, ignores $obj->foo
+
+$a = get_object_vars($obj); // returns an empty array
+
+class Fart extends ArrayObject {
+    public $foo = "bar";
+}
+
+$obj = new Fart();
+$a = get_object_vars($obj); // return an empty array
+$a = get_class_vars(get_class($obj)); // returns array("foo"=>"bar"), Yay!
+
+/* The above works with subclasses as well */
+class Toot extends Fart {
+    public $weeble = "wobble";
+}
+
+$a = get_class_vars(get_class($obj));
+// returns array("weeble" => "wobble", "foo"=>"bar"), Yay again!
+
+?>
+
+So, to iterate over the properties of an ArrayObject, and not the array values:
+
+<?php
+
+$obj = new Toot(); // which is a subclass of ArrayObject
+$props = get_class_vars(get_class($obj));
+foreach($props as $prop => $defaultValue) {
+  $value = $obj->$prop; // now you have the property name and  its value
+}
+
+?>
+===============================================================================
+
+class A{
+    private $priA;
+    protected $proA;
+    public $pubA;
+}
+
+class B extends A{
+    private $priB;
+    protected $proB;
+    public $pubB;
+
+    public function getVars(){
+        return array_diff_key(get_object_vars($this), get_class_vars
+(get_parent_class($this)));
+    }
+}
+$b = new B();
+var_dump($b->getVars());
+
+array(3) {
+  ["priB"]=>
+  NULL
+  ["proB"]=>
+  NULL
+  ["pubB"]=>
+  NULL
+}
+===============================================================================
+
+get_object_vars($this)
+php5.3 + it returns only public and protected; NOT private vars
+===============================================================================
+
+If you want to access all properties (private, protected, public) of a class
+and his base class(es) from outside the object you can take a look in the code
+below.
+You can even reffrence them.
+
+Example:
+<?php
+
+// Dummy class to act as parent class.
+class Dummy
+{
+    private        $d1 = 1;
+    protected    $d2 = 2;
+    public        $d3 = 3;
+}
+
+// The class to test on.
+class Test extends Dummy
+{
+    private        $t1 = 11;
+    protected    $t2 = 12;
+    public        $t3 = 13;
+}
+
+// Instance of the test class.
+$test =& new Test();
+
+// The propertynames of the test class and his parent.
+$nameD1 = "\0Dummy\0d1";    // class Dummy, private      $d1
+$nameD2 = "\0*\0d2";        // class Dummy, protected $d2
+$nameD3 = "d3";            // class Dummy, public    $d3
+
+$nameT1 = "\0Test\0t1";        // class Test,  private      $t1
+$nameT2 = "\0*\0t2";        // class Test,  protected $t2
+$nameT3 = "t3";            // class Test,  public    $t3
+
+// Printing all members (private, protected, public) of test class and parent.
+// These are the values at construction.
+print("Original object:\n");
+print("\t\$d1 = ".$test->$nameD1."\n");
+print("\t\$d2 = ".$test->$nameD2."\n");
+print("\t\$d3 = ".$test->$nameD3."\n");
+print("\t\$t1 = ".$test->$nameT1."\n");
+print("\t\$t2 = ".$test->$nameT2."\n");
+print("\t\$t3 = ".$test->$nameT3."\n");
+print("\n");
+
+// Create new values to use as reffrence.
+$varD1 = 31;
+$varD2 = 32;
+$varD3 = 33;
+
+$varT1 = 41;
+$varT2 = 42;
+$varT3 = 43;
+
+// Reffrence these to the class properties.
+$test->$nameD1 =& $varD1;
+$test->$nameD2 =& $varD2;
+$test->$nameD3 =& $varD3;
+
+$test->$nameT1 =& $varT1;
+$test->$nameT2 =& $varT2;
+$test->$nameT3 =& $varT3;
+
+// Printing all members (private, protected, public) of test class and parent.
+// The values have changed by assigning reffrence to them.
+print("Object Changed by reffrence (1):\n");
+print("\t\$d1 = ".$test->$nameD1."\n");
+print("\t\$d2 = ".$test->$nameD2."\n");
+print("\t\$d3 = ".$test->$nameD3."\n");
+print("\t\$t1 = ".$test->$nameT1."\n");
+print("\t\$t2 = ".$test->$nameT2."\n");
+print("\t\$t3 = ".$test->$nameT3."\n");
+print("\n");
+
+// Change the original values.
+// This will change the class properties.
+$varD1 = 61;
+$varD1 = 62;
+$varD1 = 63;
+
+$varT1 = 71;
+$varT1 = 72;
+$varT1 = 73;
+
+// Printing all members (private, protected, public) of test class and parent.
+// The values have changed because the variables $varXX have been changed.
+print("Object Changed by reffrence (2):\n");
+print("\t\$d1 = ".$test->$nameD1."\n");
+print("\t\$d2 = ".$test->$nameD2."\n");
+print("\t\$d3 = ".$test->$nameD3."\n");
+print("\t\$t1 = ".$test->$nameT1."\n");
+print("\t\$t2 = ".$test->$nameT2."\n");
+print("\t\$t3 = ".$test->$nameT3."\n");
+print("\n");
+
+// Printing the object using print_r() shows the changes
+// have been done on the object.
+print("Object Changed (print_r):\n");
+print_r($test);
+print("\n");
+
+// If you dont now the class propertynames you can get these by casting the
+// object to an array. The array keys are the names
+$prop = array_keys((array) $test);
+print("Getting all class propertynames (print_r)\n");
+print_r($prop);
+
+//Result
+/*
+
+Original object:
+    $d1 = 1
+    $d2 = 2
+    $d3 = 3
+    $t1 = 11
+    $t2 = 12
+    $t3 = 13
+
+Object Changed by reffrence (1):
+    $d1 = 31
+    $d2 = 32
+    $d3 = 33
+    $t1 = 41
+    $t2 = 42
+    $t3 = 43
+
+Object Changed by reffrence (2):
+    $d1 = 63
+    $d2 = 32
+    $d3 = 33
+    $t1 = 73
+    $t2 = 42
+    $t3 = 43
+
+Object Changed (print_r):
+Test Object
+(
+    [t1:private] => 73
+    [t2:protected] => 42
+    [t3] => 43
+    [d1:private] => 63
+    [d2:protected] => 32
+    [d3] => 33
+)
+
+Getting all class propertynames (print_r)
+Array
+(
+    [0] => Test
+
+*/
+
+?>
+===============================================================================
+
+It seems like there's no function that determines all the *static* variables of
+a class.
+
+I've come out with this one as I needed it in a project:
+
+<?php
+function get_class_static_vars($object) {
+     return array_diff(get_class_vars(get_class($object)), get_object_vars(
+$object));
+}
+?>
+
+It relies on an interesting property: the fact that get_object_vars only
+returns the non-static variables of an object.
+===============================================================================
+
+Note that before PHP 5.3.9 numeric object variables of unserialized object are
+not public, and get_object_vars() won't return them:
+https://bugs.php.net/bug.php?id=61774
+===============================================================================
+
+Please note that you cannot affect the object via the array values...in other
+words, the returned array does not contain references to the values within the
+object, but copies.
+
+If you are making an object inspector or editor, this is not good enough.  So I
+made the following methods:
+
+METHODS:
+
+function &getVar($obj, $name)
+{
+        $expr="\$prop=&\$obj->$name;";
+        eval($expr);
+        return $prop;
+}
+
+function &getObjectVars($obj)
+{
+        $result=array();
+        $vars=get_object_vars($obj);
+        foreach ($vars as $var => $value)
+        {
+                $result[$var]=&getVar(&$obj, $var);
+        }
+        return $result;
+}
+
+[NOTE:  You must pass in a reference to an object, not an object.  Sorry if
+this  offends PHP'ers, but the distinction of pass-by-value and
+copy-on-assignment drives me batty (compared to Python, Java, Smalltalk), so I
+make all my functions pass by value, and force myself to pass in a reference to
+keep track of what is happening under the hood.]
+
+EXAMPLE:
+
+class Bob
+{
+        function Bob()
+        {
+                $this->thing=13;
+                $this->other="whatever";
+        }
+
+        var $thing;
+        var $other;
+}
+
+$obj=&new Bob();
+
+# NOTE:  Passing in a reference!
+$props=getObjectVars(&$obj);
+$props["thing"]=-11;
+
+var_dump($obj);
+
+RESULTS:
+
+object(bob)(2) {
+  ["thing"]=>
+  &int(-11)
+  ["other"]=>
+  &string(8) "whatever"
+}
+===============================================================================
+
+Hi,
+
+I figured out that in prior version to 4.2 the returned array only contains
+attributes directly in this class, excluding the derived ones from
+parentclasses.
+===============================================================================
+
+hello,
+
+this example will look like all values of vars was set in your class. write a
+method like the name: dumpClass and then fill in follow code:
+
+$vars = get_object_vars($this);
+
+echo "<b>class vars</b>";
+
+foreach( $vars as $name => $value ) {
+    echo "<li>".$name." : ".$value;
+}
+
+look at: get_object_vars($this);
+
+andreas v.l
+===============================================================================
+
+Be aware of the fact that this is scope-sensitive. If you're calling this from
+an objects own method, then private and protected vars will be outputted as
+well. Call it from outside the object and the result will most likely be what
+you want to archive.
+===============================================================================
+
+There is a strange behaviour, not sure whether it is a bug:
+
+if I call
+<?
+$single_object = $data_array_of_objects[0];
+$array_of_objectvars = get_object_vars($single_object);
+     foreach($array_of_objectvars as $key => $val) {
+     echo(" $key => $val<br>");
+     }
+?>
+I get only _ONE_ line with the $key = first variable name of the object and
+$val = the values of _ALL_ variables of the object including the first
+separated by a space.
+
+NOW:
+if I call
+<?
+$single_object = $data_array_of_objects[0];
+$array_of_objectvars = get_object_vars($single_object);
+     foreach($array_of_objectvars as $key => $val) {
+     echo(" $key => $val<br>");
+     }
+     echo($data_array_of_objects[0]->objectvar1."<br>");
+     echo($data_array_of_objects[0]->objectvar2."<br>");
+?>
+
+I get a list of $key = $ val as expected, before the other echos' are printed.
+It seems to me that get_object_vars works differently when you access a
+variable in those objects explicitly (as in the echos)
+===============================================================================
+
+function conv_obj($Data){
+     if(is_object($Data)){
+         foreach(get_object_vars($Data) as $key=>$val){
+             if(is_object($val)){
+                 $ret[$key]=conv_obj($val);
+             }else{
+                 $ret[$key]=$val;
+             }
+         }
+         return $ret;
+     }elseif(is_array($Data)){
+         foreach($Data as $key=>$val){
+             if(is_object($val)){
+                 $ret[$key]=conv_obj($val);
+             }else{
+                 $ret[$key]=$val;
+             }
+         }
+         return $ret;
+     }else{
+         return $Data;
+     }
+}
+
+Very simple function to convert any Subobject to an array.
+Created it while working with Soap.
+For me as an beginner with PHP, very useful :o)
+===============================================================================
+
+To follow the code of d11wtq (enquiries AT chriscorbyn.co.uk). I did this
+function to inspect all properties(public, private, protected) of object.
+
+<?php
+header("content-type: text/plain");
+
+// Classes to test!
+class OtherClass
+{
+    private $privateVarOtherClass = 11;
+}
+
+class MyClass extends OtherClass
+{
+    protected $protectedVar = "some";
+    public $publicVar = "nk";
+    private $privateVar = "algo";
+    var $oldStyle;
+}
+
+// Dangerous function
+function get_properties($obj, $values=false)
+{
+    $obj_dump  = print_r($obj, 1);
+    $matches =  array();
+    preg_match_all('/^\s+\[(\w+).*\] => (\w*)/m', $obj_dump, $matches);
+    if ($values)
+    {
+        $output = array();
+        foreach ($matches[1] as $key => $property)
+        {
+            $output[$property] = $matches[2][$key];
+        }
+        return $output;
+    }
+    else
+    {
+        return $matches[1];
+    }
+}
+
+$instance = new MyClass();
+
+echo "Properties\n";
+print_r(get_properties($instance));
+
+echo "Properties and values\n";
+print_r(get_properties($instance, true));
+
+?>
+
+Note: remember that static properties are not visible to the object. By that
+not supported to them
+===============================================================================
+
+<?php
+# How to make a function change the private attributes
+# from some object without use serialize functions or
+# lose the control of the changes.
+
+/**
+* Parent Class to allow the change of privates attributes
+* Look the abstract function __setAttribute.
+*
+* @author Renan de Lima ( renandelima@gmail.com )
+* @author Thiago Mata ( thiago.henrique.mata@gmail.com )
+* @date 2007-02-21
+*/
+abstract class father
+{
+    /**
+     * Receive the Aray and try to change the attribute value
+     *
+     * @param array $arrNewValues
+     */
+    public function __fromDatabase( $arrNewValues )
+    {
+        $arrToSet = array_intersect_key( $arrNewValues, get_object_vars( $this 
+) );
+        foreach( $arrToSet as $strAttribute => $mixValue )
+        {
+            $this->__setAttribute( $strAttribute , $mixValue );
+        }
+    }
+   
+    /**
+     * Required method to control the attributes of class
+     * @param string $strAttribute
+     * @param unknown $mixValue
+     */
+    abstract protected function __setAttribute( $strAttribute, $mixValue );
+   
+}
+
+/**
+* Just a example of a child class using the functionality
+*
+* Note: if you don't wanna to allow the change of some attribute
+* by this method you can just make more complex the __setAttribute function.
+*
+* @author Renan de Lima ( renandelima@gmail.com )
+* @author Thiago Mata ( thiago.henrique.mata@gmail.com )
+* @date 2007-02-21
+*/
+class son extends father
+{
+   
+    private $atr = 9;
+   
+    /**
+     * This is the most simple implementation of the method.
+     * This way it's allowed to the parent class change any attribute
+     * @param string $strAttribute
+     * @param unknown $mixValue
+     */
+    protected function __setAttribute( $strAttribute, $mixValue )
+    {
+        $this->{ $strAttribute } = $mixValue;
+    }
+   
+}
+
+$objSon = new son();
+$objSon->__fromDatabase( array( 'atr' => 55 ) );
+var_dump( $objSon );
+?>
+===============================================================================
+
+In case your object contains again OBJECTS or ARRAYS:
+
+function makeAssoc($res) {
+  if (is_object($res)) $res = get_object_vars($res);
+  while (list($key, $value) = each($res)) {
+    if (is_object($value) || is_array($value)) {
+      $res[$key] = makeAssoc($value);
+    }
+  }
+  return $res;
+}
+
+Thanks to mark at dreamzpace dot com
+===============================================================================
+
+In case your object contains again objects (and so on), this function might be
+useful:
+
+function makeAssoc($res) {
+  $res = get_object_vars($res);
+  while (list($key, $value) = each($res)) {
+    if (is_object($value)) {
+      $res[$key] = makeAssoc($value);
+    }
+  }
+  return $res;
+}
+===============================================================================
+
+It seems that get_object_vars will now return properties of an object even if
+they have no value  - meaning only defined by var $foo in the class
+declaration.  This is noted behaviour in 4.2.1 which is different from previous
+versions and hitherto undocumented on this page.
+===============================================================================
+
+This is a slight modification of the previous poster's function.  We ran into a
+problem using this function when we had a JS array nested inside a JS hash.
+
+Something like this...
+
+myHash = new Hash();
+myHash[address] = new Array();
+
+When we threw that at this function, it found the first hash as an object, and
+then using the previous poster's function, it did not consider the array as an
+"object."  Instead it gave us a std_object type and we were unable to make any
+use of it.
+
+The modification we made was adding a check for is_array inside both the
+is_object and is_array checks when you call the function.  This checks for an
+array inside either an object or a nested array.
+
+function conv_obj($Data){
+    if(is_object($Data)){
+   
+        foreach(get_object_vars($Data) as $key=>$val){
+            if(is_object($val) || is_array($val)){
+                $ret[$key]=conv_obj($val);
+            }else{
+                $ret[$key]=$val;
+            }
+        }
+        return $ret;
+    }elseif(is_array($Data)){
+        foreach($Data as $key=>$val){
+            if(is_object($val) || is_array($val)){
+                $ret[$key]=conv_obj($val);
+            }else{
+                $ret[$key]=$val;
+            }
+        }
+        return $ret;
+    }else{
+        return $Data;
+    }
+}
+===============================================================================
+
+To add to my previous comment - the error message should have meant same
+structure.
+
+As my implementation called for cross-class comparison.
+===============================================================================
+
+I find this function very helpful, What i wanted to do was to get the object
+properties of an exception so i could sanitize them for output.
+
+       
+   try
+   {
+       throw new Exception( 'Test Exception.', 100 );
+   }
+   catch( Exception $e )
+   {
+       var_dump( ( object ) get_object_vars( ( object ) ( new ArrayObject( $e )
+) -> getarrayCopy() ) );
+   }
+
+Example return:
+
+object(stdClass)#10 (4) { ["message"]=> string(15) "Test Exception." ["code"]=>
+int(100) ["file"]=> string(29) "C:\xampp\htdocs\dev\index.php" ["line"]=> int
+(19) }
+===============================================================================
+
+Note that get_object_vars() returns the variables of the object not the class.
+You need to know if your class is extended from a parent class.
+===============================================================================
+
+Since there's no apparent means of obtaining all the *private* properties in an
+object I wrote a little function to do it.  Built in support would be much more
+efficient since mine uses a preg_  search to do this....
+
+<?php
+
+function get_private_properties($obj, $inside=false)
+{
+    $obj_dump  = print_r($obj, 1);
+    preg_match_all('/^\s+\[(\w+):private\]/m', $obj_dump, $matches);
+    if ($inside)
+    {
+        $output = array();
+        foreach ($matches[1] as $property)
+        {
+            $output[$property] = $obj->$property;
+            return $output;
+        }
+    }
+    else return $matches[1];
+}
+
+?>
+
+So if you run it with the optional second paramter missing you'll just get an
+array of the variable names that are private inside the class.  This is the
+only option if you are not inside the actual object and the object has no
+private properties inherited.
+
+If you run it with the second parameter set to true you will get an associative
+array with the properties and their corresponding values.  I'd only advise to
+do that for singletons since you may get errors if there are any private
+properites in parents/children.
+===============================================================================
+
+Subject: using "sql_calc_found_rows" in a MySQL query while exploiting result
+in a PHP db class object.
+
+Hello,
+
+There is a nice function in MySQL that allows to know how many records would
+have been returned if no "where" clause were set : SQL_CALC_FOUND_ROWS.
+
+If you have create a db object to collect the returned lines, you will be a
+little perplex when trying to call the result of this function.
+
+Why ?
+Simply because the returned field's name is "found_rows()" and obviously it's
+not possible to call something like :
+
+<?php $result->found_rows() ?>
+
+...as it will try to acces a method, not a property !
+
+Then, the only way to get the right result seems to be the use of a class
+function, like :
+
+<?php
+  $db->query("select found_rows()");
+  $count=current(get_object_vars(current($db->result)));
+?>
+
+Of course, if somebody found an other way to solve it, like a special syntax
+(see the one used with curled arrays in a string), I'm really open to discuss.
+
+Good luck,
+Pascal
+===============================================================================
+
+In PHP5 to get an array with all properties (even the private ones) all you
+have to do is write a public method that returns an array for your class:
+
+public function getArray()
+{
+  return get_object_vars($this);
+}
+
+and then
+
+$myBeautifulArray = $myBeautifulObject->getArray ();
+
+Have BEAUTIFUL day :)
+===============================================================================
+
+Also note that this is recursive. For example:
+
+<?php
+class Sarah{
+
+    private $Father;
+    private $Mother;
+
+    public function __construct(){
+        $this->Father    =    NULL; //I don't know Sarah's Father
+        $this->Mother    =    NULL; //I don't know Sarah's Mother
+    }
+}
+class John_Connor{
+
+    private $Father;
+    private $Mother;
+
+    public function __construct(){
+        $this->Father    =    $this; //John went back in time and fathered
+himself
+        $this->Mother    =    new Sarah(); //Sarah was his mom and his mate
+ewww
+    }
+
+    public function showParents(){
+        return get_object_vars($this);
+    }
+}
+
+$John    =    new John_Connor();
+var_dump($John->showParents());
+?>
+
+You will see this outputs:
+
+array(2) {
+  ["Father"]=>
+  object(John_Connor)#1 (2) {
+    ["Father":"John_Connor":private]=>
+    object(John_Connor)#1 (2) {
+      ["Father":"John_Connor":private]=>
+      *RECURSION*
+      ["Mother":"John_Connor":private]=>
+      object(Sarah)#2 (2) {
+        ["Father":"Sarah":private]=>
+        NULL
+        ["Mother":"Sarah":private]=>
+        NULL
+      }
+    }
+    ["Mother":"John_Connor":private]=>
+    object(Sarah)#2 (2) {
+      ["Father":"Sarah":private]=>
+      NULL
+      ["Mother":"Sarah":private]=>
+      NULL
+    }
+  }
+  ["Mother"]=>
+  object(Sarah)#2 (2) {
+    ["Father":"Sarah":private]=>
+    NULL
+    ["Mother":"Sarah":private]=>
+    NULL
+  }
+}
+===============================================================================
+
+Furthermore, variables not declared in the class but set on a given object,
+will be returned by get_object_vars().
+
+Example, ver. 4.2.1:
+<?
+class MyTest {
+        var $classVar1 = 'Class Var 1';
+        var $classVar2;
+        var $classVar3;
+
+        function MyTest()
+        {
+                $this->classVar2 = 'class var 2';
+        }
+}
+
+$test = new MyTest();
+// This var isn't declared in the class
+$test->newObjVar = 'foobar';
+
+echo "<pre>";
+print_r(get_object_vars($test));
+echo "</pre>";
+?>
+
+The output is:
+Array
+(
+
+    [classVar1] => Class Var 1
+    [classVar2] => class var 2
+    [classVar3] =>
+    [newObjVar] => foobar
+)
+
+Prior to version 4.2, classVar3 would not be output as it was never assigned a
+value.
+===============================================================================
+
+Hmmm.  A bit embarassing...
+
+It turns out the best way to get references to all of your objects member
+variables is NOT with the functions I provided before, or with get_object_vars.
+
+Just cast the object to array.
+
+$a=(array)$obj;
+
+# The two following statements are now equivalent and identical
+$a["member"]=3;
+$obj->member=3;
+
+A very powerful tool, for inspectors and what not.
+===============================================================================
+
+better version of conv_obj, based on XML... this converts XML to an array...
+use it by
+
+<?php
+$result = xmlobj2arr(simplexml_load_string($xmlContent));
+
+function xmlobj2arr($Data) {
+       if (is_object($Data)) {
+               foreach (get_object_vars($Data) as $key => $val) {
+                       $ret[$key] = xmlobj2arr($val);
+               }
+               return $ret;
+       } elseif (is_array($Data)) {
+               foreach ($Data as $key => $val) {
+                       $ret[$key] = xmlobj2arr($val);
+               }
+               return $ret;
+       } else {
+               return $Data;
+       }
+}
+?>

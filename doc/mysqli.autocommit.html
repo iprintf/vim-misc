@@ -1,0 +1,210 @@
+
+mysqli::autocommit
+
+mysqli_autocommit
+
+(PHP 5, PHP 7)
+
+mysqli::autocommit -- mysqli_autocommit — 打开或关闭本次数据库连接的自动命令提
+交事务模式
+
+说明
+
+面向对象风格
+
+bool mysqli::autocommit ( bool $mode )
+
+过程化风格
+
+bool mysqli_autocommit ( mysqli $link , bool $mode )
+
+打开或关闭本次数据库连接的自动命令提交事务模式。
+
+如需要确认当前连接的自动事务提交状态，可执行这个SQL请求SELECT @@autocommit.
+
+参数
+
+link
+
+    仅以过程化样式：由mysqli_connect() 或 mysqli_init() 返回的链接标识。
+
+mode
+
+    Whether to turn on auto-commit or not.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+    Note:
+
+    这个方法不会在不支持事务处理的表单查询中生效，如MyISAM或 ISAM。
+
+范例
+
+Example #1 mysqli::autocommit() example
+
+面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+/* turn autocommit on */
+$mysqli->autocommit(TRUE);
+
+if ($result = $mysqli->query("SELECT @@autocommit")) {
+    $row = $result->fetch_row();
+    printf("Autocommit is %s\n", $row[0]);
+    $result->free();
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+if (!$link) {
+    printf("Can't connect to localhost. Error: %s\n", mysqli_connect_error());
+    exit();
+}
+
+/* turn autocommit on */
+mysqli_autocommit($link, TRUE);
+
+if ($result = mysqli_query($link, "SELECT @@autocommit")) {
+    $row = mysqli_fetch_row($result);
+    printf("Autocommit is %s\n", $row[0]);
+    mysqli_free_result($result);
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Autocommit is 1
+
+参见
+
+  • mysqli_commit() - 提交一个事务
+  • mysqli_rollback() - 回退当前事务
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+It's worth noting that you can perform transactions without disabling
+autocommit just using standard sql. "START TRANSACTION;" will start a
+transaction. "COMMIT;" will commit the results and "ROLLBACK;" will revert to
+the pre-transaction state.
+
+CREATE TABLE and CREATE DATABASE (and probably others) are always commited
+immediately and your transaction appears to terminate. Thus any commands before
+and after will be commited, even if a subsequent rollback is attempted.
+
+If you are in the middle of a transaction and you call mysqli_close() it
+appears that you get the funcitonality of an implicit rollback.
+
+I can't reproduce the "code bug causes lock" problem outlined below (I always
+get a successful rollback and the script will run umtine times successfully).
+Therefore, I would suggest that the problem is fixed in php-5.2.2.
+===============================================================================
+
+Just to be clear, autocommit not only turns on/off transactions, but will also
+'commit' any waiting queries.
+<?php
+mysqli_autocommit($link, FALSE); // turn OFF auto
+-some query 1;
+-some query 2;
+mysqli_commit($link); // process ALL queries so far
+-some query 3;
+-some query 4;
+mysqli_autocommit($link, TRUE); // turn ON auto
+?>
+All 4 will be processed.
+===============================================================================
+
+I've found that if PHP exits due to a code bug during a transaction, an InnoDB
+table can remain locked until Apache is restarted.
+
+The simple test is to start a transaction by setting $mysqli_obj->autocommit
+(false) and executing an insert statement.  Before getting to a $mysqli_obj->
+commit statement - have a runtime code bug bomb PHP.  You check the database,
+no insert happened (you assume a rollback occurred) .. and you go fix the bug,
+and try again... but this time the script takes about 50 seconds to timeout -
+the insert statement returning with a “1205 - Lock wait timeout exceeded; try
+restarting transaction”.  No rollback occurred. And this error will not go away
+until you restart Apache - for whatever reason, the resources are not released
+until the process is killed.
+
+I found that an ‘exit’, instead of a PHP code bug, will not cause a problem. So
+there is an auto-rollback mechanism in place - it just fails miserably when PHP
+dies unexpectantly. Having to restarting apache is a pretty drastic measure to
+overcome a code bug.
+
+To avoid this problem, I use “register_shutdown_function()” when I start a
+transaction, and set a flag to indicate a transaction is in process (because
+there is no unregister_shutdown_function()). See below. So the __shutdown_check
+() routine (I beleive it needs to be public) is called when the script bombs -
+which is able to invoke the rollback().
+
+these are just the relevant bits to give u an idea...
+
+<?php
+
+public function begin_transaction() {
+  $ret = $this->mysqli_obj->autocommit(false);
+  $this->transaction_in_progress = true;
+  register_shutdown_function(array($this, "__shutdown_check"));
+}
+
+public function __shutdown_check() {
+  if ($this->transaction_in_progress) {
+    $this->rollback();
+  }
+}
+
+public function commit() {
+  $ret = $this->mysqli_obj->commit();
+  $this->transaction_in_progress = false;
+}
+
+public function rollback() {
+  $ret = $this->mysqli_obj->rollback();
+  $this->transaction_in_progress = false;
+}
+?>
+
+True for PHP 5.1.6 + MySQL 5.0.24a.
+===============================================================================
+
+If you are using the mysql command line tool, here are some helpful hints for
+the autocommit feature:
+
+1.  To view the current autocommit setting, you can use this query: select
+@@autocommit;  It will return the current setting as 1 or 0 (on or off)
+
+2. You can manage the default autocommit feature in you my.cnf or my.ini by
+adding the following line: init_connect='set autocommit=0'.  I'm pretty sure
+this isn't in the documentation, but it does work.
+
+Here are the current engines, as of MySQL 5.1dev that support transactions:
+
+InnoDB
+BerkeleyDB
+Falcon
+
+Falcon is very new, so beware using it on production systems.

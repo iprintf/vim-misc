@@ -1,0 +1,356 @@
+
+ssh2_exec
+
+(PECL ssh2 >= 0.9.0)
+
+ssh2_exec — Execute a command on a remote server
+
+说明
+
+resource ssh2_exec ( resource $session , string $command [, string $pty [, 
+array $env [, int $width = 80 [, int $height = 25 [, int $width_height_type =
+SSH2_TERM_UNIT_CHARS ]]]]] )
+
+Execute a command at the remote end and allocate a channel for it.
+
+参数
+
+session
+
+    An SSH connection link identifier, obtained from a call to ssh2_connect().
+
+command
+
+pty
+
+env
+
+    env may be passed as an associative array of name/value pairs to set in the
+    target environment.
+
+width
+
+    Width of the virtual terminal.
+
+height
+
+    Height of the virtual terminal.
+
+width_height_type
+
+    width_height_type should be one of SSH2_TERM_UNIT_CHARS or
+    SSH2_TERM_UNIT_PIXELS.
+
+返回值
+
+Returns a stream on success 或者在失败时返回 FALSE.
+
+范例
+
+Example #1 Executing a command
+
+<?php
+$connection = ssh2_connect('shell.example.com', 22);
+ssh2_auth_password($connection, 'username', 'password');
+
+$stream = ssh2_exec($connection, '/usr/local/bin/php -i');
+?>
+
+参见
+
+  • ssh2_connect() - Connect to an SSH server
+  • ssh2_shell() - Request an interactive shell
+  • ssh2_tunnel() - Open a tunnel through a remote server
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+There doesn't appear to be a way to get data from BOTH stderr and stdout
+streams simultaneously, or at least I've yet to find one.
+
+The following code *should* get the error message written to stderr, but if the
+call to stream_get_contents() for stdout is run first, the subsequent call for
+stderr won't return anything. 
+
+If the order of the statements is reversed, the call for stderr will return any
+errors and call for stdout will return nothing
+
+<?php
+// Run a command that will probably write to stderr (unless you have a folder
+named /hom)
+$stream = ssh2_exec($connection, "cd /hom");
+$errorStream = ssh2_fetch_stream($stream, SSH2_STREAM_STDERR);
+
+// Enable blocking for both streams
+stream_set_blocking($errorStream, true);
+stream_set_blocking($stream, true);
+
+// Whichever of the two below commands is listed first will receive its
+appropriate output.  The second command receives nothing
+echo "Output: " . stream_get_contents($stream);
+echo "Error: " . stream_get_contents($errorStream);
+
+// Close the streams       
+fclose($errorStream);
+fclose($stream);
+
+?>
+
+My initial suspicion is that either a) I've done something wrong  or b) the
+blocking nature of both streams means that by the time first stream has
+received data and returned, the buffer for the second stream has already
+emptied.
+
+I've done preliminary tests with blocking disabled, but haven't had any luck
+there either.
+===============================================================================
+
+if you are using exec function, and have problems with a output > 1000 lines
+you should use 
+
+<?php
+                stream_set_blocking($stream, true);
+                while($line = fgets($stream)) {
+                        flush();
+                        echo $line."<br />";
+                }
+?>
+
+except
+
+<?php
+                stream_set_blocking($stream, true);
+               echo stream_get_contents($stream);
+?>
+===============================================================================
+
+The "pty" parameter is not documented.
+
+You should pass a pty emulation name ("vt102", "ansi", etc...) if you want to
+emulate a pty, or NULL if you don't.
+
+Passing false will convert false to a string, and will allocate a "" terminal.
+===============================================================================
+
+I believe most of the problem that people are having here is that there is a
+misconception about what blocking *really* means.
+
+Blocking means a read from the *stream* will wait until there is data.  Not
+necessarily all the data from the application -- but *some*.  So it won't help
+you at all if you're executing a command that doesn't write to stdout, or
+writes a whole lot of data.
+
+So there are 2 problems:
+
+1. If you need to know that a silent program is done via ssh2_exec, you'll need
+to signal it to yourself.  ssh2_exec will *not* block execution until the
+command is done executing.  And 2 consecutive ssh2_execs may execute
+asynchronously.  You could also log into a shell via ssh2_shell and parse up to
+the next prompt -- but that's overkill.  You can also do this by adding on some
+sort of sentinel at the end of your command, such as echo "@," and then block
+on reads until you see a "@."  Ensure "@" won't appear in the output, or escape
+the output via some encoding mechanism if you can't do that.
+
+2. If the program takes awhile, you have the same problem.  You need to read
+until you're done.  So you need a sentinel value like the above.
+
+3. Sleep() is just a bad idea here.  Commands rarely take the same amount of
+time to execute a command twice.  It may be OK if you're doing *one* thing and
+can just wait 5 seconds.  But that's not cool if it's something you're doing in
+a loop.
+
+Hope this helps!
+===============================================================================
+
+If you want to run many exec orders throught ssh2 in the same process using the
+same variable $stream for exemple and to read the output for each order, you
+must close the stream after each order else you will not be able to read the
+next order output.
+
+<?php
+$stream=ssh2_exec($conn_id,"/usr/bin/ls .");
+    stream_set_blocking( $stream, true );
+    $cmd=fread($stream,4096);
+fclose($stream);
+
+if(ereg("public_html",$cmd)){
+// ...........................................
+}
+
+$stream=ssh2_exec($conn_id,"/usr/bin/ls public_html");
+    stream_set_blocking( $stream, true );
+    $cmd=fread($stream,4096);
+fclose($stream);
+
+if(ereg("images",$cmd)){
+// ..........................................
+}
+
+
+$stream=ssh2_exec($conn_id,"/usr/bin/ls public_html/images");
+    stream_set_blocking( $stream, true );
+    $cmd=fread($stream,4096);
+fclose($stream);
+
+if(ereg("blabla",$cmd)){
+// ..........................................
+}
+?>
+===============================================================================
+
+If the ssh2_exec takes awhile to run, and you need a handshake, you can use a
+file.  In this case, $flag names a handshake file that is written when the ssh
+script finishes.
+
+<?php
+                $stream = ssh2_exec($connection, $command . " $public_key 
+$private_key;");
+                $i=0;
+                while (!file_exists ($flag) && ($i < MAX_TIME))
+                {
+                        sleep(1);
+                        $i++;
+                }
+                $ret_val=($stream!=FALSE);
+?>
+
+This is an extract out of the bash script that is running.  Be sure to allow
+the webserver permission to read the file that the script writes.
+
+echo 0 > $OUTFILE
+chmod 666 $OUTFILE
+
+One other note:  you can put more than one command in by separating them with
+';' (semicolons).
+===============================================================================
+
+This is the best way I found to automatically run multiple commands or commands
+that might take longer then expected.  NOTE: this assumes that no where in the
+output is there the text '[end]' otherwise the function will end prematurely. 
+Hope this helps people.
+
+<?php
+$ip = 'ip_address';
+$user = 'username';
+$pass = 'password';
+
+$connection = ssh2_connect($ip);
+ssh2_auth_password($connection,$user,$pass);
+$shell = ssh2_shell($connection,"bash");
+
+//Trick is in the start and end echos which can be executed in both *nix and
+windows systems.
+//Do add 'cmd /C' to the start of $cmd if on a windows system.
+$cmd = "echo '[start]';your commands here;echo '[end]'";
+$output = user_exec($shell,$cmd);
+
+fclose($shell);
+
+function user_exec($shell,$cmd) {
+  fwrite($shell,$cmd . "\n");
+  $output = "";
+  $start = false;
+  $start_time = time();
+  $max_time = 2; //time in seconds
+  while(((time()-$start_time) < $max_time)) {
+    $line = fgets($shell);
+    if(!strstr($line,$cmd)) {
+      if(preg_match('/\[start\]/',$line)) {
+        $start = true;
+      }elseif(preg_match('/\[end\]/',$line)) {
+        return $output;
+      }elseif($start){
+        $output[] = $line;
+      }
+    }
+  }
+}
+
+?>
+
+[EDIT BY danbrown AT php DOT net: Contains a bugfix supplied by (jschwepp AT
+gmail DOT com) on 17-FEB-2010 to fix a typo in a function name.]
+===============================================================================
+
+Executing remote Windows commands...
+After some hair pulling, I thought I'd suggest a couple things that might help
+others:
+
+1. Use 'ssh2_fetch_stream' to open a stderr stream according to the manual.
+2. Windows shell commands require 'cmd /C [command]' to execute.  (I had
+forgotten this)
+
+<?php
+    // code fragment
+    $stdout_stream = ssh2_exec($connection, 'cmd /C dir');
+    $stderr_stream = ssh2_fetch_stream($stdout_stream, SSH2_STREAM_STDERR);
+?>
+
+I didn't realize the need for the 'cmd /C' until I saw the stderr response
+'dir: not found'.
+===============================================================================
+
+It is also good to use register_shutdown_function to shred the keys after this
+runs.
+===============================================================================
+
+The command  may not finish before the function return if the stream is not set
+to blocking mode. You may have to set the stream to blocking mode in order to
+get any output from the command.
+
+<?php
+  // [Open connection]
+  // ...
+
+  $stream = ssh2_exec($connection, 'ps ax');
+  stream_set_blocking($stream, true);
+ 
+  // The command may not finish properly if the stream is not read to end
+  $output = stream_get_contents($stream);
+ 
+  // ...
+  // [Close stream and connection]
+?>
+===============================================================================
+
+<?php
+$connection = ssh2_connect('shell.example.com', 22);
+ssh2_auth_password($connection, 'username', 'password');
+
+$stream = ssh2_exec($connection, '/usr/local/bin/php -i');
+?>
+===============================================================================
+
+It is important to note that this will not work ~all~ hosts that allow SFTP. We
+deny shell access, but allow SFTP using the sftp-internal subsystem.
+
+When attempting to use ssh2_exec() with this configuration, and
+stream_set_blocking set to true, the script will hang indefinitely. When
+stream_set_blocking is set to false, nothing will be returned.
+
+Even if you can SFTP files, be sure to check with your host to see if you have
+shell access.
+===============================================================================
+
+Oddly enough, I've noticed if I attempt to execute anything nothing happens.
+Now, I don't mean "No content is returned!".. I mean, "The command I told it to
+execute didn't execute!".
+
+Unless the following pattern is followed:
+
+<?php
+$stream = ssh2_exec($connection, "touch ~/some_fake_file", 'xterm');
+stream_get_contents($stream);
+?>
+
+Nowhere in the manual does it imply that stream_get_contents is required for
+the actual execution to take place, but in this case.. it seems that way. So,
+if you're having trouble getting commands to execute, try using
+stream_get_contents().
+===============================================================================
+
+*** IMPORTANT ***
+If you are having issues getting STDERR on PHP 5.2.X, make sure to update to
+5.2.17 and latest ssh2 extension from PECL.

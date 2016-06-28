@@ -1,0 +1,266 @@
+
+SoapVar::SoapVar
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+SoapVar::SoapVar — SoapVar constructor
+
+说明
+
+SoapVar::SoapVar ( mixed $data , string $encoding [, string $type_name [, 
+string $type_namespace [, string $node_name [, string $node_namespace ]]]] )
+
+Constructs a new SoapVar object.
+
+参数
+
+data
+
+    The data to pass or return.
+
+encoding
+
+    The encoding ID, one of the XSD_... constants.
+
+type_name
+
+    The type name.
+
+type_namespace
+
+    The type namespace.
+
+node_name
+
+    The XML node name.
+
+node_namespace
+
+    The XML node namespace.
+
+范例
+
+Example #1 SoapVar::SoapVar() example
+
+<?php
+class SOAPStruct {
+    function SOAPStruct($s, $i, $f) 
+    {
+        $this->varString = $s;
+        $this->varInt = $i;
+        $this->varFloat = $f;
+    }
+}
+$client = new SoapClient(null, array('location' => "http://localhost/soap.php",
+                                     'uri'      => "http://test-uri/"));
+$struct = new SOAPStruct('arg', 34, 325.325);
+$soapstruct = new SoapVar($struct, SOAP_ENC_OBJECT, "SOAPStruct", "http://
+soapinterop.org/xsd");
+$client->echoStruct(new SoapParam($soapstruct, "inputStruct"));
+?>
+
+参见
+
+  • SoapClient::__soapCall() - Calls a SOAP function
+  • SoapParam::SoapParam() - SoapParam constructor
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+I spent hours trying to find how to send a request where an element is
+repeated. Here is how I managed to do it:
+<?php
+$parm = array();
+$parm[] = new SoapVar('123', XSD_STRING, null, null, 'customerNo' );
+$parm[] = new SoapVar('THIS', XSD_STRING, null, null, 'selection' );
+$parm[] = new SoapVar('THAT', XSD_STRING, null, null, 'selection' );
+$resp = $client->getStuff( new SoapVar($parm, SOAP_ENC_OBJECT) );
+?>
+
+This will send something like:
+<getStuff>
+  <customerNo>123</customerNo>
+  <selection>THIS</selection>
+  <selection>THAT</selection>
+</getStuff>
+
+Hope this will save someone else's time.
+===============================================================================
+
+I worked for hours to figure out how to create following structure:
+
+<ns:Foo attr='bar'>
+   <ns:Baz attr='foobar'>barbaz</ns:Baz>
+</ns:Foo>
+
+It can be done with following array structure:
+
+$arr = array(
+  'Foo' => array(
+     'attr'=>'bar',
+     'Baz'=>array( '_' => 'barbaz', 'attr'=>'foobar')
+  )
+);
+===============================================================================
+
+This class is useful when dealing with the "anyType" type (generic object
+reference): it lets you specify the xsd type to provide "late binding" type
+information.
+
+Here's a really simple example: I have a .NET service that can take a string, a
+date, and integer, or other types, so I use the .NET "object" type. Here's an
+example of such a service--this one just tells me what type I passed in. (It's
+nice to use when checking to see if PHP passed in the type information the way
+.NET expects it.)
+
+//inside a service.asmx.cs file...
+[WebMethod]
+public string WhatTypeIsThis(object ObjectParameter)
+{
+   return "You passed in a " + ObjectParameter.GetType().Name
+     + ": " + ObjectParamter.ToString();
+}
+
+To call this service with a string from PHP, I used this code:
+<?php
+//set up the service client using WSDL
+$client = new SoapClient("http://localhost/folder/service.asmx?WSDL");
+
+//This is the variable that will be typed as an XSD string
+$typedVar = new SoapVar("mystring", XSD_STRING, "string", "http://www.w3.org/
+2001/XMLSchema");
+//This is the wrapper object for incoming parameters
+$wrapper->ObjectParameter = $typedVar;
+//This is the named parameter object that will be passed in to the service
+$params = new SoapParam($wrapper, "WhatTypeIsThis");
+
+//call the service with the string
+$result = $client->WhatTypeIsThis($params);
+//show the result
+echo $result->WhatTypeIsThisResult;
+?>
+
+The output from this should be:
+"You passed in a String: mystring"
+
+The SOAP message that is passed in looks like this:
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://
+www.w3.org/2001/XMLSchema" xmlns:ns1="http://tempuri.org/">
+    <SOAP-ENV:Body>
+        <ns1:WhatTypeIsThis>
+            <ns1:ObjectParameter xsi:type="xsd:string">mystring</
+ns1:ObjectParameter>
+        </ns1:WhatTypeIsThis>
+    </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+
+It's that xsi:type="xsd:string" that gives .NET the heads up that though the
+ObjectParameter is being passed in as an object, it is also a string.
+
+When trying other types, it's helpful to see exactly what is being sent to the
+service--to see the SOAP messages like the one above, use the trace option when
+making your SOAP client and then call the $client->__getLastRequest() function.
+(See http://www.php.net/soap_soapclient_getlastrequest)  You may need to use
+try/catch constructs if you're generating errors.
+
+Another helpful function is var_dump($client->__getTypes())--it shows how PHP
+parsed the WSDL file to create types to pass back and forth.
+===============================================================================
+
+It might be obvious to some but not to everyone
+if you ever wondered how to encode attribute in soap object, use proper coding
+and not hacking by passing xml and flag XSD_ANYXML
+
+try using this
+<?php
+$amount['_'] = 25;
+$amount['currencyId'] = 'GBP';
+$encodded = new SoapVar($amount, SOAP_ENC_OBJECT);
+
+?>
+and end result wound be
+<amount currencyId="GBP">25</amount>
+
+hope that helps someone
+===============================================================================
+
+One potential gotcha with this is that if the XML you are passing in has the <?
+xml... declaration, it may cause problems on the server side. It's best to
+strip this out with str_replace.
+===============================================================================
+
+To send requests containing ComplexTypes we needed to create stdClass objects
+for each ComplexType. If the ComplexType has an attribute we created a class
+with all the fields and attributes as members and added this class to the
+classmap with the correct type name from the wsdl. For example:
+
+//to create soap client
+            $soapClient = new SoapClient("<your wsdl url>",
+                 array('classmap' => array('RoomType' => 'RoomType'), 'trace'
+=> 1));
+                
+             //creating request object using custom class since there is an
+attribute needed
+
+    class RoomType {
+        //attribute
+        var $code;       
+        var $name;
+    }
+            $RoomType = new RoomType();
+            $RoomType->code = $code;
+           
+                        //plain stdClass is ok since no attributes defined
+            $LRoomCode = new stdClass();
+            $LRoomCode->RoomType = new SoapVar($RoomType, SOAP_ENC_OBJECT,
+"RoomType", "<your namespace url from wsdl>");
+           
+            //define a basic class object since attributes are not needed for
+this complex type
+             $RateAvailabilityReq = new stdClass();
+             $RateAvailabilityReq->LRoomCode = new SoapVar($LRoomCode,
+SOAP_ENC_OBJECT, "ArrayOfRoomType", "<your namespace url>");           
+            $RateAvailabilityReq->idB2BHotel = $idB2BHotel;
+             $RateAvailabilityReq->idProduct = $idProduct;
+             $RateAvailabilityReq->lenght = $lenght;
+            $RateAvailabilityReq->nameDistributor = $nameDistributor;
+            $RateAvailabilityReq->password = $password;
+            $RateAvailabilityReq->propertyCode = $propertyCode;           
+             $RateAvailabilityReq->startDate = $startDate;
+             $RateAvailabilityReq->userName = $userName;
+             $RateUpdateReqType = new SoapVar($RateAvailabilityReq ,
+SOAP_ENC_OBJECT, "RateAvailabilityReq", "<your namespace url>");
+            
+             $soapRequestType = new stdClass();
+             $soapRequestType->in0 = $RateUpdateReqType;
+             $getRateAvailabilityReq = new SoapVar($soapRequestType ,
+SOAP_ENC_OBJECT, "getRateAvailability", "<your namespace url>");
+            
+             $result = $soapClient->getRateAvailability
+($getRateAvailabilityReq);
+
+Reading attributes from ComplexType response objects also required a custom
+class added to the classmap array with the attribute as a member of the class.
+===============================================================================
+
+If you need to add attributes XML entities in your SOAP query like this:
+
+"<FilterBy Column="Id" FilterOperator="=" FilterValue="NUMBER" Table="Case">"
+
+Use SoapVar() with the type XSD_ANYXML as shown below.  Example uses __soapCall
+and other SoapParams.
+
+<?php
+$response = $client->__soapCall('GetFilteredRecordList',
+    array(new SoapParam($DSToken, 'Token'),
+          new SoapParam('Slide', 'TableName'),
+          new SoapVar('<FilterBy Column="Id" FilterOperator="=" FilterValue=
+"NUMBER" Table="Case"/>', XSD_ANYXML)),
+    array('soapaction' => 'http://www.example.com/webservices/
+GetFilteredRecordList'));
+?>
+
+Use this so you don't waste HOURS looking around:

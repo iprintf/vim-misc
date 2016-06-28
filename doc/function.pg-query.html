@@ -1,0 +1,311 @@
+
+pg_query
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pg_query — 执行查询
+
+说明
+
+resource pg_query ( resource $connection , string $query )
+
+pg_query() 在查询可以执行时返回查询结果资源号。如果查询失败或者提供的连接号无效
+则返回 FALSE。如果连接号有效，则可以用 pg_last_error() 函数来提取详细的错误信息
+。pg_query() 发送一条 SQL 语句到 connection 资源指定的 PostgreSQL 数据库。
+connection 必须是由 pg_connect() 或 pg_pconnect() 返回的合法连接号。本函数返回
+值是一个其它 PostgreSQL 函数例如 pg_fetch_array() 可以用来访问查询结果的查询结
+果资源号。
+
+
+    Note: connection 是 pg_query() 中的可选参数。如果没有指定 connection，则使
+    用默认连接。默认连接是 pg_connect() 或 pg_pconnect() 所打开的最后一个连接。
+    尽管 connection 参数可以省略，但不推荐这样做。因为这样可能会导致很难发现脚
+    本中的错误。
+
+    Note:
+
+    本函数以前的名字为 pg_exec()。pg_exec() 函数为了兼容性的原因仍然可以使用，
+    但是鼓励用户使用新的名字。
+
+参见 pg_connect()，pg_pconnect()，pg_fetch_array()，pg_fetch_object()，
+pg_num_rows() 和 pg_affected_rows()。
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+Regarding david.bouriaud@ac-rouen.fr:
+You misunderstand SQL. When a query is issued, results applicable at the time
+of the query are returned to the application (i.e. PHP). There is no further
+reference to the database required. Thus, all of the pg_fetch_* functions are
+acting on an internal data storage, NOT the database itself. This is because
+SQL does not have a concept of sets, or of state (except in limited
+circumstances provided by transactions). However, if you use a cursor instead,
+fetching only one record at a time, you may get an error if you delete the
+table. If you don't, it is an issue with Postgres, not PHP.
+===============================================================================
+
+A quick note for novice users: when gathering input from fields on a web form
+that maintains a database connection, *never* use pg_query to do queries from
+the field. Always sanitize input using pg_prepare and pg_execute.
+===============================================================================
+
+Use pg_query to call your stored procedures, and use pg_fetch_result when
+getting a value (like a smallint as in this example) returned by your stored
+procedure.
+
+<?php
+$pgConnection = pg_connect("dbname=users user=me");
+
+$userNameToCheckFor = "metal";
+
+$result = pg_query($pgConnection, "SELECT howManyUsersHaveThisName('
+$userNameToCheckFor')");
+
+$count = pg_fetch_result($result, 0, 'howManyUsersHaveThisName');
+?>
+===============================================================================
+
+There was a typo in the code that I posted:
+
+<?php
+  $result=pg_query($conn, "SELECT * FROM x WHERE a=b;");
+  if  (!$result) {
+   echo "query did not execute";
+  }
+  if (pg_num_rows($result) == 0) {
+   echo "0 records"
+  }
+  else {
+   while ($row = pg_fetch_array($result)) {
+     //do stuff with $row
+   }
+  }
+?>
+===============================================================================
+
+$GLOBALS["PG_CONNECT"]=pg_connect(...);
+....
+
+function query ($sqlQuery,$var=0) {
+   if (!$GLOBALS["PG_CONNECT"]) return 0;
+   $lev=error_reporting (8); //NO WARRING!!
+   $result=pg_query ($sqlQuery);
+   error_reporting ($lev); //DEFAULT!!
+   if (strlen ($r=pg_last_error ($GLOBALS["PG_CONNECT"]))) {
+      if ($var) {
+        echo "<p color=\"red\">ERROR:<pre>";
+        echo $sqlQuery;
+        echo "</pre>";
+        echo $r;
+        echo "&lt/p>";
+      }
+      close_db ();
+      return 0;
+   }
+   return $result;
+}
+===============================================================================
+
+In reply to david dot bouriaud at ac-rouen dot fr:
+
+All it is doing is internal caching. How can that be dangerous. If you are
+going to be deleting records after you have closed the connection it is your
+problem to make sure you have the latest and greatest records, and not some
+cached ones. Considering you are writing the script I don't see why it is a
+problem, you know what you are doing in the script, so it is quite useless for
+PHP to invalidate the cache, when that could be done upon exiting the script,
+which would mean there was less time spent cleaning out the cache when it
+counts most (when returning data to the user).
+===============================================================================
+
+Improving upon what jsuzuki said:
+
+It's probably better to use pg_num_rows() to see if no rows were returned, as
+that leaves the resultset cursor pointed to the first row so you can use it in
+a loop.
+
+Example:
+
+<?php
+  $result=pg_query($conn, "SELECT * FROM x WHERE a=b;");
+  if  (!$result) {
+   echo "query did not execute";
+  }
+  if (pg_num_rows($result) == 0) {
+   echo "0 records"
+  }
+  else {
+    while ($row = pg_fetch_array($result) {
+      //do stuff with $row
+    }
+  }
+?>
+
+I, personally, also find it more readable.
+===============================================================================
+
+It would be better this way:
+
+<?php
+  $result=pg_query($conn, "SELECT COUNT(*) AS rows FROM x WHERE a=b;");
+  if  (!$result) {
+   echo "query did not execute";
+  }
+  if ($line = pg_fetch_assoc($result)) {
+    if ($line['rows'] == 0) {
+     echo "0 records"
+    }
+  }
+  else {
+   while ($row = pg_fetch_array($result)) {
+     //do stuff with $row
+   }
+  }
+?>
+
+This solution doesn't raise the load of the system with the move of matching
+rows (perhaps 0,1, perhaps 100, 1000, ... rows)
+===============================================================================
+
+expanding on the note left by "cmoore" -
+
+To check to see if the recordset returned no records,
+
+<?php
+  $result=pg_query($conn, "SELECT * FROM x WHERE a=b;");
+  if  (!$result) {
+    echo "query did not execute";
+  }
+  $rs = pg_fetch_assoc($result);
+  if (!$rs) {
+    echo "0 records"
+  }
+?>
+
+-jack
+===============================================================================
+
+Here is my small function to make it easier for me to use data from select
+queries (attention, it is sensitive to sql injection)
+<?php
+function requestToDB($connection,$request){
+    if(!$result=pg_query($connection,$request)){
+        return False;
+    }
+    $combined=array();
+    while ($row = pg_fetch_assoc($result)) {
+        $combined[]=$row;
+    }
+    return $combined;
+}
+?>
+
+Example:
+<?php
+$conn = pg_pconnect("dbname=mydatabase");
+
+$results=requestToDB($connect,"select * from mytable");
+
+//You can now access a "cell" of your table like this:
+$rownumber=0;
+$columname="mycolumn";
+
+$mycell=$results[$rownumber][$columname];
+var_dump($mycell);
+===============================================================================
+
+One thing to note that wasn't obvious to me at first.  If your query returns
+zero rows, that is not a "failed" query.  So the following is wrong:
+  $result=pg_query($conn, "SELECT * FROM x WHERE a=b;");
+  if  (!$result) {
+    echo "No a=b in x\n";
+  }
+
+pg_query returns FALSE if the query can not be executed for some reason.  If
+the query is executed but returns zero rows then you get back a resul with no
+rows.
+===============================================================================
+
+Took me a while to track this down so I thought it might be useful for others:
+
+If you use stored procedures and need to get result sets back from them:
+
+function dbquery($link,$query){
+  pg_query($link,"BEGIN;");
+  $tr=pg_query($link,$query);
+  $r=pg_fetch_row($tr);
+  $name=$r[0];
+  $rs=pg_query($link,"FETCH ALL IN \"" . $name . "\";");
+  pg_query($link,"END;");
+  return $rs;
+}
+
+(Error checking removed for clarity)
+===============================================================================
+
+create table from pg_query results.. hope it helps newbies...
+function table_create($result)
+{
+    $numrows = pg_num_rows($result);
+    $fnum = pg_num_fields($result);
+
+    echo "<table border width='100%'>";
+    echo "<tr>";
+
+    for ($x = 0; $x < $fnum; $x++) {
+        echo "<td><b>";
+        echo strtoupper(pg_field_name($result, $x));
+        echo "</b></td>";
+    }
+
+    echo "</tr>";
+
+    for ($i = 0; $i < $numrows; $i++) {
+        $row = pg_fetch_object($result, $i);
+        echo "<tr align='center'>";
+        for ($x = 0; $x < $fnum; $x++) {
+    $fieldname = pg_field_name($result, $x);
+    echo "<td>";
+    echo $row->$fieldname;
+    echo "</td>";
+        }
+        echo"</tr>";
+    }
+    echo "</table>";
+   
+    return 0;
+}
+===============================================================================
+
+That's why your code should never assume it has the very latest data unless it
+locks it.
+===============================================================================
+
+Hi to all !
+It seems that the old pg_exec function does not do what it is expected to.
+In the doc, it is said that it returns a resource identifier on the successful
+querry that was send to the backend.
+It seems to me that it is more than a resource identifier.
+Follow the example :
+
+<?php
+$ConnId = pg_connect ("blablabla");
+$ResId = pg_exec ("select * from table", $ConnId);
+pg_close ($ConnId);
+$row = pg_fetch_array ($ResId, 4);
+?>
+
+I closed the connection voluntarily before the pg_fetch_array. It WORKS !
+
+Now, imagine the following script :
+<?php
+$ConnId = pg_connect ("blablabla");
+$ResId = pg_exec ("select * from table", $ConnId);
+pg_close ($ConnId);
+system ("psql base -c delete from table");
+$row = pg_fetch_array ($ResId, 4);
+?>
+See how it could be harmful !!!! I think that the coders have done this for
+performances reasons, but it is not the right way do do so !!!

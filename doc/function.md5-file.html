@@ -1,0 +1,240 @@
+
+md5_file
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+md5_file — 计算指定文件的 MD5 散列值
+
+说明
+
+string md5_file ( string $filename [, bool $raw_output = false ] )
+
+使用 » RSA 数据安全公司的 MD5 报文算法计算 filename 文件的 MD5 散列值并返回。该
+散列值为 32 字符的十六进制数字。
+
+参数
+
+filename
+
+    文件名
+
+raw_output
+
+    如果被设置为 TRUE，那么报文摘要将以原始的 16 位二进制格式返回。
+
+返回值
+
+成功返回字符串，否则返回 FALSE。
+
+更新日志
+
+版本                                    说明
+5.1.0 函数改用流 API。这意味着能够配合封装器使用该函数，比如 md5_file('http://
+      example.com/..')。
+
+范例
+
+Example #1 md5_file() 使用范例
+
+<?php
+$file = 'php-5.3.0alpha2-Win32-VC9-x64.zip';
+
+echo 'MD5 file hash of ' . $file . ': ' . md5_file($file);
+?>
+
+参见
+
+  • md5() - 计算字符串的 MD5 散列值
+  • sha1_file() - 计算文件的 sha1 散列值
+  • crc32() - 计算一个字符串的 crc32 多项式
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+If you just need to find out if two files are identical, comparing file hashes
+can be inefficient, especially on large files.  There's no reason to read two
+whole files and do all the math if the second byte of each file is different. 
+If you don't need to store the hash value for later use, there may not be a
+need to calculate the hash value just to compare files.  This can be much
+faster:
+
+<?php
+define('READ_LEN', 4096);
+
+if(files_identical('file1.txt', 'file2.txt'))
+    echo 'files identical';
+else
+    echo 'files not identical';
+
+//   pass two file names
+//   returns TRUE if files are the same, FALSE otherwise
+function files_identical($fn1, $fn2) {
+    if(filetype($fn1) !== filetype($fn2))
+        return FALSE;
+
+    if(filesize($fn1) !== filesize($fn2))
+        return FALSE;
+
+    if(!$fp1 = fopen($fn1, 'rb'))
+        return FALSE;
+
+    if(!$fp2 = fopen($fn2, 'rb')) {
+        fclose($fp1);
+        return FALSE;
+    }
+
+    $same = TRUE;
+    while (!feof($fp1) and !feof($fp2))
+        if(fread($fp1, READ_LEN) !== fread($fp2, READ_LEN)) {
+            $same = FALSE;
+            break;
+        }
+
+    if(feof($fp1) !== feof($fp2))
+        $same = FALSE;
+
+    fclose($fp1);
+    fclose($fp2);
+
+    return $same;
+}
+?>
+===============================================================================
+
+In response to using exec instead for performance (Nov 13 2007 post), It looks
+like the performance depends on the size of the file.  See the results below
+using the same script from the original post.  The first hash is with md5_file
+and the second is with openssl md5.
+
+With a 1MB file:
+Hash = df1555ec0c2d7fcad3a03770f9aa238a; time = 0.005006
+Hash = df1555ec0c2d7fcad3a03770f9aa238a; time = 0.01498
+
+With a 2MB file:
+
+Hash = 4387904830a4245a8ab767e5937d722c; time = 0.010393
+Hash = 4387904830a4245a8ab767e5937d722c; time = 0.016691
+
+With a 10MB file:
+
+Hash = b89f948e98f3a113dc13fdbd3bdb17ef; time = 0.241907
+Hash = b89f948e98f3a113dc13fdbd3bdb17ef; time = 0.037597
+
+Performance seems to change proportionally with the file size.  Judging from
+the previous post's default file name (.mov) he/she was probably dealing with a
+large file.  These are just quick tests and far from a perfect benchmark, but
+you might want to test your own files before assuming that the openssl solution
+is faster (ie, if working with small text files vs. movies, etc)
+===============================================================================
+
+Heres a function to give an md5 for an entire directory..
+
+function MD5_DIR($dir)
+{
+    if (!is_dir($dir))
+    {
+        return false;
+    }
+   
+    $filemd5s = array();
+    $d = dir($dir);
+
+    while (false !== ($entry = $d->read()))
+    {
+        if ($entry != '.' && $entry != '..')
+        {
+             if (is_dir($dir.'/'.$entry))
+             {
+                 $filemd5s[] = MD5_DIR($dir.'/'.$entry);
+             }
+             else
+             {
+                 $filemd5s[] = md5_file($dir.'/'.$entry);
+             }
+         }
+    }
+    $d->close();
+    return md5(implode('', $filemd5s));
+}
+===============================================================================
+
+It's faster to use md5sum than openssl md5:
+
+<?php
+$begin = microtime(true);
+
+$file_path = '../backup_file1.tar.gz';
+$result = explode("  ", exec("md5sum $file_path"));
+echo "Hash = ".$result[0]."<br />";
+
+# Here 7 other big files (20-300 MB)
+
+$end = microtime(true) - $begin;
+echo "Time = $end";
+# Time = 4.4475841522217
+
+#Method with openssl
+# Time = 12.1463856900543
+?>
+
+About 3x faster
+===============================================================================
+
+For those of you with PHP 4 that want to output the "raw" 128 bit hash, all you
+need to do is send it to pack to convert the hex string into the raw output.
+
+ie:
+$filename="checkthisfile.bin";
+$rawhash=pack("H*",md5_file($filename));
+===============================================================================
+
+Sorry for voting Chris's code down.
+
+It is great, but there are some brackets missing.  If you add more complex
+conditions than just a mere echo in the top IF ... ELSE structure please
+include the curly braces ... otherwise php  will choke.
+
+<?php
+define('READ_LEN', 4096);
+
+if(files_identical('file1.txt', 'file2.txt')) {
+    echo 'files identical';
+} else {
+    echo 'files not identical';
+}
+
+//   pass two file names
+//   returns TRUE if files are the same, FALSE otherwise
+function files_identical($fn1, $fn2) {
+    if(filetype($fn1) !== filetype($fn2))
+        return FALSE;
+
+    if(filesize($fn1) !== filesize($fn2))
+        return FALSE;
+
+    if(!$fp1 = fopen($fn1, 'rb'))
+        return FALSE;
+
+    if(!$fp2 = fopen($fn2, 'rb')) {
+        fclose($fp1);
+        return FALSE;
+    }
+
+    $same = TRUE;
+    while (!feof($fp1) and !feof($fp2))
+        if(fread($fp1, READ_LEN) !== fread($fp2, READ_LEN)) {
+            $same = FALSE;
+            break;
+        }
+
+    if(feof($fp1) !== feof($fp2))
+        $same = FALSE;
+
+    fclose($fp1);
+    fclose($fp2);
+
+    return $same;
+}
+?>

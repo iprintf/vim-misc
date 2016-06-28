@@ -1,0 +1,259 @@
+
+ldap_set_rebind_proc
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+ldap_set_rebind_proc — Set a callback function to do re-binds on referral
+chasing
+
+说明
+
+bool ldap_set_rebind_proc ( resource $link , callable $callback )
+Warning
+
+本函数还未编写文档，仅有参数列表。
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+The $referral that is used in the callback function isn't the bind dn, but the
+dn of the record that was being accessed (or rather it's location on the master
+server, I guess, if there is a difference in the two), so you need to rebind
+with your existing credentials. The connection ($ldap) appears to have already
+been made to the new server, so it is just a rebind process, nothing else more
+complicated than that. There must be a loop in the underlying library that
+re-submits the request that prompted the referral until either a success or
+fail is returned.
+
+I guess if the bind dn you were using in the first place won't let you edit the
+record on the master, then that is an ldap rather than php issue. However, at
+least with the rebind procedure you have a way to modify the bind dn first.
+
+So, the rebind process is really quite simple, now that I understand how it
+works! I was assuming it to be way more complicated. In it's simplest form,
+this is all you need, assuming your bind $dn and $pass are globals
+
+<?php
+function rebind($ldap, $referral) {
+    // Set ldap options
+    ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+    ldap_set_option($ldap, LDAP_OPT_REFERRALS, True);
+    ldap_set_rebind_proc($ldap, 'rebind');
+    // Rebind
+    if (!ldap_bind($ldap, $dn, $pass)) {
+            echo 'Could not bind to referral server';
+            return 1; // Yes, a 1 means a failure.
+        }
+    return 0; // Yes, return a 0 on success.
+    }
+?>
+===============================================================================
+
+I finally have referrals working using the ldap_set_rebind_proc function. Don't
+connect to the referral server in your callback function. This is done for you.
+You only have to bind. The callback must return 0 if the bind succeeds or 1 if
+it fails.
+
+Consider a master - slave LDAP setup where the slave is read-only and refers
+writes to the master. For the PHP on the slave, you need something like this:
+
+<?php
+
+// Callback function
+function rebind($ldap, $referral) {
+    // ldap options
+    ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+    ldap_set_option($ldap, LDAP_OPT_REFERRALS, True);
+    ldap_set_rebind_proc($ldap, 'rebind');
+    // The referral is of the form:
+    //  ldaps://newhost/cn=user,ou=people,dc=example,dc=com
+    $refparts = explode('/', $referral);
+    if (count($refparts) > 2) {
+        // Get the bind dn from referral
+        $dn = $refparts[3];
+        // Bind to new host
+        if (!ldap_bind($ldap, $dn, $pass)) {
+            echo 'Could not bind to referral server';
+            return 1;
+        }
+    } else {
+        // Try anonymous bind
+        if (!ldap_bind($ldap)) {
+            echo 'Could not bind to referral server anonymously';
+            return 1;
+        }
+    }
+    return 0;
+}
+   
+// Initial ldap connection to slave server
+$ldap_host = 'localhost'
+$ds = ldap_connect($ldap_host);
+// ldap options
+ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3)
+ldap_set_option($ds, LDAP_OPT_REFERRALS, True)
+// Set callback function
+ldap_set_rebind_proc($ds, 'rebind'))
+// bind
+ldap_bind($ds, $dn, $pass)
+// ldap write
+ldap_modify($ds, $dn, $attr);
+
+?>
+
+Accessing passwords and other data from your callback is easier if you use a
+class method as the callback function. The callback would be initialized like
+this:
+
+<?php
+
+ldap_set_rebind_proc($ldap, 'MyClass::rebind');
+
+?>
+===============================================================================
+
+I have now spent enough time looking at this issue to say that ldap referrals,
+at least when trying to add, modify or delete a record on a slave server that
+correctly gives a referral to a master server, does not work in php. My
+suggestion is turn turn off ldap referrals and write your own add, modify and
+delete functions with built in referral handling. Something like this:
+
+<?php
+function ldap_referral_add($connection,$add_dn,$Add_entry,$bind_dn,$bind_pw)
+    {
+    $rconnection = $connection;
+    $loop = 10; # max number of referral hops.
+    # Turn off normal referrals
+    ldap_get_option($connection,LDAP_OPT_REFERRALS,$old_referral_setting)
+    do
+        {
+        $response = ldap_add($rconnection,$dn,$entry);
+        # We get a success message:
+        if ( $response )
+            {
+            ldap_unbind($rconnection);
+            $loop = 0;    # Probably not needed
+            ldap_set_option($connection,LDAP_OPT_REFERRALS,
+$old_referral_setting);
+            return true;
+            }
+        # We get a referral message:
+        elseif ( !$response && ldap_errno($rconnection) == 0x0a )
+            {
+            $new_server_url = $server= preg_replace('!^(ldap://[^/]+)/.*$!', '\
+\1', $ldap_error($rconnection)); # May need some sanity checking here
+            $rconnection = ldap_connect($new_server_url);
+            ldap_set_option($rconnection,LDAP_OPT_REFERRALS,0)
+            ldap_set_option($rconnection,LDAP_OPT_PROTOCOL_VERSION, 3)
+            ldap_bind($rconnection,$bind_dn,$bind_pw);
+            $loop = $loop - 1;
+            }
+        else
+            {
+            ldap_unbind($rconnection);
+            $loop = 0;    # Probably not needed
+            ldap_set_option($connection,LDAP_OPT_REFERRALS,
+$old_referral_setting);
+            return false;
+            }
+        } while ( $loop > 0);
+    }
+?>
+===============================================================================
+
+I have had quite a hard time finding good information about chasing referrals
+so I am adding my tuppence worth here. I still haven't got my test code working
+fully so please look further down the page for updates.
+
+The way this appears to have to work is that you use this function to set a
+callback function of your own to connect and bind to the referral server. you
+need to set this along with forcing v3 ldap and setting the referral chasing to
+on as part of setting up the initial connection, so just after the connect but
+before the bind, you need something like:
+
+<?php
+        $ds = ldap_connect($server);
+        ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
+        ldap_set_option($ds, LDAP_OPT_REFERRALS, 1);
+        ldap_set_rebind_proc($ds, "rebind");
+        ldap_bind($ds,$dn,$pass);
+?>
+
+This callback function (called rebind in the above example needs two arguments.
+These arguments are preset and are supplied when the callback function is
+called. The first is the ldap link identifier. I assume this is supplied as the
+function could be used successively by a number of consecutive referrals. The
+second is the ldap referral URL supplied by the initial server. I have seen
+notes that say this function must be defined prior to being set by
+ldap_set_rebind_proc, but as yet I cannot confirm this.
+
+My setup is based on a master - slave ldap server configuration, with the PHP
+application residing on the slave where it does localhost lookups. When your
+try to write to the slave ldap server, the server returns a referral URL, and
+the internal PHP function then calls the callback function.
+
+Despite the code already on this page, which appears to also be used to test
+the PHP code, I believe it is wrong. I think it simply reconnects to the
+initial server. I believe that what the callback function should do is to
+connect to the new server, and bind to it. My test code currently looks like
+this:
+
+<?php
+function rebind($ldap, $referral) {
+        global $dn;
+        global $pass;
+        $server= preg_replace('!^(ldap://[^/]+)/.*$!', '\\1', $referral);
+        if (!($ldap = ldap_connect($server))){
+                echo "reconnect failed - <br>";
+                return 1;
+        }
+        ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3);
+        ldap_set_option($ldap, LDAP_OPT_REFERRALS, 1);
+        ldap_set_rebind_proc($ldap, "rebind");
+        if (!ldap_bind($ldap,$dn,$pass)){
+                echo "rebind failed - <br>";
+                return 1;
+        }
+        return 0;
+}
+?>
+
+As far as I can tell, a return value of 0 means success and any other value
+means it has failed. The complete lack of documentation doesn't help.
+
+The above code works all the way to authenticating against the new server, but
+at the moment I appear to be getting an unbind request before it tries to write
+the record to the new server, so it fails.
+
+I would also recommend adding a ldap_start_tls before the bind as well.
+===============================================================================
+
+PHP expects the ldap function ldap_set_rebind_proc to be the one that has tree
+parameters.  As far as I can tell this isn't in the 2.0 release of OpenLDAP. 
+But made it into 2.1.  Configure will tell you
+
+checking for 3 arg ldap_set_rebind_proc... no
+===============================================================================
+
+Couse there was no example code for this function, i had alot of troubles to
+make it work properly.
+
+So, here is working example:
+
+function rebind_on_ref ($ds, $ldap_url) {
+  global $binddn;    // DN used to bind
+  global $bindpw;    // password used to bind
+
+  // required by most modern LDAP servers, use LDAPv3
+  ldap_set_option($a, LDAP_OPT_PROTOCOL_VERSION, 3);
+
+  if (!ldap_bind($a,$binddn,$bindpw)) {
+        print "Cannot bind";
+  }
+}
+===============================================================================
+
+If rebind_proc isn't compiled in slapd, your will never get that funtction
+working. Check out the new alpha release of slapd and rtfm.

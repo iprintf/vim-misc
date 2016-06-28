@@ -1,0 +1,631 @@
+
+gzcompress
+
+(PHP 4 >= 4.0.1, PHP 5, PHP 7)
+
+gzcompress — Compress a string
+
+说明
+
+string gzcompress ( string $data [, int $level = -1 [, int $encoding =
+ZLIB_ENCODING_DEFLATE ]] )
+
+This function compresses the given string using the ZLIB data format.
+
+For details on the ZLIB compression algorithm see the document "» ZLIB
+Compressed Data Format Specification version 3.3" (RFC 1950).
+
+    Note:
+
+    This is not the same as gzip compression, which includes some header data.
+    See gzencode() for gzip compression.
+
+参数
+
+data
+
+    The data to compress.
+
+level
+
+    The level of compression. Can be given as 0 for no compression up to 9 for
+    maximum compression.
+
+    If -1 is used, the default compression of the zlib library is used which is
+    6.
+
+encoding
+
+    One of ZLIB_ENCODING_* constants.
+
+返回值
+
+The compressed string or FALSE if an error occurred.
+
+范例
+
+Example #1 gzcompress() example
+
+<?php
+$compressed = gzcompress('Compress me', 9);
+echo $compressed;
+?>
+
+更新日志
+
+版本            说明
+5.4.0 Added encoding parameter.
+
+参见
+
+  • gzdeflate() - Deflate a string
+  • gzinflate() - Inflate a deflated string
+  • gzuncompress() - Uncompress a compressed string
+  • gzencode() - Create a gzip compressed string
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+Did some simple benchmarking of gzcompress() this morning on a lightly-loaded
+Fedora 12 server with an AMD Phenom II 940 (quad-core) rocking 8 gigs of ram
+and executing PHP 5.3.2.2 as an Apache module:
+
+Compression benchmark: (level, time, size (%)):
+0: 0.000373 - 82.08 kB (100.02%)
+1: 0.000914 - 19.61 kB (23.90%)
+2: 0.000951 - 18.88 kB (23.01%)
+3: 0.000999 - 18.43 kB (22.46%)
+4: 0.001498 - 17.65 kB (21.51%)
+5: 0.001744 - 17.09 kB (20.82%)
+6: 0.002060 - 16.88 kB (20.57%)
+7: 0.002233 - 16.85 kB (20.53%)
+8: 0.002808 - 16.71 kB (20.36%)
+9: 0.002928 - 16.71 kB (20.36%)
+
+The time code evaluates to:
+1. Get start microtime
+2. Call gzcompress
+3. Get end microtime
+4. Report average duration of 100 cycles
+
+The 82.08 kB was a copied and pasted string of two actual, PHP-generated pages
+we use on our intranet. Running some rough calculations, the time it takes to
+compress the data at level 9 will never be larger than the time it takes to
+transmit slightly-less compressed data at levels 6 or lower. In other words, in
+our application, we have no reason not to fully-compress each PHP script's
+output.
+===============================================================================
+
+GZ-compression works perfectly for html content sent to IE5/IE5.5/Netscape6
+browsers. I even compress the <script src='javascriptstuff'> javascript code.
+It speeds throughput immensely: best case so far 160k html file --> 8k gzip
+sent.
+
+Netscape 4 (on all platforms[?]), IE4/IE5 on the Mac do NOT support
+gz-compression. Email me if you want to know more.
+===============================================================================
+
+Ah right, I did not realize it because my browsers (Acorn Browse on RISC OS and
+Netscape on Windows) don't make problems at all.
+
+Anyway, you can replace your function "gzip_PrintFourChars"
+with "echo pack("V",$Crc)".
+===============================================================================
+
+The method of first reading the source file and then passing its content to the
+gzip function instead of simply the source and destination filename was a bit
+confusing for me.
+
+So I have written a simple funtion you can use to compress files in the gzip
+format (gzip is readable by winzip like .zip files)
+
+function compress($srcName, $dstName)
+{
+  $fp = fopen($srcName, "r");
+  $data = fread ($fp, filesize($srcName));
+  fclose($fp);
+
+  $zp = gzopen($dstName, "w9");
+  gzwrite($zp, $data);
+  gzclose($zp);
+}
+
+// Compress a file
+compress("/web/myfile.dat", "/web/myfile.gz");
+===============================================================================
+
+There is a useful zipfile class at http://www.zend.com/codex.php?id=696&single=
+1 that allows you to zip many files into one zip file.
+===============================================================================
+
+You should use the crc coz' some linux browsers need it. Some browser won't
+display anything without crc. My code works with these browsers (tested ;))
+===============================================================================
+
+If no parameter is given, the default level of 6 is used.
+
+benchmarking the speed:
+(compression, datasize, compress time)
+0: 37440 (0.002 s)
+1: 2537 (0.002 s)
+2: 2298 (0.003 s)
+3: 2199 (0.003 s)
+4: 2299 (0.003 s)
+5: 1939 (0.004 s)
+6: 1789 (0.004 s)
+7: 1724 (0.004 s)
+8: 1635 (0.005 s)
+9: 1635 (0.005 s)
+
+Level 0 = no compression, then level 1-4 are roughly the fastest to compress
+with reasonable quality. level 5-7 give better compression but take a little
+longer and 8-9 take nearly double the time to compress but give best results.
+
+So the system default of 6 is actually a good compromise in speed/size. But for
+very fast compression times, I go with the threshold value of 3.
+===============================================================================
+
+To properly use gzcompress to send compressed data to browsers that support it
+(most of modern browsers do, even mobile ones !), use this function (I dont
+think W3C validator issue mentioned earlier is valid ). use ob_start() at start
+of your script also
+
+<?php
+function print_gzipped_output()
+{
+    $HTTP_ACCEPT_ENCODING = $_SERVER["HTTP_ACCEPT_ENCODING"];
+    if( headers_sent() )
+        $encoding = false;
+    else if( strpos($HTTP_ACCEPT_ENCODING, 'x-gzip') !== false )
+        $encoding = 'x-gzip';
+    else if( strpos($HTTP_ACCEPT_ENCODING,'gzip') !== false )
+        $encoding = 'gzip';
+    else
+        $encoding = false;
+   
+    if( $encoding )
+    {
+        $contents = ob_get_clean();
+        $_temp1 = strlen($contents);
+        if ($_temp1 < 2048)    // no need to waste resources in compressing
+very little data
+            print($contents);
+        else
+        {
+            header('Content-Encoding: '.$encoding);
+            print("\x1f\x8b\x08\x00\x00\x00\x00\x00");
+            $contents = gzcompress($contents, 9);
+            $contents = substr($contents, 0, $_temp1);
+            print($contents);
+        }
+    }
+    else
+        ob_end_flush();
+}
+?>
+===============================================================================
+
+Contrary to popular opinion the checksum in the last four bytes of output is
+not "wrong", it's just not very useful: RFC 1950 s8.2 specifies that the
+"Adler-32" checksum, not CRC32 should be appended to the compressed data and
+PHP function follows the RFC (if for no other reason because it uses zlib and
+Mark Adler was one of the authors thereof). In contrast gzip expects a CRC32
+(i.e. it doesn't follow that RFC), and treats the Adler-32 checksum as an
+incorrect CRC32.
+
+AFAICT there is no simple way to compute the CRC32 directly from the Adler32
+checksum.
+
+Personally, my solution was to write a short C program that performs a deflate
+on, and calculates the CRC32 of, stdin while writing the compressed data (with
+trailing CRC32 instead of Adler32) on stdout. It's an ugly hack, but it does
+allow me to  serve a ~1GB compressed output with only a single pass over the
+uncompressed data and without hitting my 8MB memory limit. In contrast, methods
+using gzcompress() and crc32() would seem to require a theoretical minimum of
+three passes across the input data (read into memory, compress, calculate CRC)
+and 2GB of allocated memory to produce a 1GB compressed output... Short of
+writing crc32() and deflate() functions from scratch, I couldn't find any way
+of doing this without either storing the whole output in a variable or
+resorting to a module in another language.
+===============================================================================
+
+I don't know why, but W3C Validator can't validate pages that are GZIP
+compressed (with functions posted below: gzcompress, pack etc.; not by
+ob_gzhandler).
+
+Because of this, I use similar code to this below:
+
+<?php
+if( strstr($_SERVER['HTTP_USER_AGENT'], 'W3C_Validator')!==false || strstr(
+$_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')===false ){
+  // do not compress
+}else{
+  // can send GZIP compressed data
+}
+?>
+
+This code also checks if user agent is W3C Validator. If it is NOT W3C
+Validator and user acceptes GZIP encoded data then we can compress the page, in
+other case if it is W3C Validator or user agent does not accept GZIP enoded
+data we can't compress the page, 'cause user agent couldn't properly handle it.
+
+Sorry for my bad English
+===============================================================================
+
+I find this works well, save the snip below in your php/ directory then edit
+your prepend.php file and add a require statement that requires the
+compression.php file below. Once complete watch (tail -f) your php error log to
+see the results of compression in action.
+
+<?php
+
+// Gzip encode the contents of the output buffer.
+function compress_output_option($output)
+{
+    // Compress the data into a new var.
+    $compressed_out = gzencode($output);
+
+    // Don't compress any pages less than 1000 bytes
+    // as it's not worth the overhead at either side.
+    if(strlen($output) >= 1000)
+    {
+        error_log('compression.php Gzipd Output'."\n"
+                 .'Before compression size '
+                 .strlen($output).' bytes'."\n"
+                 .' After compression size '
+                 .strlen($compressed_out).' bytes');
+        // Tell the browser the content is compressed with gzip
+        header("Content-Encoding: gzip");
+        return $compressed_out;
+    }
+    else
+    {
+        // No compression
+        error_log('compression.php Standard Output.');
+        return $output;
+    }
+}
+
+// Check if the browser supports gzip encoding, HTTP_ACCEPT_ENCODING
+if (strstr($HTTP_SERVER_VARS['HTTP_ACCEPT_ENCODING'], 'gzip'))
+{
+    // Start output buffering, and register compress_output() (see
+    // below)
+    ob_start("compress_output_option");
+
+}
+?>
+===============================================================================
+
+After some searching and experimentation I found that output generated with
+gzcompress() can be uncompressed by the objective c 'zlibInflate' wrapper for
+'zlib' as available at http://cocoadev.com/wiki/NSDataCategory but that
+'gzdeflate()' cannot. I hope this saves someone else the searching.
+===============================================================================
+
+Second try! In my mind, the following source code is right with 4.1.2 and
+higher, and seems to be right with other versions... and its works with all
+browser I tried(NS 4.7x, mozilla 1.00rc3, IE5.5, opera6.01)...
+As it is said in documentation of the function gzencode, you have to use this
+function, if you want to get the right result! gzcompress doesn't create the
+right stream output for browsers!(It is explained in gzencode documentation:
+generated headers are not the same!)
+
+The source code:
+
+<?
+  function checkCanGzip() {
+
+      global $HTTP_ACCEPT_ENCODING;
+     
+      if (headers_sent()) return 0;
+      if (strpos($HTTP_ACCEPT_ENCODING, 'x-gzip') !== false) return
+"x-gzip";
+      if (strpos($HTTP_ACCEPT_ENCODING,'gzip') !== false) return
+"gzip";
+      return 0;
+
+  }
+
+  function gzDocOut() {
+
+      if ($encoding = checkCanGzip()) {
+        $contents = ob_get_contents();
+        ob_end_clean();
+        header("Content-Encoding: ".$encoding);
+//        print("\x1f\x8b\x08\x00\x00\x00\x00\x00");
+        $contents = gzencode($contents);
+//        $contents = substr($contents, 0, strlen($contents) - 4);
+        print($contents);
+//        print(pack('V', crc32($contents)));
+//        print(pack('V', strlen($contents)));
+        exit();
+      }
+      else {
+        ob_end_flush();
+        exit();
+      }
+     
+  }
+
+  ob_start();
+  ob_implicit_flush(0);
+
+  print("your stuff...");
+
+  gzDocOut();
+
+?>
+
+You have to note, that gzencode is able to generate deflate compression, but
+the previous source code, does not implemente it. You just have to read
+gzencode documentation to find this tip.
+function gzencode in php 4.2.0 (and higher) allows to use a compression level,
+it is not possible in loder versions.
+
+The code which is commented, is wrong source code, used, in the different
+exemple found on this page!
+===============================================================================
+
+To solve I.E.5.x data compress problem on IIS5, such opening a download dial
+box or wrong page load, the only way for me was to change the header content
+type:
+
+<? header("Content-type: gzip");ob_start ("ob_gzhandler");?>
+
+but now all browser that doesn't support gzip don't load the page.
+===============================================================================
+
+When you compress your data IE (5.x for sure, no idea about Netscape) may mess
+up the mime headers, so you may e.g. loose your extensions after compressing
+output. In my case in attachment saving with no compression everything works
+fine. When I compress output everything seems OK except I loose the file
+extension (althogh it really is in the headers). This is because IE seems to
+think your attachment is mimetype gzip, and not what you send in the headers
+that follow.
+
+In such cases the easiest sollution would be to disable compression (maybe
+partially with an .htaccess file?).
+===============================================================================
+
+>>Netscape 4 (on all platforms[?]), IE4/IE5 on the Mac do NOT support
+>>gz-compression. Email me if you want to know more.
+
+As a matter of fact, Netscape 4.7x on Win32 DOES support gz-compression. 
+Calling the following script in my auto_prepend directive seems to work fine. 
+The script is taken from the Output Buffering article on Zend.com (http://
+www.zend.com/zend/art/buffering.php).  As noted in the article, it only works
+with PHP 4.0.4 and higher.
+
+<?php
+
+        // function to compress the output buffer in preparation for
+transmission to client
+    function compress_output($output) {
+
+            // compress and return the output buffer
+        return gzencode($output);
+    }
+
+        // Check if the browser supports gzip encoding, HTTP_ACCEPT_ENCODING
+    if (strstr($HTTP_SERVER_VARS['HTTP_ACCEPT_ENCODING'], 'gzip')) {
+   
+            // Start output buffering, and register compress_output()
+        ob_start("compress_output");
+
+            // Tell the browser the content is compressed with gzip
+        header("Content-Encoding: gzip");
+    }
+
+?>
+===============================================================================
+
+No, it doesn't return gzip compressed data -- specifically, the CRC is messed
+up.  However, after massaging the output a lot, I have come up with a
+solution.  I also commented it a lot, pointing out odd things.
+
+<?php
+// Start the output buffer
+ob_start();
+ob_implicit_flush(0);
+
+// Output stuff here...
+
+// Get the contents of the output buffer   
+$contents = ob_get_contents();
+ob_end_clean();
+
+// Tell the browser that they are going to get gzip data
+// Of course, you already checked if they support gzip or x-gzip
+// and if they support x-gzip, you'd change the header to say
+// x-gzip instead, right?
+header("Content-Encoding: gzip");
+
+// Display the header of the gzip file
+// Thanks ck@medienkombinat.de!
+// Only display this once
+echo "\x1f\x8b\x08\x00\x00\x00\x00\x00";
+
+// Figure out the size and CRC of the original for later
+$Size = strlen($contents);
+$Crc = crc32($contents);
+
+// Compress the data
+$contents = gzcompress($contents, 9);
+
+// We can't just output it here, since the CRC is messed up.
+// If I try to "echo $contents" at this point, the compressed
+// data is sent, but not completely.  There are four bytes at
+// the end that are a CRC.  Three are sent.  The last one is
+// left in limbo.  Also, if we "echo $contents", then the next
+// byte we echo will not be sent to the client.  I am not sure
+// if this is a bug in 4.0.2 or not, but the best way to avoid
+// this is to put the correct CRC at the end of the compressed
+// data.  (The one generated by gzcompress looks WAY wrong.)
+// This will stop Opera from crashing, gunzip will work, and
+// other browsers won't keep loading indefinately.
+//
+// Strip off the old CRC (it's there, but it won't be displayed
+// all the way -- very odd)
+$contents = substr($contents, 0, strlen($contents) - 4);
+
+// Show only the compressed data
+echo $contents;
+
+// Output the CRC, then the size of the original
+gzip_PrintFourChars($Crc);
+gzip_PrintFourChars($Size);
+
+
+// Done.  You can append further data by gzcompressing
+// another string and reworking the CRC and Size stuff for
+// it too.  Repeat until done.
+
+
+function gzip_PrintFourChars($Val)
+{
+    for ($i = 0; $i < 4; $i ++)
+    {
+        echo chr($Val % 256);
+        $Val = floor($Val / 256);
+    }
+}
+?>
+===============================================================================
+
+With PHP it is quite easy to modify SWF files. The compression algorithm of SWF
+is Zlib.
+
+SWF default compression level is 6, at least Flash CS2 uses this level. I
+tested this by uncompressing compressed SWF file and then compressed the
+contents with levels 0-9. With level 6, the contents of files were identical.
+
+Maybe it can be whatever else, but when trying to compare files at hex level or
+compare filesizes, it is easier to use the same level.
+===============================================================================
+
+Here is a benchmark comparing strengths of bzip and gzip compression:
+
+gz[0] - 1.647ms - 189058 Byte (100%)
+gz[1] - 3.333ms - 44572 Byte (23.58%)
+gz[2] - 3.519ms - 42685 Byte (22.58%)
+gz[3] - 4.713ms - 40840 Byte (21.6%)
+gz[4] - 5.274ms - 39111 Byte (20.69%)
+gz[5] - 6.526ms - 37039 Byte (19.59%)
+gz[6] - 8.036ms - 36206 Byte (19.15%)
+gz[7] - 9.098ms - 35940 Byte (19.01%)
+gz[8] - 12.87ms - 35713 Byte (18.89%)
+gz[9] - 14.319ms - 35707 Byte (18.89%)
+
+bz[1] - 40.282ms - 32247 Byte (17.06%)
+bz[2] - 43.716ms - 29690 Byte (15.7%)
+bz[3] - 43.765ms - 29690 Byte (15.7%)
+bz[4] - 44.213ms - 29690 Byte (15.7%)
+bz[5] - 43.704ms - 29690 Byte (15.7%)
+bz[6] - 43.814ms - 29690 Byte (15.7%)
+bz[7] - 43.934ms - 29690 Byte (15.7%)
+bz[8] - 43.725ms - 29690 Byte (15.7%)
+bz[9] - 45.129ms - 29690 Byte (15.7%)
+===============================================================================
+
+It seems that you don't have to pack the crc-checksum and the length of the
+string. The crucial thing is to erase the last 4 bytes of the gzcompressed
+content. They seem to be redundant in any case. I rewrote the function
+"gzDocOut" and I think, it is the most efficient and shortest way to encode an
+output with gzcompress:
+
+function gzDocOut() {
+
+     if ($encoding = checkCanGzip()) {
+       $contents = ob_get_contents();
+       ob_end_clean();
+       header("Content-Encoding: ". $encoding);
+       $output = "\x1f\x8b\x08\x00\x00\x00\x00\x00";
+       $output .= substr(gzcompress($contents, 2), 0, -4);
+       echo $output;
+       exit();
+     }
+     else {
+       ob_end_flush();
+       exit();
+     }
+    
+}
+
+Tested with IE5.5, Netscape 7, Mozilla 1.2, Opera 7, Opera 6 as well as
+Netscape 4.7. I'll test further browsers to be sure...
+===============================================================================
+
+It seems that you don't need anymore to add the crc and the size at the end of
+the stream, it works fairly with php4.06! I don't have tried for the moment
+with highest version than php 4.06.
+The source code:
+
+<?
+  function checkCanGzip() {
+
+      global $HTTP_ACCEPT_ENCODING;
+     
+      if (headers_sent()) return 0;
+      if (strpos($HTTP_ACCEPT_ENCODING, 'x-gzip') !== false) return "x-gzip";
+      if (strpos($HTTP_ACCEPT_ENCODING,'gzip') !== false) return "gzip";
+      return 0;
+
+  }
+
+  function gzDocOut() {
+
+      if ($encoding = checkCanGzip()) {
+        $contents = ob_get_contents();
+        ob_end_clean();
+        header("Content-Encoding: ".$encoding);
+        print("\x1f\x8b\x08\x00\x00\x00\x00\x00");
+        $size = strlen($contents);
+        $contents = gzcompress($contents, 9);
+        $contents = substr($contents, 0, $size);
+        print($contents);
+//        print(pack('V', crc32($contents)));
+//        print(pack('V', $size));
+        exit();
+      }
+      else {
+        ob_end_flush();
+        exit();
+      }
+     
+  }
+
+  ob_start();
+  ob_implicit_flush(0);
+
+  print("your stuff...");
+
+  gzDocOut();
+
+?>
+
+For the  moment, I have only tried on IE5.5, and it works well.
+Effectively, with the crc and the size at the end of gile, it doesn't work!
+===============================================================================
+
+little correction of the one above:
+the crc is not necessarily needed to display the content in browsers, but it's
+still useful as a checksum. I suggest that most of the browsers don't check it
+anyway, otherwise they would not display contents with broken checksums.
+Scripts seem to be a little bit faster, you may weigh up advantages with
+disadvantages (e.g. when you use a secure connection).
+===============================================================================
+
+I tried sending a pre-compressed javascript with header("Content-Encoding:
+gzip") to a request from <script type=javascript src="http://...?op=getscript
+">.
+
+I have found out so far that IE4 does not support external compressed scripts
+and stylesheets (that is not embedded in the HTML but included with <script
+...src=...> and <link src=...>).  With other versions of IE it works on some
+computers and not on others even if they have exactly the same versions of IE
+and Windows.   For instance IE 5.0xxxxxx and Windows 98 Buldxxxx.  
+If anyones knows of at least one configuration of IE and a OS for which it
+works for SURE let me know.

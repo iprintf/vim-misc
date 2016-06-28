@@ -1,0 +1,253 @@
+
+mysqli::rollback
+
+mysqli_rollback
+
+(PHP 5, PHP 7)
+
+mysqli::rollback -- mysqli_rollback — 回退当前事务
+
+说明
+
+面向对象风格
+
+bool mysqli::rollback ( void )
+
+过程化风格
+
+bool mysqli_rollback ( mysqli $link )
+
+回退当前数据库的事务。
+
+参数
+
+link
+
+    仅以过程化样式：由mysqli_connect() 或 mysqli_init() 返回的链接标识。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 mysqli::rollback() example
+
+面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+/* disable autocommit */
+$mysqli->autocommit(FALSE);
+
+$mysqli->query("CREATE TABLE myCity LIKE City");
+$mysqli->query("ALTER TABLE myCity Type=InnoDB");
+$mysqli->query("INSERT INTO myCity SELECT * FROM City LIMIT 50");
+
+/* commit insert */
+$mysqli->commit();
+
+/* delete all rows */
+$mysqli->query("DELETE FROM myCity");
+
+if ($result = $mysqli->query("SELECT COUNT(*) FROM myCity")) {
+    $row = $result->fetch_row();
+    printf("%d rows in table myCity.\n", $row[0]);
+    /* Free result */
+    $result->close();
+}
+
+/* Rollback */
+$mysqli->rollback();
+
+if ($result = $mysqli->query("SELECT COUNT(*) FROM myCity")) {
+    $row = $result->fetch_row();
+    printf("%d rows in table myCity (after rollback).\n", $row[0]);
+    /* Free result */
+    $result->close();
+}
+
+/* Drop table myCity */
+$mysqli->query("DROP TABLE myCity");
+
+$mysqli->close();
+?>
+
+过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+/* disable autocommit */
+mysqli_autocommit($link, FALSE);
+
+mysqli_query($link, "CREATE TABLE myCity LIKE City");
+mysqli_query($link, "ALTER TABLE myCity Type=InnoDB");
+mysqli_query($link, "INSERT INTO myCity SELECT * FROM City LIMIT 50");
+
+/* commit insert */
+mysqli_commit($link);
+
+/* delete all rows */
+mysqli_query($link, "DELETE FROM myCity");
+
+if ($result = mysqli_query($link, "SELECT COUNT(*) FROM myCity")) {
+    $row = mysqli_fetch_row($result);
+    printf("%d rows in table myCity.\n", $row[0]);
+    /* Free result */
+    mysqli_free_result($result);
+}
+
+/* Rollback */
+mysqli_rollback($link);
+
+if ($result = mysqli_query($link, "SELECT COUNT(*) FROM myCity")) {
+    $row = mysqli_fetch_row($result);
+    printf("%d rows in table myCity (after rollback).\n", $row[0]);
+    /* Free result */
+    mysqli_free_result($result);
+}
+
+/* Drop table myCity */
+mysqli_query($link, "DROP TABLE myCity");
+
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+0 rows in table myCity.
+50 rows in table myCity (after rollback).
+
+参见
+
+  • mysqli_commit() - 提交一个事务
+  • mysqli_autocommit() - 打开或关闭本次数据库连接的自动命令提交事务模式
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Remember that MyISAM tables do not support rollbacks.
+
+I just drove myself crazy for an afternoon trying to figure out what was wrong
+with my code - meanwhile it was fine all along
+===============================================================================
+
+This is an example to explain the powerful of the rollback and commit
+functions.
+Let's suppose you want to be sure that all queries have to be executed without
+errors before writing data on the database.
+Here's the code:
+
+<?php
+$all_query_ok=true; // our control variable
+
+//we make 4 inserts, the last one generates an error
+//if at least one query returns an error we change our control variable
+$mysqli->query("INSERT INTO myCity (id) VALUES (100)") ? null : $all_query_ok=
+false;
+$mysqli->query("INSERT INTO myCity (id) VALUES (200)") ? null : $all_query_ok=
+false;
+$mysqli->query("INSERT INTO myCity (id) VALUES (300)") ? null : $all_query_ok=
+false;
+$mysqli->query("INSERT INTO myCity (id) VALUES (100)") ? null : $all_query_ok=
+false; //duplicated PRIMARY KEY VALUE
+
+//now let's test our control variable
+$all_query_ok ? $mysqli->commit() : $mysqli->rollback();
+
+$mysqli->close();
+?>
+
+hope to be helpful!
+===============================================================================
+
+Just a note about auto incremental ids and rollback.
+When using transactions and inserting into a table containing a column with
+auto incremental ids, the id will be incremented even though the transaction is
+rolled back.
+
+This might occupy a lot of ids if a lot of rollbacks are performed.
+
+Example:
+<?php
+$mysqli = new mysqli("localhost", "gugbageri", "gugbageri", "gugbageri");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+/* disable autocommit */
+$mysqli->autocommit(FALSE);
+
+/* We just create a test table with one auto incremental primary column and a
+content column*/
+$mysqli->query("CREATE TABLE TestTable ( `id_column` INT NOT NULL 
+AUTO_INCREMENT , `content` INT NOT NULL , PRIMARY KEY ( `id_column` )) ENGINE =
+InnoDB;");
+
+/* commit newly created table */
+$mysqli->commit();
+
+/* we insert a row */
+$mysqli->query("INSERT INTO TestTable (content) VALUES (99)");
+
+/* we commit the inserted row */
+$mysqli->commit();
+
+/* we insert another three rows */
+$mysqli->query("INSERT INTO TestTable (content) VALUES (99)");
+$mysqli->query("INSERT INTO TestTable (content) VALUES (99)");
+$mysqli->query("INSERT INTO TestTable (content) VALUES (99)");
+
+/* we the rollback */
+$mysqli->rollback();
+
+/* we insert a row */
+$mysqli->query("INSERT INTO TestTable (content) VALUES (99)");
+
+/* we commit the inserted row */
+$mysqli->commit();
+
+if ($result = $mysqli->query("SELECT id_column FROM TestTable")) {
+
+   while($row = $result->fetch_row()) {
+      printf("Id: %d.\n", $row[0]);
+   }
+    /* Free result */
+    $result->close();
+}
+
+/* Drop table TestTable */
+$mysqli->query("DROP TABLE TestTable");
+
+$mysqli->close();
+?>
+
+This will output:
+Id: 1.
+Id: 5.
+===============================================================================
+
+Something to consider when using transact is that you should not perform a
+normal query on the same table (such as a DELETE) immediately after a
+transaction.  If the transaction rolls-back, the DELETE will execute and even
+show affected rows, but the row can be magically re-inserted even if the
+rollback() command comes before the DELETE query.

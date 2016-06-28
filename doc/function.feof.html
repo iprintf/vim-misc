@@ -1,0 +1,408 @@
+
+feof
+
+(PHP 4, PHP 5, PHP 7)
+
+feof — 测试文件指针是否到了文件结束的位置
+
+说明
+
+bool feof ( resource $handle )
+
+测试文件指针是否到了文件结束的位。
+
+参数
+
+handle
+
+    文件指针必须是有效的，必须指向由 fopen() 或 fsockopen() 成功打开的文件(并还
+    未由 fclose() 关闭)。
+
+返回值
+
+如果文件指针到了 EOF 或者出错时则返回 TRUE，否则返回一个错误（包括 socket 超时
+），其它情况则返回 FALSE。
+
+注释
+
+Warning
+
+如果服务器没有关闭由 fsockopen() 所打开的连接，feof() 会一直等待直到超时。要解
+决这个问题可参见以下范例：
+
+Example #1 处理 feof() 的超时
+
+<?php
+function safe_feof($fp, &$start = NULL) {
+ $start = microtime(true);
+
+ return feof($fp);
+}
+
+/* $fp 的赋值是由之前 fsockopen() 打开  */
+
+$start = NULL;
+$timeout = ini_get('default_socket_timeout');
+
+while(!safe_feof($fp, $start) && (microtime(true) - $start) < $timeout)
+{
+ /* Handle */
+}
+?>
+
+Warning
+
+如果传递的文件指针无效可能会陷入无限循环中，因为 feof() 不会返回 TRUE。
+
+Example #2 使用无效文件指针的 feof() 例子
+
+<?php
+// 如果文件不可读取或者不存在，fopen 函数返回 FALSE
+$file = @fopen("no_such_file", "r");
+
+// 来自 fopen 的 FALSE 会发出一条警告信息并在这里陷入无限循环
+while (!feof($file)) {
+}
+
+fclose($file);
+?>
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+When using feof() on a TCP stream, i found the following to work (after many
+hours of frustration and anger):
+
+NOTE: I used ";" to denote the end of data transmission.  This can be modified
+to whatever the server's end of file or in this case, end of output character
+is.
+
+<?php
+        $cursor = "";
+        $inData = "";
+
+        while(strcmp($cursor, ";") != 0) {
+            $cursor = fgetc($sock);
+            $inData.= $cursor;
+        }
+        fclose($sock);
+        echo($inData);
+?>
+
+Since strcmp() returns 0 when the two strings are equal, it will return non
+zero as long as the cursor is not ";".  Using the above method will add ";" to
+the string, but the fix for this is simple.
+
+<?php
+        $cursor = "";
+        $inData = "";
+
+         $cursor = fgetc($sock);
+        while(strcmp($cursor, ";") != 0) {
+            $inData.= $cursor;
+        }
+        fclose($sock);
+        echo($inData);
+?>
+
+I hope this helps someone.
+===============================================================================
+
+Don't use feof to test if you have readed all data sent by the other end of the
+socket. As i know it would return true only when the other end closes the
+connection.
+===============================================================================
+
+I really thought that the feof() was TRUE when the logical file pointer is a
+EOF.
+but no !
+we need to read and get an empty record before the eof() reports TRUE.
+
+So
+
+$fp = fopen('test.bin','rb');
+while(!feof($fp)) {
+  $c = fgetc($fp);
+  // ... do something with $c
+  echo ftell($fp), ",";
+}
+echo 'EOF!';
+
+prints for two time the last byte position.
+If our file length is 5 byte this code prints
+
+0,1,2,3,4,5,5,EOF!
+
+Because of this, you have to do another check to verify if fgetc really reads
+another byte (to prevent error on "do something with $c" ^_^).
+
+To prevent errors you have to use this code
+
+$fp = fopen('test.bin','rb');
+while(!feof($fp)) {
+  $c = fgetc($fp);
+  if($c === false) break;
+  // ... do something with $c
+}
+
+but this is the same of
+
+$fp = fopen('test.bin','rb');
+while(($c = fgetc($fp))!==false) {
+  // ... do something with $c
+}
+
+Consequently feof() is simply useless.
+Before write this note I want to submit this as a php bug but one php developer
+said that this does not imply a bug in PHP itself (http://bugs.php.net/bug.php?
+id=35136&edit=2).
+
+If this is not a bug I think that this need at least to be noticed.
+
+Sorry for my bad english.
+Bye ;)
+===============================================================================
+
+feof() is, in fact, reliable.  However, you have to use it carefully in
+conjunction with fgets().  A common (but incorrect) approach is to try
+something like this:
+
+<?
+$fp = fopen("myfile.txt", "r");
+while (!feof($fp)) {
+  $current_line = fgets($fp);
+  // do stuff to the current line here
+}
+fclose($fp);
+?>
+
+The problem when processing plain text files is that feof() will not return
+true after getting the last line of input.  You need to try to get input _and
+fail_ before feof() returns true.  You can think of the loop above working like
+this:
+
+* (merrily looping, getting lines and processing them)
+* fgets used to get 2nd to last line
+* line is processed
+* loop back up -- feof returns false, so do the steps inside the loop
+* fgets used to get last line
+* line is processed
+* loop back up -- since the last call to fgets worked (you got the last line),
+feof still returns false, so you do the steps inside the loop again
+* fgets used to try to get another line (but there's nothing there!)
+* your code doesn't realize this, and tries to process this non-existent line
+(typically by doing the same actions again)
+* now when your code loops back up, feof returns true, and your loop ends
+
+There's two ways to solve this:
+
+1. You can put an additional test for feof() inside the loop
+2. You can move around your calls to fgets() so that the testing of feof()
+happens in a better location
+
+Here's solution 1:
+
+<?
+$fp = fopen("myfile.txt", "r");
+while(!feof($fp)) {
+  $current_line = fgets($fp);
+  if (!feof($fp)) {
+    // process current line
+  }
+}
+fclose($fp);
+?>
+
+And here's solution 2 (IMHO, more elegant):
+
+<?
+$fp = fopen("myfile.txt", "r");
+$current_line = fgets($fp);
+while (!feof($fp)) {
+  // process current line
+  $current_line = fgets($fp);
+}
+fclose($fp);
+?>
+
+FYI, the eof() function in C++ works the exact same way, so this isn't just
+some weird PHP thing...
+===============================================================================
+
+Return values in the documentation are incorrectly stated. It says:
+
+Returns TRUE if the file pointer is at EOF or an error occurs (including socket
+timeout); otherwise returns FALSE.
+
+Correct text would be more like:
+
+Returns FALSE if no filehandle was passed;
+returns NULL if no filehandle was passed;
+returns TRUE if the file pointer is at EOF or an error occurs (including socket
+timeout);
+otherwise returns FALSE.
+
+As an example, running the following from the commandline:
+
+php -r 'echo
+    "Empty: ".var_export(feof(), true)."\n".
+    "Null: ".var_export(feof(NULL), true)."\n".
+    "Undefined: ".var_export(feof($undef), true)."\n"
+;'
+
+This will output:
+
+PHP Warning:  Wrong parameter count for feof() in Command line code on line 1
+PHP Warning:  feof(): supplied argument is not a valid stream resource in
+Command line code on line 1
+PHP Warning:  feof(): supplied argument is not a valid stream resource in
+Command line code on line 1
+
+Empty: NULL
+Null: false
+Undefined: false
+
+This can, as other commenters have reported, result in infinite loops and
+massive PHP error logfiles, if the file handle returned by fopen() is invalid
+for any reason.
+===============================================================================
+
+Here's solution 3:
+
+<?
+$fp = fopen("myfile.txt", "r");
+while ( ($current_line = fgets($fp)) !== false ) {
+  // do stuff to the current line here
+}
+fclose($fp);
+?>
+
+AFAICS fgets() never returns an empty string, so we can also write:
+
+<?
+$fp = fopen("myfile.txt", "r");
+while ( $current_line = fgets($fp) ) {
+  // do stuff to the current line here
+}
+fclose($fp);
+?>
+===============================================================================
+
+I found feof() to be a slow function when using a non-blocking connection.
+
+The function stream_get_meta_data() returns much quicker and has a return field
+'eof'.
+===============================================================================
+
+if you're worried the file pointer is invalid, TEST IT before you go into your
+loop... that way it'll never be an infinite loop.
+===============================================================================
+
+To avoid infinite loops and the warning :
+"Warning: feof() expects parameter 1 to be resource, boolean given"
+
+You need to check that the fopen function return the correct type.
+This can be achieved very easily with gettype().
+Here is an example :
+
+$source = fopen($xml_uri, "r");
+$xml = "";
+                   
+if(gettype($source) == "resource") { // Check here !
+    while (!feof($source)) {
+        $xml .= fgets($source, 4096);
+    }
+}
+
+echo $xml;
+===============================================================================
+
+From washington dot edu css342:
+On unix/linux, every line in a file has an End-Of-Line (EOL) character and the
+EOF character is after the last line. On windows, each line has an EOL
+characters except the last line. So unix/linux file's last line is
+      stuff, EOL, EOF
+whereas windows file's last line, if the cursor is on the line, is
+      stuff, EOF
+
+So set up data files on windows to be the same as on unix/linux. This way, you
+will correctly determine eof under both unix/linux and windows. In general, you
+must exit all loops and all functions immediately when you are attempting to
+read an item that would be past the eof.
+
+Here is a typical set up that will work correctly. Suppose in a data file,
+there are multiple lines of data. In some function is the loop where you are
+reading and handling this data. This loop will look similar to the following.
+     // infinite loop to read and handle a line of data
+     for (;;) {
+        $ln = fgets($fp);
+        if (feof($fp)) break;
+
+        // read the rest of the line
+        // do whatever with data
+     }
+If you dislike infinite loops, you can accomplish this same thing using a while
+loop by priming the loop and reading again at the end:
+    $ln = fgets($fp);
+     while (!feof($fp)) {
+        // read the rest of the line
+        // do whatever with data
+
+        $ln = fgets($fp);
+     }
+===============================================================================
+
+Please note that feof() used with TCP-Connections, returns false as long as the
+connection is open.
+It even returns false when there is no data available.
+
+BTW: Using feof() with HTTP for a single request, you should always make sure
+that you set the HTTP-Header "Connection" to "close" and _not_ to "keep-alive".
+===============================================================================
+
+Johannes: Remember note from stream_get_meta_data page: For socket streams this
+member [eof] can be TRUE  even when unread_bytes  is non-zero. To determine if
+there is more data to be read, use feof() instead of reading this item.
+
+Another thing: better not rely on the "including socket timeout" part of when
+feof returns true. Just found program looping two days in while(!feof($fd))
+fread ... with 20 seconds timeout in PHP 4.3.10.
+===============================================================================
+
+To avoid infinite loop with fgets() just use do..while statement.
+
+<?php
+if ($f = fopen('myfile.txt', 'r')) do {
+    $line = fgets($f);
+    // do any stuff here...
+} while (!feof($f));
+fclose($f);
+===============================================================================
+
+if you use fseek function to pos the pointer exceed the size the file,feof
+still return true.so note that when you use feof as the condition of while
+loop.
+===============================================================================
+
+you  can avoid the infinite loop and filling the error logs
+by an simple if statement
+Here is the example
+
+    $handle = fopen("http://xml.weather.yahoo.com/forecastrss?p=AYXX0008&u=f",
+"r");
+    $xml = "";
+    if ($handle)
+    {
+       while (!feof($handle))
+       {
+           $xml .= fread($handle, 128);
+       }
+        fclose($handle);
+    }
+===============================================================================
+
+if you hit an feof() infinite loop, watch out for resultant humongous logs,
+they can cripple a site with hard disk usage limits or run up excess usage
+fees.

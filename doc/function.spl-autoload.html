@@ -1,0 +1,435 @@
+
+spl_autoload
+
+(PHP 5 >= 5.1.2, PHP 7)
+
+spl_autoload — __autoload()函数的默认实现
+
+说明
+
+void spl_autoload ( string $class_name [, string $file_extensions ] )
+
+本函数提供了__autoload()的一个默认实现。如果不使用任何参数调用
+autoload_register() 函数，则以后在进行 __autoload() 调用时会自动使用此函数。
+
+参数
+
+class_name
+
+file_extensions
+
+    在默认情况下，本函数先将类名转换成小写，再在小写的类名后加上 .inc 或 .php
+    的扩展名作为文件名，然后在所有的包含路径(include paths)中检查是否存在该文件
+    。
+
+返回值
+
+没有返回值。
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+Note, that the default autoload implementation is written in C land and is
+always slightly faster then your native PHP one.
+
+Here is a trick to use default implementation with any configuration:
+
+<?php
+
+    // Your custom class dir
+    define('CLASS_DIR', 'class/')
+
+    // Add your class dir to include path
+    set_include_path(get_include_path().PATH_SEPARATOR.CLASS_DIR);
+
+    // You can use this trick to make autoloader look for commonly used
+"My.class.php" type filenames
+    spl_autoload_extensions('.class.php');
+
+    // Use default autoload implementation
+    spl_autoload_register();
+?>
+
+This also works with namespaces out of the box. So you can write code like "use
+My\Name\Object" and it will map to "class/My/Name/Object.class.php" file path!
+===============================================================================
+
+Note this function will LOWERCASE the class names its looking for, dont be
+confused when it cant find Foo_Bar.php
+
+also, unlike most other autoloader code snippets, this function DOES NOT
+translate underscores to slashes.
+
+class Foo_Bar {}
+will load foo_bar.php and will not try to load foo/bar.php
+
+You can get around this with
+spl_autoload_register(function($class) { return spl_autoload(str_replace('_', '
+/', $class));});
+===============================================================================
+
+One small example that shows how you can use spl_autoload function in your MVC,
+Framewrk's applications. For example, will use the Loader class.
+
+
+<?php
+
+class Loader
+{
+       
+    /**
+     * Controller Directory Path
+     *
+     * @var Array
+     * @access protected
+     */
+    protected $_controllerDirectoryPath = array();
+   
+    /**
+     * Model Directory Path
+     *
+     * @var Array
+     * @access protected
+     */
+    protected $_modelDirectoryPath = array();
+   
+    /**
+     * Library Directory Path
+     *
+     * @var Array
+     * @access protected
+     */
+    protected $_libraryDirectoryPath = array();
+   
+   
+    /**
+     * Constructor
+     * Constant contain my full path to Model, View, Controllers and Lobrary-
+     * Direcories.
+     *
+     * @Constant MPATH,VPATH,CPATH,LPATH
+     */
+    
+    public function __construct()
+    {
+        $this->modelDirectoryPath      = MPATH;
+        $this->viewDirectoryPath        = VPATH;
+        $this->controllerDirectoryPath = CPATH;
+        $this->libraryDirectoryPath     = LPATH;
+       
+        spl_autoload_register(array($this,'load_controller'));
+        spl_autoload_register(array($this,'load_model'));
+        spl_autoload_register(array($this,'load_library'));
+  
+        log_message('debug',"Loader Class Initialized");
+    }
+
+    /**
+     *-----------------------------------------------------
+     * Load Library
+     *-----------------------------------------------------
+     * Method for load library.
+     * This method return class object.
+     *
+     * @library String
+     * @param String
+     * @access public
+     */   
+    public function load_library($library, $param = null)
+    {
+        if (is_string($library)) {
+            return $this->initialize_class($library);
+        }
+        if (is_array($library)) {
+            foreach ($library as $key) {
+                return $this->initialize_class($library);
+            }
+        }               
+    }
+
+    /**
+     *-----------------------------------------------------
+     * Initialize Class
+     *-----------------------------------------------------
+     * Method for initialise class
+     * This method return new object.
+     * This method can initialize more class using (array)
+     *
+     * @library String|Array
+     * @param String
+     * @access public
+     */   
+    public function initialize_class($library)
+    {
+        try {
+            if (is_array($library)) {
+                foreach($library as $class) {
+                    $arrayObject =  new $class;
+                }           
+                return $this;
+            }
+            if (is_string($library)) {
+                $stringObject = new $library;
+            }else {
+                throw new ISException('Class name must be string.');
+            }
+            if (null == $library) {
+                throw new ISException('You must enter the name of the class.');
+            }
+        } catch(Exception $exception) {
+            echo $exception;
+        }
+    }   
+   
+    /**
+     * Autoload Controller class
+     *
+     * @param  string $class
+     * @return object
+     */
+    
+    public function load_controller($controller)
+    {
+        if ($controller) {
+            set_include_path($this->controllerDirectoryPath);
+            spl_autoload_extensions('.php');
+            spl_autoload($class);
+        }
+    }   
+   
+
+      /**
+     * Autoload Model class
+     *
+     * @param  string $class
+     * @return object
+     */
+    
+    public function load_models($model)
+    {
+        if ($model) {
+            set_include_path($this->modelDirectoryPath);
+            spl_autoload_extensions('.php');
+            spl_autoload($class);
+        }
+    }   
+   
+      /**
+     * Autoload Library class
+     *
+     * @param  string $class
+     * @return object
+     */
+    
+    public function load_library($library)
+    {
+        if ($library) {
+            set_include_path($this->libraryDirectoryPath);
+            spl_autoload_extensions('.php');
+            spl_autoload($class);
+        }
+    }
+   
+
+   
+}
+
+?>
+===============================================================================
+
+The documentation is a little unclear when it says: "The lowercased name of the
+class (and namespace) being instantiated".
+
+What it actually means is that the argument can be in whatever case you want,
+but it will be converted to lowercase before PHP starts looking for files. This
+is probably because in PHP, class names are case-insensitive (as well as
+function names and namespaces) so it needs to convert to some canonical format.
+===============================================================================
+
+Note that, the orders of file extensions is important for performance. You
+should make the priority of your favourite file extension higest or use only
+one extension for your class files. Check out this example:
+
+Some class files:
+
+ClassA.php
+<?php class ClassA { var $val = 'Hello from class "ClassA"'; } ?>
+ClassB.php
+<?php class ClassB { var $val = 'Hello from class "ClassB"'; } ?>
+ClassC.php
+<?php class ClassC { var $val = 'Hello from class "ClassC"'; } ?>
+ClassD.php
+<?php class ClassD { var $val = 'Hello from class "ClassD"'; } ?>
+ClassE.php
+<?php class ClassE { var $val = 'Hello from class "ClassE"'; } ?>
+
+1. Simple:
+<?php
+// default priority: .inc .php
+for($n=65; $n<70; $n++) {
+    $className = 'Class'.chr($n);
+    spl_autoload($className);
+    $ins = new $className;
+    echo $ins->val.'<br>';
+}
+// 4.2 miliseconds
+?>
+
+2. Change priority:
+<?php
+spl_autoload_extensions('.php,.inc');
+// new priority: .php .inc
+for($n=65; $n<70; $n++) {
+    $className = 'Class'.chr($n);
+    spl_autoload($className);
+    $ins = new $className;
+    echo $ins->val.'<br>';
+}
+// 1.4 miliseconds
+?>
+
+Or you can use this simple function that runs a bit faster for the extensions
+with lower priority :)
+<?php
+function my_autoload($className, $extList='.inc,.php') {
+    $ext = explode(',',$extList);
+    foreach($ext as $x) {
+        $fname = $className.$x;
+        if(@file_exists($fname)) {
+            require_once($fname);
+            return true;
+        }
+    }
+    return false;
+}
+
+for($n=65; $n<70; $n++) {
+    $className = 'Class'.chr($n);
+    my_autoload($className);
+    $ins = new $className;
+    echo $ins->val.'<br>';
+}
+// 2.6 miliseconds
+?>
+---
+Safak Ozpinar - Istanbul University, Computer Engineering
+===============================================================================
+
+<?php
+/*
+* defined function responsible for loading class,
+* replacing the old __ autoload.
+* ROOT is constant of the path root of the system
+*/
+spl_autoload_extensions('.class.php');
+spl_autoload_register('loadClasses');
+
+function loadClasses($className)
+{
+   
+    if( file_exists(ROOT_DIR.DS.'controller/'.$className.'.class.php' ) ){
+        set_include_path(ROOT_DIR.DS.'controller'.DS);
+        spl_autoload($className);
+    }
+    elseif( file_exists('model/'.$className.'.class.php' ) ){
+        set_include_path(ROOT_DIR.DS.'model'.DS);
+        spl_autoload($className);
+    }elseif( file_exists('view/'.$className.'.class.php' ) ){
+        set_include_path(ROOT_DIR.DS.'view'.DS);
+        spl_autoload($className    );
+    }else
+    {
+        set_include_path(ROOT_DIR.DS.'lib'.DS);
+        spl_autoload($className    );
+    }
+}
+?>
+===============================================================================
+
+Just thought I'd react to simast at gmail dot com's note: While he has a point
+in saying C outperforms PHP, his suggestion is micro-optimization. I'm not 100%
+against micro-optimizing code, but if you do, go all the way:
+
+<?php
+
+    // Your custom class dir
+    define('CLASS_DIR', 'class/')
+
+    // Add your class dir to include path
+    set_include_path(get_include_path().PATH_SEPARATOR.CLASS_DIR);
+
+This adds the include path to THE END of the paths PHP will scan for the class 
+file, resulting in a bunch of misses (file-not-found's) before actually looking
+into the CLASS_DIR.
+A more sensible approach, then would be to write
+
+    set_include_path(
+        CLASS_DIR.
+        PATH_SEPARATOR,
+        get_include_path()
+    );
+===============================================================================
+
+If you want to make the best use out of autoload with an APC cache don't use
+spl_autoload. It uses relative paths and thus will perform a stat even with
+apc.stat=0 (either that, or it doesn't work at all).
+
+Instead make a custom function and use require/include with an absolute path
+(register it with spl_autoload_register).
+
+Do NOT use *_once functions or a relative path. This will fail harder than
+spl_autoload.
+
+Also avoid using file_exists and is_file. This will also perform a stat.
+
+Why are stats bad? Because they access the file system. PHP does have a stat
+cache that helps, but it defeats the purpose of apc.stat = 0.
+
+It's also good to keep in mind that it's good to keep your custom autoload
+function simple. This is my Loader class:
+
+<?php
+
+class Loader
+{   
+    public static function registerAutoload()
+    {
+        return spl_autoload_register(array(__CLASS__, 'includeClass'));
+    }
+   
+    public static function unregisterAutoload()
+    {
+        return spl_autoload_unregister(array(__CLASS__, 'includeClass'));
+    }
+   
+    public static function includeClass($class)
+    {
+        require(PATH . '/' . strtr($class, '_\\', '//') . '.php');
+    }
+}
+
+?>
+
+Also want to point out that APC does an optimization with require/include (not
+*_once) with relative paths if require/include is done in the global scope (and
+isn't conditional). So it would be a good idea to explicitly include files you
+know you're going to use on every request (but don't use *_once). You could,
+for example, add a "registerProfiledAutoload" to the above class and keep track
+of what you're including to help you determine what you could explicitly
+include (during development, not production). The key is try not to make heavy
+use out of autoload.
+
+If you must use relative paths and don't care about having to lower-case your
+file-names then spl_autoload works great.
+===============================================================================
+
+Mine is simplier, and without include/require:
+
+function autoload($className) {
+    set_include_path('./library/classes/');
+    spl_autoload($className); //replaces include/require
+}
+spl_autoload_extensions('.class.php');
+spl_autoload_register('autoload');

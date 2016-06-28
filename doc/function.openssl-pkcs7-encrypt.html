@@ -1,0 +1,660 @@
+
+openssl_pkcs7_encrypt
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+openssl_pkcs7_encrypt — Encrypt an S/MIME message
+
+说明
+
+bool openssl_pkcs7_encrypt ( string $infile , string $outfile , mixed
+$recipcerts , array $headers [, int $flags = 0 [, int $cipherid =
+OPENSSL_CIPHER_RC2_40 ]] )
+
+openssl_pkcs7_encrypt() takes the contents of the file named infile and
+encrypts them using an RC2 40-bit cipher so that they can only be read by the
+intended recipients specified by recipcerts.
+
+参数
+
+infile
+
+outfile
+
+recipcerts
+
+    Either a lone X.509 certificate, or an array of X.509 certificates.
+
+headers
+
+    headers is an array of headers that will be prepended to the data after it
+    has been encrypted.
+
+    headers can be either an associative array keyed by header name, or an
+    indexed array, where each element contains a single header line.
+
+flags
+
+    flags can be used to specify options that affect the encoding process - see
+    PKCS7 constants.
+
+cipherid
+
+    One of cipher constants.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 openssl_pkcs7_encrypt() example
+
+<?php
+// the message you want to encrypt and send to your secret agent
+// in the field, known as nighthawk.  You have his certificate
+// in the file nighthawk.pem
+$data = <<<EOD
+Nighthawk,
+
+Top secret, for your eyes only!
+
+The enemy is closing in! Meet me at the cafe at 8.30am
+to collect your forged passport!
+
+HQ
+EOD;
+
+// load key
+$key = file_get_contents("nighthawk.pem");
+
+// save message to file
+$fp = fopen("msg.txt", "w");
+fwrite($fp, $data);
+fclose($fp);
+
+// encrypt it
+if (openssl_pkcs7_encrypt("msg.txt", "enc.txt", $key,
+    array("To" => "nighthawk@example.com", // keyed syntax
+          "From: HQ <hq@example.com>", // indexed syntax
+          "Subject" => "Eyes only"))) {
+    // message encrypted - send it!
+    exec(ini_get("sendmail_path") . " < enc.txt");
+}
+?>
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+In the previous example, the decrypted message couldn't be read by the
+'popular' mail clients. Those mail clients needed also headers in the encrypted
+part.
+
+I also noticed that there were some double headers in the previous example
+('To:' and 'Subject:' were not overriden by the Headers parameter in mail()).
+This is also corrected by unsetting 'To:' and 'Subject:' in $headers_msg.
+
+body.txt is the file with the mail body.
+publickey.cer is the file with the public certificate.
+
+<?php
+// Setup mail headers.
+$headers = array("From" => "from@mail.com", "To" => "to@mail.com", "Subject" =>
+"Encrypted mail readable with most clients", "X-Mailer" => "PHP/".phpversion
+());
+
+// Get the public key certificate.
+$pubkey = file_get_contents("publickey.cer");
+
+// Header for encrypted part
+$eol = "\r\n";
+$enc_header .= "From: ".$headers['From'].$eol;
+$enc_header .= "To: ".$headers['To'].$eol;
+$enc_header .= "Subject: ".$headers['Subject'].$eol;
+$enc_header .= "Content-Type: text/plain; format=flowed; charset=\"iso-8859-1\
+"; reply-type=original".$eol;
+$enc_header .= "Content-Transfer-Encoding: 7bit".$eol;
+$enc_header .= "\n";
+
+// Prepend header for encrypted message
+$body = file_get_contents("body.txt");
+$msg = $enc_header.$body;
+file_put_contents("msg.txt", $msg);
+
+// Remove some double headers for mail()
+$headers_msg = $headers;
+unset($headers_msg['To'], $headers_msg['Subject']);
+
+// Encrypt message
+openssl_pkcs7_encrypt("msg.txt", "enc.txt",$pubkey,$headers_msg,0,1);
+
+// Seperate headers and body for mail()
+$data = file_get_contents("enc.txt");
+$parts = explode("\n\n", $data, 2);
+
+// send mail
+mail($headers['To'], $headers['Subject'], $parts[1], $parts[0]);
+?>
+===============================================================================
+
+To build on what people have already done, below is a function that takes a
+from address, an array of e-mails/public keys, a subject, and a message and
+sends out an encrypted message using the appropriate public key.
+
+Since we're sending an encrypted message, the assumption is that what we're
+sending is actually critical. As a result the files used for sending the
+message are immediately shredded.
+
+$recipients = Array("user@example.com"=>file_get_contents("cert.pem"));
+$body = 'secret text';
+   sendSignedMail("me@examplel.com", $recipients, "Test Message", $body);
+
+  //Recepients is an array of e-mail address=>Key
+  function sendSignedMail($from, $recepients, $subject, $body){
+    foreach($recepients AS $email=>$key){
+      $tfn_in = tempnam("/tmp", "b");
+      $tfn_out = tempnam("/tmp", "e");
+
+      $handle = fopen($tfn_in, "w");
+      fwrite($handle, $body);
+      fclose($handle);
+   
+      openssl_pkcs7_encrypt($tfn_in, $tfn_out, $key,
+          array("To" => $email,
+                "From" => $from,
+                "Subject" => $subject), 0);
+      $data = file_get_contents($tfn_out);
+     
+      //Shred the files since this is sensitive data.
+      $handle = popen("/usr/bin/shred -n 3 -u $tfn_in", 'r');
+      pclose($handle);
+      $handle = popen("/usr/bin/shred -n 3 -u $tfn_out", 'r');
+      pclose($handle);
+     
+     
+      $parts = explode("\n\n", $data, 2);//Fixes headers in mail function
+
+      mail($email, $subject, $parts[1], $parts[0]);
+ 
+    }
+ 
+  }
+===============================================================================
+
+Amongst the many discussions about signing or encrypting email by itself, none
+really discuss the pain of having an email BOTH signed AND encrypted.
+
+*** What do you do first? Sign then Encrypt? Or Encrypt then Sign?
+
+According to RFC 2311, you can encrypt then sign or sign then encrypt. However,
+it depends on the client in which you are programming for. In my experience, in
+Outlook 2000, it prefers it Encrypt then Sign. While in Outlook 2003, it is
+Sign then Encrypt. Generally, you want Sign then Encrypt, as it seems most
+logical from a snail-mail piece point of view. You first sign a letter than put
+it in an envelope. Certain clients complain if you do it in an order it does
+not like, so you may want to experiement with it.
+
+*** Example of doing both signing AND encrypting.
+
+When you perform the first function, do NOT put in any headers in the headers
+array parameters, you want to put it in the SECOND function you want to
+perform. If you put the headers in the first function, the second function will
+hide it from the mail servers. You do not want that. Here I will sign then
+encrypt.
+
+<?
+// Setup mail headers.
+$headers = array("To" => "someone@nowhere.net",
+     "From" => "noone@somewhere.net",
+     "Subject" => "A signed and encrypted message.");
+
+// Sign the message first
+openssl_pkcs7_sign("msg.txt","signed.txt",
+     "signing_cert.pem",array("private_key.pem",
+     "password"),array());
+
+// Get the public key certificate.
+$pubkey = file_get_contents("cert.pem");
+
+//encrypt the message, now put in the headers.
+openssl_pkcs7_encrypt("signed.txt", "enc.txt",
+     $pubkey,$headers,0,1);
+
+$data = file_get_contents("enc.txt");
+
+// separate header and body, to use with mail function
+//  unfortunate but required, else we have two sets of headers
+//  and the email client doesn't decode the attachment
+$parts = explode("\n\n", $data, 2);
+
+// send mail (headers in the Headers parameter will override those
+//  generated for the To & Subject parameters)
+mail($mail, $subject, $parts[1], $parts[0]);
+?>
+
+Note that if you use a function that picks up the data from the disk to be used
+in another function in your program, remember that you may have used the
+explode("\n\n",$data,2) function which may have removed the spacing between the
+header and the message content.
+
+When you take the signed message and feed it in to the encryption part, you
+have to remember that the line spacing must also be fed AS PART OF THE MESSAGE
+BODY! If you plan to sign then encrypt, do not feed the header output from the
+signing into the encrypting as part of the headers array parameter! The output
+of the signing should stay as part of the message body being encrypted. (And
+the same is true if you are doing the reverse of encrypting then signing.) An
+example of both the signing and encryption function made in to a routine for
+reusability, and then called to sign and encrypt a message.
+
+*** Example of signing and encrypting executed from a routine function for code
+reusability through a program.
+
+THIS IS WRONG!:
+<?
+// [0] of Array contains headers of message. [1] of Array contains signed body
+of message.
+$signedOutputArray = signMessage($inputMessage,$headers);
+
+// [0] of Array contains headers of message and the signing.
+// [1] of Array contains encrypted body of message without the signing header.
+$signedAndEncryptedArray = encryptMessage($signedOutputArray[1],
+     $signedOutputArray[0]);
+
+mail($emailAddr,$subject,$signedAndEncryptedArray[1],
+      $signedAndEncryptedArray[0]);
+?>
+
+THIS IS CORRECT!
+<?
+// [0] of Array contains headers of signing.
+// [1] of Array contains signed body of message.
+$signedOutputArray = signMessage($inputMessage,array());
+
+// [0] of Array contains headers of message.
+// [1] of Array contains encrypted contents of both the signed message and its
+headers of the signing.
+$signedAndEncryptedArray =
+     encryptMessage($signedOutputArray[0] . "\n\n" . $signedOutputArray
+[1],$headers);
+
+mail($emailAddr,$subject,$signedAndEncryptedArray[1],
+     $signedAndEncryptedArray[0]);
+?>
+===============================================================================
+
+For everyone who spent lots of time trying to encrypt multipart/alternative
+emailwith no success:
+
+1.) put complete email (header together with body) into file to encrypt as in
+example from koen:
+<?php
+$body = file_get_contents("body.txt");
+$msg = $enc_header.$body;
+file_put_contents("msg.txt", $msg);
+?>
+
+2.) headers array sent to openssl_pkcs7_encrypt can`t contain some of headers,
+it conflicts/doubles and some clients have problems with it - i.e. Thunderbird
+don`t show you email body. For me worked headers: "Subject", "To", "From",
+"Reply-To", "Date","Return-Receipt","Message-ID","CC", "X-Priority", "X-Mailer"
+
+one more thing - if your public key for encryption is not working, check if you
+are sending certificate with key, not only pure key(must be certificate)
+
+Good luck to everyone, its a little bit hard because of small amount of
+documentation which is sometimes confusing...
+===============================================================================
+
+The example code is wrong (at least as of 4.2.0).  The recipcerts parameter is
+either the actual text of the base64 encoded key file, or it must be a filename
+in "file://..." format.  A normal path will not work (OpenSSL tries to use the
+path as the actual certificate).  The above code works as:
+
+<?php
+// the message you want to encrypt and send to your secret agent
+// in the field, known as nighthawk.  You have his certificate
+// in the file nighthawk.pem
+$data = <<<EOD
+Nighthawk,
+
+Top secret, for your eyes only!
+
+The enemy is closing in! Meet me at the cafe at 8.30am
+to collect your forged passport!
+
+HQ
+EOD;
+
+// load key
+$key = implode("", file("my.pem"));
+
+// save message to file
+$fp = fopen("msg.txt", "w");
+fwrite($fp, $data);
+fclose($fp);
+
+// encrypt it
+if (openssl_pkcs7_encrypt("msg.txt", "enc.txt", $key,
+    array("To" => "example@example.com", // keyed syntax
+          "From: HQ <hq@cia.com>", // indexed syntax
+          "Subject" => "Eyes only")))
+{
+    // message encrypted - send it!
+    exec(ini_get("sendmail_path") . " < enc.txt");
+}
+?>
+
+[You can also pass an array of recipcerts values, but I haven't used that so I
+don't know what it's expecting.]
+===============================================================================
+
+After tinkering around for about an hour, I found this that might help
+someone.  When you export your certificate, make sure it is a base-64
+certificate, as the DER-encoded cannot be read by these functions.  Windows
+want's to default to DER.  IT MUST BE Base-64 cert for these to work.
+===============================================================================
+
+It's not worth it.  Honestly, it would sound like a great idea, but it is such
+a pain in the arse.  I have done so using asp, but have not yet found a way (or
+really tried for that matter) to do this using PGP.  Using asp took me a full
+day to do (had to judo-kung foo chop a little for it to work correctly). 
+Peace--
+===============================================================================
+
+As of PHP 5.0.0, you have the ability to choose between 64 bit RC2 encryption
+OR 128 bit RC2 encryption.
+
+The new function description should now be:
+bool openssl_pkcs7_encrypt ( string infile, string outfile, mixed recipcerts,
+array headers [, int flags] [,int cipher])
+
+Where the int value of cipher is 0 or 1. 0 = 64 bit and 1 = 128 bit.
+===============================================================================
+
+Using sendmail isn't very portable, and seems daft since PHP has the mail
+function which will do the job. Problem is how do you use the mail function to
+send this email, since it's already complete with headers?
+
+If you pull in the contents of the file produced by openssl_pkcs7_encrypt and
+pass this as the message data to the mail command, you end up with an email
+with two sets of headers (one set from the encrypt function, another added by
+the mail command). The result is that the second set of headers (which tell the
+mail client the email is encrypted) get ignored and the (base64 encoded)
+encrypted mail is shown as-is, rather than being decrypted.
+
+The solution is quite simple, but it took me a little while to think of it, so
+I'm sharing it here. Once you load the contents of the file, split the headers
+off the body. Then pass the headers as the additional_headers parameter to the
+mail function, and just the body of the email as the message parameter of the
+mail function.
+
+You will need to specify the to & subject parameters, but these will be
+overriden in the final email (as delievered to the recipiant) by the ones from
+the real encrypted email.
+
+<?php
+
+$pubkey = file_get_contents("cert.pem");
+
+openssl_pkcs7_encrypt("msg.txt", "enc.txt", $pubkey,
+    array("To" => "nighthawk@example.com",
+          "From" => "HQ <hq@example.com>",
+          "Subject" => "Eyes only"), 0)
+
+$data = file_get_contents("enc.txt");
+
+// separate header and body, to use with mail function
+//  unfortunate but required, else we have two sets of headers
+//  and the email client doesn't decode the attachment
+$parts = explode("\n\n", $data, 2);
+
+// send mail (headers in the Headers parameter will override those
+//  generated for the To & Subject parameters)
+mail($mail, $subject, $parts[1], $parts[0]);
+
+?>
+
+Richard.
+===============================================================================
+
+I have been struggling to get openssl_pkcs7_encrypt() to work just as I need it
+to do but through my perseverence I have prevailed.  The issues I came across
+were due to my very incomplete understanding of S/MIME, MIME and email headers.
+
+First, both the example in the manual and the correction offered by msisolak
+above are also slightly incorrect.  Let me explain in lay terms how the problem
+arises ...
+
+email messages are constructed as follows
+
+headers
+blank line
+content
+
+For S/MIME, the message is encrypted (including headers) and further headers
+are wrapped around the encrypted message, like so:
+
+S/MIME headers
+blank line
+encrypted MIME headers
+encrypted blank line
+encrypted content
+
+If you have no headers in what you are encrypting then anything before the 1st
+blank line is regarded as headers and doesn't appear in the content of your
+message.
+
+openssl_pkcs7_encrypt() creates the entire encrypted portion so if you do not
+include any headers in your infile then you will find that some of your message
+may be treated as headers unless you make the first line of your file a blank
+line.
+
+There is also an error in the way the "From" S/MIME header is coded on the call
+to openssl_pkcs7_encrypt().
+
+So the example, to work 100% correctly needs to read as follows:
+
+// the message you want to encrypt and send to your secret agent
+// in the field, known as nighthawk.  You have his certificate
+// in the file nighthawk.pem
+//
+//Note the first line must be blank as i am providing no headers inside the
+secure portion of the mail.
+$data = <<<EOD
+
+Nighthawk,
+
+Top secret, for your eyes only!
+
+The enemy is closing in! Meet me at the cafe at 8.30am
+to collect your forged passport!
+
+HQ
+EOD;
+
+// load key
+$key = implode("", file("my.pem"));
+
+// save message to file
+$fp = fopen("msg.txt", "w");
+fwrite($fp, $data);
+fclose($fp);
+
+// encrypt it
+if (openssl_pkcs7_encrypt("msg.txt", "enc.txt", $key,
+  array("To" => "you@yourdomain.com", // keyed syntax
+         "From" => "HQ <hq@cia.com>", // indexed syntax
+         "Subject" => "Eyes only")))
+{
+   // message encrypted - send it!
+  exec(ini_get("sendmail_path") . " < enc.txt");
+}
+
+Now,  I wanted to make a couple of other enhancements. My email contained html
+content and must be formatted when displayed in the email client and I also
+wanted to use temporary file names to allow multiple users to use the script at
+the same time. Finally, I wanted to remove these temporary files afterwards.  
+
+Here is how the example ends up with these additional enhancements:
+
+<?
+
+// the message you want to encrypt and send to your secret agent
+// in the field, known as nighthawk.  You have his certificate
+// in the file my.pem
+//
+//Note the blank line  following the Content-type header
+//
+$data = <<<EOD
+MIME-Version: 1.0
+Content-type: text/html; charset=iso-8859-1
+
+<html>
+<b>Nighthawk</b>,
+<h1>Top secret, for your eyes only!</h1>
+<p>The enemy is closing in! Meet me at the cafe at 8.30am
+to collect your forged passport!</p>
+<p>HQ</p>
+</html>
+EOD;
+
+// load key
+$key = implode("", file("my.pem"));
+
+// generate a unique temporary file name.  Use .txt for the clear text version
+and .enc for the encrypted version.
+$clearfile = tempnam("temp","email") . ".txt";
+$encfile = $clearfile . ".enc";
+$clearfile .= ".txt";
+
+$fp = fopen($clearfile, "w");
+fwrite($fp, $data);
+fclose($fp);
+
+// encrypt it
+if (openssl_pkcs7_encrypt($clearfile,$encfile, $key,
+  array("To" => "you@yourdomain.com", // keyed syntax
+         "From" => "HQ <hq@cia.com>", // indexed syntax
+         "Subject" => "Eyes only")))
+{
+   // message encrypted - send it!
+  exec(ini_get("sendmail_path") . " < $encfile");
+
+};
+// now erase the temp files
+unlink($clearfile);
+unlink($encfile);
+
+?>
+===============================================================================
+
+For those trying to use this function from Windows with a key in Outlook or
+Outlook Express it can be tricky to figure out how to get the key exported in
+the format that OpenSSL is looking for.  Since all (at least all Microsoft)
+products share a common key store, it's easier to export the key from IE than
+Outlook.
+
+In IE select Tools -> Internet Options, then the "Content" tab, and click the
+Certificates button.  Select your certificate from the list and click the
+Export button.  To encrypt email you only want your public key exported in the
+"Base-64 encoded X.509 (.CER)" format.  The file this procedure creates can be
+directly used as a key file to S/MIME encrypt with openssl-pkcs7-encrypt.
+===============================================================================
+
+If you don't like the idea of only using RC2/40bit you can always recompile the
+php_openssl extension. Simply search through the extensions openssl.c source
+file for the EVP_rc2_40_cbc() call, which selects this cipher. Replace the call
+to select another better cipher such as EVP_rc2_cbc() (RC2/128bit) or
+EVP_des_ede3_cbc() (triple-DES).
+
+I patched the source to allow the selection of cipher as an extra parameter,
+but got the latest source from CVS to submit a patch and it appears the work
+has already been done, so looks like we will see this feature in pretty soon.
+
+Richard.
+===============================================================================
+
+It is a bit scary to use only RC2/40bit considering that has been already so
+exposed as vulnerable to brute-force cracking (see for example
+www.distributed.net)
+
+Here is an alternate method which allows stronger encryption (128bit.) This
+works on Solaris 8 but could be adapted for e.g. Linux by removing the "-rand"
+parameter and its randomfile name.
+
+-------------snippet-------------------
+
+$execstring=  "echo \"" . $yourbodytext . "\" | /usr/local/ssl/bin/openssl
+smime -encrypt -rc2-128 -rand /usr/local/apache/yoursecuredir/randomfile -text 
+-to " .  $recipient . " -from someuser@example.com -subject \"" . $subject . "\
+"  /usr/local/apache/yoursecuredir/usercerts/someuser.pem | /usr/lib/sendmail
+-t";
+
+exec($execstring,$returndata,$resultcode);
+
+-------------snippet-------------------
+
+It requires the .pem format for the user certificate.  Assuming you already got
+a certificate from a commercial CA such as www.thawte.com then it is fairly
+simple to export it from your browser WITHOUT --REPEAT-- WITHOUT its private
+key and copy it to the PHP/web server. The export process is browser-specific
+but assuming MS Internet Explorer you require the menu selection tools ->
+internet options -> content -> certificates -> (highlight your cert in the
+list) -> export wizard.
+
+The exported file will probably be in DER-encoded binary
+with a name like "whatever.CER" and you need to convert it to Privacy Enhanced
+message (PEM) format. Typically you would now transfer the file to the *nix
+machine and the command for doing this conversion is, for example:
+
+/usr/local/ssl/bin/openssl x509 -inform DER -outform PEM -in someuser.cer -out
+someuser.pem
+
+When adapting this code it is of course as always vital to ensure that the
+values ($recipient etc.) being passed into the system call are acquired in a
+clean way that avoids trusting user-supplied data.
+===============================================================================
+
+The example code is wrong (at least as of 4.2.0).  The recipcerts parameter is
+either the actual text of the base64 encoded key file, or it must be a filename
+in "file://..." format.  A normal path will not work (OpenSSL tries to use the
+path as the actual certificate).  The above code works as:
+
+<?php
+// the message you want to encrypt and send to your secret agent
+// in the field, known as nighthawk.  You have his certificate
+// in the file nighthawk.pem
+$data = <<<EOD
+Nighthawk,
+
+Top secret, for your eyes only!
+
+The enemy is closing in! Meet me at the cafe at 8.30am
+to collect your forged passport!
+
+HQ
+EOD;
+
+// load key
+$key = implode("", file("my.pem"));
+
+// save message to file
+$fp = fopen("msg.txt", "w");
+fwrite($fp, $data);
+fclose($fp);
+
+// encrypt it
+if (openssl_pkcs7_encrypt("msg.txt", "enc.txt", $key,
+    array("To" => "example@example.com", // keyed syntax
+          "From: HQ <hq@cia.com>", // indexed syntax
+          "Subject" => "Eyes only")))
+{
+    // message encrypted - send it!
+    exec(ini_get("sendmail_path") . " < enc.txt");
+}
+?>
+
+[You can also pass an array of recipcerts values, but I haven't used that so I
+don't know what it's expecting.]

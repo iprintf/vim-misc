@@ -1,0 +1,127 @@
+
+imagewebp
+
+(PHP 5 >= 5.5.0, PHP 7)
+
+imagewebp — 将 WebP 格式的图像输出到浏览器或文件
+
+说明
+
+bool imagewebp ( resource $image , string $filename )
+
+将 image 参数指定的图像以 WebP 格式输出到浏览器或者保存到文件。
+
+参数
+
+image
+
+    由图象创建函数(例如imagecreatetruecolor())返回的图象资源。
+
+filename
+
+    文件保存的路径，如果未设置或为 NULL，将会直接输出原始图象流。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 保存为 WebP 图像文件
+
+<?php
+// 创建一个空图像并在其上加入一些文字
+$im = imagecreatetruecolor(120, 20);
+$text_color = imagecolorallocate($im, 233, 14, 91);
+
+imagestring($im, 1, 5, 5,  'WebP with PHP', $text_color);
+
+// 保存图像
+imagewebp($im, 'php.webp');
+
+// 释放内存
+imagedestroy($im);
+?>
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+WebP is a great file format, but it's basically supported only by Chrome. For
+WebP files with transparency it's necessary to have PNG fallback for other
+browsers (otherwise it won't work in iOS, Firefox, IE, etc.).
+
+Regular truecolor PNG with alpha gives pretty large files, but there's a
+special smaller PNG file variant that can be created by pngquant - a command
+line utility.
+
+If you have pngquant 1.8 on your server (just get package from official
+pngquant website), then you can create small fallback images (with quality
+better than from PHP's libgd):
+
+<?php
+
+/**
+* Optimizes PNG file with pngquant 1.8 or later (reduces file size of 24-bit/
+32-bit PNG images).
+*
+* You need to install pngquant 1.8.x on the server (ancient version 1.0 won't
+work).
+* There's package for Debian/Ubuntu and RPM for other distributions on http://
+pngquant.org
+*
+* @param $path_to_png_file string - path to any PNG file, e.g. $_FILE['file']
+['tmp_name']
+* @param $max_quality int - conversion quality, useful values from 60 to 100
+(smaller number = smaller file)
+* @return string - content of PNG file after conversion
+*/
+function compress_png($path_to_png_file, $max_quality = 90)
+{
+    if (!file_exists($path_to_png_file)) {
+        throw new Exception("File does not exist: $path_to_png_file");
+    }
+
+    // guarantee that quality won't be worse than that.
+    $min_quality = 60;
+
+    // '-' makes it use stdout, required to save to $compressed_png_content
+variable
+    // '<' makes it read from the given file path
+    // escapeshellarg() makes this safe to use with any path
+    $compressed_png_content = shell_exec("pngquant --quality=$min_quality-
+$max_quality - < ".escapeshellarg(    $path_to_png_file));
+
+    if (!$compressed_png_content) {
+        throw new Exception("Conversion to compressed PNG failed. Is pngquant
+1.8+ installed on the server?");
+    }
+
+    return $compressed_png_content;
+}
+?>
+
+So for example when user is uploading a PNG file:
+
+<?php
+
+$read_from_path = $_FILE['file']['tmp_name'];
+$save_to_path = "uploads/compressed_file.png";
+
+$compressed_png_content = compress_png($read_from_path);
+file_put_contents($save_to_path, $compressed_png_content);
+
+// you don't need move_uploaded_file().
+
+// and for webp:
+imagewebp(imagecreatefrompng($read_from_path), $save_to_path + ".webp");
+?>
+
+And then you can use URL with .webp version in Chrome and browsers that send
+Accept: image/webp, and .png for the rest (and all will get small file!)
+===============================================================================
+
+It is also possible to defer the creation of png replacements for WebP images
+to the client, with notably the library libwebpjs enabling transparent
+conversion.

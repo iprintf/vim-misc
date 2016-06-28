@@ -1,0 +1,2105 @@
+
+mysqli_stmt::bind_param
+
+mysqli_stmt_bind_param
+
+(PHP 5, PHP 7)
+
+mysqli_stmt::bind_param -- mysqli_stmt_bind_param — Binds variables to a
+prepared statement as parameters
+
+说明
+
+面向对象风格
+
+bool mysqli_stmt::bind_param ( string $types , mixed &$var1 [, mixed &$... ] )
+
+过程化风格
+
+bool mysqli_stmt_bind_param ( mysqli_stmt $stmt , string $types , mixed &$var1
+[, mixed &$... ] )
+
+Bind variables for the parameter markers in the SQL statement that was passed
+to mysqli_prepare().
+
+    Note:
+
+    If data size of a variable exceeds max. allowed packet size
+    (max_allowed_packet), you have to specify b in types and use 
+    mysqli_stmt_send_long_data() to send the data in packets.
+
+    Note:
+
+    Care must be taken when using mysqli_stmt_bind_param() in conjunction with 
+    call_user_func_array(). Note that mysqli_stmt_bind_param() requires
+    parameters to be passed by reference, whereas call_user_func_array() can
+    accept as a parameter a list of variables that can represent references or
+    values.
+
+参数
+
+stmt
+
+    仅以过程化样式：由 mysqli_stmt_init() 返回的 statement 标识。
+
+types
+
+    A string that contains one or more characters which specify the types for
+    the corresponding bind variables:
+
+                         Type specification chars
+    Character                         Description
+    i         corresponding variable has type integer
+    d         corresponding variable has type double
+    s         corresponding variable has type string
+    b         corresponding variable is a blob and will be sent in packets
+
+var1
+
+    The number of variables and length of string types must match the
+    parameters in the statement.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 面向对象风格
+
+<?php
+$mysqli = new mysqli('localhost', 'my_user', 'my_password', 'world');
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$stmt = $mysqli->prepare("INSERT INTO CountryLanguage VALUES (?, ?, ?, ?)");
+$stmt->bind_param('sssd', $code, $language, $official, $percent);
+
+$code = 'DEU';
+$language = 'Bavarian';
+$official = "F";
+$percent = 11.2;
+
+/* execute prepared statement */
+$stmt->execute();
+
+printf("%d Row inserted.\n", $stmt->affected_rows);
+
+/* close statement and connection */
+$stmt->close();
+
+/* Clean up table CountryLanguage */
+$mysqli->query("DELETE FROM CountryLanguage WHERE Language='Bavarian'");
+printf("%d Row deleted.\n", $mysqli->affected_rows);
+
+/* close connection */
+$mysqli->close();
+?>
+
+Example #2 过程化风格
+
+<?php
+$link = mysqli_connect('localhost', 'my_user', 'my_password', 'world');
+
+/* check connection */
+if (!$link) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$stmt = mysqli_prepare($link, "INSERT INTO CountryLanguage VALUES (?, ?, ?, ?)"
+);
+mysqli_stmt_bind_param($stmt, 'sssd', $code, $language, $official, $percent);
+
+$code = 'DEU';
+$language = 'Bavarian';
+$official = "F";
+$percent = 11.2;
+
+/* execute prepared statement */
+mysqli_stmt_execute($stmt);
+
+printf("%d Row inserted.\n", mysqli_stmt_affected_rows($stmt));
+
+/* close statement and connection */
+mysqli_stmt_close($stmt);
+
+/* Clean up table CountryLanguage */
+mysqli_query($link, "DELETE FROM CountryLanguage WHERE Language='Bavarian'");
+printf("%d Row deleted.\n", mysqli_affected_rows($link));
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+1 Row inserted.
+1 Row deleted.
+
+参见
+
+  • mysqli_stmt_bind_result() - Binds variables to a prepared statement for
+    result storage
+  • mysqli_stmt_execute() - Executes a prepared Query
+  • mysqli_stmt_fetch() - Fetch results from a prepared statement into the
+    bound variables
+  • mysqli_prepare() - Prepare an SQL statement for execution
+  • mysqli_stmt_send_long_data() - Send data in blocks
+  • mysqli_stmt_errno() - Returns the error code for the most recent statement
+    call
+  • mysqli_stmt_error() - Returns a string description for last statement error
+
+
+User Contributed Notes 42 notes
+
+===============================================================================
+
+There are some things to note when working with mysqli::bind_param() and
+array-elements.
+Re-assigning an array will break any references, no matter if the keys are
+identical.
+You have to explicitly reassign every single value in an array, for the
+references to be kept.
+Best shown in an example:
+<?php
+function getData() {
+    return array(
+        0=>array(
+            "name"=>"test_0",
+            "email"=>"test_0@example.com"
+        ),
+        1=>array(
+            "name"=>"test_1",
+            "email"=>"test_1@example.com"
+        )
+    );
+}
+$db  = new mysqli("localhost","root","","tests");
+$sql = "INSERT INTO `user` SET `name`=?,`email`=?";
+$res = $db->prepare($sql);
+// If you bind array-elements to a prepared statement, the array has to be
+declared first with the used keys:
+$arr = array("name"=>"","email"=>"");
+$res->bind_param("ss",$arr['name'],$arr['email']);
+//So far the introduction...
+
+/*
+    Example 1 (wont work as expected, creates two empty entries)
+    Re-assigning the array in the while()-head generates a new array, whereas
+references from bind_param stick to the old array
+*/
+foreach( getData() as $arr ) {
+    $res->execute();
+}
+
+/*
+    Example 2 (will work as expected)
+    Re-assigning every single value explicitly keeps the references alive
+*/
+foreach( getData() as $tempArr ) {
+    foreach($tempArr as $k=>$v) {
+        $arr[$k] = $v;
+    }
+    $res->execute();
+}
+?>
+
+Coming to the problem calling mysqli::bind_param() with a dynamic number of
+arguments via call_user_func_array() with PHP Version 5.3+, there's another
+workaround besides using an extra function to build the references for the
+array-elements.
+You can use Reflection to call mysqli::bind_param(). When using PHP 5.3+ this
+saves you about 20-40% Speed compared to passing the array to your own
+reference-builder-function.
+Example:
+<?php
+$db     = new mysqli("localhost","root","","tests");
+$res    = $db->prepare("INSERT INTO test SET foo=?,bar=?");
+$refArr = array("si","hello",42);
+$ref    = new ReflectionClass('mysqli_stmt');
+$method = $ref->getMethod("bind_param");
+$method->invokeArgs($res,$refArr);
+$res->execute(); 
+?>
+===============================================================================
+
+A few notes on this function.
+
+If you specify type "i" (integer), the maximum value it allows you to have is 2
+^32-1 or 2147483647. So, if you are using UNSIGNED INTEGER or BIGINT in your
+database, then you are better off using "s" (string) for this.
+
+Here's a quick summary:
+(UN)SIGNED TINYINT: I
+(UN)SIGNED SMALLINT: I
+(UN)SIGNED MEDIUMINT: I
+SIGNED INT: I
+UNSIGNED INT: S
+(UN)SIGNED BIGINT: S
+
+(VAR)CHAR, (TINY/SMALL/MEDIUM/BIG)TEXT/BLOB should all have S.
+
+FLOAT/REAL/DOUBLE (PRECISION) should all be D.
+
+That advice was for MySQL. I have not looked into other database software.
+===============================================================================
+
+I did for myself a really useful function (cause I didn't want to use eval() or
+reflection) that create for you a prepared statement with an indefinite number
+of parameters and return an indefinite number of result columns. Last two
+arguments are optional so when you don't have parameters to send to MySQL you
+can avoid them. I decided to share it here cause it may  be helpful and save
+some time and brainstorming:
+
+function prepared_stmt($con, $query, $type = "", $param = array()){
+
+    if($stmt = mysqli_prepare($con, $query)){
+
+        $refarg = array($stmt, $type);//First two parameter of
+mysqli_stmt_bind_param
+
+        foreach ($param as $key => $value)//create array of parameters'
+references
+
+            $refarg[] =& $param[$key];
+       
+        if($type != "")//Jump instruction if argument $type is missing
+           
+            call_user_func_array("mysqli_stmt_bind_param", $refarg);//bind
+parameters with dinamic length
+
+        if(mysqli_stmt_execute($stmt)){//check if execution go fine
+           
+            $cols = mysqli_field_count($con);//retrive the number of columns of
+the resultset
+           
+            $result = array_fill(0, $cols, NULL);//create an empty array with
+the same length of the columns
+                   
+            $ref = array($stmt);//first argument of mysqli_stmt_bind_result
+
+            foreach ($result as $key => $value)//create array of empty cells'
+references
+
+                $ref[] =& $result[$key];
+
+            call_user_func_array("mysqli_stmt_bind_result", $ref);//bind
+results with dinamic length
+
+            return $ref;//return statement and columns references
+           
+           
+        }//if
+
+        else
+           
+            return false;
+       
+       
+
+    }//if
+   
+    else
+       
+        return false;
+
+}//prepared_stmt
+
+Example of call:
+
+$hello = prepared_stmt($con, "SELECT Example FROM table WHERE Col=?", "s",
+array("LOL");
+//count($hello) is equal to 2
+//$hello[0] Statement reference
+//$hello[1] Example column field where to find values after fetching
+
+while(mysqli_stmt_fetch($hello[0]))
+         echo $hello[1] . "<br>";//This will print all value of the Example
+column
+===============================================================================
+
+Blob and null handling aside, a couple of notes on how param values are
+automatically converted and forwarded on to the Mysql engine based on your type
+string argument:
+
+1) PHP will automatically convert the value behind the scenes to the underlying
+type corresponding to your binding type string.  i.e.:
+
+<?php
+
+$var = true;
+bind_param('i', $var); // forwarded to Mysql as 1
+
+?>
+
+2) Though PHP numbers cannot be reliably cast to (int) if larger than
+PHP_INT_MAX, behind the scenes, the value will be converted anyway to at most
+long long depending on the size.  This means that keeping in mind precision
+limits and avoiding manually casting the variable to (int) first, you can still
+use the 'i' binding type for larger numbers.  i.e.:
+
+<?php
+
+$var = '429496729479896';
+bind_param('i', $var); // forwarded to Mysql as 429496729479900
+
+?>
+
+3) You can default to 's' for most parameter arguments in most cases.  The
+value will then be automatically cast to string on the back-end before being
+passed to the Mysql engine.  Mysql will then perform its own conversions with
+values it receives from PHP on execute.  This allows you to bind not only to
+larger numbers without concern for precision, but also to objects as long as
+that object has a '__toString' method.
+
+This auto-string casting behavior greatly improves things like datetime
+handling.  For example: if you extended DateTime class to add a __toString
+method which outputs the datetime format expected by Mysql, you can just bind
+to that DateTime_Extended object using type 's'.  i.e.:
+
+<?php
+
+// DateTime_Extended has __toString defined to return the Mysql formatted
+datetime
+$var = new DateTime_Extended;
+bind_param('s', $var); // forwarded to Mysql as '2011-03-14 17:00:01'
+
+?>
+===============================================================================
+
+Dear all,
+
+I was searching for a class which supports multiple calls to bind_param,
+because I have scenarios where I build huge SQL statements over different
+functions with variable numbers of parameters. But I didn't found one. So I
+have just written up this little piece of code I would like to share with you.
+There is enough room to optimize these classes, but it shows the general idea.
+And for me it works. In mbind_param_do() it seems to depend from the PHP
+version if makeValuesReferenced() must be used or if $params can be used
+directly. In my case I have to use it.
+
+The cool thing about this solution: You don't have to care about a lot if you
+are using my mbind_ functions or not. You may also use default bind_param and
+the execute will still work.
+
+<?php
+
+class db extends mysqli {
+    public function prepare($query) {
+        return new stmt($this,$query);
+    }
+}
+
+class stmt extends mysqli_stmt {
+    public function __construct($link, $query) {
+        $this->mbind_reset();
+        parent::__construct($link, $query);
+    }
+
+    public function mbind_reset() {
+        unset($this->mbind_params);
+        unset($this->mbind_types);
+        $this->mbind_params = array();
+        $this->mbind_types = array();
+    }
+   
+    //use this one to bind params by reference
+    public function mbind_param($type, &$param) {
+        $this->mbind_types[0].= $type;
+        $this->mbind_params[] = &$param;
+    }
+   
+    //use this one to bin value directly, can be mixed with mbind_param()
+    public function mbind_value($type, $param) {
+        $this->mbind_types[0].= $type;
+        $this->mbind_params[] = $param;
+    }
+   
+   
+    public function mbind_param_do() {
+        $params = array_merge($this->mbind_types, $this->mbind_params);
+        return call_user_func_array(array($this, 'bind_param'), $this->
+makeValuesReferenced($params));
+    }
+   
+    private function makeValuesReferenced($arr){
+        $refs = array();
+        foreach($arr as $key => $value)
+        $refs[$key] = &$arr[$key];
+        return $refs;
+
+    }
+   
+    public function execute() {
+        if(count($this->mbind_params))
+            $this->mbind_param_do();
+           
+        return parent::execute();
+    }
+   
+    private $mbind_types = array();
+    private $mbind_params = array();
+}
+
+$search1 = "test1";
+$search2 = "test2";
+
+$_db = new db("host","user","pass","database");
+$query = "SELECT name FROM table WHERE col1=? AND col2=?";
+$stmt = $_db->prepare($query);
+
+$stmt->mbind_param('s',$search1);
+//this second call is the cool thing!!!
+$stmt->mbind_param('s',$search2);
+
+$stmt->execute();
+
+//this would still work!
+//$search1 = "test1changed";
+//$search2 = "test2changed";
+//$stmt->execute();
+
+...
+
+$stmt->store_result();
+$stmt->bind_result(...);
+$stmt->fetch();
+?>
+===============================================================================
+
+You can bind to variables with NULL values, and on update and insert queries,
+the corresponding field will be updated to NULL no matter what bind string type
+you associated it with.  But, for parameters meant for the WHERE clause (ie
+where field = ?), the query will have no effect and produce no results.
+
+When comparing a value against NULL, the MYSQL syntax is either "value IS NULL"
+or "value IS NOT NULL".  So, you can't pass in something like "WHERE (value =
+?)" and expect this to work using a null value parameter.
+
+Instead, you can do something like this in your WHERE clause:
+
+"WHERE (IF(ISNULL(?), field1 is null, field1 = ?))"
+
+Then, pass in the value you want to test twice:
+
+bind_param('ss', $value1, $value1);
+===============================================================================
+
+When dealing with a dynamic number of field values while preparing a statement
+I find this class useful.
+
+<?php
+class BindParam{
+    private $values = array(), $types = '';
+   
+    public function add( $type, &$value ){
+        $this->values[] = $value;
+        $this->types .= $type;
+    }
+   
+    public function get(){
+        return array_merge(array($this->types), $this->values);
+    }
+}
+?>
+
+Usage is pretty simple. Create an instance and use the add method to populate.
+When you're ready to execute simply use the get method.
+
+<?php
+$bindParam = new BindParam();
+$qArray = array();
+
+$use_part_1 = 1;
+$use_part_2 = 1;
+$use_part_3 = 1;
+
+$query = 'SELECT * FROM users WHERE ';
+if($use_part_1){
+    $qArray[] = 'hair_color = ?';
+    $bindParam->add('s', 'red');
+}
+if($use_part_2){
+    $qArray[] = 'age = ?';
+    $bindParam->add('i', 25);
+}
+if($use_part_3){
+    $qArray[] = 'balance = ?';
+    $bindParam->add('d', 50.00);
+}
+
+$query .= implode(' OR ', $qArray);
+
+//call_user_func_array( array($stm, 'bind_param'), $bindParam->get());
+
+echo $query . '<br/>';
+var_dump($bindParam->get());
+?>
+
+This gets you the result that looks something like this:
+
+SELECT * FROM users WHERE hair_color = ? OR age = ? OR balance = ?
+array(4) { [0]=> string(3) "sid" [1]=> string(3) "red" [2]=> int(25) [3]=>
+float(50) }
+
+[Editor's note: changed BindParam::add() to accept $value by reference and
+thereby prevent a warning in newer versions of PHP.]
+===============================================================================
+
+I used to have problems with call_user_func_array and bind_param after
+migrating to php 5.3.
+
+The problem is that 5.3 requires array values as reference while 5.2 works with
+real values.
+
+so i created a secondary function to help me with this...
+
+<?php
+function refValues($arr){
+    if (strnatcmp(phpversion(),'5.3') >= 0) //Reference is required for PHP
+5.3+
+    {
+        $refs = array();
+        foreach($arr as $key => $value)
+            $refs[$key] = &$arr[$key];
+        return $refs;
+    }
+    return $arr;
+}
+?>
+
+and changed my previous function from:
+
+<?php
+call_user_func_array(array($this->stmt, "bind_param"),$this->valores);
+?>
+
+to:
+
+<?php
+call_user_func_array(array($this->stmt, "bind_param"),refValues($this->valores
+));
+?>
+
+in this way my db functions keep working in php 5.2/5.3 servers.
+
+I hope this help someone.
+===============================================================================
+
+It is believed that if one has specified 'b' in $types, the corresponding
+variable should be set to null, and one has to use mysqli_stmt::send_long_data
+() or mysqli_stmt_send_long_data() to send the blob, otherwise the blob value
+would be treated as empty.
+===============================================================================
+
+Hi, I just write a function to do all my sql statements based on all the others
+comments in this page, maybe it can be useful for someone else :)
+
+Usage:
+
+execSQL($sql, $parameters, $close);
+
+$sql = Statement to execute;
+$parameters = array of type and values of the parameters (if any)
+$close = true to close $stmt (in inserts) false to return an array with the
+values;
+
+Examples:
+
+execSQL("SELECT * FROM table WHERE id = ?", array('i', $id), false);
+
+execSQL("SELECT * FROM table", array(), false);
+
+execSQL("INSERT INTO table(id, name) VALUES (?,?)", array('ss', $id, $name),
+true);
+
+<?php
+
+function execSQL($sql, $params, $close){
+           $mysqli = new mysqli("localhost", "user", "pass", "db");
+          
+           $stmt = $mysqli->prepare($sql) or die ("Failed to prepared the
+statement!");
+          
+           call_user_func_array(array($stmt, 'bind_param'), refValues($params
+));
+          
+           $stmt->execute();
+          
+           if($close){
+               $result = $mysqli->affected_rows;
+           } else {
+               $meta = $stmt->result_metadata();
+           
+               while ( $field = $meta->fetch_field() ) {
+                   $parameters[] = &$row[$field->name];
+               } 
+       
+            call_user_func_array(array($stmt, 'bind_result'), refValues(
+$parameters));
+              
+            while ( $stmt->fetch() ) { 
+               $x = array(); 
+               foreach( $row as $key => $val ) { 
+                  $x[$key] = $val; 
+               } 
+               $results[] = $x; 
+            }
+
+            $result = $results;
+           }
+          
+           $stmt->close();
+           $mysqli->close();
+          
+           return  $result;
+   }
+  
+    function refValues($arr){
+        if (strnatcmp(phpversion(),'5.3') >= 0) //Reference is required for PHP
+5.3+
+        {
+            $refs = array();
+            foreach($arr as $key => $value)
+                $refs[$key] = &$arr[$key];
+            return $refs;
+        }
+        return $arr;
+    }
+?>
+
+Regards
+===============================================================================
+
+It should be noted that MySQL has some issues regarding the use of the IN
+clause in prepared statements.
+
+I.e. the code:
+<?php
+
+$idArr = "1, 2, 3, 4";
+$int_one = 1;
+$int_two = 2;
+$int_three = 3;
+$int_four = 4;
+
+$db = new MySQLi();
+$bad_stmt = $db->prepare(SELECT `idAsLetters` FROM `tbl` WHERE `id` IN(?));
+$bad_stmt->bind_param("s", $idArr);
+$bad_stmt->bind_result($ias);
+$bad_stmt->execute();
+
+echo "Bad results:" . PHP_EOL;
+while($stmt->fetch()){
+   echo $ias . PHP_EOL;
+}
+
+$good_stmt->close();
+
+$good_stmt = $db->prepare(SELECT `idAsLetters` FROM `tbl` WHERE `id` IN(?, ?,
+?, ?));
+$good_stmt->bind_param("iiii", $int_one, $int_two, $int_three, $int_four);
+$good_stmt->bind_result($ias);
+$good_stmt->execute();
+
+echo "God results:" . PHP_EOL;
+while($stmt->fetch()){
+   echo $ias . PHP_EOL;
+}
+$bad_stmt->close();
+
+$db->close();
+?>
+will print this result:
+
+Bad results:
+one
+
+Good results:
+one
+two
+three
+four
+
+Using "IN(?)" in a prepared statement will return just one (the first) row from
+a table/view. This is not an error in PHP, but merely how MySQL handles
+prepared statements.
+===============================================================================
+
+Parameter type matters more than you might think!
+
+A cautionary tail to any who would seek to find less than thorough solutions
+for automating prepared statements. Take the following mysqli_stmt extension
+method for example.
+
+<?php
+
+public function param_type($param)
+{
+    if (ctype_digit((string) $param)
+        return $param <= PHP_INT_MAX ? 'i' : 's';
+
+    if (is_numeric($param))
+        return 'd';
+
+    return 's';
+}
+
+?>
+
+At face value this seems like a perfectly straightforward and innocuous
+function. Something like this served as a small piece in a larger automation
+extension which dutifully served its purpose efficiently handling hundreds of
+thousands of queries a day.
+
+Now I know what you're thinking: it doesn't handle blob types. Well we didn't
+work with blob types (and still don't) so that's never been an issue. This
+problem was far more insidious and ultimately pernicious than that.
+
+So what went wrong? The problem began to surface when we started automating
+SELECT queries on a newly created index for a column designed to store
+telephone numbers. The column was of type VARCHAR but the data stored was
+always formatted as an integer. Not a problem when performing a write operation
+but as soon as we went to read from the table on this index everything went to
+hell.
+
+We're not entirely sure, but as near as we can tell the act of binding a
+parameter to a VARCHAR index as 'i' instead of 's' on a read query is
+detrimental in the following way: MySQL will ignore the b-tree on the index and
+perform a full table scan. With smaller tables this may never present itself as
+a significant performance issue. When your tables get into the tens of millions
+of rows, however...
+===============================================================================
+
+Here is the procedural version of a select statement when wanting to use %LIKE%
+in the query and not an '=':
+<?php
+function db_connect(){
+//    set $db as global for access outside function
+    global $db;
+    #    Use procedural methods for database connection and manipulation
+//    Connect to Database
+    @$db = mysqli_connect(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
+
+//    Check connection
+    if(mysqli_connect_errno()) {
+        echo '<br />Error: Could not connect to database.  Please try again
+later.<br />';
+        exit;
+    }
+   
+}
+
+//    Connect to Database
+    db_connect();
+    
+    $theRecordInTheTableIs = "%".$_POST['theRecordInTheTableIs']."%";    //   
+concat $_POST variable with % on each side for use in prepared statement
+    $theRelatedRecordLooks = "%".$_POST['theRelatedRecordLooks']."%";    //   
+concat $_POST variable with % on each side for use in prepared statement
+   
+
+//    Create Query
+    $q      =     '';        //    create variable for input
+    $q     .=     " SELECT ";
+    $q     .=     " * ";
+    $q     .=     " FROM ";
+    $q     .=     " myFavTable ";
+    $q     .=     " WHERE ";
+    $q    .=     " theRecordInTheTableIs LIKE ? ";
+    $q    .=     " AND ";
+    $q    .=     " theRelatedRecordLooks LIKE ? ";
+   
+//    Prepare the statement
+    $stmt = mysqli_prepare($db, $q);
+
+//    bind the paramaters
+    mysqli_stmt_bind_param($stmt, 'ss', $theRecordInTheTableIs,
+$theRelatedRecordLooks);   
+                                                           
+//    Execute the query                                                       
+                       
+    mysqli_stmt_execute($stmt);
+
+// bind result variables 
+    mysqli_stmt_bind_result($stmt, $col0, $col1, $col2, $col3, $col4, $col5, 
+$col6, $col7, $col8, $col9, $col10);
+
+   
+//    Display the query
+//    start the table
+
+echo '<table>
+    <tr>
+        <td>Col0 Title</td>
+        <td>Col1 Title</td>
+        <td>Col2 Title</td>
+        <td>Col3 Title</td>
+        <td>Col4 Title</td>
+        <td>Col5 Title</td>
+        <td>Col6 Title</td>
+        <td>Col7 Title</td>
+        <td>Col8 Title</td>
+        <td>Col9 Title</td>
+        <td>Col10 Title</td>
+    </tr>';
+
+// fetch values
+    while (mysqli_stmt_fetch($stmt)) {
+        echo "     <tr>
+        <td>{$col0}</td>
+        <td>{$col1}</td>
+        <td>{$col2}</td>
+        <td>{$col3}</td>
+        <td>{$col4}</td>
+        <td>{$col5}</td>
+        <td>{$col6}</td>
+        <td>{$col7}</td>
+        <td>{$col8}</td>
+        <td>{$col9}</td>
+        <td>{$col10}</td>
+    </tr> ";       
+   
+    }
+
+
+//    close the table
+    echo '</table>';
+
+?>
+===============================================================================
+
+It may seem obvious, but it's worth noting that variables must exist before you
+can bind them. This example worked well for me (line 12).
+
+<?php
+$test_names_arrays = array
+( array( "fname" => "Walter" , "lname" => "Williams" )
+, array( "fname" => "Ray"    , "lname" => "Paseur"   )
+, array( "fname" => "Bill"   , "lname" => "O'Reilly" )
+)
+;
+$sql = "INSERT INTO my_table ( fname, lname ) VALUES ( ?,? )";
+$ins = $mysqli->prepare($sql);
+
+// NB: THESE VARIABLES MUST EXIST BEFORE THEY CAN BE BOUND!
+$person = current($test_names_arrays);
+
+$ins->bind_param('ss', $person['fname'], $person['lname']);
+foreach ($test_names_arrays as $person)
+{
+    $ins->execute();
+}
+?>
+===============================================================================
+
+MySQL has a "NULL-safe equal" operator (I'm guessing since 5.0)
+http://dev.mysql.com/doc/refman/5.0/en/comparison-operators.html#
+operator_equal-to
+
+If you use this operator instead of the usual = you can interchange values and
+null in where clauses.
+
+There is however a known bug when using this operator with datetime or
+timestamp fields: http://bugs.mysql.com/bug.php?id=36100
+===============================================================================
+
+<?php
+/* just explaining how to call mysqli_stmt_bind_param with a parameter array */
+
+$sql_link = mysqli_connect('localhost', 'my_user', 'my_password', 'world');
+$type = "isssi";
+$param = array("5", "File Description", "File Title", "Original Name", time());
+$sql = "INSERT INTO file_detail (file_id, file_description, file_title,
+file_original_name, file_upload_date) VALUES (?, ?, ?, ?, ?)";
+$sql_stmt = mysqli_prepare ($sql_link, $sql);
+call_user_func_array('mysqli_stmt_bind_param', array_merge (array($sql_stmt, 
+$type), $param);
+mysqli_stmt_execute($sql_stmt);
+?>
+===============================================================================
+
+You can, in fact, use mysqli_bind_parameter to pass a NULL value to the
+database. simply create a variable and store the NULL value (see the manpage
+for it) to the variable and bind that. Works great for me anyway.
+===============================================================================
+
+A lot of newcommers to mysqli find it hard to get started. I have written this
+wrapper with object based response, that handles most of my queries. I hope
+it'll be usefull for others as well:
+
+<?php
+define('DB_HOST', 'localhost');
+define('DB_USERNAME', '');
+define('DB_PASSWORD', '');
+define('DB_DEFAULT_DB', 'test');
+
+function iQuery($sql, $arrParams, $arrBindNames=false) {
+    $result = new stdClass();
+    $mysqli = @new mysqli(DB_HOST, DB_USERNAME, DB_PASSWORD, DB_DEFAULT_DB);
+    if (mysqli_connect_errno()) {
+        $result->error = 'Connection failed: '.mysqli_connect_error();
+        return $result;
+    }
+    if ($stmt = $mysqli->prepare($sql)) {
+        $method = new ReflectionMethod('mysqli_stmt', 'bind_param');
+        $method->invokeArgs($stmt, $arrParams);   
+        $stmt->execute();
+        $meta = $stmt->result_metadata();
+        if (!$meta) {           
+            $result->affected_rows = $stmt->affected_rows;
+            $result->insert_id = $stmt->insert_id;
+        } else {
+            $stmt->store_result();
+            $params = array();
+            $row = array();
+            if ($arrBindNames) {
+                for ($i=0,$j=count($arrBindNames); $i<$j; $i++) {
+                    $params[$i] = &$row[$arrBindNames[$i]];
+                }
+            } else {
+                while ($field = $meta->fetch_field()) {
+                    $params[] = &$row[$field->name];
+                }
+            }
+            $meta->close();
+            $method = new ReflectionMethod('mysqli_stmt', 'bind_result');
+            $method->invokeArgs($stmt, $params);           
+            $result->rows = array();
+            while ($stmt->fetch()) {
+                $obj = new stdClass();
+                foreach($row as $key => $val) {
+                    $obj->{$key} = $val;
+                }
+                $result->rows[] = $obj;
+            }
+            $stmt->free_result();
+        }
+        $stmt->close();
+    }
+    $mysqli->close();
+    return $result;
+}
+
+$arrParams = array('ss', $_POST['sex'], $_POST['active']);
+$result = iQuery( 'SELECT * FROM `test_table` WHERE `sex`=? AND `active`=?', 
+$arrParams);
+
+print_r($result);
+print $result->rows[1]->first_name . " " . $result->rows[1]->last_name;
+?>
+
+If $_POST['sex'] contains 'male' and $_POST['active'] contains 'yes' - and the
+field names are 'id', 'first_name', 'last_name', 'sex' and 'active', the
+printet result may look like this:
+
+----------------------------------------------
+stdClass Object
+(
+    [rows] => Array
+        (
+            [0] => stdClass Object
+                (
+                    [id] => 2
+                    [first_name] => Peter
+                    [last_name] => Johnson
+                    [sex] => male
+                    [active] => yes
+                )
+
+            [1] => stdClass Object
+                (
+                    [id] => 5
+                    [first_name] => Ole
+                    [last_name] => Clausen
+                    [sex] => male
+                    [active] => yes
+                )
+
+        )
+
+)
+Ole Clausen
+----------------------------------------------
+
+You can also apply special field names to the response, if you use the
+parameter $arrBindNames:
+
+$arrParams = array('ss', $_POST['sex'], $_POST['active']);
+$arrNames = array('foo_id', 'bar_first', 'baz_last', 'foo_sex', 'bar_act');
+$result = iQuery( 'SELECT * FROM `test_table` WHERE `sex`=? AND `active`=?',
+$arrParams, $arrNames);
+
+- a row would then look like this:
+
+    [0] => stdClass Object
+        (
+            [foo_id] => 2
+            [bar_first] => Peter
+            [baz_last] => Johnson
+            [foo_sex] => male
+            [bar_act] => yes
+        )
+
+The first argument 'ss' in $arrParams states, that the two following arguments
+are of type String. The options are 's' for String, 'i' for Integer, 'd' for
+Double and 'b' for Blob (sent in packages).
+       
+In queries, that do not return a result INSERT, UPDATE, etc. $result->
+affected_rows and $result->insert_id are available. Connection errors are
+available in $result->error. Additional error handling would be nice, but is
+not implemented for now. Play with the wrapper and use print_r on the result
+... enjoy!
+
+The name 'iQuery'? Well, it handles mysql*i* - and then I guess it's kind of a
+tribute to Mr. Jobs ... may he 'rest' in energetic, hungry foolishness  =)
+
+==
+UPDATE: 08-NOV-2011 07:19
+
+Due to changes in PHP 5.3 I encountered a problem with 'bind_param' in my
+iQuery function below. The values in the passed array *must* be references. The
+soloution is this function:
+
+<?php
+function getRefArray($a) {
+    if (strnatcmp(phpversion(),'5.3')>=0) {
+        $ret = array();
+        foreach($a as $key => $val) {
+            $ret[$key] = &$a[$key];
+        }
+        return $ret;
+    }
+    return $a;
+}
+?>
+
+- and this change in iQuery:
+
+        if ($stmt = $mysqli->prepare($sql)) {
+            $arrParams = getRefArray($arrParams); // <-- Added due to changes
+since PHP 5.3
+            $method = new ReflectionMethod('mysqli_stmt', 'bind_param');
+            $method->invokeArgs($stmt, $arrParams);   
+            $stmt->execute();
+            $meta = $stmt->result_metadata();
+===============================================================================
+
+When trying to bind a string param you get a "Number of variables doesn't match
+number of parameters in prepared statement" error, make sure you're not
+wrapping the question mark with quotes.
+
+By mistake I had a query like:
+SELECT something FROM table WHERE param_name = "?"
+
+Binding it with <?php $stmt->bind('s', $param_value); ?> had been failing on
+me. All I had to do was to remove quotes around "?".
+Hope this saves someone's time.
+===============================================================================
+
+NOTES to new users! Or programmers like myself who learn the hard way!!!
+Pay attention to the variables that are given in the function up above. (
+string $types , mixed &$var1 [, mixed &$... ] ) . The example shows this too,
+but I personally didn't get it 'til trying to debug my code.
+
+ITS REQUIRED TO PASS VARIABLES HERE. You can not pass straight data through
+here.
+
+$stmt->bind('s','Something here'); Will error!!!
+
+Just a clarification as to avoid another night like mine last night and this
+morning.
+===============================================================================
+
+I think this is a good way to automatically get the types for the binding in as
+few lines of code as possible. If you bind the array values in the same order
+as when you used it for this you should not worry about aligning them.
+
+foreach($array as $var){
+    $chrType = substr((string)gettype($var),0,1);
+    $strType .= (!in_array($chrType,array("i","d","s"))) ? "b" : $chrType;
+}
+===============================================================================
+
+I just came across a very strange behaviour when using bind_param() with a
+reflection class.  I figured I ought to post it here to save anyone else who
+comes across it from banging their head against their desk for an hour (as I
+just did).
+
+First, some background:  I have a set of classes,  one per file format (i.e.
+CSV, HTML table, etc), which import data from flat files to a temporary table
+in my database.  The class then transforms the data to 3NF.
+
+I'm  using a reflection class to pass an array to mysqli->bind_param() because
+the column counts and types are variable.  The code (simplified) I am having
+issues with is:
+
+<?php
+
+/* Code that loops through the rows and columns in the
+* flat file and appends the MySQLi 'type' letter to the
+* $typeString variable and appends the actual value
+* to the $data array.  I left the code out because it's
+* (probably) not relevant and would bloat the post.
+*/
+$stmtInsert = $db->prepare('INSERT.....');
+$typeString = 'ississis';
+$data = array(1, 'two', 'three', 4, 'five', 'six', 7, 'eight');
+
+/* Here's where the actual strangeness starts happening
+*/
+
+// Merge the parameter types with the parameter values
+$data = array_merge((array) $typeString, $data);
+
+// Create the reflection class
+$ref = new \ReflectionClass('mysqli_stmt');
+
+// Get the bind_param  method
+$method = $ref->getMethod('bind_param');
+
+// Invoke it with $data
+$method->invokeArgs($stmtInsert, $data);
+
+// Execute the statement
+$stmtInsert->execute();
+
+}
+?>
+
+Oddly, in one (and only one) case it started throwing "Warning: Parameter 41 to
+mysqli_stmt::bind_param() expected to be a reference, value given".  The
+reflection class throws an exception.  Other import sets using this code work
+just fine.  Parameter 41 is the last parameter.   Changing the affected code as
+follows resolves the issue:
+
+<?php
+
+$ref = new \ReflectionClass("mysqli_stmt");
+$method = $ref->getMethod("bind_param");
+$data[count($data)-1] = (string) $data[count($data)-1];
+$method->invokeArgs($stmtInsert, $data);
+$stmtInsert->execute();
+
+?>
+
+Not sure what's going on here, but like I said, hopefully this will keep the
+next person from thinking they're totally insane.
+===============================================================================
+
+I had a problem with the LIKE operator
+
+This code did not work:
+
+<?php
+$test = $sql->prepare("SELECT name FROM names WHERE name LIKE %?%");
+$test->bind_param("s", $myname);
+?>
+
+The solution is:
+
+<?php
+$test = $sql->prepare("SELECT name FROM names WHERE name LIKE ?");
+$param = "%" . $myname . "%";
+$test->bind_param("s", $param);
+?>
+===============================================================================
+
+WOW! Thanks for the code that fixed the issue with mysqli_stmt_bind_param and
+PHP 5.3+. Worth sharing again for people getting the error message that a
+reference was expected and a value was provided. Here's a snippet and the whole
+function that fixed it!
+
+//Use it like this
+call_user_func_array('mysqli_stmt_bind_param', array_merge (array($sql_stmt,
+$type), $this->refValues($param)));
+
+function refValues($arr)
+{
+    if (strnatcmp(phpversion(),'5.3') >= 0) //Reference is required for PHP
+5.3+
+    {
+        $refs = array();
+        foreach($arr as $key => $value)
+            $refs[$key] = &$arr[$key];
+         return $refs;
+     }
+     return $arr;
+}
+===============================================================================
+
+I had to do a more advanced prepare function (A multi-multi values prepared
+statement)to make things easier for a few situations, so I wrote the following
+function.
+
+NOTE: This function assumes you have put it into a class that have:
+$mysqli = A mysqli object
+
+NOTE2: This function currently only supports ints for the values, but you can
+modify it to support additional types...
+
+To use it:
+<?php
+$sql = "SELECT id, code FROM country";
+$result = $database->fetch_all($sql); // This is just a custom fetch_all
+function...
+
+if(!$result) {
+    return null; // no results...
+}
+
+// Re-organize the order of the elements from the resultset, code first then
+id, just like the sql statement...
+$pData = array();
+foreach($result as $row) {
+    $pData[] = array('code'=>$row['code'] + 1,'id'=>$row['id']); //Assign valid
+php variable names, because this'll be used later on!!!
+}
+
+$database->mysqli_prepare_exec("UPDATE country SET code=? WHERE id=?", 'ii', 
+$pData);
+?>
+
+Here's the function:
+
+<?php
+public function mysqli_prepare_exec($sql, $types, $data)
+{
+    $stm = $this->mysqli->prepare($sql);
+
+    if(!$stm) {
+        return null; // Statement couldn't be prepared, check for errors...
+    }
+
+    foreach($data[0] as $k => $v) {
+        eval('$' . $k . '=' . $v . ';');
+        eval('$vars[\'' . $k . '\'] = &$' . $k . ';'); // Referencing to our
+last newly created variable
+    }
+    unset($k,$v);
+
+    call_user_func_array(array($stm, 'bind_param'), array_merge(array($types), 
+$vars));
+
+    foreach($data as $row) {
+        foreach($row as $k => $v) {
+            eval('$' . $k . '=' . $v . ';');
+        }
+        $stm->execute();
+    }
+}
+?>
+===============================================================================
+
+Small correction. This version removes the NULL element from the array, so it
+doesn't fall on to the next ? when passed to mysql_stmt_bind_param(). Note that
+$saParams is still passed by reference, but now it is being modified.
+
+<?php
+
+function preparse_prepared($sQuery, &$saParams)
+{
+    $nPos = 0;
+
+    $sRetval = $sQuery;
+    foreach ($saParams as $x_Key => $Param)
+    {
+        //if we find no more ?'s we're done then
+        if (($nPos = strpos($sQuery, '?', $nPos + 1)) === false)
+        {
+            break;
+        }
+
+        //this test must be done second, because we need to increment offsets
+of $nPos for each ?.
+        //we have no need to parse anything that isn't NULL.
+        if (!is_null($Param))
+        {
+            continue;
+        }
+
+               
+        //null value, replace this ? with NULL.
+        $sRetval = substr_replace($sRetval, 'NULL', $nPos, 1);
+
+        //unset this element now
+        unset($saParams[$x_Key]);
+    }
+           
+           
+    return $sRetval;
+}
+
+?>
+===============================================================================
+
+Dont forget that in the query that you are preparing you do NOT need quotes
+around string values.
+If you put them there anyway, you will get:
+mysqli_stmt_bind_param(): Number of variables doesn't match number of
+parameters in prepared statement
+===============================================================================
+
+For those learning mysqli::prepare and mysqli_stmt::bind_params for the first
+time, here is a commented block of code which executes prepared queries and
+returns data in a similar format to the return values of mysqli_query.  I tried
+to minimize unnecessary classes, objects, or overhead for two reasons:
+1) facilitate learning
+2) allow relativity interchangeable use with mysqli_query
+
+My goal is to lower the learning curve for whoever is starting out with these
+family of functions.  I am by no means an expert coder/scripter, so I am sure
+there are improvements and perhaps a few bugs, but I hope not =)
+
+<?php
+/*
+Function: mysqli_prepared_query()
+  Executes prepared querys given query syntax, and bind parameters
+  Returns data in array format
+
+Arguments:
+  mysqli_link
+  mysqli_prepare query
+  mysqli_stmt_bind_param argmuent list in the form array
+($typeDefinitinonString, $var1 [, mixed $... ])
+
+Return values:
+  When given SELECT, SHOW, DESCRIBE or EXPLAIN statements: returns table data
+in the form resultArray[row number][associated field name]
+  Returns number of rows affacted when given other queries
+  Returns FALSE on error                       
+*/
+function mysqli_prepared_query($link,$sql,$bindParams = FALSE){
+  if($stmt = mysqli_prepare($link,$sql)){
+    if ($bindParams){                                                         
+                                         
+      $bindParamsMethod = new ReflectionMethod('mysqli_stmt', 'bind_param');  /
+/allows for call to mysqli_stmt->bind_param using variable argument list      
+      $bindParamsReferences = array();  //will act as arguments list for
+mysqli_stmt->bind_param 
+     
+      $typeDefinitionString = array_shift($bindParams);
+      foreach($bindParams as $key => $value){
+        $bindParamsReferences[$key] = &$bindParams[$key]; 
+      }
+     
+      array_unshift($bindParamsReferences,$typeDefinitionString); //returns
+typeDefinition as the first element of the string 
+      $bindParamsMethod->invokeArgs($stmt,$bindParamsReferences); //calls
+mysqli_stmt->bind_param suing $bindParamsRereferences as the argument list
+    }
+    if(mysqli_stmt_execute($stmt)){
+      $resultMetaData = mysqli_stmt_result_metadata($stmt);
+      if($resultMetaData){                                                     
+                        
+        $stmtRow = array(); //this will be a result row returned from
+mysqli_stmt_fetch($stmt)  
+        $rowReferences = array();  //this will reference $stmtRow and be passed
+to mysqli_bind_results
+        while ($field = mysqli_fetch_field($resultMetaData)) {
+          $rowReferences[] = &$stmtRow[$field->name];
+        }                               
+        mysqli_free_result($resultMetaData);
+        $bindResultMethod = new ReflectionMethod('mysqli_stmt', 'bind_result');
+        $bindResultMethod->invokeArgs($stmt, $rowReferences); //calls
+mysqli_stmt_bind_result($stmt,[$rowReferences]) using object-oriented style
+        $result = array();
+        while(mysqli_stmt_fetch($stmt)){
+          foreach($stmtRow as $key => $value){  //variables must be assigned by
+value, so $result[] = $stmtRow does not work (not really sure why, something
+with referencing in $stmtRow)
+            $row[$key] = $value;          
+          }
+          $result[] = $row;
+        }
+        mysqli_stmt_free_result($stmt);
+      } else {
+        $result = mysqli_stmt_affected_rows($stmt);
+      }
+      mysqli_stmt_close($stmt);
+    } else {
+      $result = FALSE;
+    }
+  } else {
+    $result = FALSE;
+  }
+  return $result;
+}
+
+?>
+
+Here's hoping the PHP gods don't smite me.
+===============================================================================
+
+///////////////////////////////
+
+Im sure many of you may want to use this functionality.
+
+spent about 3hours writing this, so maybe i can save somone else some time, you
+can break it up into smaller functions for reuse as you wish.
+
+the mysqli stmt bind param (mysqli_stmt_bind_param) function only takes one
+variable at a time, so its difficult to pass in a few variables to fill in the
+placeholder space.
+
+this allows mysqli prepared statements with variable arguments, one sql
+template with multiple placeholders to be prepared and excuted.
+
+hope this helps somone,
+Mahees.
+
+///////////////////////////////
+
+<?php
+$uname = 'mahees';
+$pass = 'mahees';
+
+$userPassArr = DataAccess::fetch('SELECT * FROM users WHERE username = ? AND
+password = ?', $uname, $pass);
+print_r($userPassArr);
+
+/*
+Array
+(
+    [0] => Array
+        (
+            [id] => 1
+            [username] => mahees
+            [password] => mahees
+        )
+
+)
+*/
+
+$userPassArr = DataAccess::fetch('SELECT * FROM users');
+print_r($userPassArr);
+
+/*
+Array
+(
+    [0] => Array
+        (
+            [id] => 1
+            [username] => mahees
+            [password] => mahees
+        )
+
+    [1] => Array
+        (
+            [id] => 4
+            [username] => foo
+            [password] => bar
+        )
+
+    [2] => Array
+        (
+            [id] => 5
+            [username] => bar
+            [password] => baz
+        )
+
+)
+*/
+
+//********* function in DataAccess class *********
+//im sure this can be written better with more checks...but principle stands
+
+    static function fetch() {
+        $args = func_get_args();
+        $sql = array_shift($args);
+        $link = self::establish_db_conn();
+        if (!$stmt = mysqli_prepare($link, $sql)) {
+            self::close_db_conn();
+            die('Please check your sql statement : unable to prepare');
+        }
+        $types = str_repeat('s', count($args));
+        array_unshift($args, $types);
+        array_unshift($args, $stmt);
+        call_user_func_array('mysqli_stmt_bind_param', $args);
+       
+        mysqli_stmt_execute($stmt);
+
+        $result = mysqli_stmt_result_metadata($stmt);
+        $fields = array();
+        while ($field = mysqli_fetch_field($result)) {
+            $name = $field->name;
+            $fields[$name] = &$$name;
+        }
+        array_unshift($fields, $stmt);
+        call_user_func_array('mysqli_stmt_bind_result', $fields);
+
+        array_shift($fields);
+        $results = array();
+        while (mysqli_stmt_fetch($stmt)) {
+            $temp = array();
+            foreach($fields as $key => $val) { $temp[$key] = $val; }
+            array_push($results, $temp);
+        }
+
+        mysqli_free_result($result);
+        mysqli_stmt_close($stmt);
+        self::close_db_conn();
+
+        return $results;
+    }
+?>
+===============================================================================
+
+Miguel Hatrick's Statement_Parameter class, as posted in these notes, allows
+for a relatively painless way of writing secure dynamic SQL.  It is secure
+against SQL injection because we still use bind parameters for any content
+coming from the user.
+
+For example, the following code constructs an insert statement, but looks at
+which query string (GET) parameters are present in order to figure out which
+columns should be included.  The ParameterManager.php file is simply Miguel's
+classes as posted in this discussion.
+
+<?php
+require_once("dbConnectionParams.php");
+require_once("ParameterManager.php");
+
+$sp = new Statement_Parameter();
+
+$column_list = "";
+
+$value_list = "";
+
+if (isset ($_GET['name']) ) {
+    $column_list = $column_list . "name,";
+    $value_list = $value_list . "?,";
+    $sp->Add_Parameter('name', Statement_Parameter_Type::$STATEMENT_TYPE_STRING
+);
+    $sp->Set_Parameter('name',$_GET['name']);
+}
+
+if (isset($_GET['address']) ) {
+    $column_list = $column_list . "address,";
+    $value_list = $value_list . "?,";
+    $sp->Add_Parameter('address', Statement_Parameter_Type::
+$STATEMENT_TYPE_STRING);
+    $sp->Set_Parameter('address',$_GET['address']);
+}
+
+//tidy up column list and value list - the code above will always leave them
+ending in a comma, which we remove now
+$column_list = substr($column_list, 0, strlen($column_list) -1);
+$value_list = substr($value_list, 0, strlen($value_list) -1);
+
+$sql = "insert into test_table (" . $column_list . ") values (" . $value_list .
+");";
+
+echo $sql;
+
+$mysqli = @new mysqli($host,$user,$password,$database);
+$stmt = $mysqli->prepare($sql);
+
+$sp->Bind_Params($stmt);
+
+if($stmt->execute() === TRUE)
+{
+    /*** assign the last insert id ***/
+    $last_id = $mysqli->insert_id;
+    echo "OK$last_id";
+}
+else {   
+    echo $mysqli->error;               
+}
+
+?>
+===============================================================================
+
+I've found that you can't pass NULL values in using mysql_stmt_bind_param.
+Recently I ran into this problem because I wrote some MySQL routines that would
+update existing data, but only when the value wasn't NULL.
+
+My solution to work around this is simple:
+
+<?php
+
+function preparse_prepared($sQuery, &$saParams)
+{
+    $nPos = 0;
+
+    $sRetval = $sQuery;
+    foreach ($saParams as $Param)
+    {
+        //if we find no more ?'s we're done then
+        if (($nPos = strpos($sQuery, '?', $nPos + 1)) === false)
+        {
+            break;
+        }
+
+        //this test must be done second, because we need to increment offsets
+of $nPos for each ?.
+        //we have no need to parse anything that isn't NULL.
+        if (!is_null($Param))
+        {
+            continue;
+        }
+
+               
+        //null value, replace this ? with NULL.
+        $sRetval = substr_replace($sRetval, 'NULL', $nPos, 1);
+    }
+           
+           
+    return $sRetval;
+}
+
+?>
+
+This will iterate the given list of parameters and replace any null values in
+the query with an actual null value. You'll want to use the resulting $sQuery
+to pass to mysqli_prepare(). For that, I use another routine that generates a
+list of the values (s, i, etc).
+
+For example:
+
+<?php
+
+                    array_unshift($saParams, $this->getPreparedTypeString(
+$saParams));
+                    array_unshift($saParams, $stmt);
+                   
+                    call_user_func_array('mysqli_stmt_bind_param', $saParams);
+
+?>
+
+Where getPreparedTypeString is defined as:
+
+<?php
+
+        public static function getPreparedTypeString(&$saParams)
+        {
+            $sRetval = '';
+
+            //if not an array, or empty.. return empty string
+            if (!is_array($saParams) || !count($saParams))
+            {
+                return $sRetval;
+            }
+
+            //iterate the elements and figure out what they are, and append to
+result
+            foreach ($saParams as $Param)
+            {
+                if (is_int($Param))
+                {
+                    $sRetval .= 'i';
+                }
+                else if (is_double($Param))
+                {
+                    $sRetval .= 'd';
+                }
+                else if (is_string($Param))
+                {
+                    $sRetval .= 's';
+                }
+            }
+
+            return $sRetval;
+        }
+
+?>
+
+To clarify why I pass array values by reference: They aren't being modified, so
+I don't want copies of them begin made in memory as they may be large. In other
+languages, this is much more efficient. Not sure if PHP handles passing values
+on a "copy on edit" basis.. but I'm guessing not.
+===============================================================================
+
+Used the hints above - esp the call_user_func_array - what works simply is
+passing by reference...
+
+<?php
+
+class MySQL {
+
+   // so vars that are global to the class
+   var $connection;
+   var $dbc;
+
+   function __construct () {
+      $this->connection = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
+      if (mysqli_connect_errno()) {
+         //printf("Could not connect to the DB: %s\n", mysqli_connect_error());
+// TMI
+         printf("Could not connect to the DB");
+         exit();
+      }
+   }
+
+   function DBi($info) {
+      //  a call has this array structure
+      //  $this->info['params'] = array('is', &$user, &$name);
+      //  $this->info['query'] = "select id, username, role_id from users where
+id = ? and name = ?";
+      //  $this->info['close'] = "false";  // return $stmt for further work
+      //
+      $mysqli = $this->connection;
+      $params = $info['params'];
+      // print_r($info);  // debug
+      if ($stmt = $mysqli->prepare($info['query'])) {
+          $ret = call_user_func_array (array($stmt,'bind_param'),$info['params'
+]); 
+          // $ret not used yet...
+          $stmt->execute();
+          if ($info['close'] == "true") {
+             $result = $mysqli->affected_rows;
+             $stmt->close();
+             return $result;
+          } else {
+             return $stmt;
+          }
+      } else { printf("Prepared Statement Error: $server_id \n"); }
+   }
+
+}
+
+?> 
+
+The close is generally for inserts, else the $stmt is returned for further
+processing...
+ 
+<?php
+// call the method to run the prepared query, then return statement handle.  If
+just wanted an insert, use close = true
+if ( is_int($user) ) {
+   $this->info['params'] = array('is', &$user, &$name);
+   $this->info['query'] = "select id, username, role_id from users where id = ?
+and name = ?";
+   $this->info['close'] = "false";  // return $stmt for further work
+   $stmt = parent::DBi($this->info);
+   $stmt->bind_result($col1, $col2, $col3);
+   while( $stmt->fetch() ) {
+            $res['id'] = $col1;
+            $res['username'] = $col2;
+            $res['role_id'] = $col3;
+            $res['error'] = 0;
+   }
+   $stmt->close;
+   return $res;
+}
+
+?>
+===============================================================================
+
+I did a prepared statement for inserting in a simple table - images ( blob )
+and their unique identifiers ( string ). All my blobs have smaller sizes than
+the MAX-ALLOWED-PACKET value.
+
+I've found that when binding my BLOB parameter, I need to pass it as a STRING,
+otherwise it's truncated to zero length in my table. So I have to do this:
+
+<?php
+   $ok = $stmt->bind_param( 'ss', $id, $im ) ;
+?>
+===============================================================================
+
+This might be helpful for someone. I made a class to manage the parameters
+
+Its used like this:
+
+<?php
+$stmt = $mysqli->prepare("CALL item_add(?, ?, ?, ?)");
+
+$sp = new Statement_Parameter();
+
+$sp->Add_Parameter('mydescription', Statement_Parameter_Type::
+$STATEMENT_TYPE_STRING);
+$sp->Add_Parameter('myean',            Statement_Parameter_Type::
+$STATEMENT_TYPE_STRING);
+$sp->Add_Parameter('myprice',        Statement_Parameter_Type::
+$STATEMENT_TYPE_DOUBLE);
+$sp->Add_Parameter('myactive',        Statement_Parameter_Type::
+$STATEMENT_TYPE_INTEGER);
+
+// call this to bind the parameters
+$sp->Bind_Params($stmt);
+
+//you can then modify the values as you wish
+$sp->Set_Parameter('myactive',0);
+$sp->Set_Parameter('mydescription','whatever');
+   
+/* execute prepared statement */
+$stmt->execute();
+
+class Statement_Parameter
+{
+    private $_array = array();
+   
+    public function __constructor()
+    {
+    }
+   
+    public function Add_Parameter($name, $type, $value = NULL)
+    {
+        $this->_array[$name] = array("type" => $type, "value" => $value);   
+    }
+   
+    public function Get_Type_String()
+    {
+        $types = "";   
+   
+        foreach($this->_array as $name => $la)
+            $types .= $la['type'];
+       
+        return $types;
+    }
+   
+    public function Set_Parameter($name, $value)
+    {
+        if (isset($this->_array[$name]))
+        {
+            $this->_array[$name]["value"] = $value;
+            return true;
+        }
+        return false;
+    }
+   
+    public function Bind_Params(&$stmt)
+    {
+        $ar = Array();
+       
+        $ar[] = $this->Get_Type_String();
+       
+        foreach($this->_array as $name => $la)
+            $ar[] = &$this->_array[$name]['value'];
+       
+        return call_user_func_array(array($stmt, 'bind_param'),$ar);
+    }
+}
+
+class Statement_Parameter_Type
+{
+    public static $STATEMENT_TYPE_INTEGER = 'i';
+    public static $STATEMENT_TYPE_DOUBLE =     'd';
+    public static $STATEMENT_TYPE_STRING =     's';
+    public static $STATEMENT_TYPE_BLOB =     'b';
+}
+?>
+===============================================================================
+
+I wanted to pass the parameters for several queries to a single function to
+fill them (insert / update having the same fields for example), while at the
+same time making the types array a bit easier to maintain when you've got a lot
+of parameters. Here's a simple solution I came up with:
+
+<?php
+function bindParameters(&$statement, &$params)
+{
+  $args   = array();
+  $args[] = implode('', array_values($params));
+
+  foreach ($params as $paramName => $paramType)
+  {
+    $args[] = &$params[$paramName];
+    $params[$paramName] = null;
+  }
+
+  call_user_func_array(array(&$statement, 'bind_param'), $args);
+}
+
+// Usage:
+$statement = $database->prepare('INSERT INTO test (value1, value2) VALUES (?,
+?)');
+$params    = array('param1' => 's',
+                   'param2' => 'i');
+
+bindParameters($statement, $params);
+
+$params['param1'] = 'parameter test';
+$params['param2'] = 42;
+
+$statement->execute();
+?>
+
+Note that the types will be overwritten after a call to bindParameters to
+provide a sensible default (otherwise it will be used as the parameter value
+when you execute the statement), so you need to reinitialize the types if you
+want to bind it to another statement.
+===============================================================================
+
+I already have a database class that makes everything nice and easy. But when
+it came to preparing, binding and executing, I found it was a real challenge to
+boil things down.
+
+But luckily I stumbled over a bug-report with a workaround, that pointed me in
+the right direction.: http://bugs.php.net/bug.php?id=43568
+
+I now execute stored procedures (aka routines) like this:
+
+<?php
+$db = new myDb();
+$db->execProcedure('call someProc(?,?)','ss',array('param1','param2'));
+?>
+
+And this is the code to make it happen:
+(I extracted this example from a bigger context, but you probably get the idea)
+
+<?php
+class myDb extends mysqli {
+
+  public function  __construct() {
+    //Connection established here
+  }
+
+  public function execProcedure($call,$types,$params) {
+    $stmt = $this->prepare($call);
+    $bind_names[] = $types;
+    for ($i=0; $i<count($params);$i++) {
+      $bind_name = 'bind' . $i;
+      $$bind_name = $params[$i];
+      $bind_names[] = &$$bind_name;
+    }
+    $return = call_user_func_array(array($stmt,'bind_param'),$bind_names);
+    $stmt->execute();
+    $stmt->close();
+  }
+}
+===============================================================================
+
+It's worth noting that you have to bind all parameters in one fell swoop - you
+can't go through and call bind_param once for each.
+===============================================================================
+
+Columns with type bigint need to be specified as type 'd' NOT 'i'.
+
+Using 'i' results in large numbers (eg 3000169151) being truncated.
+
+--
+flame
+===============================================================================
+
+I just wrote a function to bind a variable number of parameters
+
+function bind_param_array( $stmt,  $types,  $vars ){
+/* ------------------------------------------------------------------------ */
+    $php_command = '$stmt->bind_param( $types';
+    for( $i=0;$i<count($vars);$i++)
+    {
+        $php_command .= ',$vars['.$i.']';
+    }
+    $php_command .= ');';
+    return eval( $php_command );
+}
+
+yo can use it like this
+
+$params = array( "one", "two", "two again" );
+$types      =  str_repeat( 's', count( $params );
+$stmt        =  $MysqliObject->prepare( $query );
+bind_param_array( $stmt, $types,$params);
+
+enjoy it!
+===============================================================================
+
+Sprintf parameter binding style:
+
+<?php
+
+  class MySqliDecorator {
+    private $db;
+    private $map = array(
+      '%d' => 'i', //integer
+      '%f' => 'd', //float
+      '%s' => 's', //string
+    );
+   
+    public function __construct(mysqli $db) {
+      $this->db = $db;
+    }
+       
+    public function prepare($query, &$params = array()) {
+      $expr = '/(' . implode('|', array_keys($this->map)) . ')/';
+
+      if (preg_match_all($expr, $query, $matches)) {
+        $types = implode('', $matches[0]);       
+        $types = strtr($types, $this->map);
+
+        $query = preg_replace($expr, '?', $query);
+       
+        if ($stmt = $this->db->prepare($query)) {       
+          array_unshift($params, $types);
+
+          if (call_user_func_array(array($stmt, 'bind_param'), &$params)) {
+             return $stmt;
+          } else {
+             return false;
+          }
+       
+        } else {
+          return false;
+        }
+
+      } else {
+        return $this->db->prepare($query);
+      }
+    }
+
+  }
+?>
+
+Using:
+
+<?php
+  $db = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+  $stmt = new MySqliDecorator($db);
+ 
+  $params = array(1, 'johny');
+  $stmt = $stmt->prepare('SELECT * FROM users WHERE Id = %d OR Username = %s', 
+$params);
+  $stmt->execute();
+?>
+
+Be careful when using % with LIKE and so on.
+===============================================================================
+
+When I tried to use nickv9's class BindParam, I had to make a small change to
+get it to work:
+
+<?php
+// snip...
+public function add( $type, &$value ){
+        $this->values[] = &$value;
+        $this->types .= $type;
+    }
+// snip...
+?>
+
+Note the additional reference notation used within the function to add the
+parameter to the class variable (&$value instead of $value), not just in the
+parameter list.
+
+Otherwise, I got an error from call_user_func_array():
+"Parameter 2 to mysqli_stmt::bind_param() expected to be a reference, value
+given..."
+===============================================================================
+
+Simple workaround for casting:
+
+<?php
+function mysqli_cast_workaround() {
+    $numargs = func_num_args();
+    $types = '';
+    for ($i = 0; $i < $numargs; $i++) {
+         $arg = func_get_arg($i);
+         if (is_numeric($arg)) {
+             $types.="i";
+         }else{
+             $types.="s";
+         }
+         $args[($i+1)] = $arg;
+         unset($arg);        
+    }  
+    $args[0] = $types;
+   return call_user_func_array('mysqli_stmt_bind_param',$args);  
+}
+
+?>

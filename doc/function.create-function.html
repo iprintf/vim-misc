@@ -1,0 +1,1244 @@
+
+create_function
+
+(PHP 4 >= 4.0.1, PHP 5, PHP 7)
+
+create_function — Create an anonymous (lambda-style) function
+
+说明
+
+string create_function ( string $args , string $code )
+
+Creates an anonymous function from the parameters passed, and returns a unique
+name for it.
+
+Caution
+
+This function internally performs an eval() and as such has the same security
+issues as eval(). Additionally it has bad performance and memory usage
+characteristics.
+
+If you are using PHP 5.3.0 or newer a native anonymous function should be used
+instead.
+
+参数
+
+Usually these parameters will be passed as single quote delimited strings. The
+reason for using single quoted strings, is to protect the variable names from
+parsing, otherwise, if you use double quotes there will be a need to escape the
+variable names, e.g. \$avar.
+
+args
+
+    The function arguments.
+
+code
+
+    The function code.
+
+返回值
+
+Returns a unique function name as a string, or FALSE on error.
+
+范例
+
+Example #1 Creating an anonymous function with create_function()
+
+You can use this function, to (for example) create a function from information
+gathered at run time:
+
+<?php
+$newfunc = create_function('$a,$b', 'return "ln($a) + ln($b) = " . log
+($a * $b);');
+echo "New anonymous function: $newfunc\n";
+echo $newfunc(2, M_E) . "\n";
+// outputs
+// New anonymous function: lambda_1
+// ln(2) + ln(2.718281828459) = 1.6931471805599
+?>
+
+Or, perhaps to have general handler function that can apply a set of operations
+to a list of parameters:
+
+Example #2 Making a general processing function with create_function()
+
+<?php
+function process($var1, $var2, $farr)
+{
+    foreach ($farr as $f) {
+        echo $f($var1, $var2) . "\n";
+    }
+}
+
+// create a bunch of math functions
+$f1 = 'if ($a >=0) {return "b*a^2 = ".$b*sqrt($a);} else {return false;}';
+$f2 = "return \"min(b^2+a, a^2,b) = \".min(\$a*\$a+\$b,\$b*\$b+\$a);";
+$f3 = 'if ($a > 0 && $b != 0) {return "ln(a)/b = ".log($a)/$b; } else 
+{ return false; }';
+$farr = array(
+    create_function('$x,$y', 'return "some trig: ".(sin($x) + $x*cos($y));'),
+    create_function('$x,$y', 'return "a hypotenuse: ".sqrt($x*$x + $y*$y);'),
+    create_function('$a,$b', $f1),
+    create_function('$a,$b', $f2),
+    create_function('$a,$b', $f3)
+    );
+
+echo "\nUsing the first array of anonymous functions\n";
+echo "parameters: 2.3445, M_PI\n";
+process(2.3445, M_PI, $farr);
+
+// now make a bunch of string processing functions
+$garr = array(
+    create_function('$b,$a', 'if (strncmp($a, $b, 3) == 0) return "** \"$a\" '.
+    'and \"$b\"\n** Look the same to me! (looking at the first 3 chars)";'),
+    create_function('$a,$b', '; return "CRCs: " . crc32($a) . ", ".crc32($b);'
+),
+    create_function('$a,$b', '; return "similar(a,b) = " . similar_text
+($a, $b, &$p) . "($p%)";')
+    );
+echo "\nUsing the second array of anonymous functions\n";
+process("Twas brilling and the slithy toves", "Twas the night", $garr);
+?>
+
+以上例程会输出：
+
+Using the first array of anonymous functions
+parameters: 2.3445, M_PI
+some trig: -1.6291725057799
+a hypotenuse: 3.9199852871011
+b*a^2 = 4.8103313314525
+min(b^2+a, a^2,b) = 8.6382729035898
+ln(a)/b = 0.27122299212594
+
+Using the second array of anonymous functions
+** "Twas the night" and "Twas brilling and the slithy toves"
+** Look the same to me! (looking at the first 3 chars)
+CRCs: -725381282, 342550513
+similar(a,b) = 11(45.833333333333%)
+
+But perhaps the most common use for of lambda-style (anonymous) functions is to
+create callback functions, for example when using array_walk() or usort()
+
+Example #3 Using anonymous functions as callback functions
+
+<?php
+$av = array("the ", "a ", "that ", "this ");
+array_walk($av, create_function('&$v,$k', '$v = $v . "mango";'));
+print_r($av);
+?>
+
+以上例程会输出：
+
+Array
+(
+  [0] => the mango
+  [1] => a mango
+  [2] => that mango
+  [3] => this mango
+)
+
+an array of strings ordered from shorter to longer
+
+<?php
+
+$sv = array("small", "larger", "a big string", "it is a string thing");
+print_r($sv);
+
+?>
+
+以上例程会输出：
+
+Array
+(
+  [0] => small
+  [1] => larger
+  [2] => a big string
+  [3] => it is a string thing
+)
+
+sort it from longer to shorter
+
+<?php
+
+usort($sv, create_function('$a,$b','return strlen($b) - strlen($a);'));
+print_r($sv);
+
+?>
+
+以上例程会输出：
+
+Array
+(
+  [0] => it is a string thing
+  [1] => a big string
+  [2] => larger
+  [3] => small
+)
+
+参见
+
+  • Anonymous functions
+
+
+User Contributed Notes 37 notes
+
+===============================================================================
+
+Beware when using anonymous functions in PHP as you would in languages like
+Python, Ruby, Lisp or Javascript.  As was stated previously, the allocated
+memory is never released; they are not objects in PHP -- they are just
+dynamically named global functions -- so they don't have scope and are not
+subject to garbage collection.
+
+So, if you're developing anything remotely reusable (OO or otherwise), I would
+avoid them like the plague.  They're slow, inefficient and there's no telling
+if your implementation will end up in a large loop.  Mine ended up in an
+iteration over ~1 million records and quickly exhasted my 500MB-per-process
+limit.
+===============================================================================
+
+Best wapper:
+
+<?php
+
+function create_lambda($args, $code) {
+    static $func;
+    if (!isset($func[$args][$code])) {
+        $func[$args][$code] = create_function($args, $code);
+    }
+    return $func[$args][$code];
+}
+===============================================================================
+
+I experimented a bit in creating a lambda function using a variable amount of
+arguments. While I couldn't find an efficient way to create a random bit of
+code, I was able to get it to behave as a front end for existing functions (as
+well as user-defined of course).
+
+The code required me to use the dreaded eval() function to get it to use a
+variable amount of parameters, so be sure that all input is thoroughly cleaned
+if derived from the user.
+
+<?php
+
+    function run_function( $function )
+    {
+        // Get Arguments, Unset Exisitng Parameter
+        $params = func_get_args();
+        unset( $params[0] );
+
+        if( ( $count = count( $params ) ) > 0 )
+        {
+            $args = '$a';
+            $inc = 'b';
+
+            // Create Argument String - Formats as '$a, $b, $c' Per Number of
+Arguments
+            for( $x = 1; $x < $count; $x++ )
+            {
+                $args .= ', $' . $inc;
+                $inc++;
+            }
+
+            // Create Lambda Function and Format Paramters
+            $lambda = create_function( $args, 'return ' . $function . '(' . 
+$args . ');' );
+            $params = "'" . implode('\', \'', $params) . "'";
+
+            // Build and Evaluate Function with Parameters
+            $eval = '$return = $lambda(' . $params . ');';
+            eval($eval);
+
+            return $return;
+        }
+        else
+        {
+            return false;
+        }
+    }
+?>
+
+For most applications you would be better off calling the function normally.
+Perhaps this little proof of concept may find some use if adapted to work by
+someone who requires it.
+===============================================================================
+
+How to save memory-space:
+
+<?php
+
+function create_lambda($args, $code) {
+    static $list = array();
+    $i = "{$args}\0{$code}";
+    if (!isset($list[$i])) {
+        $list[$i] = create_function($args, $code);
+    }
+    return $list[$i];
+}
+===============================================================================
+
+The following function is very useful for creating an alias of a user function.
+For built-in functions, it is less useful because default values are not
+available, so function aliases for built-in functions must have all parameters
+supplied, whether optional or not.
+
+<?php
+function create_function_alias($function_name, $alias_name)
+{
+    if(function_exists($alias_name))
+        return false;
+    $rf = new ReflectionFunction($function_name);
+    $fproto = $alias_name.'(';
+    $fcall = $function_name.'(';
+    $need_comma = false;
+   
+    foreach($rf->getParameters() as $param)
+    {
+        if($need_comma)
+        {
+            $fproto .= ',';
+            $fcall .= ',';
+        }
+
+        $fproto .= '$'.$param->getName();
+        $fcall .= '$'.$param->getName();
+
+        if($param->isOptional() && $param->isDefaultValueAvailable())
+        {
+            $val = $param->getDefaultValue();
+            if(is_string($val))
+                $val = "'$val'";
+            $fproto .= ' = '.$val;
+        }
+        $need_comma = true;
+    }
+    $fproto .= ')';
+    $fcall .= ')';
+
+    $f = "function $fproto".PHP_EOL;
+    $f .= '{return '.$fcall.';}';
+
+    eval($f);
+    return true;
+}
+?>
+===============================================================================
+
+The function takes as arguments the tree array, the category id on which i want
+the retrieval, and the depth level for which i would like the subcategories ids
+returned.
+
+this saves me a LOT of time on large adjacency list trees.
+
+<?php
+$ctg_tree = array(
+'1'=>array('parent_id'=>0,
+           'children'=>array(
+          '2'=>array('parent_id'=>1,
+                      'children'=>array(
+                      '3'=>array('parent_id'=>2))),
+           '4'=>array('parent_id'=>1,
+                      'children'=>array(
+                      '5'=>array('parent_id'=>4),
+                      '6'=>array('parent_id'=>4))))));
+
+function getSubCategories($ctg_tree, $id, $level = null) {
+                               
+        $getBranchIds =
+create_function(
+'$tree, $ctg_id, $level = null, $arr = null,'.
+' $push = false, $getBranchIds','
+            if(!$arr) {
+                $arr = array();
+            }
+            if(intval($level) && $push){
+                $level--;
+            }
+
+            foreach($tree as $key=>$ctg) {
+                if($push) {
+                    $arr[] = $key;
+                }
+                if($ctg_id == $key) {
+                    $start = true;
+                    $push = true;
+                }
+if(count($ctg[\'children\']) && (intval($level) || $level === null)) {
+$getBranchIds(
+$ctg[\'children\'],$ctg_id,$level,&$arr,$push,$getBranchIds
+);
+                }
+                if($start) return $arr;
+            }
+
+            return $arr;');
+
+return $getBranchIds(
+$ctg_tree, $id, $level, null, false, $getBranchIds
+);
+    }
+
+print_r(getSubCategories($ctg_tree, 4, 1));
+?>
+
+Array
+(
+    [0] => 5
+    [1] => 6
+)
+
+print_r(getSubCategories($ctg_tree, 1, 1));
+
+Array
+(
+    [0] => 2
+    [1] => 4
+)
+
+<?php
+print_r(getSubCategories($ctg_tree, 1));
+?>
+
+Array
+(
+    [0] => 2
+    [1] => 3
+    [2] => 4
+    [3] => 5
+    [4] => 6
+)
+===============================================================================
+
+If you create a function that will only be used from an object context (i.e.
+you want a dynamic method that can then call methods from the original object,
+still maintaining access to the object's runtime values) then you can use the
+following functions I have created (ob_lambda_func and ob_lambda) to enable the
+dynamic function to easily call *public* methods on the object, in their
+runtime contexts:
+
+<?php
+/* the OB Lambda functions allow a lambda function to call a method from its
+callee's object */
+if(!function_exists('ob_lambda_func')){
+function ob_lambda_func($method, $args) {
+   if((phpversion()+0)<5.1 || (substr(phpversion(),2)+0)<1.1)
+       die("\nError: This script requires PHP v5.1.1+!\n");
+   $bt=debug_backtrace();
+   foreach($bt as $xsp) {
+       if(isset($xsp['object'])) {
+           if(!method_exists($xsp['object'], $method)) continue;
+           return call_user_func_array(array($xsp['object'], $method), $args);
+       }
+   }
+   if(!function_exists($method))
+       die("\nOB: Internal Error! ($method)");
+   return call_user_func_array($method, $args);
+}}
+if(!function_exists('ob_lambda')){
+function ob_lambda($method) {
+   return create_function('','$args=func_get_args(); return ob_lambda_func('.
+var_export($method, true).',$args);');
+}}
+
+/* Usage:
+*   For each callable method, store the results of ob_lambda('method_name')
+*   When a lambda function you call wants to access one of these methods,
+*    you need to pass it the result of ob_lambda for that method, the easiest
+*    way is to have one of the lambda functions arguments accept the result
+*       i.e.:  $myFunc=ob_lambda('myMethod');
+*              $lf1=create_function('$func', '$func( ... args ... )');
+*              $lf1($myFunc);
+*    because create_function prepends a \0 to the function name, it is
+difficult
+*    to pass the result of ob_lambda to the target function without using an
+argument
+*/
+/* here is an example -- lambda function Foo::test can call Foo::Bar and
+Foo::Baz, and these  */
+class Foo {
+    private $bar, $baz, $test;
+    private $runtimeValue=0;
+    function __construct() {
+        $this->runtimeValue=rand();
+        $this->bar=ob_lambda('Bar');
+        $this->baz=ob_lambda('Baz');
+        $this->test=create_function(
+            '$bar, $baz',
+            '$bar("Hello, World!"); $baz();'
+        );
+    }
+    function Test() {
+        $fn=$this->test;
+        $fn($this->bar, $this->baz);
+    }
+    function Bar($a) {
+        echo "$a: Bar ($this->runtimeValue)\n";
+    }
+    function Baz() {
+        echo "and another! Baz ($this->runtimeValue)\n";
+    }
+}
+
+$foo=new Foo();
+// Foo::Bar("Testing Other Method"); <-- this causes fatal error
+//  (using $this when not in object context)
+$foo->Test();
+
+?>
+
+This snippet (with test) shows how the lambda function $foo->test can call
+Foo::Bar and Foo::Baz without an explicit reference to the original object. The
+methods are run from their object context, and so can access the
+runtime-modified variable $foo->runtimeValue, which is set to a random number
+on construction.
+The function definition for $foo->test is the following:
+function ($bar, $baz) {
+    $bar("Hello, World!");
+    $baz;
+}
+As you can see, it is clean and simple, with no obvious artifacts from the use
+of OB Lambda
+
+The expected output should be:
+Hello, World!: Bar (440048505)
+and another! Baz (440048505)
+
+Or any other random number in place of 440048505
+Make sure, before you change your code, that your target server has PHP 5.1.1+,
+or these functions won't work and will return an error!
+Hope this helps anyone as much as it has me! :)
+===============================================================================
+
+To avoid memory problems, when creating a dynamic function within loops,
+register it as a global variable, and check if it has already been set;
+
+<?php
+global $my_func;
+if (!isset($my_func))
+{
+    $my_func = create_function($args, $code);
+}
+
+$my_func();
+?>
+
+That way you don't end up creating the same function twice (or a couple of
+million of times, as it happened to me...)
+===============================================================================
+
+Just a little toy I thought up, I would like to share. Creates an anonymous
+function, which let you use a class  as a function.
+
+In php 5.3 there is support for real functors  (trough __invoke):
+
+<?php
+function createFunctor($className){
+        $content = "
+                static \$class;
+                if(!\$class){
+                        \$class = new $className;
+                }
+                return \$class->run(\$args);
+        ";
+        $f = create_function('$args', $content);
+        return $f;
+
+}
+class test {
+        public function run($args){
+                print $args;
+        }
+}
+$test = createFunctor('test');
+$test('hello world');
+?>
+===============================================================================
+
+Workaround is as follows:
+
+<?php
+class Foo {
+    function setHandler($handlerName, $handlerCode) {
+        $this->handlerFunctions[$handlerName] = create_function('&$self,
+$dataArr', $handlerCode);
+// NOTE: $this not allowed here, using $self as replacement
+    }
+
+    function executeHandler($handlerName, $dataArr) {
+        if($this->handlerFunctions[$handlerName]) {
+                $this->handlerFunctions[$handlerName](&$this, $dataArr);
+            }
+     }
+
+    function getConstantInfo($what) {
+        return($what);
+    }
+}
+
+$bla = new Foo;
+
+$bla->setHandler("load", 'echo($self->getConstantInfo("name")."\n");');
+$bla->executeHandler("load", array("foo" => "bar"));
+?>
+===============================================================================
+
+$f = create_function('','echo "function defined by create_function";');
+$f();
+
+result:
+function defined by create_function
+
+You may define no return in function body while you are using create_function.
+===============================================================================
+
+Here has been some discussion about the "memory leak" create_function() can
+create.
+
+What create_function() actually does, is creating an ordinary function with
+name chr(0).lambda_n where n is some number:
+
+<?php
+$f = create_function('', 'return 1;');
+
+function lambda_1() { return 2; }
+
+$g = "lambda_1";
+echo $g(); // outputs: 2
+
+$h = chr(0)."lambda_1";
+echo $h(); // outputs: 1
+?>
+===============================================================================
+
+Here's how to call a runtime-created function from another runtime-created
+function:
+<?php
+        $get_func = create_function('$func', 'return substr($func,1);');
+        $get_value = create_function('$index','return pow($index,$index);');
+        $another_func = create_function('$a', '$func="\x00"."'.$get_func(
+$get_value).'";return $func($a);');
+        echo $another_func(2); # result is 4
+?>
+===============================================================================
+
+In the process of migrating a PHP4 codebase to PHP5, I ran into a peculiar
+problem. In the library, every class was derived from a generic class called
+'class_container'. 'class_container' contained an array called
+runtime_functions and a method called class_function that was as follows:
+
+<?php
+function class_function($name,$params,$code) {
+
+  $this->runtime_functions[$name] = create_function($params,$code);
+
+}
+?>
+
+In a subclass of class_container, there was a function that utilized
+class_function() to store some custom lambda functions that were
+self-referential:
+
+<?php
+function myfunc($name,$code) {
+
+  $this->class_function($name,'$theobj','$this=&$theobj;'.$code);
+
+}
+?>
+
+In PHP4, this worked just fine. The idea was to write blocks of code at the
+subclass level, such as "echo $this->id;", then simply $MYOBJ->myfunc
+("go","echo $this->id;"); and later call it like $MYOBJ->runtime_functions
+["go"]();
+
+It essentially worked exactly like binding anonymous functions to objects in
+Javascript.
+
+Note how the "$this" keyword had to be manually redefined for the $code block
+to work.
+
+In PHP5, however, you can't redeclare $this without getting a fatal error, so
+the code had to be updated to:
+
+<?php
+function myfunc($name,$code) {
+
+  $this->class_function($name,'$this',$code);
+
+}
+?>
+
+Apparently create_function() allows you to set $this via a function argument,
+allowing you to bind anonymous functions to instantiated objects. Thought it
+might be useful to somebody.
+===============================================================================
+
+In reply to info at adaniels dot nl:
+
+You may not be able to use __FUNCTION__ in a lambda (thanks for pointing it
+out; I was having that problem just now), but you can use $GLOBALS to work
+around it if you're assigning the function to a variable. I reimplemented
+array_walk_recursive() in PHP4 like this:
+
+<?php
+$array_walk_recursive = create_function('&$array, $callback',
+    'foreach($array as $element) {
+        if(is_array($element)) {
+            $funky = $GLOBALS["array_walk_recursive"];
+            $funky($element, $callback);
+        }
+        else {
+            $callback($element);
+        }
+    }');
+?>
+===============================================================================
+
+In regards to the recursion issue by info at adaniels dot nl
+
+Anon function recursion by referencing the function variable in the correct
+scope.
+<?php
+$fn2 = create_function('$a', 'echo $a; if ($a < 10) call_user_func($GLOBALS
+["fn2"], ++$a);');
+$fn2(1);
+?>
+===============================================================================
+
+Note that using __FUNCTION__ in a an anonymous function, will always result
+'__lambda_func'.
+
+<?php
+    $fn = create_function('', 'echo __FUNCTION__;');
+    $fn();
+    // Result: __lambda_func
+    echo $fn;
+    // Result: ºlambda_2 (the actual first character cannot be displayed)
+?>
+
+This means that a anonymous function can't be used recursively. The following
+code (recursively counting to 10) results in an error:
+<?php
+    $fn2 = create_function('$a', 'echo $a; if ($a < 10) call_user_func
+(__FUNCTION__, $a++);');
+    $fn2(1);
+    // Warning: call_user_func(__lambda_func) [function.call-user-func]: First
+argument is expected to be a valid callback in T:/test/test.php(21) :
+runtime-created function on line 1
+?>
+===============================================================================
+
+Beware! This is merely a convenience function that generates a unique name for
+a regular function. It is *not* a closure or even an anonymous function. It is
+just a regular function that gets named for you.
+===============================================================================
+
+Functions created by create_function() cannot return a value by reference.  The
+function below creates a function that can.  The arguments are the same as
+create_function().  Note that these arguments are passed, unmodified, to eval
+(), so be sure that data passed in is sanitized.
+
+<?php
+/**
+* create_ref_function
+* Create an anonymous (lambda-style) function
+* which returns a reference
+* see http://php.net/create_function
+*/
+function
+create_ref_function( $args, $code )
+{
+    static $n = 0;
+
+    $functionName = sprintf('ref_lambda_%d',++$n);
+   
+    $declaration = sprintf('function &%s(%s) {%s}',$functionName,$args,$body);
+   
+    eval($declaration);
+   
+    return $functionName;
+}
+?>
+===============================================================================
+
+If you were checking to see if a function is made properly, this would be a
+better way of checking:
+
+<?php
+$fnc = @create_function('$arg1,$arg2,$arg3', 'return true;');
+# make that function whatever you want
+if (empty($fnc)) {
+  die('Could not create function $fnc.');
+}
+
+# although, the follow will NOT work
+if (empty(create_function('$arg', 'return $arg;'))) {
+  die('Could not create anonymous function.');
+}
+# you would get an error regarding not being able to use a
+# return value in writeable context (i.e. a return value is
+# a const in C, and the function empty() doesn't use a
+# const void* parameter
+?>
+===============================================================================
+
+<?php
+# dynamically create html helper functions which take the args
+# $string_contents, $optional_hash_of_options
+# and return the contents wrapped in a tag
+   
+$html_funcs = Array(
+    'table',
+    'tr',
+    'th',
+    'td',
+    'div',
+    'span',
+    'pre',
+    'strong',
+    'em'
+);
+$args = '$html, $options=Array()';
+$code = '
+  $o = "";
+  foreach ($options as $a => $b) {
+    $o .= " $a=\"$b\"";
+  }
+  return "<$tag$o>$html</$tag>";
+';
+foreach ($html_funcs as $key => $tag) {
+    ${$tag} = create_function($args, "\$tag = '$tag'; $code");
+}
+
+# usage example:
+
+print $table(
+  $tr($th('heading').$td('this is the cell content')),
+  Array('style'=>'border: 1px solid silver;')
+);
+?>
+===============================================================================
+
+I use this create_closure() in my work to seperate callbacks into Classes:
+<?php
+function create_closure($fun, $args, $uses)
+         {$params=explode(',', $args.','.$uses);
+          $str_params='';
+          foreach ($params as $v)
+                  {$v=trim($v, ' &$');
+                   $str_params.='\''.$v.'\'=>&$'.$v.', ';
+                  }
+          return "return function({$args}) use ({$uses}) {{$fun}(array({
+$str_params}));};";
+         }
+?>
+
+example:
+<?php
+$loop->addPeriodicTimer(1, eval(create_closure('pop_message', '$timer', 
+'$cache_key, $n, &$response, &$redis_client')));
+
+function pop_message($params)
+         {extract($params, EXTR_REFS);
+          $redis_client->ZRANGE($cache_key, 0, $n)
+                            ->then(//normal
+                                   function($data) use ($cache_key, $n, &$timer
+, &$response, &$redis_client)
+                                   {//...
+                                   },
+                                   //exception
+                                   function ($e) use (&$timer, &$response, &
+$redis_client)
+                                   {//...
+                                   }
+                                  );
+         }
+?>
+===============================================================================
+
+Beware of memory-leaks, the garbage-collection seems to 'oversee' dynamically
+created functions!
+
+I used a function like this to replace special characters in links with their
+htmlentities:
+<?php
+$text = preg_replace_callback (
+    "/(<(frame src|a href|form action)=\")([^\"]+)(\"[^>]*>)/i",
+    create_function (
+        '$matches',
+        'return $matches[1] . htmlentities ($matches[3]) . $matches[4];'
+    ),
+    $text);
+?>
+
+After 1000 calls, the process used about 5MB more than before. In my situation
+this boosted up the memory-size of one PHP-process up to over 100MB!
+
+In such cases, better store the function in a global variable.
+===============================================================================
+
+Try this to boost performance of your scripts (increase maxCacheSize):
+
+<?php
+runkit_function_copy('create_function', 'create_function_native');
+runkit_function_redefine('create_function', '$arg,$body', 'return
+__create_function($arg,$body);');
+
+function __create_function($arg, $body) {
+    static $cache = array();
+    static $maxCacheSize = 64;
+    static $sorter;
+
+    if ($sorter === NULL) {
+        $sorter = function($a, $b) {
+            if ($a->hits == $b->hits) {
+                return 0;
+            }
+
+            return ($a->hits < $b->hits) ? 1 : -1;
+        };
+    }
+
+    $crc = crc32($arg . "\\x00" . $body);
+
+    if (isset($cache[$crc])) {
+        ++$cache[$crc][1];
+        return $cache[$crc][0];
+    }
+
+    if (sizeof($cache) >= $maxCacheSize) {
+        uasort($cache, $sorter);
+        array_pop($cache);
+    }
+
+    $cache[$crc] = array($cb = eval('return function('.$arg.'){'.$body.'};'), 0
+);
+    return $cb;
+}
+?>
+===============================================================================
+
+Here is another tricky but usefull techynote, good for adding "plugin" to a
+existing class :
+
+<?php
+
+class Hoge {
+    var $lamda;
+    var $text;
+
+    function set($lamda)
+    {
+        $this->lamda = $lamda;
+    }
+
+    function callLamda()
+    {
+        $func = $this->lamda;
+        return $func($this);
+    }
+
+    function get()
+    {
+        return $this->text;
+    }
+}
+
+$newfunc = create_function('&$class', 'echo $class->get();' );
+
+$h = new Hoge;
+$h->text = "Hi there !";
+$h->set($newfunc);
+$h->callLamda();
+
+?>
+===============================================================================
+
+How do you use function which is created by create_function() as class method?
+
+<?php
+class Hoge {
+  var $lamda;
+  function set($lamda) {
+    $this->lamda = $lamda;
+  }
+  function callLamda() {
+    $func = $this->lamda;
+    return $func();
+  }
+}
+
+$newfunc = create_function('', 'echo "hoge<br>\n";');
+
+$h = new Hoge;
+$h->set( $newfunc );
+$h->callLamda();
+?>
+
+It works fine. :-)
+===============================================================================
+
+In response to koyama at hoge dot org (14-Dec-2000):
+
+This does NOT create a new method - try adding this at the end:
+
+<?php
+if (function_exists($h->lamda)) {
+   print "Its a function\n";
+} else {
+   print "No it isnt";
+}
+?>
+
+It creates a function which $h->lamda points to.
+
+Under PHP4 you could simply add an argument $this which meant it *behaved* like
+a method (though it existed in global scope) but with PHP5, you can't have a
+variable named $this in a function (which is rather irksome).
+
+(and methinks the ant-bot challenge is taking the mickey - min(three, four)? 
+!).
+===============================================================================
+
+neo at gothic-chat d0t de wrote :
+Beware of memory-leaks, the garbage-collection seems to 'oversee' dynamically
+created functions!
+
+Not really...
+
+In fact, PHP can not "unassign" functions. So if you create a function, it
+won't be deleted until the end of the script, even if you unset the variable
+containing its name.
+
+If you need to change a part of a function everytime you run a loop, think of a
+way to make a more general function or try using eval :) (functions are made to
+be re-used. If you need to run your own piece of code once, eval is much
+better).
+===============================================================================
+
+Default values works:
+
+<?php
+
+$f = create_function('$a,$b=3', 'var_dump($a, $b);');
+$f(1);
+
+// output:
+
+// int(1)
+// int(3)
+
+?>
+===============================================================================
+
+Sometimes it may be useful to create functions in a dynamic environment
+(f. e. in a daemon-like php script).
+
+Normally declaring a function must be done once, which results in the problem,
+that in this special case modifying a function wouldn't have an effect until
+the script is reloaded.
+
+Maybe this code snipplet is useful 4 u.
+
+File: "functions.inc"
+
+<?php
+function test($str) {
+    echo $str;
+}
+?>
+
+Dynamic FunctionHandler:
+
+<?php
+$FileName = "functions.inc";
+$FileHandle = fopen($FileName,"r");
+$FileContent = fread($FileHandle,filesize($FileName));
+fclose($FileHandle);
+
+preg_match_all("#function\ ?([a-zA-Z0-9-_]*)\ ?\((.*?)\)\ ?\{(.*?)\}#mixse",
+$FileContent,$Matches);
+if ( is_array($Matches) && isset($Matches[0]) && count($Matches[0]) > 0  ) {
+     foreach ( $Matches[0] as $key=>$val ) {
+        $$Matches[1][$key] = create_function($Matches[2][$key],$Matches[3][$key
+]);
+    }
+}
+?>
+
+The Test:
+<?php echo $test("test"); ?>
+.. will echo "test";
+
+Hans Kuhlen
+===============================================================================
+
+[EDIT by danbrown AT php DOT net: Combined user-corrected post with previous
+(incorrect) post.]
+
+You can't refer to a class variable from an anonymous function inside a class
+method using $this.  Anonymous functions don't inherit the method scope. 
+You'll have to do this:
+
+<?php
+class AnyClass {
+
+var $classVar = 'some regular expression pattern';
+
+function classMethod() {
+
+   $_anonymFunc = create_function( '$arg1, $arg2', 'if ( eregi($arg2, $arg1) )
+{ return true; } else { return false; } ' );
+
+   $willWork = $_anonymFunc('some string', $classVar);
+
+}
+
+}
+?>
+===============================================================================
+
+A nice technique for building complex search patterns on lists, files or
+whatever is to build function combining functions like this:
+
+<?php
+function _not_($f) {
+  return create_function('$x',
+    "return !$f(\$x);");
+}
+
+function _and_($f, $g) {
+  return create_function('$x',
+    "return $f(\$x) && $g(\$x);");
+}
+?>
+
+(similarly for _or_ and others...).  Once you've built your matching primitives
+you can then build more complex matches into your script.
+
+Unfortunately, as explained in (closed) bug #10721, the function names returned
+by create_function have a null byte at the front and this causes a parse error.
+
+You can fix the definition like this:
+
+<?php
+function _not_($f) {
+  $f = substr($f, 1);
+  return create_function('$x',
+    "return !call_user_func(chr(0).'$f', \$x)");
+}
+?>
+
+The expression that re-builds the function name avoid the null being literally
+in the parsed string.  If there is a better fix, please let me know.
+===============================================================================
+
+Create_function enables the ability to change the scope of functions.  You
+might have a class where it needs to define a GLOBAL function.  This is
+possible, like:
+
+<?php
+        class blah {
+                function blah() {
+                        $z=create_function('$arg1string','return
+"function-z-".$arg1string;');
+                        $GLOBALS['z']=$z;
+                }
+        }
+        $blah_object=new blah;
+
+        $result=$GLOBALS['z']('Argument 1 String');
+        echo $result;
+?>
+
+Making a function escape it's defined scope can be useful in many situations.
+===============================================================================
+
+for those who want to assign it's own name to a function consider this code:
+
+<?php
+$fname = 'hello';
+
+$func = sprintf('
+    function %s($v="") {
+        Return "$v<BR>";
+    }
+',
+$fname
+);
+
+eval($func);
+echo $fname('Please print it.... please....');
+?>
+
+what it does is,
+: Creats a function as a string;
+: Replaces the function name with $fname value;
+: Converts the string into a REAL php code with eval()
+: Calls the function using the variable function as declared before ($fname);
+
+Simple, isn't it?
+
+Can work well as an abstraction layer for portability and/or compatibility
+purposes
+
+Maxim Maletsky
+maxim@maxim.cx // PHPBeginner.com
+===============================================================================
+
+For those who want to create closure with create_function, don't bother, you
+can't.
+Use create_closure instead :p
+
+<?php
+//same thing as create_function, but returns a closure..( 5.4)
+function create_closure($args, $body){
+  return eval("return function($args){ {$body}  };");
+}
+?>
+===============================================================================
+
+<?
+
+function is_function( &$mixed )
+{
+    if ( is_object( $mixed ) ) {
+        return ( $mixed instanceof Closure );
+    } elseif( is_string( $mixed ) ) {
+        return function_exists( $mixed );
+    } else {
+        return false;
+    }
+}
+
+function myfunc(){}
+
+$test = 123;
+echo  is_function( $test ); //will return false
+
+$test = 'isset';
+echo  is_function( $test ); //will return false... it's not work with reserved
+:( ...
+
+$test = 'myfunc';
+echo  is_function( $test ); //will return true
+
+$test = create_function( '', 'echo 123;' );
+echo  is_function( $test ); //will return true
+
+$test = function () { echo 123; };
+echo  is_function( $test ); //will return true
+
+?>
+===============================================================================
+
+In response to kkaiser at revolution-records dot net's note, even tho PHP will
+allow you to use
+<?
+$myfunc = create_function('$this', $code);
+?>
+You can NOT use a reference to "$this" inside of the anonymous function, as PHP
+will complain that you are using a reference to "$this" in a non-object
+context.
+
+Currently, I have not found a work-around for this...

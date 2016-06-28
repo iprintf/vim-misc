@@ -1,0 +1,123 @@
+
+pg_last_error
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pg_last_error — 得到某连接的最后一条错误信息
+
+说明
+
+string pg_last_error ([ resource $connection ] )
+
+pg_last_error() 返回指定连接 connection 的最后一条错误信息。
+
+错误信息可能会被 PostgreSQL(libpq) 的内部函数调用所覆盖。如果 PostgreSQL 的内部
+模块函数产生了多个错误，则可能不能返回适当的错误信息。
+
+使用 pg_result_error()，pg_result_status() 和 pg_connection_status() 来取得更好
+的错误处理。
+
+    Note:
+
+    本函数以前的名字为 pg_errormessage()。
+
+参见 pg_result_error()。
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+From a practical view there are two types of error messages when using
+transactions:
+
+-"Normal" errors: in this case, the application should stop the current process
+and show an error message to the user.
+
+-Deadlock errors. This shows that the deadlock detection process of PostgreSQL
+found a circle of dependency, and broke it by rolling back the transaction in
+one of the processes, which gets this error msg. In this case, the application
+should not stop, but repeat the transaction.
+
+I found no discrete way to find out which case are we dealing with. This
+interface doesn't support error codes, so we have to search for patterns in the
+message text.
+
+Here is an example for PostgreSQL database connection class. It throws a
+PostgresException on "normal" errors, and DependencyException in the case of a
+broken deadlock, when we have to repeat the transaction.
+
+postgres.php:
+<?php
+class PostgresException extends Exception {
+    function __construct($msg) { parent::__construct($msg); }
+}
+
+class DependencyException extends PostgresException {
+    function __construct() { parent::__construct("deadlock"); }
+}
+
+class pg {
+    public static $connection;
+   
+    private static function connect() {
+        self::$connection = @pg_connect("dbname=foodb user=foouser password=
+foopasswd");
+        if (self::$connection === FALSE) {
+            throw(new PostgresException("Can't connect to database server."));
+        }
+    }
+   
+    public static function query($sql) {
+        if (!isset(self::$connection)) {
+            self::connect();
+        }
+       
+        $result = @pg_query(self::$connection, $sql);
+        if ($result === FALSE) {
+            $error = pg_last_error(self::$connection);
+            if (stripos($error, "deadlock detected") !== false) throw(new 
+DependencyException());
+           
+            throw(new PostgresException($error.": ".$sql));
+        }
+       
+        $out = array();
+        while ( ($d = pg_fetch_assoc($result)) !== FALSE) {
+            $out[] = $d;
+        }
+       
+        return $out;
+    }
+}
+?>
+
+It should be used in this way:
+
+test.php:
+<?php
+include("postgres.php");
+
+do {
+    $repeat = false;
+    try {
+        pg::query("begin");
+       
+        ...
+
+        $result = pg::query("SELECT * FROM public.kitten");
+
+        ...
+
+        pg::query("commit");
+    }
+    catch (DependencyException $e) {
+        pg::query("rollback");
+        $repeat = true;
+    }
+} while ($repeat);
+?>
+
+The normal errors should be caught at the frontend.
+
+Tamas

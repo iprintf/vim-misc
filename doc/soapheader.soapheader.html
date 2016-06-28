@@ -1,0 +1,294 @@
+
+SoapHeader::SoapHeader
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+SoapHeader::SoapHeader — SoapHeader constructor
+
+说明
+
+SoapHeader::SoapHeader ( string $namespace , string $name [, mixed $data [, 
+bool $mustunderstand = false [, string $actor ]]] )
+
+Constructs a new SoapHeader object.
+
+参数
+
+namespace
+
+    The namespace of the SOAP header element.
+
+name
+
+    The name of the SoapHeader object.
+
+data
+
+    A SOAP header's content. It can be a PHP value or a SoapVar object.
+
+mustUnderstand
+
+    Value of the mustUnderstand attribute of the SOAP header element.
+
+actor
+
+    Value of the actor attribute of the SOAP header element.
+
+范例
+
+Example #1 SoapHeader::SoapHeader() example
+
+<?php
+$client = new SoapClient(null, array('location' => "http://localhost/soap.php",
+                                     'uri'      => "http://test-uri/"));
+$client->__soapCall("echoVoid", null, null,
+                new SoapHeader('http://soapinterop.org/echoheader/',
+                               'echoMeStringRequest',
+                               'hello world'));
+?>
+
+参见
+
+  • SoapClient::__soapCall() - Calls a SOAP function
+  • SoapVar::SoapVar() - SoapVar constructor
+  • SoapParam::SoapParam() - SoapParam constructor
+  • SoapServer::addSoapHeader() - Add a SOAP header to the response
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+To build the authentication headers like below FOR WSDL:
+
+**NOTE** I cannot find documentation on the __setSoapHeaders() method, though
+it does work in 5.0.4
+
+<?php
+
+class MySoapClass
+{
+
+    function __construct(){
+        // Blah blah blah
+        $this->soap = new SoapClient($this->foo, $this->bar);
+
+    }
+
+    // Build that header!
+    private function build_auth_header(){
+        // Build an object with parameters
+        $auth->username = $this->username;
+        $auth->password = $this->password;
+       
+        $authvalues = new SoapVar($auth, SOAP_ENC_OBJECT);
+        $header =  new SoapHeader($this->name_space, "Authentication", //
+Rename this to the tag you need
+                                                          $authvalues, false);
+
+        $this->soap->__setSoapHeaders(array($header));
+       
+    }
+
+    // Wrapper so we can build auth header first
+    public function MySoapFunction($params){
+
+        $this->build_auth_header();
+        $this->soap->MySoapFunction($params);
+
+    }
+
+}
+?>
+===============================================================================
+
+Here is a way to get headers on the server side. It will fill up an assoc with
+all headers in a namespace. In its current state, it only handles text content;
+but each header is expanded to a DOMNode, so you can do whatever you wish to
+parse custom types.
+
+In my case this method is useful because I want to pass PHPSESSID in a SOAP
+header, and I need to set it before I even call SoapServer::handle().
+
+//
+// READ SOAP HEADERS, STOP READING AT SOAPENV:BODY ELEMENT
+//
+$xml = new XmlReader();
+$xml->XML( $HTTP_RAW_POST_DATA );
+
+$shoppingCartHeaders = array();
+while( $xml->read() ) {
+    if( $xml->namespaceURI ==
+"urn:com.plauditdesign.shoppingcart.client.headers#"
+        && $xml->nodeType == XMLReader::ELEMENT ) {
+
+        $headerNode = $xml->expand();
+        $shoppingCartHeaders[ $xml->localName ] = $headerNode->textContent;
+    } elseif( $xml->namespaceURI == "http://schemas.xmlsoap.org/soap/envelope/"
+        && $xml->nodeType == XMLReader::ELEMENT
+        && $xml->localName == "Body" ) {
+
+        $xml->close();
+    }
+}
+
+...
+
+if( isset( $shoppingCartHeaders["sessionId"] ) ) {
+    session_id( $shoppingCartHeaders["sessionId"] );
+}
+
+...
+
+$server->setPersistence( SOAP_PERSISTENCE_SESSION );
+$server->handle();
+===============================================================================
+
+In botoom code is bug.
+
+is:
+
+// create authentication header values
+$authvalues=new SoapVar($auth,SOAP_ENC_OBJECT,'authenticate');
+
+should be:
+
+// create authentication header values
+$authvalues=new SoapVar($auth,SOAP_ENC_OBJECT);
+===============================================================================
+
+If you are using WSDL to define your SOAP Headers, note that PHP's SoapServer
+class will not process incoming headers unless the <message> and <part> names
+are identical for the header methods.
+
+Define a SOAP header function like this in WSDL:
+
+<!-- replace "tns:" with your own namespace abbreviation -->
+
+<!-- define method arguments using a complexType -->
+<xsd:complexType name="HeaderMethodArgs">
+    <xsd:all>
+        <xsd:element ... name="arg1"/>
+        <xsd:element ... name="arg2"/>
+    </xsd:all>
+</xsd:complexType>
+
+<!-- define method message with single part -->
+<message name='headerMethodName'>
+    <part name='headerMethodName' type='tns:HeaderMethodArgs'/>
+</message>
+
+<!-- add header tag to operations that use this header -->
+<operation name='someBodyMethod'>
+    ...
+    <input>
+        <soap:body .../>
+        <soap:header
+            ...
+            message='tns:headerMethodName'
+            part='headerMethodName'
+        />
+    </input>
+    <output>...</output>
+</operation>
+===============================================================================
+
+To do headers (the raw way):
+
+    // Setting "trace" will allow us to view the request that we are making,
+after we have made it.
+    $objClient = new SoapClient("http://www.somewhere.com/wsdls/some.wsdl",
+array('trace' => true));
+
+    // These parameters satisfy this specific remote call.
+    $arrParameters_Login = array('username' => 'username', 'password' =>
+'password', 'company' => 'Company');
+
+    // Invoke the remote call "login()".
+    $objLogin =  $objClient->login($arrParameters_Login);
+
+    // Grab session ID that this remote call will provide.
+    $strSessionID = $objLogin->loginReturn->sessionId;
+
+    // Set headers-- The remote call "query()" will require a header pointing
+to our session.
+
+    $strHeaderComponent_Session = "<SessionHeader><sessionId>$strSessionID</
+sessionId></SessionHeader>";
+
+    $objVar_Session_Inside = new SoapVar($strHeaderComponent_Session,
+XSD_ANYXML, null, null, null);
+    $objHeader_Session_Outside = new SoapHeader('namespace.com',
+'SessionHeader', $objVar_Session_Inside);
+
+    // More than one header can be provided in this array.
+    $objClient->__setSoapHeaders(array($objHeader_Session_Outside));
+
+    // Set the query parameters.
+
+    $strQuery = 'select empID from Time where empID = 92389278';
+    $arrParameters_Query = array('queryString' => $strQuery);
+
+    // Make call.
+
+    $objResponse = $objClient->query($arrParameters_Query);
+
+    header('Content-Type: text/xml; ');
+    print($objClient->__getLastRequest());
+
+The request that goes out:
+
+<SOAP-ENV:Envelope>
+    <SOAP-ENV:Header>
+        <SessionHeader>
+            <sessionId>8789364113604871127</sessionId>
+        </SessionHeader>
+    </SOAP-ENV:Header>
+    <SOAP-ENV:Body>
+        <ns1:query>
+            <ns1:queryString>select empID from Time where empID = 92389278</
+ns1:queryString>
+        </ns1:query>
+    </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+===============================================================================
+
+I was unable to connect to .net using any of the previous notes. I found out
+that the easiest way is the one that works. Everyone is trying to use soapvar .
+but you dont need to.
+
+$ns = 'http://blabla.com/Services/Services';
+$AuthHeader = new AuthHeader($LoginResponse);
+$header =  new SoapHeader($ns,"AuthHeader",  $AuthHeader,false);
+$this->soapClient->__setSoapHeaders(array($header));
+
+my header was suppose to look like this
+<soapenv:Header>
+<ns1:AuthHeader>
+<ns1:SessionKey>xxxx</ns1:SessionKey>
+<ns1:SessionRole>xxxxx</ns1:SessionRole>
+<ns1:UserType>xx</ns1:UserType>
+<ns1:UserName>xxx</ns1:UserName>
+</ns1:AuthHeader>
+</soapenv:Header>
+
+so my AuthHeader is just a simple class
+class AuthHeader
+{
+  var $SessionKey;//string
+  var $SessionRole;//string
+  var $UserType;//string
+  var $UserName;//string
+ 
+  function __construct($LoginResponse)
+  {
+     $this->SessionKey  = $LoginResponse->LoginResult->SessionKey;
+     $this->SessionRole = $LoginResponse->LoginResult->SessionRole;
+     $this->UserType    = $LoginResponse->LoginResult->UserType;
+     $this->UserName    = $LoginResponse->LoginResult->UserName;
+
+  }
+}
+
+The important lesson here is the when you build your header you can use a
+normal class. It does not need to be a soapvar

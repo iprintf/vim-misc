@@ -1,0 +1,195 @@
+
+connection_aborted
+
+(PHP 4, PHP 5, PHP 7)
+
+connection_aborted — 检查客户端是否已经断开
+
+说明
+
+int connection_aborted ( void )
+
+检查客户端是否已经断开。
+
+返回值
+
+如果客户端已经断开则返回1，否则返回0。
+
+参见
+
+  • connection_status() - 返回连接的状态位
+  • ignore_user_abort() - 设置客户端断开连接时是否中断脚本的执行
+  • 查看连接处理了解PHP处理连接的详情。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+A trick to detecting if a connection is closed without having to send data that
+will otherwise corrupt the stream of data (like a binary file) you can use a
+combination of chunking the data on HTTP/1.1 by sending a "0" ("zero") as a
+leading chunk size without anything else.
+
+*NOTE* it's important to note that it's not a good idea to check the stream
+more then once every few seconds. By doing this you are potentially increasing
+the data sent to the user with no gain to the user.
+
+A good reason to do it this way is if you are generating a report that takes a
+long time to run and takes a lot of server resources. This would allow the
+server to detect if a user canceled the download and do any cleanup without
+corrupting the file file being download.
+
+Here is an example:
+
+<?php
+ignore_user_abort(true);
+header('Transfer-Encoding:chunked');
+ob_flush();
+flush();
+$start = microtime(true);
+$i = 0;
+// Use this function to echo anything to the browser.
+function vPrint($data){
+    if(strlen($data))
+        echo dechex(strlen($data)), "\r\n", $data, "\r\n";
+    ob_flush();
+    flush();
+}
+// You MUST execute this function after you are done streaming information to
+the browser.
+function endPacket(){
+    echo "0\r\n\r\n";
+    ob_flush();
+    flush();
+}
+do{
+    echo "0";
+    ob_flush();
+    flush();
+    if(connection_aborted()){
+        // This happens when connection is closed
+        file_put_contents('/tmp/test.tmp', sprintf("Conn Closed\nTime spent
+with connection open: %01.5f sec\nLoop itterations: %s\n\n", microtime(true) - 
+$start, $i), FILE_APPEND);
+        endPacket();
+        exit;
+    }
+    usleep(50000);
+    vPrint("I get echo'ed every itteration (every .5 second)<br />\n");
+}while($i++ < 200);
+endPacket();
+?>
+===============================================================================
+
+I have failed to get accurate results from this even with echo, flush(), and
+other buffer manipulation trickery. The following function detects connection
+status from the OS netstat(1) in linux, even without echoing anything. You may
+need to alter the parsing for windows or older versions of netstat. It calls an
+external command so it consume some resources, use it with care e.g. you can
+call it every some seconds while waiting for long-poll requests. Not tested
+with ipv6.
+
+//returns connection status (ESTABLISHED, TIME_WAIT, etc) or NOT_FOUND
+function getConnectionStatus() {
+            $remote_ip = $_SERVER['REMOTE_ADDR']?:($_SERVER
+['HTTP_X_FORWARDED_FOR']?:$_SERVER['HTTP_CLIENT_IP']);
+            $remote_port=$_SERVER['REMOTE_PORT'];
+
+            $cmd="netstat -tn | fgrep ' $remote_ip:$remote_port '";
+
+            $pfp=popen($cmd,"r");
+                        if(!$pfp) {
+                                error_log ("getConnectionStatus: $cmd");
+                        }
+
+            $buf = fgets($pfp, 1024);
+            pclose($pfp);
+
+            $buf=preg_replace('!\s+!', ' ', $buf); //remove multiple spaces
+            $buf=trim($buf);
+
+            $buf_r=explode(" ",$buf);
+
+            if (count($buf_r)) {
+                    $state=$buf_r[count($buf_r)-1];
+                    return trim($state);
+            }
+
+            return "NOTFOUND";
+    }
+
+//check for it:
+if (getConnectionStatus() != "ESTABLISHED") { ...}
+===============================================================================
+
+From ignore_user_abort function :
+
+PHP will not detect that the user has aborted the connection until an attempt
+is made to send information to the client. Simply using an echo statement does
+not guarantee that information is sent, see flush().
+
+This rule seems to apply here too.
+===============================================================================
+
+In order to detect a disconnection inside the script we need to flush the
+buffer (it is only when the the server tries to send the buffer content that it
+will see that the connection is broken).
+
+Thus we need to use the ob_implicit_flush() function to flush automatically the
+buffer
+
+This is an example of a disconnection detection :
+
+<?php
+  // enables the automatic flush
+  ob_implicit_flush();
+
+  function verifyCommunication() {
+    $status = (connection_aborted()?"not ":"") ."sent";
+    persistCommunication(new Communication($status));
+  }
+
+  // we will check the communication state when the script finished
+  register_shutdown_function(verifyCommunication);
+  echo "blabla";
+  // this sleep is used to have time to break the connection on the client side
+  sleep(10);
+  echo"tata";
+?>
+
+I use such a process to cancel a request if the client didn't get the
+acknowledgement because he will redo his request...
+===============================================================================
+
+Although the documentation indicates it returns an int, I found comparing the
+return value with numeric values does not seem to work.
+
+Example (does not work):
+<?php
+if (connection_aborted()==1) {
+fwrite($filehandle, 'aborted!');
+}
+?>
+
+You're better off just assuming it returns boolean
+
+Example (does work):
+<?php
+if (connection_aborted()) {
+fwrite($filehandle, 'aborted!');
+}
+?>
+===============================================================================
+
+(connection_aborted not working)
+I had this problem years ago, now the problem came back after upgrading php...
+i tried everything i found and in the end the function ob_end_flush();  on top
+of script as post in php bug track solved the problem. Im using windows 7 x64 /
+php 5.2.4 / apache 2.2.14 (win32)
+
+try adding ob_end_flush(); on top of you script.
+i read something about this but can't remember where, it was related to a bug
+or something.
+
+hope this help.

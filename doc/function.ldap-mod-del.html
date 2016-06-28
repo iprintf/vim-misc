@@ -1,0 +1,227 @@
+
+ldap_mod_del
+
+(PHP 4, PHP 5, PHP 7)
+
+ldap_mod_del — Delete attribute values from current attributes
+
+说明
+
+bool ldap_mod_del ( resource $link_identifier , string $dn , array $entry )
+
+Removes one or more attributes from the specified dn. It performs the
+modification at the attribute level as opposed to the object level.
+Object-level deletions are done by the ldap_delete() function.
+
+参数
+
+link_identifier
+
+    An LDAP link identifier, returned by ldap_connect().
+
+dn
+
+    The distinguished name of an LDAP entity.
+
+entry
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+参见
+
+  • ldap_mod_add() - Add attribute values to current attributes
+  • ldap_mod_replace() - Replace attribute values with new ones
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+For anyone interested in removing a user from a group, you can use ldap_mod_del
+() as follows:
+
+$group = 'CN=mygroup,OU=myOU,DC=mydomain,DC=com';
+
+$group_info['member'] = 'CN=User\, Test,CN=Users,DC=mydomain,DC=com';
+
+ldap_mod_del($ldap, $group, $group_info);
+
+I have tested this using Active Directory on a Win 2K3 server.
+===============================================================================
+
+To remove all of a particular attribute, feed it an empty array.
+
+For example, to remove all members from a group:
+
+<?php
+ldap_mod_del($ldapconn,$groupDN,array("member" => array()));
+?>
+===============================================================================
+
+Te remove a user from a group in Apple's Open Directory, you need to also
+remove the members generated uid from the group.
+
+Removing the users is as follows:
+
+<?php
+
+//setting variables
+$ldapDN = "uid=myadmin,cn=users,dc=myserver,dc=com';
+$ldapPass = "somepass";
+
+$groupDn = 'cn=mygroup,cn=groups,dc=myserver,dc=com'
+$removal = array(
+    "memberuid"=>"username",
+    "apple-group-memberguid"=>"846DE847-D73D-428D-83A8-B95B606C511B"
+);
+
+//connect and bind
+$ldapconnect = ldap_connect("myserver.com",389);
+ldap_bind($ldapconnect, $ldapDN, $ldapPass);
+
+//removing member from group
+ldap_mod_del($ldapconnect, $groupDn, $removal);
+
+//unbind
+ldap_unbind($ldapconnect);
+
+?>
+===============================================================================
+
+We often need to delete "objectclass" below follows a simple code to make this
+successful removal.
+
+$userdataModifydelSamba = array();
+$userdataModifydelSamba['objectClass'] = array();
+$userdataModifydelSamba['objectClass'][0] = 'sambaSamAccount';
+
+$userdataModifydelSamba['sambasid'] = array();
+$userdataModifydelSamba['sambantpassword'] = array();
+$userdataModifydelSamba['sambahomedrive'] = array();
+$userdataModifydelSamba['sambadomainname'] = array();
+$userdataModifydelSamba['sambaacctflags'] = array();
+$userdataModifydelSamba['sambaprimarygroupsid'] = array();
+$userdataModifydelSamba['sambapwdlastset'] = array();
+
+$sucess = @ldap_mod_del($connection, $dn, $result);
+if(!$sucess)
+{
+   throw new Exception("error " . ldap_err2str(ldap_errno($connection)));
+}
+===============================================================================
+
+and please don't forget:
+you can't delete all attributes, when at least one is required.
+===============================================================================
+
+The above example has also been proven to work in the iPlanet / Sun One
+Directory Server 5.0/5.1. As an example:
+
+$attrs["mail"] = array();
+ldap_mod_del($ldapConnID,$dn,$attrs);
+
+or
+
+$attrs["mail"] = array();
+$attrs["telephonenumber"] = array();
+ldap_mod_del($ldapConnID,$dn,$attrs);
+
+This will remove all occurences of attributes in the entry specified by the dn.
+===============================================================================
+
+At least with OpenLDAP 1.2.x
+to remove an attribute regardless of it's value you have to assign:
+
+$attrs["AttributeName"]=array();
+
+after ldap_mod_del($ds,$dn,$attrs)
+all occurences of AttributeName will be removed
+===============================================================================
+
+To remove all instances of an attribute:
+
+$entry["attrname"][]="value1";
+$entry["attrname"][]="value2";
+...
+$entry["attrname"][]="valueN";
+
+ldap_mod_del($ds, $dn, $entry);
+===============================================================================
+
+<pre>
+uid: testuser
+mail: testuser@test.net
+mail: testuser@somewhere.com
+</pre>
+
+How to remove the values of mail so that only the second value for mail exists:
+
+<pre>
+$entry["mail"] = "testuser@test.net";
+$result = ldap_mod_del($connID, $dn, $entry);
+</pre>
+
+if you want to remove all instances of an attribute.....
+==>
+<pre>
+$entry["mail"][0] = "testuser@test.net";
+$entry["mail"][1] = "testuser@somewhere.net";
+$result = ldap_mod_del($connID, $dn, $entry);
+</pre>
+
+are not?
+===============================================================================
+
+Using ldap_modify with a blank string works if you aren't propagating your LDAP
+database, even though it returns the error. Still, I'd say don't do it, as it
+smacks of something that will be fixed in a future version.
+===============================================================================
+
+I have found that the syntax:
+
+$entry["mail"] = "";
+
+Will NOT delete the mail attribute using the OpenLDAP server.  You must specify
+the attribute value to delete it successfully, otherwise you will recieve an
+"Invalid Syntax" error from the server.
+
+The error: "Inappropriate Matching" will be displayed if the attribute you are
+trying to delete has no equality rule in the schema.  I had a problem deleting
+the attribute facsimilieTelephoneNumber, and it was because my core.schema file
+did not have an EQUALITY definition for that attribute.  I copied the
+telephoneNumber EQUALITY rule and it worked perfectly.
+===============================================================================
+
+To remove all instances of an attribute you can use ldap_modify with an empty
+value for that attribute.
+
+$entry["mail"] = "";
+$result = ldap_modify($connID, $dn, $entry);
+===============================================================================
+
+After a couple hours of searching and not finding anything on the ldap_mod_del
+function worth anything, I started trying to figure out myself what format the
+"array entry" parameter needed to be in.  Here is what I found:
+
+The entry array is a hash with the attribute name as the hash key and the
+specific value you want deleted for that attribute as the corresponding hash
+value.
+
+-- Example
+
+Current values for the attributes of of a particular entry:
+
+     uid: testuser
+     mail: testuser@test.net
+     mail: testuser@somewhere.com
+
+How to remove the first value of mail so that only the second value for mail
+exists:
+
+     $entry["mail"] = "testuser@test.net";
+     $result = ldap_mod_del($connID, $dn, $entry);
+
+So if you want to remove all instances of an attribute, you have to do it one
+by one.

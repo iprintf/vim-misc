@@ -1,0 +1,131 @@
+
+Memcache::add
+
+(PECL memcache >= 0.2.0)
+
+Memcache::add — 增加一个条目到缓存服务器
+
+说明
+
+bool Memcache::add ( string $key , mixed $var [, int $flag [, int $expire ]] )
+
+Memcache::add()方法在缓存服务器之前不存在key时，以key作为key存储一个变量var到缓
+存服务器。同样可以使用函数memcache_add()。
+
+参数
+
+key
+
+    将要分配给变量的key。
+
+var
+
+    将要被存储的变量。字符串和整型被以原文存储，其他类型序列化后存储。
+
+flag
+
+    使用MEMCACHE_COMPRESSED标记对数据进行压缩(使用zlib)。
+
+expire
+
+    当前写入缓存的数据的失效时间。如果此值设置为0表明此数据永不过期。你可以设置
+    一个UNIX时间戳或以秒为单位的整数（从当前算起的时间差）来说明此数据的过期时
+    间，但是在后一种设置方式中，不能超过 2592000秒（30天）。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。如果这个key已经存在返回FALSE。 
+Memcache::add()方法的其他行为类似 Memcache::set()。
+
+范例
+
+Example #1 Memcache::add()示例
+
+<?php
+
+$memcache_obj = memcache_connect("localhost", 11211);
+
+/* 面向过程编程 API */
+memcache_add($memcache_obj, 'var_key', 'test variable', false, 30);
+
+/* 面向对象编程 API */
+$memcache_obj->add('var_key', 'test variable', false, 30);
+
+?>
+
+参见
+
+  • Memcache::set() - Store data at the server
+  • Memcache::replace() - 替换已经存在的元素的值
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+skeleton of a thread safe updater for an incremental counter:
+
+<?php
+
+$key = "counter";
+$value = $memcache->increment($key, 1);
+if ($value === false) {
+   // --- read from DB ---
+   $query = "SELECT value FROM database";
+   $result = mysql_query($query);
+   $row = mysql_fetch_assoc($result);
+   $db_value = $row["value"];
+   $add_value = $memcache->add($key, $db_value + 1, 0, 0);
+   if ($add_value === false) {
+      $value = $memcache->increment($key, 1)
+      if ($value === false) {
+          error_log ("counter update failed.");
+      }
+   } else {
+      $value = $db_value + 1;
+   }
+}
+
+// --- display counter value ---
+echo $value;
+
+?>
+===============================================================================
+
+Race conditions happen on an heavy load server when more than one thread tries
+to execute memcache_add.
+For example if thread A and thread B try to save the same key you can test that
+sometimes both return TRUE.
+To have the right behaviour you can verify that the correct value is in the
+assigned key:
+
+<?php
+function memcache_safeadd(&$memcache_obj, $key, $value, $flag, $expire)
+{
+    if (memcache_add($memcache_obj, $key, $value, $flag, $expire))
+    {
+        return ($value == memcache_get($memcache_obj, $key));
+    }
+    return FALSE;
+}
+?>
+===============================================================================
+
+It looks like add() function is truly 100% atomic, and safeadd bicycle
+mentioned in the other comment is useless. There are few links where developers
+of Memcahed explained it deeper
+
+http://lists.danga.com/pipermail/memcached/2008-March/006647.html
+http://www.serverphorums.com/read.php?9,214222
+===============================================================================
+
+It's also good to note that add will succeed if the key exists but is expired
+===============================================================================
+
+[c.2007]
+if you read source code for MMC_SERIALIZED you will see at line ~1555 that [a
+line ~1560]
+!(is_string,is_long,is_double,is_bool)
+
+[is] serialized and that serialized values are flaged as MMC_SERIALIZED for
+return (fetch) code unserialize these values again

@@ -1,0 +1,730 @@
+
+unserialize
+
+(PHP 4, PHP 5, PHP 7)
+
+unserialize — 从已存储的表示中创建 PHP 的值
+
+说明
+
+mixed unserialize ( string $str )
+
+unserialize() 对单一的已序列化的变量进行操作，将其转换回 PHP 的值。
+
+参数
+
+str
+
+    序列化后的字符串。
+
+    若被解序列化的变量是一个对象，在成功地重新构造对象之后，PHP 会自动地试图去
+    调用 __wakeup() 成员函数（如果存在的话）。
+
+        Note: unserialize_callback_func 指令
+
+        如果在解序列化的时候需要实例化一个未定义类，则可以设置回调函数以供调用
+        （以免得到的是不完整的 object “__PHP_Incomplete_Class”）。可通过
+        php.ini、ini_set() 或 .htaccess 定义‘unserialize_callback_func’。每次实
+        例化一个未定义类时它都会被调用。若要禁止这个特性，只需置空此设定。
+
+返回值
+
+返回的是转换之后的值，可为 integer、float、string、array 或 object。
+
+如果传递的字符串不可解序列化，则返回 FALSE，并产生一个 E_NOTICE。
+
+更新日志
+
+版本                   说明
+4.2.0 添加了 unserialize_callback_func 指令。
+
+范例
+
+Example #1 unserialize() 例子
+
+<?php
+// 这里，我们使用 unserialize() 装载来自数据库的 $session_data 数组中的会话数据
+。
+// 此例是描述 serialize() 的那个例子的补充。
+
+$conn = odbc_connect("webdb", "php", "chicken");
+$stmt = odbc_prepare($conn, "SELECT data FROM sessions WHERE id = ?");
+$sqldata = array($_SERVER['PHP_AUTH_USER']);
+if (!odbc_execute($stmt, $sqldata) || !odbc_fetch_into($stmt, $tmp)) {
+    // 如果执行出错或返回错误，则初始化为空数组
+    $session_data = array();
+} else {
+    // 现在我们需要的是 $tmp[0] 中已序列化的数据。
+    $session_data = unserialize($tmp[0]);
+    if (!is_array($session_data)) {
+        // 出错，初始化为空数组
+        $session_data = array();
+    }
+}
+?>
+
+Example #2 unserialize_callback_func 例子
+
+<?php
+$serialized_object='O:1:"a":1:{s:5:"value";s:3:"100";}';
+
+// unserialize_callback_func 从 PHP 4.2.0 起可用
+ini_set('unserialize_callback_func', 'mycallback'); // 设置您的回调函数
+
+function mycallback($classname) 
+{
+   // 只需包含含有类定义的文件
+   // $classname 指出需要的是哪一个类
+}
+?>
+
+注释
+
+Warning
+
+如果反序列化了 FALSE 的值，或者在过程中发生了错误，都会返回 FALSE。可以通过 str
+和 serialize(false) 进行比较，或者捕捉 E_NOTICE 错误来判断这种特殊情况。
+
+参见
+
+  • serialize() - 产生一个可存储的值的表示
+  • 自动加载对象
+  • unserialize_callback_func
+  • __wakeup()
+
+
+User Contributed Notes 22 notes
+
+===============================================================================
+
+When you serialize an object of a class from a particular namespace, the
+namespace is recorded as part of the serialization. If you decide to change
+this namespace's name, it can be hard to read in old serialized objects. I.e.,
+suppose you had serialized an object of type foo\A, you change the namespace of
+your project to goo but otherwise leave the class definition of A unchanged.
+You would like to be able to unserialize the object as goo\A, instead
+unserialization will only create a partial object. To fix this in the case
+where you don't have nested objects in your class definition, you can use the
+following simple rename function:
+/**
+* Used to change the namespace of a serialized php object (assumes doesn't
+* have nested subobjects)
+*
+* @param string $class_name new fully qualified name with namespace
+* @param string $object_string serialized object
+*
+* @return string serialized object with new name
+*/
+function renameSerializedObject($class_name, $object_string)
+{
+    /*  number of digits in the length of name of the object needs to be
+        less than 12 digits (probably more like 4) for this to work.
+    */
+    $name_length = intval(substr($object_string, 2, 14));
+    $name_space_info_length = strlen("O:".$name_length.":") +
+        $name_length + 2; // 2 for quotes;
+    $object_string = 'O:' .
+        strlen($class_name) . ':"'. $class_name.'"' .
+        substr($object_string, $name_space_info_length);
+    return $object_string;
+}
+===============================================================================
+
+Just a note - if the serialized string contains a reference to a class that
+cannot be instantiated (e.g. being abstract) PHP will immediately die with a
+fatal error. If the unserialize() statement is preceded with a '@' to avoid
+cluttering the logs with warns or notices there will be absolutely no clue as
+to why the script stopped working. Cost me a couple of hours...
+===============================================================================
+
+As mentioned in the notes, unserialize returns false in the event of an error
+and for boolean false. Here is the first solution mentioned, without using
+error handling:
+
+<?php
+function isSerialized($str) {
+    return ($str == serialize(false) || @unserialize($str) !== false);
+}
+
+var_dump(isSerialized('s:6:"foobar";')); // bool(true)
+var_dump(isSerialized('foobar'));        // bool(false)
+var_dump(isSerialized('b:0;'));          // bool(true)
+?>
+===============================================================================
+
+__PHP_Incomplete_Class Object Demystified
+
+1. First take note of the output. A simple example:
+
+__PHP_Incomplete_Class Object (
+[__PHP_Incomplete_Class_Name] => SomeObject1
+[obj1property1] => somevalue1 [obj1property2] => __PHP_Incomplete_Class Object
+( [__PHP_Incomplete_Class_Name] => SomeObject2 [obj2property1] => somevalue1
+[obj2property2] => Array (
+['key1'] => somevalue3, ['key2'] => somevalue4 ) ) )
+
+2. We analyze this and break it down.
+__PHP_Incomplete_Class Object tells you there is an object that needs to be
+declared somehow.
+__PHP_Incomplete_Class_Name simply tells you the expected class name. It is
+just one of the properties for now.
+
+So we have:
+a) an unknown object that has a class name SomeObject1 (first class)
+b) it has 2 properties, namely obj1property1 and obj2property2
+c) obj2property2 is itself an object whose class name is SomeObject2 (the
+second class)
+d) SomeObject2 has two properties, obj2property1 and obj2property2
+e) obj2property2 is an array that contains two elements
+
+3. Now that we have an idea of the structure, we shall create class definitions
+based from it. We will just create properties for now, methods are not required
+as a minimum.
+
+<?php
+class SomeObject1 {
+        public $obj1property1;
+        public $obj1property2;
+}
+class SomeObject2 {
+        public $obj2property1;
+        public $obj2property2;
+}
+?>
+
+4. Have that accessible to your script and it will solve the
+__PHP_Incomplete_Class Object problem as far as the output is concerned. Now
+you will have:
+
+SomeObject1 ( [obj1property1] => somevalue1 [obj1property2] => SomeObject2 (
+[obj2property1] => somevalue1 [obj2property2] => Array ( ['key1'] =>
+somevalue3, ['key2'] => somevalue4 ) ) )
+
+As you will notice, __PHP_Incomplete_Class Object is gone and replaced by the
+class name. The property __PHP_Incomplete_Class_Name is also removed.
+
+5. As for the array property obj2property2, we can directly access that and
+just assume that it is an array and loop through it:
+
+<?php
+
+// this will be SomeObject1
+$data = unserialize($serialized_data);
+
+// this will be SomeObject2
+$data2 = $data->obj1property2();
+
+foreach($data2->obj2property2 as $key => $value):
+         print $key.' : '. $value .'<br>';
+endforeach;
+
+?>
+
+Outputs:
+key1 : somevalue3
+key2 : somevalue4
+
+That's it. You can add more methods on the class declarations for the given
+properties, provided you keep your original output as basis for the data types.
+===============================================================================
+
+In the Classes and Objects docs, there is this: In order to be able to
+unserialize() an object, the class of that object needs to be defined.
+
+Prior to PHP 5.3, this was not an issue.  But after PHP 5.3 an object made by
+SimpleXML_Load_String() cannot be serialized.  An attempt to do so will result
+in a run-time failure, throwing an exception.  If you store such an object in
+$_SESSION, you will get a post-execution error that says this:
+
+Fatal error: Uncaught exception 'Exception' with message 'Serialization of
+'SimpleXMLElement' is not allowed' in [no active file]:0 Stack trace: #0 {main}
+thrown in [no active file] on line 0
+
+The entire contents of the session will be lost.  Hope this saves someone some
+time!
+
+<?php // RAY_temp_ser.php
+error_reporting(E_ALL);
+session_start();
+var_dump($_SESSION);
+$_SESSION['hello'] = 'World';
+var_dump($_SESSION);
+
+// AN XML STRING FOR TEST DATA
+$xml = '<?xml version="1.0"?>
+<families>
+  <parent>
+    <child index="1" value="Category 1">Child One</child>
+  </parent>
+</families>';
+
+// MAKE AN OBJECT (GIVES SimpleXMLElement)
+$obj = SimpleXML_Load_String($xml);
+
+// STORE THE OBJECT IN THE SESSION
+$_SESSION['obj'] = $obj;
+===============================================================================
+
+This little function will check whether the serialized string is well formed.
+
+PHP < 6 because i'd heard changes will be made in this php-intern function,
+maybe it could be edited easy for it.
+
+<?php
+
+function wd_check_serialization( $string, &$errmsg )
+{
+
+    $str = 's';
+    $array = 'a';
+    $integer = 'i';
+    $any = '[^}]*?';
+    $count = '\d+';
+    $content = '"(?:\\\";|.)*?";';
+    $open_tag = '\{';
+    $close_tag = '\}';
+    $parameter = "($str|$array|$integer|$any):($count)" . "(?:[:]($open_tag|
+$content)|[;])";           
+    $preg = "/$parameter|($close_tag)/";
+    if( !preg_match_all( $preg, $string, $matches ) )
+    {           
+        $errmsg = 'not a serialized string';
+        return false;
+    }   
+    $open_arrays = 0;
+    foreach( $matches[1] AS $key => $value )
+    {
+        if( !empty( $value ) && ( $value != $array xor $value != $str xor 
+$value != $integer ) )
+        {
+            $errmsg = 'undefined datatype';
+            return false;
+        }
+        if( $value == $array )
+        {
+            $open_arrays++;                               
+            if( $matches[3][$key] != '{' )
+            {
+                $errmsg = 'open tag expected';
+                return false;
+            }
+        }
+        if( $value == '' )
+        {
+            if( $matches[4][$key] != '}' )
+            {
+                $errmsg = 'close tag expected';
+                return false;
+            }
+            $open_arrays--;
+        }
+        if( $value == $str )
+        {
+            $aVar = ltrim( $matches[3][$key], '"' );
+            $aVar = rtrim( $aVar, '";' );
+            if( strlen( $aVar ) != $matches[2][$key] )
+            {
+                $errmsg = 'stringlen for string not match';
+                return false;
+            }
+        }
+        if( $value == $integer )
+        {
+            if( !empty( $matches[3][$key] ) )
+            {
+                $errmsg = 'unexpected data';
+                return false;
+            }
+            if( !is_integer( (int)$matches[2][$key] ) )
+            {
+                $errmsg = 'integer expected';
+                return false;
+            }
+        }
+    }       
+    if( $open_arrays != 0 )
+    {
+        $errmsg = 'wrong setted arrays';
+        return false;
+    }
+    return true;
+}
+
+?>
+===============================================================================
+
+Here's a simple function to get the class of a serialized string (that is, the
+type of object that will be returned if it's unserialized):
+
+<?php
+function get_serial_class($serial) {
+    $types = array('s' => 'string', 'a' => 'array', 'b' => 'bool', 'i' => 'int'
+, 'd' => 'float', 'N;' => 'NULL');
+   
+    $parts = explode(':', $serial, 4);
+    return isset($types[$parts[0]]) ? $types[$parts[0]] : trim($parts[2], '"');
+}
+?>
+
+I use this when saving a serialized object to a cookie, to make sure it is the
+right type when I go to unserialize it.
+
+The type names are the same format/case as you would see if you did a var_dump
+().
+===============================================================================
+
+I was getting unserialize()  Error at offset error.
+
+If you face similar problem  then use the following procedure
+
+$auctionDetails = preg_replace('!s:(\d+):"(.*?)";!se', "'s:'.strlen('$2').':\
+"$2\";'", $dataArr[$i]['auction_details'] );
+$auctionDetails = unserialize($auctionDetails);
+===============================================================================
+
+Be aware that if useing serialize/unserialize in a serverfarm with both 32bit
+and 64bit servers you can get unexpected results.
+
+Ex: if you serialize an integer with value of 2147483648 on a 64bit system and
+then unserialize it on a 32bit system you will get the value -2147483648
+instead. This is because an integer on 32bit cannot be above 2147483647 so it
+wraps.
+===============================================================================
+
+Anyone having trouble serializing data with SimpleXMLElement objects stored
+within it, check this out:
+
+This will traverse $data looking for any children which are instances of
+SimpleXMLElement, and will run ->asXML() on them, turning them into a string
+and making them serializable. Other data will be left alone.
+
+<?php
+function exportNestedSimpleXML($data) {
+    if (is_scalar($data) === false) {
+        foreach ($data as $k => $v) {
+            if ($v instanceof SimpleXMLElement) {
+                $v = str_replace("&#13;","\r",$v->asXML());
+            } else {
+                $v = exportNestedSimpleXML($v);
+            }
+
+            if (is_array($data)) {
+                $data[$k] = $v;
+            } else if (is_object($data)) {
+                $data->$k = $v;
+            }
+        }
+    }
+
+    return $data;
+}
+
+$data = array (
+    "baz" => array (
+        "foo" => new stdClass(),
+        "int" => 123,
+        "str" => "asdf",
+        "bar" => new SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?>
+<foo>bar</foo>'),
+    )
+);
+
+var_dump($data);
+/*array(1) {
+  ["baz"]=>
+  array(4) {
+    ["foo"]=>
+    object(stdClass)#3 (0) {
+    }
+    ["int"]=>
+    int(123)
+    ["str"]=>
+    string(4) "asdf"
+    ["bar"]=>
+    object(SimpleXMLElement)#4 (1) {
+      [0]=>
+      string(3) "bar"
+    }
+  }
+}*/
+
+var_dump(exportNestedSimpleXML($data));
+/*array(1) {
+  ["baz"]=>
+  array(4) {
+    ["foo"]=>
+    object(stdClass)#3 (0) {
+    }
+    ["int"]=>
+    int(123)
+    ["str"]=>
+    string(4) "asdf"
+    ["bar"]=>
+    string(54) "<?xml version="1.0" encoding="UTF-8"?>
+<foo>bar</foo>
+"
+  }
+}
+*/
+?>
+===============================================================================
+
+To all who have problem with quoting and slashes when storing serialized data
+in MySQL: you are probably doing it wrong.
+
+Use e.g. PDO with placeholders and the blob column type, and it will Just Work.
+===============================================================================
+
+When dealing with a string which contain "\r", it seems that the length is not
+evaluated correctly. The following solves the problem for me :
+
+<?php
+// remove the \r caracters from the $unserialized string
+$unserialized = str_replace("\r","",$unserialized);
+
+// and then unserialize()
+unserialize($unserialized);
+?>
+===============================================================================
+
+When you use sessions, its very important to keep the sessiondata small, due to
+low performance with unserialize. Every class shoud extend from this class. The
+result will be, that no null Values are written to the sessiondata. It will
+increase performance.
+
+<?
+class BaseObject
+{
+    function __sleep()
+    {
+        $vars = (array)$this;
+        foreach ($vars as $key => $val)
+        {
+            if (is_null($val))
+            {
+                unset($vars[$key]);
+            }
+        }   
+        return array_keys($vars);
+    }
+};
+?>
+===============================================================================
+
+In reply to the earlier post about having to include object definitions
+*before* using unserialize.  There is a workaround for this.
+
+When an object is serialized, the first bit of the string is actually the name
+of the class.  When an unknown object is unserialized, this is maintained as a
+property.  So if you serialize it again, you get back the exact same string as
+if you'd serialized the original object.  Basically, to cut to the point...
+
+If you use
+
+$_SESSION['my_object'] = unserialize(serialize($_SESSION['my_object']))
+
+then you get back an object of the correct type, even if the session had
+originally loaded it as an object of type stdClass.
+===============================================================================
+
+I faced with error when serializing/deserializing an object. The error looks
+like
+Notice: unserialize(): Error at offset 2 of 52 bytes in file.php on line 130
+
+and found solution here: http://davidwalsh.name/
+php-serialize-unserialize-issues
+
+The safe way to serialize and unserialize:
+
+//to safely serialize
+$serialized = base64_encode(serialize($var));
+
+//to unserialize...
+$unserialized = unserialize(base64_decode($var));
+===============================================================================
+
+When trying to serialize or unserialize recursive arrays or otherwise linked
+data you might find the undocumented R data type quite useful.
+
+If you want a array like the one produced with
+<?
+$a = array();
+$a[0] =& $a;
+?>
+serialized you can store it using a string simular to this one:
+<?
+$a = unserialize("a:1:{i:0;R:1;}");
+?>
+
+Both sources will make $a hold an array that self-references itself in index 0.
+
+The argument for R is the index of the created sub-variable of the
+serialize-string beginning with 1.
+===============================================================================
+
+a replacement for unserialize that returns whether it worked and populates the
+unserialized variable by reference:
+<?php
+function funserialize($serialized, &$into) {
+    static $sfalse;
+    if ($sfalse === null)
+        $sfalse = serialize(false);
+    $into = @unserialize($serialized);
+    return $into !== false || rtrim($serialized) === $sfalse;//whitespace at
+end of serialized var is ignored by PHP
+}
+
+$s_foo = 'b:0;';
+var_dump(funserialize($s_foo, $foo), $foo);
+
+$s_bar = 'bar';
+var_dump(funserialize($s_bar, $bar), $bar);
+
+$s_foo = 'a:0:{};';
+var_dump(funserialize($s_foo, $foo), $foo);
+
+?>
+gives:
+
+bool(true)
+bool(false)
+
+bool(false)
+bool(false)
+
+bool(true)
+array(0) {
+}
+===============================================================================
+
+A quick note:
+If you store a serialized object in a session, you have to include the class
+_before_ you initialize (session_start()) the session.
+===============================================================================
+
+To check if a string is serialized:
+
+$blSerialized=(@unserialize($sText)||$sText=='b:0;');
+===============================================================================
+
+When unserializing in PHP5 (behavior observed with 5.1.2), __autoload() will be
+checked first, and unserialize_callback_func called only if __autoload failed
+to load the class definition.
+===============================================================================
+
+When dealing with sessions, try session_decode($data) instead of unserialize
+($data).
+===============================================================================
+
+If instead of using JSON, you'd like to stick with PHP-style serialization,
+here's some JavaScript code I posted at http://magnetiq.com for serializing
+JavaScript objects in PHP fashion:
+
+/* Returns the class name of the argument or undefined if
+   it's not a valid JavaScript object.
+*/
+function getObjectClass(obj)
+{
+    if (obj && obj.constructor && obj.constructor.toString)
+    {
+        var arr = obj.constructor.toString().match(
+            /function\s*(\w+)/);
+
+        if (arr && arr.length == 2)
+        {
+            return arr[1];
+        }
+    }
+
+    return undefined;
+}
+
+/* Serializes the given argument, PHP-style.
+
+   The type mapping is as follows:
+
+   JavaScript Type    PHP Type
+   ---------------    --------
+   Number             Integer or Decimal
+   String             String
+   Boolean            Boolean
+   Array              Array
+   Object             Object
+   undefined          Null
+
+   The special JavaScript object null also becomes PHP Null.
+   This function may not handle associative arrays or array
+   objects with additional properties well.
+*/
+function phpSerialize(val)
+{
+    switch (typeof(val))
+    {
+    case "number":
+        return (Math.floor(val) == val ? "i" : "d") + ":" +
+            val + ";";
+    case "string":
+        return "s:" + val.length + ":\"" + val + "\";";
+    case "boolean":
+        return "b:" + (val ? "1" : "0") + ";";
+    case "object":
+        if (val == null)
+        {
+            return "N;";
+        }
+        else if ("length" in val)
+        {
+            var idxobj = { idx: -1 };
+
+            return "a:" + val.length + ":{" + val.map(
+                function (item)
+                {
+                    this.idx++;
+
+                    var ser = phpSerialize(item);
+
+                    return ser ?
+                        phpSerialize(this.idx) + ser :
+                        false;
+                }, idxobj).filter(
+                function (item)
+                {
+                    return item;
+                }).join("") + "}";
+        }
+        else
+        {
+            var class_name = getObjectClass(val);
+
+            if (class_name == undefined)
+            {
+                return false;
+            }
+
+            var props = new Array();
+
+            for (var prop in val)
+            {
+                var ser = phpSerialize(val[prop]);
+
+                if (ser)
+                {
+                    props.push(phpSerialize(prop) + ser);
+                }
+            }
+            return "O:" + class_name.length + ":\"" +
+                class_name + "\":" + props.length + ":{" +
+                props.join("") + "}";
+        }
+    case "undefined":
+        return "N;";
+    }
+
+    return false;
+}
+
+On the client side, you can pass in a complex (nested) JavaScript object to the
+phpSerialize function to get a PHP-style serialized representation. This string
+can be posted back and directly passed to the unserialize function to yield a
+representation of the complex object in PHP realm. Use of this technique
+requires caution on security matters.

@@ -1,0 +1,250 @@
+
+stream_get_line
+
+(PHP 5, PHP 7)
+
+stream_get_line — 从资源流里读取一行直到给定的定界符
+
+说明
+
+string stream_get_line ( resource $handle , int $length [, string $ending ] )
+
+从给定的资源流里读取一行。
+
+当读取到 length 个字节数就结束，或者当在读取的字符串中发现 ending （不包含到返
+回值里）也结束，又或者遇到了 EOF 也结束（总之以上条件中哪个先出现就以哪个为准）
+。
+
+这个函数与 fgets() 几乎是相同的，唯一的区别是在这个函数里面允许指定行尾的定界符
+，而不是使用标准的 \n， \r 还有 \r\n ，并且返回值中不包含定界符。（翻译注：也可
+以把 \n 等作为定界符传入 ending ）
+
+参数
+
+handle
+
+    一个有效的文件句柄。
+
+length
+
+    需要从句柄里读取的字节数。
+
+ending
+
+    可选参数，字符串定界符。
+
+返回值
+
+返回一个字符串，该字符串的内容根据 length 字节数从 handle 里读取。
+
+如果发生错误，则返回 FALSE.
+
+参见
+
+  • fread() - 读取文件（可安全用于二进制文件）
+  • fgets() - 从文件指针中读取一行
+  • fgetc() - 从文件指针中读取字符
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+I've spent quite a while trying to get stream_get_line to get a chunk encoded
+html file and to finish correctly at the end so that I can pipeline requests.
+
+This is the function I have come up with.
+
+<?php
+    function getURLContents($url, $ip, $port, $ssl = false, $closeConnection = 
+false)
+    {
+        if ($ssl)
+            $ssl = 'ssl://';
+        else
+            $ssl = '';
+        $fp = pfsockopen($ssl.$ip, $port, $errno, $errstr, 
+MAX_TIME_TO_START_CONNECTION);
+        if ($fp)
+        {
+            $out =  'GET '.$url." HTTP/1.1\r\n";
+            $out .= 'Host: '.$ip.':'.$port."\r\n";
+            if ($closeConnection)
+                $out .= "Connection: close\r\n";
+            else
+                $out .= "Connection: keep-alive\r\n";
+            $out .= "\r\n";
+            if (!fwrite($fp, $out))
+            {
+                echo 'Problem writing to socket, opening a new connection.';
+                fclose($fp);
+                $fp = pfsockopen($ssl.$ip, $port, $errno, $errstr, 
+MAX_TIME_TO_START_CONNECTION);
+                fwrite($fp, $out);
+            }
+            $theData = '';
+            $notDone = true;
+            stream_set_blocking($fp, 0);
+            $startTime = time();
+            $lastTime = $startTime;
+            while (!feof($fp) && !$done && (($startTime + 
+MAX_TIME_FOR_THE_RESPONSE) > time()))
+            {
+                usleep(100);
+                $theNewData = stream_get_line($fp, 1024, "\n");
+                $theData .= $theNewData;
+                $done = (trim($theNewData) === '0');
+
+            }
+        }
+        else
+        {
+            echo 'ERROR CONNECTING TO '.$ip.':'.$port;
+            return false;
+        }
+        if ($closeConnection)
+            fclose($fp);
+        return $theData;
+    }
+?>
+===============================================================================
+
+If you are specifying the 3rd optional "ending" parameter as a string which is
+more than one character and actually find that the line returned by the
+function sometimes contains this "ending" value it may be related to the
+following bug, https://bugs.php.net/bug.php?id=63240
+
+Our server was running 5.3.18 and when we upgraded to 5.3.20 it worked fine, I
+believe this was fixed in 5.3.19 though.
+===============================================================================
+
+fgets is faster but stream_get_line is more useful in a tcp server scripts.
+
+when fgets reads some bytes from socket, where EOF is reached, it returns bool
+(false) same as stream_get_line
+
+BUT if remote client drops connection, and server script will try to read some
+data with function fgets, function will return bool(false), and stream_get_line
+will return string(0) ""
+
+so you can detect remote client disconnection with stream_get_line, and cannot
+with fgets
+===============================================================================
+
+If the "ending" is a string, there are cases where the function doesn't return
+the correct value for the first time it is called. Don't be shocked if you find
+it returning a string value of upto "length" that includes the "ending". (See
+bug #44607)
+
+If the "ending" is just a single character, the function would always work
+correctly. ("\n" is a single character)
+
+Temporarily, until this is fixed, the below function can be used:
+
+<?php
+function istream_get_line(&$fp, $length, $end) {
+    $current = ftell($fp);
+    $str = fread($fp, $length);
+    $i = strpos($str, $end);
+    if ($i === FALSE) {
+        return $str;   
+    } else {
+        fseek($fp, $current + $i + strlen($end));
+        return substr($str, 0, $i);
+    }
+}
+?>
+===============================================================================
+
+I have been struggling with the problem that stream_get_line() sometimes reads
+too much when the 3rd parameter is used (and the 3rd parameter has a length
+greater than 1), so $ending is actually contained in the data returned (https:/
+/bugs.php.net/bug.php?id=63240).
+
+I don't have the option of upgrading my PHP version but it seems that a
+workaround can be to insert:
+
+    fseek($fp, ftell($fp));
+
+just before calling stream_get_line().
+===============================================================================
+
+WARNING:
+Specifying a length of 0 does NOT give you an infinite length, contrary to what
+the documentation might suggest. Instead, setting a length of 0 just makes the
+function default to a length of 8192. To be precise, it gets the value
+PHP_SOCK_CHUNK_SIZE (8192) in ext/standard/streamsfuncs.c.
+
+So, let's say you're trying to read ALL data until you reach a "\x03" (decimal
+3) byte. How do you GUARANTEE that this is the case? Well, there's no way! The
+only thing you can do stream_get_lin() into a "master" string, then fseek()
+backwards by 1 character, then fgetc() and verify that it's "\x03". If you
+don't see a "\x03", it means that stream_get_line() has aborted after 8192
+bytes and before hitting "\x03", and you'll have to call it again. Keep
+appending the return values to a "master" string until you hit a "\x03" or
+EOF... That's the ONLY way to properly build a string that contains EVERYTHING
+until the character you're looking for.
+===============================================================================
+
+My testing has found this function to be dramatically faster than fgets on PHP
+5.1.14.  The difference is probably due to how buffering is used internally. 
+Compare the following:
+<?php
+// reads 10,000 lines in 27 seconds
+while (!feof($handle)) {
+    $line = fgets($handle, 1000000);
+}
+?>
+vs.
+<?php
+// reads 10,000 lines in 0.5 seconds
+while (!feof($handle)) {
+    $line = stream_get_line($handle, 1000000, "\n");
+}
+?>
+===============================================================================
+
+In version 5.0.4 using this funtion and then calling ftell($stream) would give
+you the position up to but not including the "ending" string.
+
+When I rev'd to PHP version 5.1.2, calling this function then using ftell
+($stream) would give the position up to AND including the "ending" string
+
+for example, parsing HTTP responses.
+
+The response from apache using curl....
+------------------------------------------------------------
+HTTP/1.1 200 OK
+Date: Tue, 18 Apr 2006 20:54:59 GMT
+Server: Apache/1.3.33 (Unix) PHP/5.0.4 mod_ssl/2.8.22 OpenSSL/0.9.7e
+X-Powered-By: PHP/5.0.4
+Transfer-Encoding: chunked
+Content-Type: text/html
+
+<html><body>test</body></html>
+-------------------------------------------------------------
+
+The code:
+
+<?php
+
+  $headers = stream_get_line($in,4096,"\r\n\r\n");
+
+   fseek ($in,ftell($in)+4);
+
+   while (!feof($in)){
+      fputs ($out,stream_get_line($in,4096,''));
+   }
+
+?>
+
+prior to my 5.0.4 this worked perfectly, trimming the \r\n\r\n section of the
+HTTP response and seperating the top into the $headers string, and the rest was
+placed into the file handle $out.
+
+using php 5.1.2, the above code chopps off the first 4 bytes of the HTTP
+response and puts
+
+l><body>test</body></html>
+
+into $out.

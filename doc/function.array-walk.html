@@ -1,0 +1,1106 @@
+
+array_walk
+
+(PHP 4, PHP 5, PHP 7)
+
+array_walk — 使用用户自定义函数对数组中的每个元素做回调处理
+
+说明
+
+bool array_walk ( array &$array , callable $funcname [, mixed $userdata = NULL
+] )
+
+将用户自定义函数 funcname 应用到 array 数组中的每个单元。
+
+array_walk() 不会受到 array 内部数组指针的影响。array_walk() 会遍历整个数组而不
+管指针的位置。
+
+参数
+
+array
+
+    输入的数组。
+
+funcname
+
+    典型情况下 funcname 接受两个参数。array 参数的值作为第一个，键名作为第二个
+    。
+
+        Note:
+
+        如果 funcname 需要直接作用于数组中的值，则给 funcname 的第一个参数指定
+        为引用。这样任何对这些单元的改变也将会改变原始数组本身。
+
+        Note:
+
+        Many internal functions (for example strtolower()) will throw a warning
+        if more than the expected number of argument are passed in and are not
+        usable directly as funcname.
+
+    只有 array 的值才可以被改变，用户不应在回调函数中改变该数组本身的结构。例如
+    增加/删除单元，unset 单元等等。如果 array_walk() 作用的数组改变了，则此函数
+    的的行为未经定义，且不可预期。
+
+userdata
+
+    如果提供了可选参数 userdata，将被作为第三个参数传递给 callback funcname。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+错误／异常
+
+如果 funcname 函数需要的参数比给出的多，则每次 array_walk() 调用 funcname 时都
+会产生一个 E_WARNING 级的错误。这些警告可以通过在 array_walk() 调用前加上 PHP
+的错误操作符 @ 来抑制，或者用 error_reporting()。
+
+范例
+
+Example #1 array_walk() 例子
+
+<?php
+$fruits = array("d" => "lemon", "a" => "orange", "b" => "banana", "c" => 
+"apple");
+
+function test_alter(&$item1, $key, $prefix)
+{
+    $item1 = "$prefix: $item1";
+}
+
+function test_print($item2, $key)
+{
+    echo "$key. $item2<br />\n";
+}
+
+echo "Before ...:\n";
+array_walk($fruits, 'test_print');
+
+array_walk($fruits, 'test_alter', 'fruit');
+echo "... and after:\n";
+
+array_walk($fruits, 'test_print');
+?>
+
+以上例程会输出：
+
+Before ...:
+d. lemon
+a. orange
+b. banana
+c. apple
+... and after:
+d. fruit: lemon
+a. fruit: orange
+b. fruit: banana
+c. fruit: apple
+
+参见
+
+  • array_walk_recursive() - 对数组中的每个成员递归地应用用户函数
+  • iterator_apply() - 为迭代器中每个元素调用一个用户自定义函数
+  • create_function() - Create an anonymous (lambda-style) function
+  • list() - 把数组中的值赋给一些变量
+  • each() - 返回数组中当前的键／值对并将数组指针向前移动一步
+  • call_user_func_array() - 调用回调函数，并把一个数组参数作为回调函数的参数
+  • array_map() - 将回调函数作用到给定数组的单元上
+  • callback 类型的信息
+  • foreach
+
+
+User Contributed Notes 34 notes
+
+===============================================================================
+
+It's worth nothing that array_walk can not be used to change keys in the array.
+The function may be defined as (&$value, $key) but not (&$value, &$key).
+Even though PHP does not complain/warn, it does not modify the key.
+===============================================================================
+
+Calling an array Walk inside a class
+
+If the class is static:
+array_walk($array, array('self', 'walkFunction'));
+or
+array_walk($array, array('className', 'walkFunction'));
+
+Otherwise:
+array_walk($array, array($this, 'walkFunction'));
+===============================================================================
+
+Note that using array_walk with intval is inappropriate.
+There are many examples on internet that suggest to use following code to
+safely escape $_POST arrays of integers:
+<?php
+array_walk($_POST['something'],'intval'); // does nothing in PHP 5.3.3
+?>
+It works in _some_ older PHP versions (5.2), but is against specifications.
+Since intval() does not modify it's arguments, but returns modified result, the
+code above has no effect on the array and will leave security hole in your
+website.
+
+You can use following instead:
+<?php
+$_POST['something'] = array_map(intval,$_POST['something']);
+?>
+===============================================================================
+
+Don't forget about the array_map() function, it may be easier to use!
+
+Here's how to lower-case all elements in an array:
+
+<?php
+    $arr = array_map('strtolower', $arr);
+?>
+===============================================================================
+
+Using lambdas you can create a handy zip function to zip together the keys and
+values of an array. I extended it to allow you to pass in the "glue" string as
+the optional userdata parameter. The following example is used to zip an array
+of email headers:
+
+<?php
+
+/**
+* Zip together the keys and values of an array using the provided glue
+*
+* The values of the array are replaced with the new computed value
+*
+* @param array $data
+* @param string $glue
+*/
+function zip(&$data, $glue=': ')
+{
+    if(!is_array($data)) {
+        throw new InvalidArgumentException('First parameter must be an array');
+    }
+
+    array_walk($data, function(&$value, $key, $joinUsing) {
+        $value = $key . $joinUsing . $value;
+    }, $glue);
+}
+
+$myName = 'Matthew Purdon';
+$myEmail = 'matthew@example.com';
+$from = "$myName <$myEmail>";
+
+$headers['From'] = $from;
+$headers['Reply-To'] = $from;
+$headers['Return-path'] = "<$myEmail>";
+$headers['X-Mailer'] = "PHP" . phpversion() . "";
+$headers['Content-Type'] = 'text/plain; charset="UTF-8"';
+
+zip($headers);
+
+$headers = implode("\n", $headers);
+$headers .= "\n";
+
+echo $headers;
+
+/*
+From: Matthew Purdon <matthew@example.com>
+Reply-To: Matthew Purdon <matthew@example.com>
+Return-path: <matthew@example.com>
+X-Mailer: PHP5.3.2
+Content-Type: text/plain; charset="UTF-8"
+*/
+?>
+===============================================================================
+
+It can be very useful to pass the third (optional) parameter by reference while
+modifying it permanently in callback function. This will cause passing modified
+parameter to next iteration of array_walk(). The exaple below enumerates items
+in the array:
+
+<?php
+function enumerate( &$item1, $key, &$startNum ) {
+   $item1 = $startNum++ ." $item1";
+}
+
+$num = 1;
+
+$fruits = array( "lemon", "orange", "banana", "apple");
+array_walk($fruits, 'enumerate', $num );
+
+print_r( $fruits );
+
+echo '$num is: '. $num ."\n";
+?>
+
+This outputs:
+
+Array
+(
+    [0] => 1 lemon
+    [1] => 2 orange
+    [2] => 3 banana
+    [3] => 4 apple
+)
+$num is: 1
+
+Notice at the last line of output that outside of array_walk() the $num
+parameter has initial value of 1. This is because array_walk() does not take
+the third parameter by reference.. so what if we pass the reference as the
+optional parameter..
+
+<?php
+$num = 1;
+
+$fruits = array( "lemon", "orange", "banana", "apple");
+array_walk($fruits, 'enumerate', &$num ); // reference here
+
+print_r( $fruits );
+
+echo '$num is: '. $num ."\n";
+echo "we've got ". ($num - 1) ." fruits in the basket!";
+?>
+
+This outputs:
+Array
+(
+    [0] => 1 lemon
+    [1] => 2 orange
+    [2] => 3 banana
+    [3] => 4 apple
+)
+$num is: 5
+we've got 4 fruits in the basket!
+
+Now $num has changed so we are able to count the items (without calling count()
+unnecessarily).
+
+As a conclusion, using references with array_walk() can be powerful toy but
+this should be done carefully since modifying third parameter outside the
+array_walk() is not always what we want.
+===============================================================================
+
+When i pass the third parameter by reference in php5.2.5,
+happened this: Warning: Call-time pass-by-reference has been deprecated -
+argument passed by value...
+
+And to set allow_call_time_pass_reference to true in php.ini won't work,
+according to http://bugs.php.net/bug.php?id=19699   thus to work around:
+
+<?php
+array_walk($arrChnOut, create_function('&$v, $k, $arr_rtn', 'if ($k{0}!="_")
+{$arr_rtn[0]["_".$v[\'ID\']]=$v; unset($arr_rtn[0][$k]);}'), array(&$arrChnOut
+));
+?>
+===============================================================================
+
+I was looking for trimming all the elements in an array, I found this as the
+simplest solution:
+
+<?php
+array_walk($ids, create_function('&$val', '$val = trim($val);'));
+?>
+===============================================================================
+
+Some speed tests
+
+<?php
+// Test results
+$array1 = test('array_walk');
+$array2 = test('array_walk_list_each');
+$array3 = test('array_walk_foreach1');
+$array4 = test('array_walk_foreach2');
+
+// Check arrays for equal
+var_dump($array1 == $array2, $array1 == $array3, $array1 == $array4);
+
+// Test function 1
+function array_walk_list_each(&$array, $function, $userData = null) {
+    while ( list($key, $value) = each($array) )
+        $function($array[$key], $key, $userData);
+}
+
+// Test function 2
+function array_walk_foreach1(&$array, $function, $userData = null) {
+    foreach ($array as $key => &$value )
+        $function($value, $key, $userData);
+}
+
+// Test function 3
+function array_walk_foreach2(&$array, $function, $userData = null) {
+    foreach ($array as $key => $value )
+        $function($array[$key], $key, $userData);
+}
+
+function some_function(&$value, $key, $userData) {
+    $value = "$key => $userData";
+}
+
+function test($function, $count = 10000, $arrayElements = 1000) {
+    echo $function, ' ... ';
+    $array = array_fill(0, $arrayElements, "some text value");
+   
+    $timer = microtime(true);
+    for( $i = 0; ++$i < $count; )
+        $function($array, 'some_function', 'some user data');
+    printf("%.3f sec\n", microtime(true) - $timer);
+   
+    return $array;
+}
+?>
+
+Output (PHP 5.4.9-4ubuntu2.2 (cli) (built: Jul 15 2013 18:24:39))
+=========================
+array_walk ... 13.572 sec
+array_walk_list_each ... 0.027 sec
+array_walk_foreach1 ... 15.356 sec
+array_walk_foreach2 ... 17.416 sec
+bool(true)
+bool(true)
+bool(true)
+
+Output (PHP 5.5.0 (cli) (built: Jul 16 2013 17:59:42) - same server)
+=========================
+array_walk ... 4.776 sec
+array_walk_list_each ... 0.006 sec
+array_walk_foreach1 ... 4.482 sec
+array_walk_foreach2 ... 5.166 sec
+bool(true)
+bool(true)
+bool(true)
+
+PHP 5.5 array_walk looks pretty good but list each is more and more quickly...
+===============================================================================
+
+Unfortunately I spent a lot of time trying to permanently apply the effects of
+a function to an array using the array_walk function when instead array_map was
+what I wanted. Here is a very simple though effective example for those who may
+be getting overly frustrated with this function...
+
+<?php
+$fruits = array("Lemony & Fresh","Orange Twist","Apple Juice");
+
+print_r($fruits);
+echo '<br />';
+
+function name_base($key)
+{
+$name2 = str_replace(" ", "_", $key);
+$name3 = str_replace("&", "and", $name2);
+$name4 = strtolower($name3);
+echo $name4.'<br />';
+return $name4;
+}
+echo '<br />';
+
+$test = array_map('name_base', $fruits);
+$fruits_fixed = $test;
+echo '<br />';
+print_r($fruits_fixed);
+?>
+===============================================================================
+
+if you want to modify every value of an multidimensional array use this
+function used here:
+
+<?php
+
+$array = array (1=>1, 2=> 2, 3 => array(1=>11, 2=>12, 3=>13));
+$text = "test";
+
+function modarr(&$array, $text) {
+        foreach ($array as $key => $arr) {
+                if(is_array($arr)) $res[$key] = modarr(&$arr,$text);
+                // modification function here
+                else $res[$key] = $arr.$text;
+                }
+        return $res;
+}
+
+$erg = modarr($array, $text);
+
+print_r($erg); 
+
+?>
+
+result will be_
+
+<?php
+Array ( [1] => 1test [2] => 2test [3] => Array ( [1] => 11test [2] => 12test [3
+] => 13test ) )
+?>
+===============================================================================
+
+For completeness one has to mention the possibility of using this function with
+PHP 5.3 closures:
+
+<?php
+$names = array("D\'Artagnan", "Aramis", "Portos");
+array_walk($names, function(&$n) {
+  $n = stripslashes($n);
+});
+?>
+
+The trap with array_walk being it doesn't return the array, instead it's
+modified by reference.
+===============================================================================
+
+You can use lambda function as a second parameter:
+
+<?php
+array_walk($myArray, function(&$value, $key){
+    // if you want to change array values then "&" before the $value is
+mandatory.
+});
+?>
+
+Example (multiply positive values by two):
+
+<?php
+$myArray = array(1, 2, 3, 4, 5);
+
+array_walk($myArray, function(&$value, $index){
+    if ($value > 0) $value *= 2;
+});
+?>
+===============================================================================
+
+array_walk does not work on SplFixedArray objects:
+<?php
+$array = new SplFixedArray(2);
+$array[0] = 'test_1';
+$array[1] = 'test_2';
+
+array_walk($array, function(&$val){
+    $val .= '__';
+    return $val;
+});
+foreach ($array as $a) {
+    echo "$a\n";
+}
+?>
+
+result is:
+test_1
+test_2
+===============================================================================
+
+####### I intuitively tried to use array_walk function with PHP built-in
+function "abs($var)" but it did not work and got some warning message
+
+<?php
+$values = array(-5,2,3,-8,4,-1,0);
+array_walk($values, "abs");
+?>
+
+=> Warning: abs() expects exactly 1 parameter, 2 given in ...
+
+###### Then I wrote this function :
+
+<?php
+function myAbs(&$val){
+    $val =  abs($val);
+}
+array_walk($values, "myAbs");
+?>
+
+##### It works!
+===============================================================================
+
+If you want to unset elements from the callback function, maybe what you really
+need is array_filter.
+===============================================================================
+
+example with closures, checking and deleting value in array:
+
+<?php
+$array = array('foo' => 'bar', 'baz' => 'bat');
+
+array_walk($array, function($val,$key) use(&$array){
+    if ($val == 'bar') {
+        unset($array[$key]);
+    }
+});
+
+var_dump($array);
+===============================================================================
+
+There is a note about 3 years ago regarding using this for trimming. array_map
+() may be cleaner for this. I haven't checked the time/resource impact:
+
+$result = array_map("trim", $array);
+===============================================================================
+
+I wanted to walk an array and reverse map it into a second array.  I decided to
+use array_walk because it should be faster than a reset,next loop or foreach(x
+as &$y) loop.
+
+<?php
+$output = array();
+array_walk($input, 'gmapmark_reverse', $output);
+
+function gmapmark_reverse(&$item, $index, &$target) {
+    $target[$item['form_key']] = $index;
+}
+?>
+
+In my debugger I can see that $target is progressively updated, but when
+array_walk returns, $output is empty.  If however I use a (deprecated)
+call-by-reference:
+
+<?php
+array_walk($input, 'gmapmark_reverse', &$output);
+?>
+
+$output is returned correctly.  Unfortunately there's not an easy way to
+suppress the warnings:
+
+<?php
+@array_walk($input, 'gmapmark_reverse', &$output);
+?>
+
+doesn't silence them.  I've designed a workaround using a static array:
+
+<?php
+$reverse = array();
+array_walk($input, 'gmapmark_reverse');
+// call function one last time to get target array out, because parameters
+don't work
+$reverse = gmapmark_reverse($reverse);
+
+function gmapmark_reverse(&$item, $index = 0) {
+  static $target;
+  if (!$target) {
+    $target = array();
+  }
+  if (isset($item['form_key'])) {
+    $target[$item['form_key']] = $index;
+  }
+  return($target);
+}
+?>
+===============================================================================
+
+Correction for the speed test from zlobnygrif.
+
+<?php
+// Test results
+$array1 = test('array_walk');
+$array2 = test('array_walk_list_each');
+$array3 = test('array_walk_foreach1');
+$array4 = test('array_walk_foreach2');
+
+// Check arrays for equal
+var_dump($array1 == $array2, $array1 == $array3, $array1 == $array4);
+
+// Test function 1
+function array_walk_list_each(&$array, $function, $userData = null) {
+   /* make sure we walk the array each time */
+    reset($array);
+    while ( list($key, $value) = each($array) )
+        $function($array[$key], $key, $userData);
+}
+
+// Test function 2
+function array_walk_foreach1(&$array, $function, $userData = null) {
+    foreach ($array as $key => &$value )
+        $function($value, $key, $userData);
+}
+
+// Test function 3
+function array_walk_foreach2(&$array, $function, $userData = null) {
+    foreach ($array as $key => $value )
+        $function($array[$key], $key, $userData);
+}
+
+function some_function(&$value, $key, $userData) {
+    $value = "$key => $userData";
+}
+
+function test($function, $count = 10000, $arrayElements = 1000) {
+    echo $function, ' ... ';
+    $array = array_fill(0, $arrayElements, "some text value");
+  
+    $timer = microtime(true);
+    for( $i = 0; ++$i < $count; )
+        /* change data for each $i */
+        $function($array, 'some_function', 'some user data ' . $i);
+    printf("%.3f sec\n", microtime(true) - $timer);
+  
+    return $array;
+}
+===============================================================================
+
+/* You can use array_walk to secure your php-code and avoid it against php/
+html-injection. This sample secures incoming user-data: */
+
+<?php
+array_walk($_POST, 'secureInput');
+array_walk($_GET, 'secureInput');
+array_walk($_REQUEST, 'secureInput');
+array_walk($_FILES, 'secureInput);
+
+function secureInput(&$value, $key)
+{
+    $value = trim($value);
+    // removes blank space at beginning an end
+    $value = strip_tags($value);
+    // removes all HTML- an PHP-commands
+    }
+?>
+
+If you want to allow some HTML- or PHP-commands, use this:
+
+    $value = strip_tags($value, '<p><br>');
+// removes all HTML- an PHP-commands, excepted <p></p> and <br /> Tags.
+
+NOTE: it is important to add the "&" infront of $value in the function!
+Otherwhise the function won't remove the HTML- and PHP-code.
+===============================================================================
+
+Filter an array by using key.
+
+<?php
+    $product_1 = 'test';
+    $product_2 = 'test 2';
+
+    function array_key_filter($array,$callback = 'trim')
+    {  
+        $filtered = array();
+        array_walk($array,function ($degeri,$degisken_adi) use (&$filtered,
+$callback)
+        {  
+            if($callback($degisken_adi))
+            {
+                $filtered[$degisken_adi] =  $degeri;
+            }  
+        });
+
+        return $filtered;        
+    }
+
+    #using
+
+    $degiskenler = array_key_filter(get_defined_vars(),function($key)
+    {
+        return strpos($key,'product_') === 0;
+    });
+
+    print_r($degiskenler);
+?>
+output:
+
+Array
+(
+    [product_1] => test
+    [product_2] => test 2
+)
+===============================================================================
+
+You want to get rid of the whitespaces users add in your form fields...?
+Simply use...:
+
+class SomeVeryImportantClass
+{
+...
+    public function mungeFormData(&$data)
+    {
+        array_walk($data, array($this, 'munge'));
+    }
+
+    private function munge(&$value, &$key)
+    {
+        if(is_array($value))
+        {
+            $this->mungeFormData($value);
+        }
+        else
+        {
+            $value = trim($value);
+        }
+    }
+...
+}
+
+so...
+$obj = new SomeVeryImportantClass;
+$obj->mungeFormData($_POST);
+___
+eNc
+===============================================================================
+
+Prefix array values with keys and retrieve as a glued string, the original
+array remains unchanged. I used this to create some SQL queries from arrays.
+
+<?php
+
+function array_implode_prefix($outer_glue, $arr, $inner_glue, $prefix=false){
+    array_walk( $arr , "prefix", array($inner_glue, $prefix) );
+    return implode($outer_glue, $arr);
+}
+
+function prefix(&$value, $key, array $additional){
+    $inner_glue = $additional[0];
+    $prefix = isset($additional[1])? $additional[1] : false;
+    if($prefix === false) $prefix = $key;
+
+    $value = $prefix.$inner_glue.$value;
+}
+
+//Example 1:
+$order_by = array("3"=>"ASC", "2"=>"DESC", "7"=>"ASC");
+echo array_implode_prefix(",", $order_by, " ");
+//Output: 3 ASC,2 DESC,7 ASC
+
+//Example 2:
+$columns = array("product_id", "category_id", "name", "description");
+$table = "product";
+
+echo array_implode_prefix(", ", $columns, ".", $table);
+//Output:product.product_id, product.category_id, product.name,
+product.description
+
+//Example 3 (function prefix) won't really be used on its own
+$pre= "vacation";
+$value = "lalaland";
+prefix($value, $pre, array("."));
+echo $value;
+
+//Output: vacation.lalaland
+
+?>
+===============================================================================
+
+<?php
+   /**
+    *    class.ArrayTool.php lets you search an array based on key => value
+pairs
+    *
+    *   @version 1.0
+    *   @ 1-11-2008
+    *   @author Mike Volmar
+    *
+    *    Object for converting between array key and value
+    *
+    */   
+
+class ArrayTool {
+
+    var $mydata = array();
+    var $flag = 0;
+    var $results;
+   
+    function ArrayTool(){
+
+    }
+   
+    function tellAll(){
+        print_r($this->mydata);
+    }
+   
+    function setArray($data){
+        $this->mydata = $data;
+    }
+
+    function getKey($input){
+        foreach($this->mydata as $key => $value){
+            if(($this->flag == 0)&&($input == $value)){
+                $this->results = $key;
+                $this->flag = 1;
+            }
+        }
+        $this->flag = 0;
+        return $this->results;       
+    }
+
+    function getValue($input){
+        foreach($this->mydata as $key => $value){   
+            if(($this->flag == 0)&&($input == $key)){
+                $this->results = $value;
+                $this->flag = 1;
+            }
+        }
+        $this->flag = 0;
+        return $this->results;
+    }
+
+}
+
+?>
+===============================================================================
+
+I had some problems using this function - it didn't want to apply PHP-defined
+functions. So I decided to write my own - here it is. I had to use some
+generic-programming skills, didn't really checked the speed (I think it could
+be slow)... I believe it could be much better, but I don't know, how - well, I
+guess multiple array support and recursion would be nice. So?
+
+Prototype:
+bool arrayWalk(array &$arry, callback $callback, mixed $params=false)
+
+<?php
+
+    function arrayWalk(&$arry, $callback, $params=false) {
+        $P=array(""); // parameters
+        $a=""; // arguement string :)
+
+        if($params !== false) { // add parameters
+            if(is_array($params)) { // multiple additional parameters
+                foreach($params as $par)
+                    { $P[]=$par; }
+            }
+            else // just one additional
+                { $P[]=$params; }
+        }
+
+        for( // create the arguement string
+            $i=0; isset($P[$i]); ++$i
+        )
+            { $a.='$'.chr($i + 97).', '; } // random argument names
+
+        $a=substr($a, 0, -2); // to get rid of the last comma and two spaces
+
+        $func=create_function($a, 'return '.$callback.'('.$a.');'); // the
+generic function
+
+        if(is_callable($func)) {
+            for( // cycle through array
+                $i=0; isset($arry[$i]); ++$i
+            ) {
+                $P[0]=$arry[$i]; // first element must be the first argument -
+array value
+                $arry[$i] = call_user_func_array($func, $P); // assign the new
+value obtained by the generic function
+            }
+        }
+        else
+            { return false; } // failure - function not callable
+
+        return true; // success!
+    } // arrayWalk()
+
+?>
+
+One big problem I've noticed so far - for example, if you wanted to use
+str_replace on the array, you'd fail - simply because of the arguement order of
+str_replace, where the string modified is the third arguement, not the first as
+arrayWalk requires.
+
+So, still some work left...
+===============================================================================
+
+Beware that "array ($this, method)" construct. If you're wanting to alter
+members of the "$this" object inside "method" you should construct the callback
+like this:
+
+  $callback[] = &$this;
+  $callback[] = method;
+  array_walk ($input, $callback);
+
+Creating your callback using the array() method as suggested by "appletalk"
+results in a copy of $this being passed to method, not the original object,
+therefor any changes made to the object by method will be lost when array_walk
+() returns. While you could construct the callback with "array(&$this, method)
+", I believe this relies on the deprecated runtime pass-by-reference mechanism
+which may be removed in future releases of PHP. Better to not create a
+dependence on that feature now than having to track it down and fix it in the
+future.
+===============================================================================
+
+If array_walk_recursive() is not present and you want to apply htmlentities()
+on each array element you can use this:
+
+<?php
+function array_htmlentities(&$elem)
+{
+  if (!is_array($elem))
+  {
+    $elem=htmlentities($elem);
+  }
+  else
+  {
+    foreach ($elem as $key=>$value)
+      $elem[$key]=array_htmlentities($value);
+  }
+  return $elem;
+} // array_htmlentities()
+?>
+
+If you want to output an array with print_r() and you have html in it this
+function is very helpful.
+===============================================================================
+
+In response to 'ibolmo', this is an extended version of string_walk, allowing
+to pass userdata (like array_walk) and to have the function edit the string in
+the same manner as array_walk allows, note now though that you have to pass a
+variable, since PHP cannot pass string literals by reference (logically).
+
+<?php
+function string_walk(&$string, $funcname, $userdata = null) {
+    for($i = 0; $i < strlen($string); $i++) {
+        # NOTE: PHP's dereference sucks, we have to do this.
+        $hack = $string{$i};
+        call_user_func($funcname, &$hack, $i, $userdata);
+        $string{$i} = $hack;
+    }
+}
+
+function yourFunc($value, $position) {
+    echo $value . ' ';
+}
+
+function yourOtherFunc(&$value, $position) {
+    $value = str_rot13($value);
+}
+
+# NOTE: We now need this ugly $x = hack.
+string_walk($x = 'interesting', 'yourFunc');
+// Ouput: i n t e r e s t i n g
+
+string_walk($x = 'interesting', 'yourOtherFunc');
+echo $x;
+// Output: vagrerfgvat
+?>
+
+Also note that calling str_rot13() directly on $x would be much faster ;-) just
+a sample.
+===============================================================================
+
+For all those people trying to shoe-horn trim() into array_walk() and have
+found all these tricks to work around the issue with array_walk() passing 2
+parameters to the callback...
+
+Check out array_map().
+
+http://php.net/array_map
+
+It's all sorts of win.
+
+For the record. I'm one of these people and after 15 years of php development
+I'm pleased to say that there's still things I'm learning. :)  I just found out
+about array_map() myself...
+===============================================================================
+
+here is a simple and yet easy to use implementation of this function.
+the 'original' function has the problem that you can't unset a value.
+with my function, YOU CAN!
+
+<?php
+function array_walk_protected(&$a,$s,$p=null)
+{
+    if(!function_exists($s)||!is_array($a))
+    {
+        return false;
+    }
+   
+    foreach($a as $k=>$v)
+    {
+        if(call_user_func_array($s,array(&$a[$k],$k,$p))===false)
+        {
+            unset($a[$k]);
+        }
+    }
+}
+
+function get_name(&$e,$i,$p)
+{
+    echo "$i: $e<br>";
+    return false;
+}
+
+$m=array('d'=>'33','Y'=>55);
+
+array_walk_protected($m,'get_name');
+
+var_dump($m); //returns array(0) { }
+?>
+
+i called it array_walk_protected because it is protected against the unexpected
+behavior of unsetting the value with the original function.
+
+to delete an element, simply return false!!!
+nothing else is needed!
+unsetting $e, under your created function, will keep the same array as-is, with
+no changes!
+
+by the way, the function returns false if $a is not array or $s is not a
+string!
+
+limitations: it only can run user defined functions.
+i hope you like it!
+===============================================================================
+
+If the project often change the datatype of the array.
+Если в проекте нужно часто менять тип данных в массиве.
+<?php
+/**
+* Callback-функция (для array_walk) преобразует тип данных элементов массива.
+* @param mixed $item Значение элемента обрабатываемого массива.
+* @param int|string $key Ключ элемента массива.
+* @param string $type Тип данных, в который преобразуем элементы массива.
+*/
+function convertTypeValueArray(&$item, $key, $type)
+{   
+    $arValidType = array("boolean", "bool", "integer", "int", "float", "string"
+, "array", "object", "null");
+    $type = strtolower($type);
+    if(in_array($type, $arValidType))
+    {
+        settype($item, $type);
+    }
+}
+
+$arTest = array("", 1, " 2", 3.1, "4.2", " 5 ");
+array_walk($arTest, "convertTypeValueArray", "int");
+var_dump($arTest); // array(6) { [0]=> int(0) [1]=> int(1) [2]=> int(2) [3]=>
+int(3) [4]=> int(4) [5]=> int(5) }
+?>
+===============================================================================
+
+no sure if this should go under array-walk but it does what i need, it searches
+a multidimensionial array by using an array to walk it, it either returns a
+value or an array.
+
+<?php
+function walker($walk, $array) {
+    if (count($walk) >0) {
+        foreach($array as $key => $value) {
+            if ($key == $walk[0]) {
+                if (is_array($value)) {
+                    unset($walk[0]);
+                    return walker(array_values($walk), $value);
+                } else {
+                    if (isset($value)) {
+                        if (count($walk) == 1) {
+                            return $value;
+                        } else {
+                            return 0;
+                        }
+                    } else {
+                        return 0;
+                    }
+                }
+            }
+        }
+        return 0;
+    } else {
+        return $array;
+    }
+}
+?>
+===============================================================================
+
+If anyone is interested to implement the array_walk functionality to a string.
+I've made this handy function. Note that this can be easily extended for any
+type of purpose. I've used this to convert from a string of bytes to a hex
+string then back from hex to a byte string.
+<?php
+function string_walk($string,$funcname)
+{
+    for($i=0;$i<strlen($string);$i++) {
+        call_user_func($funcname,$string{$i});
+    }
+}
+
+function yourFunc($val)
+{
+    echo $val.' ';
+}
+
+string_walk('interesting','yourFunc');
+//ouput: i n t e r e s t i n g
+?>

@@ -1,0 +1,288 @@
+
+apc_store
+
+(PECL apc >= 3.0.0)
+
+apc_store — Cache a variable in the data store
+
+说明
+
+bool apc_store ( string $key , mixed $var [, int $ttl = 0 ] )
+array apc_store ( array $values [, mixed $unused = NULL [, int $ttl = 0 ]] )
+
+缓存一个变量到APC中
+
+    Note: 与PHP中其他的机制不同，使用apc_store() 存储的变量在不同的请求之间一直
+    持久存在（直到从缓存系统中移除）。
+
+参数
+
+key
+
+    存储缓存变量使用的名称.key是唯一的，所以两个值使用同一个 key，原来的将被新
+    的值覆盖。
+
+var
+
+    The variable to store
+
+ttl
+
+    生存时间;在缓存中存储var共ttl秒, 在ttl秒过去后,存储的变量将会从缓存中擦除
+    (在下一次请求时), 如果没有设置ttl(或者ttl是0), 变量将一直存活到被手动移除为
+    止,除此之外不在缓存中的可能原因是，缓存系统使用clear，或者restart等。
+
+values
+
+    Names in key, variables in value.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。 Second syntax returns array with
+error keys.
+
+范例
+
+Example #1 apc_store() 例子
+
+<?php
+$bar = 'BAR';
+apc_store('foo', $bar);
+var_dump(apc_fetch('foo'));
+?>
+
+以上例程会输出：
+
+string(3) "BAR"
+
+参见
+
+  • apc_add() - 缓存一个变量到数据存储
+  • apc_fetch() - 从缓存中取出存储的变量
+  • apc_delete() - 从用户缓存中删除某个变量
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+if you want to store array of objects in apc use ArrayObject wrapper (PHP5).
+
+<?php
+$objs = array();
+$objs[] = new TestClass();
+$objs[] = new TestClass();
+$objs[] = new TestClass();
+
+//Doesn't work
+apc_store('objs',$objs,60);
+$tmp = apc_fetch('objs');
+print_r($tmp);
+
+//Works
+apc_store('objs',new ArrayObject($objs),60);
+$tmp = apc_fetch('objs');
+print_r($tmp->getArrayCopy());
+
+?>
+===============================================================================
+
+APC does serialization/deserialization during store/fetch operations as well as
+it calls __sleep()/__wakeup(), or Serializable::serialize()/
+Serializable::unserialize(). Tested on PHP 5.4.1.0.
+===============================================================================
+
+"Note APC version 3.1.3 there is a bug (http://pecl.php.net/bugs/bug.php?id=
+16814) that will display a cache slam averted warning for all writes to a cache
+var that exists. Slam checking can be disabled by setting apc.slam_defense =
+0."
+
+This is not a bug. Surprisingly, it has been assigned a bug id.It is obviously
+not a bug, because there is a man-made error message, as well as a switch to
+turn off slam checking.
+
+Think about it, would you release code which modifies core system files without
+warning? No, you would make a warning for the user. Same is true with shared
+memory.
+
+I happen to think it is a good feature, it tells you are overwriting
+something... And if you dislike it, turn it off using that setting, or use an @
+in front of the function calls...
+===============================================================================
+
+When specifying a ttl (Time-To-Live), you are allowed to use negative values.
+This causes a stored entry to be invalidated immediately, but note that it will
+not physically be removed until you read (eg. apc_fetch or apc_exists) it:
+
+<?php
+apc_store('testKey', 'testValue', -1); // ... or any negative integer.
+
+// at this point, the key exists physically but is already technically
+invalidated by the ttl.
+
+$test = apc_fetch('testKey'); // $test equals false.
+
+// at this point, the key no longer exists physically.
+?>
+
+Although you could mimic apc_delete with a negative TTL (like when dealing with
+cookies), note that the difference is that apc_delete actually physically
+removes the entry.
+
+This example comes in handy when you want to unit-test a class that uses APC.
+It's faster to use a negative TTL than a positive in combination with a sleep
+call to test whether the cache entry has actually been deleted. Other than that
+I can't think of any situations in which you could use this example, but I'm
+simply pointing out that doing this will not generate Exceptions or errors.
+===============================================================================
+
+Note that caching resources is not possible; even if the apc cache doesn't
+seems to call the serialize / unserialize functions, that doesn't means that
+resources can be cached!
+
+Small non-working example:
+
+<?php
+// Setter code
+$r = fopen( '/tmp/test.txt', 'r' );
+var_dump( $r );
+apc_store( 'test', $r );
+?>
+
+<?php
+// Getter code
+$d = apc_fetch( 'test' );
+var_dump( $d );
+echo fread( $d, 1024 );
+?>
+
+var_dump( $d ) returns Resource #n of type (Unknown). The resource is still
+here, but unavailable.
+===============================================================================
+
+Note that since APC 3.0.15 or 3.0.16, the time-to-live-feature does not work
+within the same request (see http://pecl.php.net/bugs/bug.php?id=13331).
+===============================================================================
+
+Don't save empty arrays and empty values. Sometimes, you can get wrong
+apc_exists($someKey) result, that this key doesn't exists.
+===============================================================================
+
+Note that the TTL only takes effect when you attempt to access the variable
+again (at least in my version).  That is, just issuing a new request to a page
+won't clear outdated items -- you have to call apc_fetch on that specific item.
+
+If you call apc_info after the TTL of an item it will still be listed.
+
+This is important if you are expecting items to be cleared to conserve memory.
+===============================================================================
+
+be sure that setting FALSE values can be wrong returned from fetch since fetch
+return FALSE on errors
+===============================================================================
+
+Functions to update arrays and get the values from an unique key.
+
+<?php
+
+function apc_array_store($apc_var, $key, $valor)
+{
+    $apcTemp = array();
+   
+    if ( $valor == NULL ) return FALSE;
+   
+    if ( $apcTemp = apc_fetch($apc_var) ) // Verifica se a variavel $apc_var
+existe no cache APC
+    { // Se existir
+        if ( !array_key_exists($apcTemp, $key) ) // Verifica se a chave $key
+existe no array
+            $apcTemp[$key] = $valor; // Se $valor não for NULL, adiciona no
+array
+       
+        if ( apc_store("$apc_var", $apcTemp) ) // Tenta atualizar o array no
+cache
+             return TRUE;
+        else return FALSE;
+    }
+    else
+    { // Se a variavel $apc_var nao existir no cache adiciona
+        if ( $valor == NULL ) // Se $valor for NULL retorna FALSE
+            return FALSE;
+        else
+        {    // Se $valor não for NULL, cria o array
+            $apcTemp[$key] = $valor;
+           
+            if ( apc_add("$apc_var", $apcTemp) ) // Tenta adicionar o array no
+cache
+                 return TRUE;
+            else return FALSE;
+        }
+    }
+   
+}
+
+function apc_array_fetch($apc_var, $key)
+{
+
+    if ( $apcTemp = apc_fetch($apc_var) ) // Verifica se a variavel $apc_var
+existe no cache APC
+    { // Se existir
+        if ( !array_key_exists($apcTemp, $key) ) // Verifica se a chave $key
+existe no array
+                return FALSE; // Se não existir retorna FALSE
+            else
+                return $apcTemp[$key]; // Se existir retorna o valor
+    }
+    else // Se não existir
+        return FALSE;
+   
+}
+
+?>
+===============================================================================
+
+Seems to be no (easy) way at the to know how old a value fetched is and to
+check whether it is out of date.
+
+I've made these wrappers so that you can fetch and store values based on a udt
+returned from get_last_modified_date() which should return a udt of when your
+data was last changed, and hence needs junking out of the cache.
+
+<?php
+function apc_fetch_udt($key){
+    $g = apc_fetch($key);
+    if ($g){
+        list($udt,$val) = $g;
+        if (get_last_modified_date()<$udt) {
+            $val = unserialize($val);
+            return $val;
+        } else {
+            apc_delete($key);
+        }
+    }
+}
+function apc_store_udt($key,$g){
+    $udt = time();
+    $g   = serialize($g);
+    $apc = array($udt,$g);
+    apc_store($key, $apc);
+}
+?>
+===============================================================================
+
+Interesting info to read before apc_store() implementation:
+
+http://stackoverflow.com/questions/10494744/
+deadlock-with-apc-exists-apc-add-apc-php
+http://stackoverflow.com/questions/4468805/apc-values-randomly-disappear/
+4532905#4532905
+===============================================================================
+
+Note APC version 3.1.3 there is a bug (http://pecl.php.net/bugs/bug.php?id=
+16814) that will display a cache slam averted warning for all writes to a cache
+var that exists. Slam checking can be disabled by setting apc.slam_defense = 0.
+===============================================================================
+
+It might be interesting to note that storing an object in the cache does not
+serialize the object, i.e. does not call the __sleep()/__wakeup() or serialize
+()/unserialize() methods.

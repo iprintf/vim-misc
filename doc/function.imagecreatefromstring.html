@@ -1,0 +1,465 @@
+
+imagecreatefromstring
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+imagecreatefromstring — 从字符串中的图像流新建一图像
+
+说明
+
+resource imagecreatefromstring ( string $image )
+
+imagecreatefromstring() 返回一个图像标识符，其表达了从给定字符串得来的图像。图
+像格式将自动检测，只要 PHP 支持：JPEG，PNG，GIF，WBMP 和 GD2。
+
+参数
+
+image
+
+    A string containing the image data.
+
+返回值
+
+An image resource will be returned on success. FALSE is returned if the image
+type is unsupported, the data is not in a recognised format, or the image is
+corrupt and cannot be loaded.
+
+范例
+
+Example #1 imagecreatefromstring() example
+
+<?php
+$data = 'iVBORw0KGgoAAAANSUhEUgAAABwAAAASCAMAAAB/2U7WAAAABl'
+       . 'BMVEUAAAD///+l2Z/dAAAASUlEQVR4XqWQUQoAIAxC2/0vXZDr'
+       . 'EX4IJTRkb7lobNUStXsB0jIXIAMSsQnWlsV+wULF4Avk9fLq2r'
+       . '8a5HSE35Q3eO2XP1A1wQkZSgETvDtKdQAAAABJRU5ErkJggg==';
+$data = base64_decode($data);
+
+$im = imagecreatefromstring($data);
+if ($im !== false) {
+    header('Content-Type: image/png');
+    imagepng($im);
+    imagedestroy($im);
+}
+else {
+    echo 'An error occurred.';
+}
+?>
+
+以上例程的输出类似于：
+
+Output of example : imagecreatefromstring()
+
+参见
+
+  • imagecreatefromjpeg() - 由文件或 URL 创建一个新图象。
+  • imagecreatefrompng() - 由文件或 URL 创建一个新图象。
+  • imagecreatefromgif() - 由文件或 URL 创建一个新图象。
+  • imagecreatetruecolor() - 新建一个真彩色图像
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+My site allows anonymous uploads to a web-accessible location (that will
+execute a script if it finds one).
+
+Naturally, I need to verify that only harmless content is accepted. I am
+expecting only images, so I use:
+
+<?php
+  $im = $imagecreatefromstring($USERFILE);
+  $valid = ($im != FALSE);
+  imagedestroy($im);
+  return $valid;
+?>
+===============================================================================
+
+While downloading images from internet, it's easiest to let php decide what is
+the file type. So, forget using imagecreatefromjpg, imagecreatefromgif and
+imagecreatefrompng. Instead, this is the way to go:
+
+<?php
+$src = "http://www.varuste.net/tiedostot/l_ylabanneri.jpg";
+$image = imagecreatefromstring(file_get_contents($src));
+?>
+===============================================================================
+
+In case it's not obvious from the lack of "imagecreatefrombmp()" in GD, this
+function cannot handle plain old BMP files either.
+===============================================================================
+
+A note to the previous question (if you still don't know it :))...
+
+GIF's are 256 colors (or 8 bit), and the resample function needs true color I
+guess... that's why it works with JPG's and not with GIF's.
+
+Next thing... you take a string, write it to file, open the file
+(imagecreatefromgif), and delete the file again.
+
+if you do imagecreatefromstring($string) you can skip the temporary file part.
+===============================================================================
+
+The only way I managed to resolve the loading of image files from file data
+either on local site or from off-site protocols is as follows. I hope this
+saves someone else the two hours of debugging and looking for good examples.
+[PHP]
+
+<?php
+$sFile = "http://www.justgreatwine.co.uk/img/vineyard.jpg";
+$imagedata = GetFileData($sFile); //load the file in 4k chunks
+/*=======THE OUTPUT=========*/
+ob_start();
+// assuming you have image data in $imagedata
+$length = strlen($imagedata);
+header('Last-Modified: '.date('r'));
+header('Accept-Ranges: bytes');
+header('Content-Length: '.$length);
+header('Content-Type: image/jpeg');
+print($imagedata);
+ob_end_flush();
+/*======FUNCTIONS USED======*/
+function GetFileData($sFilePath){
+    $fp = fopen($sFilePath, 'rb') or die('404! Unable to open file!');
+    $buf = '';
+    while(!feof($fp)){
+        $buf .= fgets($fp, 4096);
+    }
+    fclose($fp);
+return $buf; //returns False if failed, else the contents up to FileSize bytes.
+}
+?>
+
+[/PHP]
+===============================================================================
+
+I use dynamically generated images that require a little touch-up before being
+displayed. So essentially I do some base work, then store the images in a
+memory cache (APC), reload the images again from the cache later on "into" GD,
+do final processing and then display the image.
+Since I wanted to avoid a lot of disc access I used the output buffering
+functions:
+
+<?php
+   // Do your image processing stuff
+  
+   // Start buffering
+   ob_start ( );
+   ImageGD ( $hImage );
+   $sImage = ob_get_contents ( );
+   ob_end_clean ( );
+
+   // Put stuff into cache
+
+   // Reload from cache and recreate image
+   $hImage = imagecreatefromstring ( $sImage );
+
+   // Do final editing stuff and output image
+?>
+
+Of course this is a condensed example but I just wanted to share the idea.
+===============================================================================
+
+I know a lot of people have been having trouble using images from the Sprint
+PPC6700 with GD.  The jpeg library always thows an error about 16 bytes of
+extraneous data.  I decided to poke around in a hex editor and found those
+extraneous bytes occur right at the end of the exif data.
+
+By removing this extraneous data, images can easily be manipulated by GD and
+the EXIF extension as a normal images.  This also removes any problems using
+the images with GIMP which must rely on the same jpeg libraries.
+
+Here is a function that will check to see if an image is from the PPC6700 and
+then remove the extraneous data for you.  The result can successully be used
+with imagecreatefromstring
+
+Author: Paul Visco
+IM: paulsidekick
+Created: 2-12-06
+
+function checkFixPPC6700($orig){
+
+    //get the file contents
+    $data = file_get_contents($orig);
+
+    //if its a PPC 6700 image cut out the extraneous 16 bits
+    if(strstr($data, "\x41\x70\x61\x63\x68\x65\x00\x48")){
+//this next line can all be one string I split it up so the form on php.net
+would accept it
+        $bad_data ="\x00\x10\x4A\x46" . "\x49\x46\x00\x01\x01" . "\x00\x00\x01\
+x00\x01\x00\x00";
+        return substr_replace($data, "", strpos($data, $bad_data),
+        strlen($bad_data));
+    } else {
+        //if not from a PPC 6700 return data unaltered
+         return $data;
+    }
+
+}
+===============================================================================
+
+An easy example to help understanding this function...
+
+<?
+$loadFile = "http://static.php.net/images/php.gif";
+
+$im = imagecreatefromstring(file_get_contents($loadFile));
+// identical to imagecreatefromgif($loadFile);
+imagegif($im);
+?>
+
+The function will try to auto-determine file format (jpg, gif, png....), and
+will return false if fails.
+===============================================================================
+
+I run a blogging site that allowed users to publish images from their cell
+phones.  For some reason, the nokia 3220 produces jpegs with extrandeous data
+before the EOF 0xFFF9
+
+I wrote this class to allow you to fix the images so that they can be used with
+GD to resize and manipulate.  Without applying the fix both GD and gimp report
+errors for the file.  If basically keeps eating bytes from the junk part till
+the file is a valid jpeg.  Here is an example bunk pic written by a nokia 3220
+that you cna test it with http://www.shawnrider.com/moblog/cache/
+0854747001121624103.jpg
+
+/*
+Author: Paul Visco
+Hompage: http://www.elmwoodstrip.com?u=paul
+AIM: paulsidekick
+Notes:  The file allows you fix the jpegs created by the Nokia 3220 picture
+phone so that they can be manipulated using the GD library with PHP.
+
+Usage:  Simply instanitiate the class and then call the fix method for each
+image.
+e.g.
+$nokia = new nokia;
+$nokia->debug ="y";
+$nokia->fix("yourpic.jpg");
+*/
+
+class nokia
+{
+    public $file;
+    public $debug = "n";
+    public $dir_name = "";
+    private $img; //the image created from the string
+    private $str;
+   
+    function fix($file)
+    {
+       
+        //set the file to fix
+        $this->file = $file;
+   
+        //load the file into a string
+        $this->str = file_get_contents($this->file);
+       
+        //test to see if it is a nokia image or if it has been corrupted
+previously
+        if (substr_count($this->str, chr(0x28).chr(0x36).chr(0x28).chr(0x2B)) =
+= 0 || @imagecreatefromstring($this->str))
+        {
+            if ($this->debug =="y")
+            {
+                echo "\n<br />".$this->file." is not a corrupted Nokia pic";
+            }
+           
+            return true;
+        }
+       
+        //make a directory for fixed images if it doesn't exist and is
+specified
+        if(!empty($this->dir_name) && !is_dir($this->dir_name))
+        {
+            @mkdir($this->dir_name, 0777);
+        }
+       
+        //strip out the funk e crap from the file
+        $this->eat($this->str);
+       
+        //write the file back to itself
+        file_put_contents($this->dir_name.$this->file, $this->str);
+
+        //return true for fixed
+        return true;
+
+    }
+   
+    function eat()
+    {
+   
+        //check the image
+        $this->img = @imagecreatefromstring($this->str);
+       
+        //if the image doesn't work then keep striping out crap
+        while(!$this->img)
+        {
+            //cut off the bad bytes one by one
+            $this->str= substr_replace($this->str, "", -3, -2);
+           
+            //check the image again
+            $this->img = @imagecreatefromstring($this->str);
+        } 
+       
+        if ($this->debug =="y")
+        {
+            //notify the user it's fixed
+            echo "\n<br />Nasty bits eaten!! ".$this->file." is fixed now
+thanks to p:labs!";
+        }
+        return true;
+    }
+
+}
+===============================================================================
+
+Here is the code I did to create a thumbnail image from the database blob
+field. The trick is to use "imagecreatefromstring()" to create an image file.
+
+Jack Shieh
+
+<?php
+require("dbconfig.inc");
+
+$id = $_GET['id'];
+
+if($id) {
+
+    $link = @mysql_connect($host, $user, $password) or die("Could not connect:
+" . mysql_error());
+    @mysql_select_db($dbname, $link);
+
+    $query = "select filetype, image from pictures where id = $id";
+    $result = @mysql_query($query);
+
+    $data = @mysql_result($result,0,"image");
+    $type = @mysql_result($result,0,"filetype");
+   
+    Header( "Content-type: $type");   
+   
+    $size = 150;  // new image width
+    $src = imagecreatefromstring($data);
+    $width = imagesx($src);
+    $height = imagesy($src);
+    $aspect_ratio = $height/$width;
+
+    if ($width <= $size) {
+      $new_w = $width;
+      $new_h = $height;
+    } else {
+      $new_w = $size;
+      $new_h = abs($new_w * $aspect_ratio);
+    }
+
+    $img = imagecreatetruecolor($new_w,$new_h);
+    imagecopyresized($img,$src,0,0,0,0,$new_w,$new_h,$width,$height);
+
+    // determine image type and send it to the client   
+    if ($type == "image/pjpeg") {   
+      imagejpeg($img);
+    } else if ($type == "image/x-png") {
+      imagepng($img);
+    } else if ($type == "image/gif") {
+      imagegif($img);
+    }
+    imagedestroy($img);
+    mysql_close($link);
+};
+?>
+===============================================================================
+
+Generating graphs in an external program (in this case, gnuplot) may cause
+problems. This is a solution hacked together in the late hours of night.
+
+<?php
+// get the values from, say, a database
+$vals = "1 2\\\\n4 8\\\\n"; # etc
+// construct the gnuplot_call variable, something like:
+$gnuplot_call = "echo \"set term png; plot '<echo -e \\\"$vals\\\" ' ti
+'Updated with' with line ; \" | gnuplot";
+ob_start();
+passthru($gnuplot_call, $gnuplot_call_output);
+$image = imagecreatefromstring(ob_get_contents());
+ob_end_clean();
+imagepng($image); # display
+?>
+===============================================================================
+
+I'm trying to get the imagecreatefromstring to work with GIFs. Of course, it
+won't.
+I've read the tips but can't get them to work either.
+The following is what I tried, based on above tips:
+
+---
+
+    header('Content-Type: image/gif');
+    header('Content-Disposition: inline; filename=file.gif');
+
+    $temp = tmpfile();
+    fwrite($temp, $line['image']);
+    $src_img = imagecreatefromgif($temp);
+    fclose($temp); // this removes the file
+    $dst_img = imagecreatetruecolor(100, 100);
+    imagecopyresampled($dst_img, $src_img, 0,0,0,0, 100,100, imagesx($src_img),
+imagesy($src_img));
+   
+    imagegif($dst_img);
+
+---
+
+where $line['image'] is the gif as taken from my MySQL database...
+
+If anyone that has been able to make something like this work could give me a
+working piece of code I'd be really greatful!
+
+I would be great if the tempfile could be excluded too...
+
+Below is a working piece of code for jpeg:
+
+---
+
+    header('Content-Type: image/jpeg');
+    header('Content-Disposition: inline; filename=file.jpg');
+   
+    $src_img = imagecreatefromstring($line['image']);
+    $dst_img = imagecreatetruecolor(100, 100);
+    imagecopyresampled($dst_img, $src_img, 0,0,0,0, 100,100, imagesx($src_img),
+imagesy($src_img));
+   
+    imagejpeg($dst_img);
+===============================================================================
+
+I found out that in PHP 4.3.2 and 4.3.4 that the 'imagecreatefromstring'
+function use a lot of memory when working with big image...
+Try this piece of code with a big image (like 1Meg or more)
+<?php
+$loadFile = "http://bigimage.jpg";//Try with a big image
+$im = imagecreatefromstring(file_get_contents($loadFile));
+imagejpeg($im);
+?>
+
+With a 400k image. I run with a 16M Mem_limit but for a 1.4M image, the
+mem_limit required jump to more that 32M
+===============================================================================
+
+Create an image resource from file, without knowing image type:
+
+<?php
+function imagecreatefromfile($imagepath=false) {
+    if(!$imagepath || !$is_readable($imagepath) return false;
+    return @imagecreatefromstring(file_get_contents($imagepath));
+}
+$img_resource=imagecreatefromfile($imagepath);
+?>
+===============================================================================
+
+So you guys don't spend an hour trying to figure out why your script keeps
+running out of memory when you're using this or the other imagecreatefrom
+functions.  GD uncompresses the image when you use these functions, and this
+can lead to your script running out of memory.
+
+If you download a rawimage save it on your computer to jpeg so the file size
+comes down, GD will automatically convert it to the raw and you can possibly
+run out of memory.

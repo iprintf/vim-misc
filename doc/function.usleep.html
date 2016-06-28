@@ -1,0 +1,358 @@
+
+usleep
+
+(PHP 4, PHP 5, PHP 7)
+
+usleep — 以指定的微秒数延迟执行
+
+说明
+
+void usleep ( int $micro_seconds )
+
+以指定的微秒数延缓程序的执行。
+
+参数
+
+micro_seconds
+
+    暂停的时间以微秒计。1微秒（micro second）是百万分之一秒。
+
+返回值
+
+没有返回值。
+
+更新日志
+
+版本             说明
+5.0.0 此函数在Windows系统下可用。
+
+范例
+
+Example #1 usleep()例子
+
+<?php
+
+// Current time
+echo date('h:i:s') . "\n";
+
+// wait for 2 seconds
+usleep(2000000);
+
+// back!
+echo date('h:i:s') . "\n";
+
+?>
+
+以上例程会输出：
+
+11:13:28
+11:13:30
+
+参见
+
+  • sleep() - 延缓执行
+  • time_nanosleep() - 延缓执行若干秒和纳秒
+  • time_sleep_until() - 使脚本睡眠到指定的时间为止。
+  • set_time_limit() - 设置脚本最大执行时间
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+WARNING!!
+
+the snippet below by 'Marius (mm at co-operation dot de)' is NOT a usleep and
+it will keep the CPU at 100% running. why people keep posting that crap is a
+complete mystery for me.
+
+the idea of sleep and usleep is that by letting the cpu run a few idle cycles
+so the other programs can have some cycles run of their own. what results in
+better response times and lower overall system-load. so if you have to wait for
+something, go to sleep for a few seconds instead of occupying the cpu while
+doing absolute nothing but waitting.
+===============================================================================
+
+A word of warning about the microdelay() code posted that uses the fsockopen -
+if you use this is a loop that delays for small periods you will very quickly
+run out of sockets/socket buffer space. And then your network connections go
+very strange......
+===============================================================================
+
+To monitor a scripts CPU ussage and avoid any nasty CPU gobbling loops you can
+use this function (will not work with windows or safe mode) I know it works on
+FreeBSD:
+function phpmon($max)
+{
+$cmd = `ps -Unobody -r -o%cpu`;
+$lines = explode("\n", $cmd);
+$usage = substr($lines[1], 0, strpos($lines[1], "."));
+$sleeprate = 500;
+while ($usage >= $max)
+  {
+  $cmd = `ps -Unobody -r -o%cpu`;
+  $lines = explode("\n", $cmd);
+  $usage = substr($lines[1], 0, strpos($lines[1], "."));
+  usleep($sleeprate);
+  }
+}
+
+phpmon($MAX);
+
+where $MAX is the maximum CPU you want the process to consume. e-mail me with
+any improvements/suggestions.
+
+I have noticed that this consumes a lot of system CPU (at least in my limited
+testing) possibly from all of the system calls or the huge mathematical
+functions I used to test the effectiveness of the script.
+===============================================================================
+
+Should be noted that functions that loop really fast to create a delay also
+consume 100% CPU while doing the loop.  Try creating a dummy loop that goes
+100000 times, watch it choke your machine.  If you really need usleep() don't
+use windows.
+===============================================================================
+
+On both MacOS X and Linux the usleep() call seems to consume CPU cycles,
+whereas sleep() and time_nanosleep() do not. This was the same on PHP 5.3.29
+and 5.5.29.
+
+I used a loop with just a call to sleep/usleep/time_nanosleep, and compared
+them all with an empty loop. Obviously the empty loop consumed 99% of the CPU,
+sleep used 0%, usleep used 3% for 1000ms and 6% for 100ms, and time_nanosleep
+used 0% for both 500ms and 1000ms.
+===============================================================================
+
+Dude you are SO the man for that code snippet. It worked like a charm. I just
+wanted to point out a couple things and offer my own improvement.
+
+1. If you're like me, you were probably wondering why the socket had to keep
+being recreated on each call, and why you couldn't just create a static socket.
+Its because socket_select assumes you're passing in a pointer, and will alter
+the variable on return to reflect the actual sockets that were changed.
+
+2. I couldn't figure out for the life of me why socket_select wasn't defined.
+Its because you hadn't enabled the right extension in php.ini
+
+Ok so heres my slight improvement. The only real thing I did is use a static
+variable for the socket, to avoid creating a brand new socket on each call of
+this function. I'm not sure if socket creation will cause things to crash down
+the line like the other problems reported on here, but if you ask me better
+safe then sorry.
+
+function Sleeper($mSec)
+{
+    //    For dummies like me who spent 5 minutes
+    //    wondering why socket_create wasn't defined
+    if(!function_exists('socket_create')){
+        die("Please enable extension php_sockets.dll");
+    }
+
+    //    So the socket is only created once
+    static $socket=false;
+    if($socket===false){
+        $socket=array(socket_create(AF_INET,SOCK_RAW,0));
+    }
+    $pSock=$socket;
+   
+    //    Calc time
+    $uSex = $mSec * 1000;
+
+    //    Do the waiting
+    socket_select($read=NULL,$write=NULL,$pSock,0,$uSex);
+   
+    //    OCD
+    return true;
+}
+===============================================================================
+
+It should be noted that Windows machines have a resolution of either 10 mS or
+15 mS (depending on the chipset implementation and HAL used) when using the
+Sleep() function in kernel32.dll.  This means that your average error will be
+either 5 or 7.5 mS.  This is not ordinarily a problem unless you really NEED to
+sleep for less time than the granularity provided by Windows.
+===============================================================================
+
+If you're using Windows then you maybe are in trouble with usleep if you really
+need to use it.
+
+The Bernie's microdelay function using fsockopen does not work properly, and
+the fclose doesn't help much.
+
+I don't know if network connections go strange, but I know it does not work
+since you've made more than 2000 - 3000 calls to it, so it's not a reliable
+solution in 'long life' php scripts, or these are the issues of the microdelay
+function in my PHP and PHP-GTK applications.
+
+Though another solution should be found, and googling a bit I fount a WinAPI
+function: Sleep.
+
+So I get with this snippet wich works fine for me, you get milliseconds
+precission but the more important, it works for long-run scripts and of course,
+it does not waste any CPU cycles.
+
+dl('php_w32api.dll');
+
+$GLOBALS['win32api'] =& new win32;
+
+// USleep alternative for Windows and PHP4:
+$GLOBALS['win32api']->registerfunction("long Sleep (long dwMillisecods) From
+kernel32.dll");
+
+// Now you can call the function from everywhere in your script: $GLOBALS
+['win32api']->Sleep(milliseconds);
+
+for ($msec = 2000; $msec > 0; $msec = $msec - 125) {
+  echo "Hi. Next one in $msec msec.\n";
+  $GLOBALS['win32api']->Sleep($msec);
+}
+===============================================================================
+
+I have spent DAYS trying to create a reliable usleep()-replacement for Windows.
+
+I have only this to offer:
+
+As commented by someone else already, the gettimeofday() method used below is
+useless - PHP will use all available CPU power doing nothing.
+
+The fsockopen() method apparently is also useless - as someone else commented,
+an fclose() was missing in the original post, but this apparently does not
+solve the problem. After calling the function about 50 or so times, fsockopen()
+returns immidiately, without any delay - and watching a process monitor in
+Windows, you can then watch the process taking up increasingly more memory,
+until eventually PHP aborts (or crashes) when it reaches maximum.
+
+The win32api-method is also a no-go ... after calling the Sleep function a few
+hundred times (during which memory usage will also go up every time due to a
+memory leak somewhere), PHP will cause an exception and Windows will terminate
+it.
+
+I have given up - I don't think there is any viable solution to this problem
+under PHP 4.
+
+If you need this function, upgrade your project to PHP 5.
+
+Or settle for 1-second delays with the sleep()-function.
+
+These, unfortunately, seem to be your only options...
+===============================================================================
+
+I have no idea why nobody came up with this yet, but there is an efficient way
+to reproduce usleep() under windows:
+
+<?php
+function usleep_win($msec) {
+   $usec = $msec * 1000;
+   socket_select($read = NULL, $write = NULL, $sock = array(socket_create (
+AF_INET, SOCK_RAW, 0)), 0, $usec);
+}
+?>
+
+* Doesnt busy wait
+* Doesnt eat memory
+* Works for millions of repetitions
+* Seems to be rather efficient
+
+It seems that the average error (on my machine) is about 5ms (it sleeps 5ms
+more than intended) thats probably due to code execution as well as kernel
+timers.
+
+A socket without any purpose is highly unlikely to every cause an exception, so
+socket_select will always sleep until the timeout is hit.
+===============================================================================
+
+I want to create a daemon/Linux service. Here is an example of how to run a
+process that has "throttle control"
+
+// You must set these
+//
+// max_execution_time = 0
+// max_input_time = 0
+
+function doProcess() {
+    echo "Start"."\n";
+    usleep(10000);
+    echo "Stop"."\n";
+    return false;
+}
+
+function manageProcess() {
+    // Setup data
+    $runsPerMinute = 200;
+    $maxMinuteAverage = 5;
+    $waitIfNotWorking = 120; // seconds
+
+    // Conversion
+    $microsPerSecond = 1000000;
+
+    // Statistical Info
+    $currentMinute = 0;
+    $minute = -1;
+    $countPerMinute = array();
+    $sumPerMinute = array();
+
+    // Totals
+    $totalProcessTime = 0;
+    $totalCounts = 0;
+
+    while (true) {
+        $timestart = microtime();
+        $performedWork = doProcess();
+        $timeend = microtime();
+
+        if (!$performedWork) {
+            // Statistical Info
+            $currentMinute = 0;
+            $minute = -1;
+            $countPerMinute = array();
+            $sumPerMinute = array();
+
+            sleep($waitIfNotWorking);
+        } else {
+
+            $ts = split(" ",$timestart);
+            $te = split(" ",$timeend);
+
+            $te[0] = ($te[0] * $microsPerSecond) - ($ts[0] * $microsPerSecond);
+            $te[1] = ($te[1] - $ts[1]) * $microsPerSecond;
+
+            $processTime = $te[0] + $te[1];
+
+            if (date("i")<>$minute) { // We are NOT in the same minute
+                // Reset the new minute
+                $minute = date("i");
+                $currentMinute = ($currentMinute+1) % $maxMinuteAverage;
+
+                // Remove Statistical Information from the minute we are
+expiring.
+                if (isset($countPerMinute[$currentMinute])) {
+                    $totalProcessTime = $totalProcessTime - $sumPerMinute
+[$currentMinute];
+                    $totalCounts = $totalCounts - $countPerMinute
+[$currentMinute];
+                }
+
+                $countPerMinute[$currentMinute] = 0;
+                $sumPerMinute[$currentMinute] = 0;
+            }
+
+            $countPerMinute[$currentMinute] = $countPerMinute[$currentMinute] +
+1;
+            $sumPerMinute[$currentMinute] = $sumPerMinute[$currentMinute] +
+$processTime;
+
+            $totalCounts = $totalCounts + 1;
+            $totalProcessTime = $totalProcessTime + $processTime;
+
+            $averageRuntime = round($totalProcessTime / $totalCounts);
+
+            $waitTime = (($microsPerSecond*60) / $runsPerMinute) -
+$averageRuntime;
+
+            usleep($waitTime);
+        }
+    }
+
+}
+
+manageProcess();

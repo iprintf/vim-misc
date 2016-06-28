@@ -1,0 +1,668 @@
+
+array_walk_recursive
+
+(PHP 5, PHP 7)
+
+array_walk_recursive — 对数组中的每个成员递归地应用用户函数
+
+说明
+
+bool array_walk_recursive ( array &$input , callable $funcname [, mixed
+$userdata = NULL ] )
+
+将用户自定义函数 funcname 应用到 array 数组中的每个单元。本函数会递归到更深层的
+数组中去。
+
+参数
+
+input
+
+    输入的数组。
+
+funcname
+
+    典型情况下 funcname 接受两个参数。input 参数的值作为第一个，键名作为第二个
+    。
+
+        Note:
+
+        如果 funcname 需要直接作用于数组中的值，则给 funcname 的第一个参数指定
+        为引用。这样任何对这些单元的改变也将会改变原始数组本身。
+
+userdata
+
+    如果提供了可选参数 userdata，将被作为第三个参数传递给 callback funcname。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 array_walk_recursive() example
+
+<?php
+$sweet = array('a' => 'apple', 'b' => 'banana');
+$fruits = array('sweet' => $sweet, 'sour' => 'lemon');
+
+function test_print($item, $key)
+{
+    echo "$key holds $item\n";
+}
+
+array_walk_recursive($fruits, 'test_print');
+?>
+
+以上例程会输出：
+
+a holds apple
+b holds banana
+sour holds lemon
+
+注意上例中的键 'sweet' 并没有显示出来。任何其值为 array 的键都不会被传递到回调
+函数中去。
+
+参见
+
+  • array_walk() - 使用用户自定义函数对数组中的每个元素做回调处理
+  • callback 类型的信息
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+Since this is only mentioned in the footnote of the output of one of the
+examples, I feel it should be spelled out:
+
+* THIS FUNCTION ONLY VISITS LEAF NODES *
+
+That is to say that if you have a tree of arrays with subarrays of subarrays,
+only the plain values at the leaves of the tree will be visited by the callback
+function.  The callback function isn't ever called for a nodes in the tree that
+subnodes (i.e., a subarray).  This has the effect as to make this function
+unusable for most practical situations.
+===============================================================================
+
+A simple solution for walking a nested array to obtain the last set value of a
+specified key:
+
+<?php
+
+$key = 'blah';
+$val = null;
+array_walk_recursive( $your_array,
+                      function($v, $k, $u) { if($k === $u[0]) $u[1] = $v; },
+                      [$key ,&$val] );
+
+echo "$key = $val";
+
+?>
+===============================================================================
+
+If you are wanting to change the values of an existing multi-dimensional array,
+as it says above in the note, you need to specify the first argument as a
+reference. All that means is, be sure to precede the $item variable with an
+ampersand (&) as in the good_example below.
+
+Unfortunately the PHP example given doesn't do this. It actually took me a
+while to figure out why my function wasn't changing the original array, even
+though I was passing by reference.
+
+Here's the tip: Don't return any value from the function! Just change the value
+of $item that you passed in by reference. This is rather counter-intuitive
+since the vast majority of functions return a value.
+
+<?php
+// array_walk_recursive fails to change your array unless you pass by
+reference.
+// Don't return values from your filter function, even though it's quite
+logical at a glance!
+function bad_example($item,$key){
+   if($key=='test'){
+       return 'PHP Rocks';  // Don't do it
+   }else{
+      return $item;  // Don't do this either
+   }
+}
+
+// array_walk_recursive pass-by-reference example
+function good_example(&$item,$key){
+   if($key=='test'){
+        $item='PHP Rocks'; // Do This!
+   }
+}
+
+$arr = array('a'=>'1','b'=>'2','test'=>'Replace This');
+
+array_walk_recursive($arr,'bad_example');
+var_dump($arr);
+/**
+* no errors, but prints...
+* array('a'=>'1','b'=>'2','test'=>'Replace This');
+*/
+
+array_walk_recursive($arr,'good_example');
+var_dump($arr);
+/**
+* prints...
+* array('a'=>'1','b'=>'2','test'=>'PHP Rocks');
+*/
+
+?>
+
+Returning a value from your function does work if you pass by reference and
+modify $item before you return, but you will eat up memory very, very fast if
+you try it, even on an example as small as the one here.
+
+One other silly thing you might try first is something like this:
+
+<?php
+// Resist the urge to do this, it doesn't work.
+$filtered = array_walk_recursive($unfiltered,'filter_function');
+?>
+
+Of course, $filtered is just TRUE afterwards, not the filtered results you were
+wanting. Oh, it ran your function recursively alright, but changed all the
+values in the local function scope only and returns a boolean as the
+documentation states.
+===============================================================================
+
+The description says "If funcname needs to be working with the actual values of
+the array, specify the first parameter of funcname as a reference." This isn't
+necessarily helpful as the function you're calling might be built in (e.g. trim
+or strip_tags). One option would be to create a version of these like so.
+
+<?php
+    function trim_by_reference(&$string) {
+        $string = trim($string);
+    }
+?>
+
+The downside to this approach is that you need to create a wrapper function for
+each function you might want to call. Instead, we can use PHP 5.3's inline
+function syntax to create a new version of array_walk_recursive.
+
+<?php
+    /**
+     * This function acts exactly like array_walk_recursive, except that it
+pretends that the function
+     * its calling replaces the value with its result.
+     *
+     * @param $array The first value of the array will be passed into $function
+as the primary argument
+     * @param $function The function to be called on each element in the array,
+recursively
+     * @param $parameters An optional array of the additional parameters to be
+appeneded to the function
+     *
+     * Example usage to alter $array to get the second, third and fourth
+character from each value
+     *     array_walk_recursive_referential($array, "substr", array("1","3"));
+     */
+    function array_walk_recursive_referential(&$array, $function, $parameters =
+array()) {
+        $reference_function = function(&$value, $key, $userdata) {
+            $parameters = array_merge(array($value), $userdata[1]);
+            $value = call_user_func_array($userdata[0], $parameters);
+        };
+        array_walk_recursive($array, $reference_function, array($function, 
+$parameters));
+    }
+?>
+
+The advantage here is that we only explicitly define one wrapper function
+instead of potentially dozens.
+===============================================================================
+
+array_walk_recursive itself cannot unset values. Even though you can pass array
+by reference, unsetting the value in the callback will only unset the variable
+in that scope.
+
+<?php
+/**
+* http://uk1.php.net/array_walk_recursive implementation that is used to remove
+nodes from the array.
+*
+* @param array The input array.
+* @param callable $callback Function must return boolean value indicating
+whether to remove the node.
+* @return array
+*/
+function walk_recursive_remove (array $array, callable $callback) {
+    foreach ($array as $k => $v) {
+        if (is_array($v)) {
+            $array[$k] = walk_recursive_remove($v, $callback);
+        } else {
+            if ($callback($v, $k)) {
+                unset($array[$k]);
+            }
+        }
+    }
+
+    return $array;
+}
+?>
+
+An up to date implementation of the above function can be looked up from https:
+//github.com/gajus/marray/blob/master/src/marray.php#L116.
+===============================================================================
+
+I use RecursiveIteratorIterator with parameter CATCH_GET_CHILD to iterate on
+leafs AND nodes instead of array_walk_recursive function :
+
+<?php
+// Iteration on leafs AND nodes
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($candidate), 
+RecursiveIteratorIterator::CATCH_GET_CHILD) as $key => $value) {
+    echo 'My node ' . $key . ' with value ' . $value . PHP_EOL;
+}
+?>
+===============================================================================
+
+since PHP 5.3.0, you will get a warning saying that "call-time
+pass-by-reference" is deprecated when you use & in foo(&$a);. And as of PHP
+5.4.0, call-time pass-by-reference was removed, so using it will raise a fatal
+error.
+===============================================================================
+
+I needed to add or modify values in an array with unknown structure. I was
+hoping to use array_walk_recursive for the task, but because I was also adding
+new nodes I came up with an alternate solution.
+
+<?php
+
+    /**
+     * Sets key/value pairs at any depth on an array.
+     * @param $data an array of key/value pairs to be added/modified
+     * @param $array the array to operate on
+     */
+    function setNodes($data, &$array)
+    {
+        $separator = '.'; // set this to any string that won't occur in your
+keys
+        foreach ($data as $name => $value) {
+            if (strpos($name, $separator) === false) {
+                // If the array doesn't contain a special separator character,
+just set the key/value pair.
+                // If $value is an array, you will of course set nested key/
+value pairs just fine.
+                $array[$name] = $value;
+            } else {
+                // In this case we're trying to target a specific nested node
+without overwriting any other siblings/ancestors.
+                // The node or its ancestors may not exist yet.
+                $keys = explode($separator, $name);
+                // Set the root of the tree.
+                $opt_tree =& $array;
+                // Start traversing the tree using the specified keys.
+                while ($key = array_shift($keys)) {
+                    // If there are more keys after the current one...
+                    if ($keys) {
+                        if (!isset($opt_tree[$key]) || !is_array($opt_tree[$key
+])) {
+                            // Create this node if it doesn't already exist.
+                            $opt_tree[$key] = array();
+                        }
+                        // Redefine the "root" of the tree to this node (assign
+by reference) then process the next key.
+                        $opt_tree =& $opt_tree[$key];
+                    } else {
+                        // This is the last key to check, so assign the value.
+                        $opt_tree[$key] = $value;
+                    }
+                }
+            }
+        }
+    }
+
+?>
+
+Sample usage:
+
+<?php
+
+$x = array();
+setNodes(array('foo' => 'bar', 'baz' => array('quux' => 42, 'hup' => 101)), $x
+);
+print_r($x); // $x has the same structure as the first argument
+setNodes(array('jif.snee' => 'hello world', 'baz.quux.wek' => 5), $x);
+print_r($x); // added $x['jif']['snee'] and modified $x['baz']['quux'] to be
+array('wek' => 5)
+
+?>
+===============================================================================
+
+Simple array_walk_recursive:
+
+// var example
+$myArray = Array(
+  Array('keyA1' => '    textA1 ', 'keyA2' => '  textA2     '),
+  Array('keyB1' => '    textB1 ', 'sub' =>
+        Array('keyB1_sub1' => '      textB1_sub1   '),
+          Array('keyB1_sub2' => '      textB1_sub2   ')
+      ),
+  Array('keyC1' => '    textC1 ', 'keyC2' => '  textC2     '),
+  Array('keyD1' => '    textD1 ', 'keyD2' => '  textD2     '),
+  Array('keyE1' => '    textE1 ', 'keyE2' => '  textE2     ')
+);
+
+// function for "trim" (or your function, use same structure)
+function trimming($data) {
+  if (gettype($data) == 'array')
+    return array_map("trimming", $data);
+  else
+    return trim($data);
+}
+
+// get array
+$myArray = array_map("trimming", $myArray);
+
+// show array trimmed
+var_dump($myArray);
+
+/*
+RESULT
+
+array (size=5)
+  0 =>
+    array (size=2)
+      'keyA1' => string 'textA1' (length=6)
+      'keyA2' => string 'textA2' (length=6)
+  1 =>
+    array (size=3)
+      'keyB1' => string 'textB1' (length=6)
+      'sub' =>
+        array (size=1)
+          'keyB1_sub1' => string 'textB1_sub1' (length=11)
+      0 =>
+        array (size=1)
+          'keyB1_sub2' => string 'textB1_sub2' (length=11)
+  2 =>
+    array (size=2)
+      'keyC1' => string 'textC1' (length=6)
+      'keyC2' => string 'textC2' (length=6)
+  3 =>
+    array (size=2)
+      'keyD1' => string 'textD1' (length=6)
+      'keyD2' => string 'textD2' (length=6)
+  4 =>
+    array (size=2)
+      'keyE1' => string 'textE1' (length=6)
+      'keyE2' => string 'textE2' (length=6)
+
+*/
+===============================================================================
+
+<?
+function my_array_map() {
+    $args = func_get_args();
+    $arr = array_shift($args);
+   
+    foreach ($args as $fn) {
+        $nfn = create_function('&$v, $k, $fn', '$v = $fn($v);');
+        array_walk_recursive($arr, $nfn, $fn);
+    }
+    return $arr;
+}
+?>
+
+takes an array as the first argument, and functions as the other arguments.  it
+applies those functions recursively to the array
+===============================================================================
+
+This is a peice of code I wrote that appears to create this function for PHP 4.
+
+<?php
+if (!function_exists('array_walk_recursive'))
+{
+    function array_walk_recursive(&$input, $funcname, $userdata = "")
+    {
+        if (!is_callable($funcname))
+        {
+            return false;
+        }
+       
+        if (!is_array($input))
+        {
+            return false;
+        }
+       
+        foreach ($input AS $key => $value)
+        {
+            if (is_array($input[$key]))
+            {
+                array_walk_recursive($input[$key], $funcname, $userdata);
+            }
+            else
+            {
+                $saved_value = $value;
+                if (!empty($userdata))
+                {
+                    $funcname($value, $key, $userdata);
+                }
+                else
+                {
+                    $funcname($value, $key);
+                }
+               
+                if ($value != $saved_value)
+                {
+                    $input[$key] = $value;
+                }
+            }
+        }
+        return true;
+    }
+}
+?>
+
+Please note it is a conditionaly set function and will have to be put before
+any call to it.
+
+If there is anything wrong with it, please email me.
+===============================================================================
+
+To convert all values of an array in UTF8, do this:
+
+<?php
+
+function convert_before_json(&$item, &$key)
+{
+   $item=utf8_encode($item);
+}
+
+array_walk_recursive($your_array,"convert_before_json");
+
+?>
+===============================================================================
+
+This function has a serious bug, which is still not fixed as of the PHP 5.2.5
+release. After you call it, it can accidentally modify your original array.
+Save yourself hours of frustration by reading on.
+
+The bug is here: http://bugs.php.net/bug.php?id=42850, and it looks like it
+will be fixed for 5.3.
+
+If the array that you walk contains other array elements, they will be turned
+into references. This will happen even if the callback function doesn't take
+its first argument by reference, and doesn't do anything to the values.
+
+For example, try this:
+<?php
+$data = array ('key1' => 'val1', 'key2' => array('key3' => 'val3'));
+function foo($item, $key){}
+var_dump($data);
+?>
+
+The original array has no references. Now try this:
+<?php
+array_walk_recursive($data,'foo');
+var_dump($data);
+?>
+
+Now key2 is a reference, not just an array. So if you do this:
+<?php
+function test($item){$item['key2'] = array();}
+test($data);
+var_dump($data);
+?>
+
+you will see that test modifies $data, even though it shouldn't.
+
+One workaround is to immediately make a deep copy of the array after calling
+array_walk_recursive, like this:
+<?php
+function array_duplicate($input) {
+  if (!is_array($input)) return $input;
+  $output = array();
+  foreach ($input as $key => $value) {
+    $output[$key] = array_duplicate($value);
+  }
+  return $output;
+}
+array_walk_recursive($data,'foo');
+$data = array_duplicate($data);
+var_dump($data);
+?>
+
+After doing that, the references are gone.
+===============================================================================
+
+I decided to add to the previous PHP 4 compatible version of
+array_walk_recursive() so that it would work within a class and as a standalone
+function.  Both instances are handled by the following function which I
+modified from omega13a at sbcglobal dot net.
+
+The following example is for usage within a class.  To use as a standalone
+function take it out of the class and rename it.  (Example:
+array_walk_recursive_2)
+
+<?php
+class A_Class {
+
+function array_walk_recursive(&$input, $funcname, $userdata = '') {
+  if(!function_exists('array_walk_recursive')) {
+    if(!is_callable($funcname))
+      return false;
+
+    if(!is_array($input))
+      return false;
+
+    foreach($input as $key=>$value) {
+      if(is_array($input[$key])) {
+        if(isset($this)) {
+          eval('$this->' . __FUNCTION__ . '($input[$key], $funcname,
+$userdata);');
+        } else {
+          if(@get_class($this))
+            eval(get_class() . '::' . __FUNCTION__ . '($input[$key], $funcname,
+$userdata);');
+          else
+            eval(__FUNCTION__ . '($input[$key], $funcname, $userdata);');
+        }
+      } else {
+        $saved_value = $value;
+
+        if(is_array($funcname)) {
+          $f = '';
+          for($a=0; $a<count($funcname); $a++)
+            if(is_object($funcname[$a])) {
+              $f .= get_class($funcname[$a]);
+            } else {
+              if($a > 0)
+                $f .= '::';
+              $f .= $funcname[$a];
+            }
+          $f .= '($value, $key' . (!empty($userdata) ? ', $userdata' : '') . 
+');';
+          eval($f);
+        } else {
+          if(!empty($userdata))
+            $funcname($value, $key, $userdata);
+          else
+            $funcname($value, $key);
+        }
+
+        if($value != $saved_value)
+          $input[$key] = $value;
+      }
+    }
+    return true;
+  } else {
+    array_walk_recursive($input, $funcname, $userdata);
+  }
+}
+
+function kv_addslashes(&$v, $k) {
+  $v = addslashes($v);
+}
+}
+?>
+
+Usage:
+<?php
+$arr = array(
+  'a' => '"Hello World"',
+  'b' => "'Hello World'",
+  'c' => "Hello 'Worl\"d",
+  'd' => array(
+    'A' => 'H"e"l"l"o" "W"o"r"l"d'
+    )
+  );
+
+$class = new A_Class();
+$class->array_walk_recursive($arr, array(&$class, 'kv_addslashes'));
+print_r($arr);
+?>
+===============================================================================
+
+If you don't really particularly care about the keys of an array, you can
+capture all values quite simply:
+
+<?php
+
+$sample = array('dog' => 'woof', 'cat' => array('angry' => 'hiss', 'happy' => 
+'purr'), 'aardvark' => 'kssksskss');
+$output = array();
+
+// Push all $val onto $output.
+array_walk_recursive($sample, create_function('$val, $key, $obj', 'array_push
+($obj, $val);'), &output);
+
+// Printing
+echo nl2br(print_r($output, true));
+
+/*
+* Array
+* (
+*  [0] => woof
+*  [1] => hiss
+*  [2] => purr
+*  [3] => kssksskss
+* )
+*/
+?>
+
+[EDIT BY danbrown AT php DOT net: In a note added by 'FaustoFilho' on
+17-MAY-2011, the following information was appended to this note.
+
+[If you intend to use this] "function to extract the last key value of an
+array, don't forget to insert a currency sign ($) signal before '$output' at
+7th line.
+
+This value must be a variable, and if you forgot to assign this signal, your
+code won't work, displaying an error like this:
+
+Parse error: syntax error, unexpected ')', expecting T_PAAMAYIM_NEKUDOTAYIM in
+/path/to/script.php on line 7."]
+===============================================================================
+
+To egingell at sisna dot com:
+
+There is a small bug in your function, the following line should be changed:
+From: if ($value != $saved_value || $saved_key != $key) {
+Into: if ($value !== $saved_value || $saved_key !== $key) {
+
+It's a nice function, because I was searching for something to change the keys
+of a multiple dimension array.

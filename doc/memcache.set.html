@@ -1,0 +1,270 @@
+
+Memcache::set
+
+(PECL memcache >= 0.2.0)
+
+Memcache::set — Store data at the server
+
+说明
+
+bool Memcache::set ( string $key , mixed $var [, int $flag [, int $expire ]] )
+
+Memcache::set()向key存储一个元素值为 var。参数expire是以秒为单位的失效时间，如
+果设置为0表明该元素永不过期（但是它可能会因为为了给其他项分配空间而被删除）。如
+果你希望存储的元素经过压缩（使用zlib），你可以设置flag的值为MEMCACHE_COMPRESSED
+。
+
+
+    Note:
+
+    谨记：资源类型变量（比如文件或连接）不能被存储在缓存中，因为它们在序列化状
+    态不能被完整描述。
+
+同样你也可以使用函数memcache_set()。
+
+参数
+
+key
+
+    要设置值的key。
+
+var
+
+    要存储的值，字符串和数值直接存储，其他类型序列化后存储。
+
+flag
+
+    使用MEMCACHE_COMPRESSED指定对值进行压缩(使用zlib)。
+
+expire
+
+    当前写入缓存的数据的失效时间。如果此值设置为0表明此数据永不过期。你可以设置
+    一个UNIX时间戳或以秒为单位的整数（从当前算起的时间差）来说明此数据的过期时
+    间，但是在后一种设置方式中，不能超过 2592000秒（30天）。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Memcache::set() 示例
+
+<?php
+/* procedural API */
+
+/* connect to memcached server */
+$memcache_obj = memcache_connect('memcache_host', 11211);
+
+/*
+设置'var_key'对应存储的值
+flag参数使用0,值没有经过压缩
+失效时间为30秒
+*/
+memcache_set($memcache_obj, 'var_key', 'some variable', 0, 30);
+
+echo memcache_get($memcache_obj, 'var_key');
+
+?>
+
+Example #2 Memcache::set() 示例
+
+<?php
+/* OO API */
+
+$memcache_obj = new Memcache;
+
+/* connect to memcached server */
+$memcache_obj->connect('memcache_host', 11211);
+
+/*
+设置'var_key'对应值，使用即时压缩
+失效时间为50秒
+*/
+$memcache_obj->set('var_key', 'some really big variable', MEMCACHE_COMPRESSED, 
+50);
+
+echo $memcache_obj->get('var_key');
+
+?>
+
+参见
+
+  • Memcache::add() - 增加一个条目到缓存服务器
+  • Memcache::replace() - 替换已经存在的元素的值
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+This is just two minor things about memcache that might not be perfectly clear,
+the limits on key and data sizes and what happen to flags in the memcache
+protocol.
+
+* There is a max key size of 250 anything bigger gets truncated. There is also
+a (1MB - 42 bytes) limit on the data.
+
+* In the memcache protocol there is a 16bit, 32bit in newer version, flag that
+you can set to whatever you want because memcache doesn't do anything with the
+flags. The php api doesn't let you get the flags because php uses the flags for
+php's own use such as "MEMCACHE_COMPRESSED" and I decided to test if it was
+doing something because it wasn't part of the memcache protocol.
+
+<?php
+$memcache = new Memcache();
+$memcache->connect("127.0.0.1", 11211);
+
+// Since memcache truncates the keys at 250 bytes both the get "250 a's" and
+"251 a's" will find the key in the cache
+echo "*** Truncate key test ***<br>";
+echo "set 251: " . ($memcache->set(str_repeat("a", 251), "value", 0, 1) ? "t" :
+"f") . "<br>";
+
+echo "get 249: " . (($ret = $memcache->get(str_repeat("a", 249))) !== false ? 
+"'$ret'" : "f") . "<br>";
+echo "get 250: " . (($ret = $memcache->get(str_repeat("a", 250))) !== false ? 
+"'$ret'" : "f") . "<br>";
+echo "get 251: " . (($ret = $memcache->get(str_repeat("a", 251))) !== false ? 
+"'$ret'" : "f") . "<br>";
+echo "delete: " . ($memcache->delete(str_repeat("a", 250)) ? "t" : "f") . "<br>
+<br>";
+
+echo "*** Compress value test ***<br>";
+echo "set 1024*1024-42: " . ($memcache->set("test", str_repeat("a", 1024*1024-
+42), 0, 1) ? "t" : "f") . "<br>";
+echo "set 1024*1024-41: " . ($memcache->set("test", str_repeat("a", 1024*1024-
+41), 0, 1) ? "t" : "f") . "<br>";
+echo "set 1024*1024 compressed: " . ($memcache->set("test", str_repeat("a", 
+1024*1024), MEMCACHE_COMPRESSED, 1) ? "t" : "f") . "<br>";
+echo "delete: " . ($memcache->delete("test") ? "t" : "f") . "<br>";
+$memcache->close();
+?>
+
+Output:
+*** Truncate key test ***
+set 251: t
+get 249: f
+get 250: 'value'
+get 251: 'value'
+delete: t
+
+*** Compress value test ***
+set 1024*1024-42: t
+set 1024*1024-41: f
+set 1024*1024 compressed: t
+delete: t
+===============================================================================
+
+The max time for expiration (without having to worry about deletions when
+necessary as with 0 seconds) is 2,592,000 seconds (30 days).
+
+Specifying an expiration value above that will return false, but will NOT throw
+in error so it is easy to miss.
+===============================================================================
+
+If you're interested in using compression, please note that, at least for PHP
+version 5.3.2 and Memcache version 3.0.4, when retrieving a key who's value is
+a numeric or boolean type, PHP throws a notice of the following:
+
+Message: MemcachePool::get(): Failed to uncompress data
+
+The way around this is to test your variable type before setting or adding it
+to Memcache, or even cast it as a string. 
+
+<?php
+$key = 'mc_key';
+$value = 12345;
+$compress = is_bool($value) || is_int($value) || is_float($value) ? false : 
+MEMCACHE_COMPRESSED;
+
+$mc= new Memcache;
+$mc->connect('localhost', 11211);
+$mc->set($key, $value, $compress);
+
+echo $mc->get($key);
+
+//Alternative is to cast the variable
+$value = is_scalar($value) ? (string)$value : $value;
+$mc->set($key, $value, MEMCACHE_COMPRESSED);
+?>
+===============================================================================
+
+Using set more than once for the same key seems to have unexpected results - it
+does not behave as a "replace," but instead seems to "set" more than one value
+for the same key.  "get" may return any of the values.
+
+This was tested on a multiple-server setup - behaviour may be different if you
+only have one server.
+
+Remedy is to use a combination of replace and set:
+
+<?php
+$result = $memcache->replace( $key, $var );
+if( $result == false )
+{
+    $result = $memcache->set( $key, $var );
+}
+?>
+===============================================================================
+
+if you want to cache an image created on-the-fly you can do:
+
+<?php
+ob_start();
+imagepng($image);
+$memcache->set("my_image", ob_get_contents(), false, $cache_time);
+ob_end_clean();
+?>
+
+then you could access the chached image as simple variable:
+<?php $my_image = $memcache->get("my_image"); ?>
+
+so, in short, you have to buffer the output
+===============================================================================
+
+I ran into problems using the MEMCACHE_COMPRESSED flag when storing small
+amounts of data, such as an integers.
+
+For expample.
+
+<?php
+Memcache::set('integer', 123456, MEMCACHE_COMPRESSED);
+//would return true
+
+Memcache::get('integer');
+//would return false
+?>
+
+This problem went away when I removed the MEMCACHE_COMPRESSED flag for values
+that were small.
+===============================================================================
+
+to put some things right:
+
+max expiration time: RTFM, it's written here.
+
+max amount of data: almost unlimited as long as your server can bear it.
+
+speed and pace:
+well, thats another thing. We had a couple of data records which for
+application reasons must be kept in memory. Since the bunch of data is big and
+doesn't change very often, we considered caching it to memcache instead of
+retrieving it from the DB each and every time.
+
+This isn't a general advice nor any quality statement, but we did a couple of
+tests with serialized arrays (50 MB), compressed and uncompressed and it turned
+out that in our particular scenario, memcache is much slower than the DB
+(mySql).
+
+In general, one can not predict on the behavior of memcache in certain
+scenarios but always need to make some testing and benchmarking upfront before
+starting to deploy things to a live system.
+
+Despite of the tests above, we are still using memcache for session caching
+instead of file system, since there are certain other things to consider and
+the amount of data is always small (few KB)
+===============================================================================
+
+The lowest byte of the int is reserved for pecl/memcache internal usage (e.g.
+to indicate compression and serialization status).

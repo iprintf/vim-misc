@@ -1,0 +1,312 @@
+
+passthru
+
+(PHP 4, PHP 5, PHP 7)
+
+passthru — 执行外部程序并且显示原始输出
+
+说明
+
+void passthru ( string $command [, int &$return_var ] )
+
+同 exec() 函数类似， passthru() 函数也是用来执行外部命令（command）的。当所执行
+的 Unix 命令输出二进制数据，并且需要直接传送到浏览器的时候，需要用此函数来替代 
+exec() 或 system() 函数。常用来执行诸如 pbmplus 之类的可以直接输出图像流的命令
+。通过设置 Content-type 为 image/gif，然后调用 pbmplus 程序输出 gif 文件，就可
+以从 PHP 脚本中直接输出图像到浏览器。
+
+参数
+
+command
+
+    要执行的命令。
+
+return_var
+
+    如果提供 return_var 参数， Unix 命令的返回状态会被记录到此参数。
+
+返回值
+
+没有返回值。
+
+注释
+
+Warning
+
+当用户提供的数据传入此函数，使用 escapeshellarg() 或 escapeshellcmd() 来确保用
+户欺骗系统从而执行任意命令。
+
+    Note:
+
+    如何程序使用此函数启动，为了能保持在后台运行，此程序必须将输出重定向到文件
+    或其它输出流。否则会导致 PHP 挂起，直至程序执行结束。
+
+    Note: 安全模式启用时，可仅可用 safe_mode_exec_dir 执行文件。实际上，现在不
+    允许在到可执行的路径中存在 .. 组件。
+
+Warning
+
+安全模式启用时，命令字符串会被 escapeshellcmd() 转换。因此，echo y | echo x 会
+变成 echo y \| echo x。
+
+参见
+
+  • exec() - 执行一个外部程序
+  • system() - 执行外部程序，并且显示输出
+  • popen() - 打开进程文件指针
+  • escapeshellcmd() - shell 元字符转义
+  • 执行运算符
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+If you are using passthru() to download files (for dynamically generated
+content or something outside webserver root) using similar code:
+
+header("Content-Type: application/octet-stream");
+header("Content-Disposition: attachment; filename=\"myfile.zip\"");
+header("Content-Length: 11111");
+passthru("cat myfile.zip",$err);
+
+and your download goes fine, but subsequent downloads / link clicks are screwed
+up, with headers and binary data being all over the website, try putting
+
+exit();
+
+after the passthrough. This will exit the script after the download is done and
+will not interfere with any future actions.
+===============================================================================
+
+passthru() seems absolutely determined to buffer output no matter what you do,
+even with ob_implicit_flush().  The solution seems to be to use popen()
+instead.
+===============================================================================
+
+Remember to use the full path (IE '/usr/local/bin/foo' instead of 'foo') when
+using passthru, otherwise you'll get an exit code of 127 (command not found).
+===============================================================================
+
+If you have chrooted apache and php, you will also want to put /bin/sh into the
+chrooted environment. Otherwise, the exec() or passthru() will not function
+properly, and will produce error code 127, file not found.
+===============================================================================
+
+Zak Estrada
+14-Dec-2004 11:21
+Remember to use the full path (IE '/usr/local/bin/foo' instead of 'foo') when
+using passthru, otherwise you'll get an exit code of 127 (command not found).
+
+Remember, you'll also get this error if your file does not have executable
+permission.
+===============================================================================
+
+I wrote function, that gets proxy server value from the Internet Explorer (from
+registry). It was tested in Windows XP Pro
+
+(Sorry for my English)
+
+<?php
+function getProxyFromIE()
+{
+        exec("reg query \"HKEY_CURRENT_USER\Software\Microsoft".
+        "\Windows\CurrentVersion\Internet Settings\" /v ProxyEnable",
+        $proxyenable,$proxyenable_status);
+
+        exec("reg query \"HKEY_CURRENT_USER\Software\Microsoft".
+        "\Windows\CurrentVersion\Internet Settings\" /v ProxyServer",
+        $proxyserver);
+
+        if($proxyenable_status!=0)
+        return false; #Can't access the registry! Very very bad...
+        else
+        {
+        $enabled=substr($proxyenable[4],-1,1);
+        if($enabled==0)
+        return false;
+        else
+        {
+        $proxy=ereg_replace("^[ \t]{1,10}ProxyServer\tREG_SZ[ \t]{1,20}","",
+        $proxyserver[4]);
+
+        if(ereg("[\=\;]",$proxy))
+        {
+             $proxy=explode(";",$proxy);
+             foreach($proxy as $i => $v)
+             {
+                   if(ereg("http",$v))
+                   {
+                   $proxy=str_replace("http=","",$v);
+                   break;
+                   }
+             }
+             if(@!ereg("^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\:".
+             "[0-9]{1,5}$",$proxy))
+             return false;
+             else
+             return $proxy;
+        }
+        else
+        return $proxy;
+        }
+
+        }
+}
+?>
+Note, that this function returns FALSE if proxy is disabled in Internet
+Explorer. This function returns ONLY HTTP proxy server.
+
+Usage:
+<?php
+$proxy=getProxyFromIE();
+if(!$proxy)
+echo "Can't get proxy!";
+else
+echo $proxy;
+?>
+===============================================================================
+
+PHP's program-execution commands fail miserably when it comes to STDERR, and
+the proc_open() command doesn't work all that consistently in non-blocking mode
+under Windows.
+
+This command, although useful, is no different. To form a mechanism that will
+see/capture both STDOUT and STDERR output, pipe the command to the 'tee'
+command (which can be found for Windows), and wrap the whole thing in output
+buffering.
+
+Dustin Oprea
+===============================================================================
+
+Note to Paul Giblock: the command *is* run through the shell.
+You can verify this on any Linux system with
+
+<?php
+passthru ('echo $PATH');
+?>
+
+You'll get the content of the PATH environment variable, not the string $PATH.
+===============================================================================
+
+Stuart:
+
+The pasthru function does not execute the program through the shell.  What this
+mean, among other things, is that your PATH variable is never set.  Therefore,
+you have to use full paths on everything.
+
+I believe system() will run your program underneith a shell.  This allow the
+program to run in a 'normal' environment.
+
+-Paul
+===============================================================================
+
+Thought it might beuseful to note the passthru seems to supress error messages
+whilst being run in Dos on Windows (test on NT).
+
+To show FULL raw output including errors, use system().
+===============================================================================
+
+Regarding swbrown's comment...you need to use an output buffer if you don't
+want the data displayed.
+
+For example:
+ob_start();
+passthru("<i>command</i>");
+$var = ob_get_contents();
+ob_end_clean(); //Use this instead of ob_flush()
+
+This gets all the output from the command, and exits without sending any data
+to stdout.
+===============================================================================
+
+The documention does not mention that passthru() will only display standard
+output and not standard error.
+
+If you are running a script you can pipe the STDERR to STDOUT by doing
+
+exec 2>&1
+
+Eg. the script below will actually print something with the passthru()
+function...
+
+#!/bin/sh
+exec 2>&1
+ulimit -t 60
+cat nosuchfile.txt
+===============================================================================
+
+If you sometimes get no output from passthru() use system() instead. This
+solved this problem for me (php 4.0.5 on Tru64 Unix compiled with gcc).
+===============================================================================
+
+PJ's ulimit example is nice; however, if you include multiple commands in the
+script after the ulimit command, each gets its own, seperate 60 second time
+slot!<br>
+
+Furthermore, these sixty seconds are *CPU* time. Most programs hang for other
+reasons than CPU hogging (for example, waiting for a database connection) so
+for most purposes the number 60 is rather too high.<br>
+
+Try "ulimit -t 1" first, which will give you about 10^9 cycles on modern
+hardware -- quite enough to get a lot of work done!
+===============================================================================
+
+About the problem of zombies, you may call a bash script like this:
+
+--------------------------
+#! /bin/bash
+ulimit -t 60
+
+<your command here>
+--------------------------
+===============================================================================
+
+I dunno if anyone else might find this useful, but when I was trying to use the
+passthru() command on Suse9.3 I was having no success with the command:
+
+$command = 'gdal_translate blahahahaha';
+
+passthru($command);
+
+It only worked once I put:
+
+$command = '/usr/bin/local/gdal_translate blalalala';
+
+passthru($command);
+===============================================================================
+
+I had an issue when i used exec
+
+I think we were echoing information on the test.php script.
+for eg: when we tried
+
+exec(php test.php,$array,$error);
+
+the return was 127 and the code was failing.
+
+checking the note on this page gave us a hint to use passthru instead.
+The only thing to note is that you need to provide the fuull path.
+
+now our command became
+
+passthru(/bin/php /pathtotest/test.php,$array,$error);
+
+this works.
+
+yipeee!!!!!
+===============================================================================
+
+Regarding kpierre's post, be mindful that if you shell script errors, you will
+find the error output from it in the base error_log file (not virtualhost
+error_log) in apache.
+===============================================================================
+
+With apache 2.x on RH9 passthru() writes 1 byte at a time. Apache 2.x buffers
+and chunk encodes the output for you - but the chunked encoding devides the
+output in chunks of 1 byte each...thus several bytes of overhead per byte. I
+guess that buffering behaviour is by design - but caused problems for me with
+IE adobe acrobot 5 plugin. The plugin doesn't like like it if you send it a
+stream of 1 byte chunks - it tells you your file is not a pdf or gives a blank
+screen. Using output buffering (ob_start / ob_endflush) gives reasonable size
+chunks and the plugin works OK.

@@ -1,0 +1,257 @@
+
+pg_send_query
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pg_send_query — 发送异步查询
+
+说明
+
+bool pg_send_query ( resource $connection , string $query )
+bool pg_send_query ( string $query )
+
+pg_send_query() 向 connection 连接发送异步查询。和 pg_query() 不同，它可以向
+PostgreSQL 发送多个查询并用 pg_get_result() 依次得到结果。当执行查询时脚本的执
+行不会被锁定。用 pg_connection_busy() 来检查连接连接是否为忙（即查询正在执行中
+）。调用 pg_cancel_query() 则有可能取消查询。
+
+尽管用户可以一次发送多个查询，但用户不能通过正忙的连接发送多个查询。如果向正忙
+的连接发送了查询，则会等待上一条查询结束并丢弃所有结果。
+
+Example #1 异步查询
+
+<?php
+    $dbconn = pg_connect("dbname=publisher") or die("Could not connect");
+    if (!pg_connection_busy($dbconn)) {
+        pg_send_query($dbconn,"select * from authors; select count(*)
+ from authors;");
+    }
+    $res1 = pg_get_result($dbconn);
+    echo "First call to pg_get_result(): $res1\n";
+    $rows1 = pg_num_rows($res1);
+    echo "$res1 has $rows1 records\n\n";
+    $res2 = pg_get_result($dbconn);
+    echo "second call to pg_get_result(): $res2\n";
+    $rows2 = pg_num_rows($res2);
+    echo "$res2 has $rows2 records\n";
+?>
+
+上例输出如下：
+
+first call to pg_get_result(): Resource id #3
+Resource id #3 has 3 records
+
+second call to pg_get_result(): Resource id #4
+Resource id #4 has 1 records
+
+参见 pg_query()，pg_cancel_query()，pg_get_result() 和 pg_connection_busy()。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+pg_send_query would not stop your script from executing but it would stop the
+script from exiting.
+
+Example:
+
+<?php
+$con = pg_connect('dbname=payroll');
+pg_send_query('SELECT process_payroll()'); // Where process_payroll is a super
+long process
+?>
+
+You would still need to wait for the query to finish before the any display
+would be sent to the browser. And surprisingly, unlike pg_query this script
+would not generate the Maximum execution time error.
+===============================================================================
+
+Regarding the failure to process them all now, then retrieve the results later,
+I found that all queries would return successfully if I added a further
+condition to your while loop in the "stack_query()" method.
+
+By adding:
+&& (pg_transaction_status($conn) === PGSQL_TRANSACTION_IDLE ) )
+
+Every query executed with no errors.
+
+<?php
+$conn = pg_connect("dbname=dbname host=localhost user=psql ");
+if ($conn === FALSE)
+  exit("Can't connect to db");
+
+$q = array();
+// send some queries
+foreach (range(0, 50) as $i)
+  stack_query($q, $conn, "SELECT 'query $i' AS str;");
+// receive them
+while (true)
+  {
+    $left = stack_query($q, $conn);
+    echo "$left left... ";
+    $result = pg_get_result($conn);
+    if ($left == 0 && $result === FALSE)
+      break;
+    $row = pg_fetch_assoc($result);
+    // depending on race conditions, you wont get all your original queries
+here.
+    echo "got $row[str]\n";
+  }
+
+function stack_query(&$queries, $conn, $sql = FALSE)
+{
+  if ($sql !== FALSE)
+    $queries[] = $sql;
+  while (count($queries) && !pg_connection_busy($conn)  && (
+pg_transaction_status($conn) === PGSQL_TRANSACTION_IDLE ) )
+    pg_send_query($conn, array_shift($queries));
+  return count($queries) + (pg_connection_busy($conn) ? 1 : 0);
+}
+?>
+===============================================================================
+
+<?php
+// --------- OPEN CONN ---
+
+   $conn = pg_connect("host='127.0.0.1' dbname='test' user='usertest' password=
+'passtest'");
+
+// --------- OPEN FILE ---
+
+   $fp = fopen('logo.gif', "r");
+   $buffer = fread($fp, filesize('logo.gif'));
+   fclose($fp);
+
+// --------- CREATE - INSERT OID ---
+
+   pg_exec($conn, "begin");
+
+   $oid = pg_locreate($conn);
+
+   $rs = pg_exec($conn,"INSERT INTO test(tipo, images) VALUES('A1', $oid);");
+   $handle = pg_loopen ($conn, $oid, "w");
+
+   pg_lowrite ($handle, $buffer);
+   pg_loclose ($handle);
+
+   pg_exec($conn, "commit");
+
+// --------- OPEN - INSERT OID ---
+
+   $rs = pg_exec($conn, "SELECT images FROM test WHERE tipo = 'A1';");
+   $row = pg_fetch_row($rs, 0);
+
+   pg_exec($conn, "begin");
+   $loid = pg_loopen($conn, $row[0], "r");
+
+   header("Content-type: image/gif");
+
+   pg_loreadall($loid);
+   pg_loclose($loid);
+
+   pg_exec ($conn, "commit");
+
+// --------- UNLINK OID ---
+
+   pg_exec($conn, "begin");
+
+   $loid = $row[0];
+   pg_lounlink($conn, $loid);
+
+   pg_exec ($conn, "commit");
+
+// --------- DELETE OID ---
+
+   pg_exec($conn, "DELETE FROM test WHERE tipo = 'A1';");
+
+// --------- CLOSE CONN ---
+
+   pg_close();
+?>
+===============================================================================
+
+Due to a bug, OLD API does not available with PHP 4.2.0 and 4.2.1.
+
+PHP 4.2.2 will support OLD API again and will be kept long enough.
+
+New API will be available PHP 4.2.0 to later versions.
+yohgaki at php dot net
+19-Jun-2002 04:00
+Due to a bug, PHP 4.2.0 and 4.2.1 does not support pg_lo_import() old API. It's
+fixed in PHP 4.2.2.
+
+BTW, new API will be always available from PHP 4.2.0 to later versions. Older
+API will be kept long enough, also.
+ceco at noxis dot net
+15-May-2002 09:08
+it works for me (php-4.2.1)
+
+not like this
+
+int pg_lo_import ( string pathname [, resource connection])
+
+but
+int pg_lo_import ( resource connection, string pathname )
+
+don't know the reason
+===============================================================================
+
+If there is an error in one of your queries, the queries following it will not
+get executed, and there will *not* be an error message displayed. The only way
+I can think of to determine if an SQL error happened is to use pg_trace.
+
+Example:
+
+pg_send_query($connection,
+    "SELECT id FROM users;
+    SELECT * FROM customers;
+     [INVALID-SQL-STATEMENT];
+    SELECT name FROM countries;");
+
+while ($result = pg_get_result($connection))
+    $results[] = $result;
+
+The $results array will only have two items in it.
+===============================================================================
+
+Note that if you send a query without calling pg_get_result() for the previous
+one (supposing it has finished and the connection is not busy), the previous
+query will get discarded.
+
+See for yourself (tested on php4.4.0, postgres8.0.4, Linux/FreeBSD) :
+<?
+$conn = pg_connect("dbname=template1 host=localhost user=pgsql");
+if ($conn === FALSE)
+  exit("Can't connect to db");
+
+$q = array();
+// send some queries
+foreach (range(0, 500) as $i)
+  stack_query($q, $conn, "SELECT 'query $i' AS str;");
+// receive them
+while (true)
+  {
+    $left = stack_query($q, $conn);
+    echo "$left left... ";
+    $result = pg_get_result($conn);
+    if ($left == 0 && $result === FALSE)
+      break;
+    $row = pg_fetch_assoc($result);
+    // depending on race conditions, you wont get all your original queries
+here.
+    echo "got $row[str]\n";
+  }
+
+function stack_query(&$queries, $conn, $sql = FALSE)
+{
+  if ($sql !== FALSE)
+    $queries[] = $sql;
+  while (count($queries) && !pg_connection_busy($conn))
+    pg_send_query($conn, array_shift($queries));
+  return count($queries) + (pg_connection_busy($conn) ? 1 : 0);
+}
+?>
+
+You will have to write a higher level of abstraction if you want a "send all
+queries now, receive them later" behaviour.

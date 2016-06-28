@@ -1,0 +1,180 @@
+
+oci_parse
+
+(PHP 5, PHP 7, PECL OCI8 >= 1.1.0)
+
+oci_parse — 配置 Oracle 语句预备执行
+
+说明
+
+resource oci_parse ( resource $connection , string $query )
+
+oci_parse() 在 connection 上配置 query 并返回语句标识符以用于 oci_bind_by_name
+()，oci_execute() 以及其它函数。
+
+    Note:
+
+    本函数并不验证 query。要知道 query 是否是合法的 SQL 或 PL/SQL 语句的唯一方
+    法是执行它。
+
+oci_parse() 在出错时返回 FALSE。
+
+    Note:
+
+    在 PHP 5.0.0 之前的版本必须使用 ociparse() 替代本函数。该函数名仍然可用，为
+    向下兼容作为 oci_parse() 的别名。不过其已被废弃，不推荐使用。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+A neat way to parse a query only once per script, if the query is done inside a
+function:
+
+<?php
+function querySomething($conn, $id)
+{
+    static $stmt;
+
+    if (is_null($stmt)) {
+        $stmt = oci_parse($conn, 'select * from t where pk = :id');
+    }
+
+    oci_bind_by_name($stmt, ':id', $id, -1);
+
+    oci_execute($stmt, OCI_DEFAULT);
+
+    return oci_fetch_array($stmt, OCI_ASSOC);
+
+}
+
+?>
+
+With the static variable, the statment handle isn't closed after the function
+has terminated. Very nice for functions that are called e.g. in loops.
+Unfortunately this only works for static sql. If you have dynamic sql, you can
+do the following:
+
+<?php
+
+function querySomething($conn, $data)
+{
+    static $stmt = array();
+   
+    $first = true;
+   
+    $query = 'select * from t';
+
+    foreach ($data as $key => $value) {
+        if ($first) {
+            $first = false;
+            $query .= ' where ';
+        } else {
+            $query .= ' and ';
+        }
+       
+        $query .= "$key = :b$key";
+    }
+   
+    $queryhash = md5($query);
+  
+    if (is_null($stmt[$queryhash])) {
+        $stmt[$queryhash] = oci_parse($conn, $query);   
+    }
+
+    foreach ($data as $key => $value) {
+        // don't use $value, because we bind memory addresses here.
+        // this would result in every bind pointing at the same value after
+foreach
+        oci_bind_by_name($stmt[$queryhash], ":b$key", $data[$key], -1);
+    }
+   
+    oci_execute($stmt[$queryhash], OCI_DEFAULT);
+
+    return oci_fetch_array($stmt[$queryhash], OCI_ASSOC);
+
+}
+
+?>
+===============================================================================
+
+For those that are having trouble with error checking, i have noticed on a lot
+of sites that people are trying to check the statement handle for error
+messages with OCIParse. Since the statement handle ($sth) is not created yet,
+you need to check the database handle ($dbh) for any errors with OCIParse. For
+example:
+
+instead of:
+
+<?php
+$stmt = OCIParse($conn, $query);
+if (!$stmt) {
+   $oerr = OCIError($stmt);
+   echo "Fetch Code 1:".$oerr["message"];
+   exit;
+}
+?>
+
+use:
+
+<?php
+$stmt = OCIParse($conn, $query);
+if (!$stmt) {
+   $oerr = OCIError($conn);
+   echo "Fetch Code 1:".$oerr["message"];
+   exit;
+}
+?>
+
+Hope this helps someone.
+===============================================================================
+
+If you want using PL/SQL in variable:
+
+<?php
+$query = "begin null;  end;";
+$stid = oci_parse($conn, "$query");
+?>
+
+or
+
+<?php
+$stid = oci_parse($conn, "begin null;  end;");
+?>
+===============================================================================
+
+Whereas MySQL doesn't care what kind of quotes are around a LIKE clause,
+ociexecute gives the error:
+    ociexecute(): OCIStmtExecute: ORA-00904: "NM": invalid identifier
+for the following.
+<?php
+$sql  = "SELECT * FROM addresses "
+      . "WHERE state LIKE \"NM\"";  // error!
+$stmt = ociparse($conn, $sql);
+ociexecute($stmt);
+?>
+
+it's fine if you just use single quotes:
+    . "WHERE state LIKE 'NM'";
+but i think it's interesting that ociparse doesn't say anything
+===============================================================================
+
+When you want to call stored function (and want to read its result) which
+executes DML queries (insert, update, delete) inside its body you can't use
+"select your_stored_function(:param1, :param2) from dual" because you will
+receive "ORA-14551: cannot perform a DML operation inside a query" error.
+
+In order to call such function and get its result you need to wrap it into
+nested procedure with OUT parameter like this:
+
+DECLARE
+  PROCEDURE caller(return_value OUT NUMBER) AS
+  BEGIN
+    return_value := your_stored_function(:param1, :param2);
+  END;
+BEGIN
+  caller(:return_value);
+END;
+
+and bind to :return_value variable to get the result of function.

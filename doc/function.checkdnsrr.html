@@ -1,0 +1,231 @@
+
+checkdnsrr
+
+(PHP 4, PHP 5, PHP 7)
+
+checkdnsrr — 给指定的主机（域名）或者IP地址做DNS通信检查
+
+说明
+
+bool checkdnsrr ( string $host [, string $type = "MX" ] )
+
+根据不同记录（type）类型查询主机（host）相应的DNS记录。
+
+参数
+
+host
+
+    主机（host）可以是一个IP地址也可以是域名。
+
+type
+
+    解析记录类型（type）可能是下面这些类型中的任何一个：A，MX，NS，SOA，PTR，
+    CNAME，AAAA，A6， SRV，NAPTR，TXT 或者 ANY。
+
+返回值
+
+如果记录能找到，就返回TRUE；如果查找不到该DNS记录或者发生了错误，就返回FALSE。
+
+更新日志
+
+版本                  说明
+5.3.0 这个函数在Windows平台上也可以使用了。
+5.2.4 增加了TXT的记录类型。
+5.0.0 增加了AAAA的记录类型。
+
+注释
+
+    Note:
+
+    出于对低版本在windows平台上的兼容性，可以试试» PEAR扩展包里面提供的
+    » Net_DNS类。
+
+参见
+
+  • dns_get_record() - 获取指定主机的DNS记录
+  • getmxrr() - Get MX records corresponding to a given Internet host name
+  • gethostbyaddr() - 获取指定的IP地址对应的主机名
+  • gethostbyname() - Get the IPv4 address corresponding to a given Internet
+    host name
+  • gethostbynamel() - Get a list of IPv4 addresses corresponding to a given
+    Internet host name
+  • the named(8) manual page
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+criffoh at gmail dot com is right. Before you check domain, you must convert to
+ascii with idn_to_ascii function:
+http://us2.php.net/manual/en/function.idn-to-ascii.php .
+
+var_dump(checkdnsrr('ñandu.cl', 'A')); // returns false
+var_dump(checkdnsrr(idn_to_ascii('ñandu.cl'), 'A')); // return true
+===============================================================================
+
+This is a little code example that will validate an email address in two ways:
+- first the general syntax of the string is checked with a regular expression
+- then the domain substring (after the '@') is checked using the 'checkdnsrr'
+function
+
+<?php
+
+function validate_email($email){
+
+   $exp = "^[a-z\'0-9]+([._-][a-z\'0-9]+)*@([a-z0-9]+([._-][a-z0-9]+))+$";
+
+   if(eregi($exp,$email)){
+
+      if(checkdnsrr(array_pop(explode("@",$email)),"MX")){
+        return true;
+      }else{
+        return false;
+      }
+
+   }else{
+
+      return false;
+
+   }   
+}
+
+?>
+===============================================================================
+
+Is not possible validate domains with 'ñ' for my country.
+
+In my country is possible to register domain using 'ñ' character. For example:
+
+ñandu.cl
+http://nic.cl/cgi-bin/dom-CL?q=%F1andu
+
+If I use this function to check DNS record, it return false, but the domain
+already exists:
+
+var_dump(checkdnsrr('ñandu.cl', 'A')); // returns false
+===============================================================================
+
+Updated (eregi is deprecated) function to validate an email and a domain. 
+Function allows for either fully-qualified email addresses, or partial address
+(@gmail.com or gmail.com).   Also supports the I18N character conversion.
+
+I'm using the function for white/black list content validation:
+
+function checkEmailAndDomain($_email)
+{
+    $exp = "/^(.*)@(.*)$/";
+    preg_match($exp, $_email, $matches);
+
+    if (!empty($matches[1]) and (!filter_var($_email, FILTER_VALIDATE_EMAIL)))
+        return (false);
+
+    return (checkdnsrr(idn_to_ascii($matches[2]), 'MX'));
+}
+===============================================================================
+
+<?php
+function check_dnsbl($ip)
+{
+    $dnsbl_check=array("bl.spamcop.net","list.dsbl.org",
+"sbl.spamhaus.org",'xbl.spamhaus.org');
+    if($ip){
+        $rip=implode('.',array_reverse(explode(".",$ip)));
+        foreach($dnsbl_check as $val){
+            if(checkdnsrr($rip.'.'.$val.'.','A'))
+                return $rip.'.'.$val;
+        }
+    }
+    return false;
+}
+?>
+===============================================================================
+
+Attention! By default the function searches only for MX records, when no type
+is specified. To search for any record you have to manually ask for it.
+
+I hope i spared someone my day of bug searching caused by that oversight. :(
+===============================================================================
+
+maybe usefull, a blacklist (DNSBL) check function:
+
+<?php
+function is_blacklisted($ip) {
+    $dnsbl_check=array("bl.spamcop.net",
+                       "relays.osirusoft.com",
+                       "list.dsbl.org",
+                       "sbl.spamhaus.org");
+    if ($ip) {
+       $quads=explode(".",$ip);
+        $rip=$quads[3].".".$quads[2].".".$quads[1].".".$quads[0];
+        for ($i=0; $i<count($dnsbl_check); $i++) {
+            if (checkdnsrr($rip.".".$dnsbl_check[$i],"A")) {
+                $listed.=$dnsbl_check[$i]." ";
+            }
+         }
+       if ($listed) { return $listed; } else { return FALSE; }
+    }
+}
+?>
+===============================================================================
+
+fox dot 69 at gmx dot net: I wonder where you got this code from. I have
+written this piece of code half a year ago and released it WITH a copyright
+header that is missing now! Anyways... this code is to be considered licenced
+"as-is", however it'd be nice to keep the authors note (This is something about
+reputation, you see?). Thanks.
+
+(Much) more recent version of it:
+<?php
+function is_blacklisted($ip) {
+   // written by satmd, do what you want with it, but keep the author please
+   $result=Array();
+   $dnsbl_check=array("bl.spamcop.net",
+                       "list.dsbl.org",
+                       "sbl.spamhaus.org");
+   if ($ip) {
+       $quads=explode(".",$ip);
+       $rip=$quads[3].".".$quads[2].".".$quads[1].".".$quads[0];
+       for ($i=0; $i<count($dnsbl_check); $i++) {
+           if (checkdnsrr($rip.".".$dnsbl_check[$i].".","A")) {
+              $result[]=Array($dnsbl_check[$i],$rip.".".$dnsbl_check[$i]);
+           }
+         }
+      return $result;
+   }
+}
+?>
+
+Beware that this code's signature differs from the original! I also removed
+osirusoft as its results are not useful anyways (false positives!). Please make
+sure that you have nscd or a caching dns server running as this code is prone
+to (d)dos! Only use it in places where it is necessary (when data is to be
+modified), e.g. the script processing uploads/posts/replies in a blog.
+===============================================================================
+
+The checkdnsrr function is not implemented on the Windows platform. The way to
+get around this problem is to write your own version of checkdnsrr. Example:
+myCheckDNSRR
+
+<?php
+function myCheckDNSRR($hostName, $recType = '')
+{
+if(!empty($hostName)) {
+   if( $recType == '' ) $recType = "MX";
+   exec("nslookup -type=$recType $hostName", $result);
+   // check each line to find the one that starts with the host
+   // name. If it exists then the function succeeded.
+   foreach ($result as $line) {
+     if(eregi("^$hostName",$line)) {
+       return true;
+     }
+   }
+   // otherwise there was no mail handler for the domain
+   return false;
+}
+return false;
+}
+?>
+Note that the type parameter is optional, and if you don't supply it then the
+type defaults to "MX" (which means Mail Exchange). If any records are found,
+the function returns TRUE. Otherwise, it returns FALSE.

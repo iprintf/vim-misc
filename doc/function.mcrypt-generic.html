@@ -1,0 +1,193 @@
+
+mcrypt_generic
+
+(PHP 4 >= 4.0.2, PHP 5, PHP 7)
+
+mcrypt_generic — 加密数据
+
+说明
+
+string mcrypt_generic ( resource $td , string $data )
+
+本函数用来加密数据。传入数据长度必须是 n * 分组大小，否则需要后补 "\0"。本函数
+返回加密后的数据。注意，根据数据补齐不同，返回的数据可能比输入的数据长度有所增
+加。
+
+如果你需要把加密后的数据保存到数据库，请确保保存 mcrypt_generic 返回的完整的字
+符串，否则将无法正确解密。如果原始数据有 10 个字符，分组大小为 8 （使用 
+mcrypt_enc_get_block_size() 获取分组大小），则数据库中至少需要 16 个字符来保存
+数据。请注意 mdecrypt_generic() 函数返回的数据也会是 16 个字符。使用 rtrim
+($str, "\0") 移除字符串末尾的 0 。
+
+如果你在例如 MySQL 这样的数据库中存储数据，请注意 varchar 类型的字段会在插入数
+据时自动移除字符串末尾的“空格”。由于加密后的数据可能是以空格（ASCII 32）结尾，
+这种特性会导致数据损坏。请使用 tinyblob/tinytext（或 larger）字段来存储加密数据
+。
+
+参数
+
+td
+
+    加密描述符。
+
+    在调用本函数之前，请使用 mcrypt_generic_init() 函数初始化加密句柄。在加密完
+    成之后，需要调用 mcrypt_generic_deinit() 函数进行必要的清理工作。请参见 
+    mcrypt_module_open() 。
+
+data
+
+    要加密的数据。
+
+返回值
+
+返回加密后的数据。
+
+参见
+
+  • mdecrypt_generic() - 解密数据
+  • mcrypt_generic_init() - 初始化加密所需的缓冲区
+  • mcrypt_generic_deinit() - 对加密模块进行清理工作
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+completing  the post from Ryan Thomas, ryanrst at gmail dot com, if u post a
+cookie w/ HTTP method, its may be encoded;
+As some chars in base64 will be encoded to another things, u can just replace
+them before encode and after decode;
+Its a tweak from dawgeatschikin at hotmail dot com to original idea from
+massimo dot scamarcia at gmail dot com
+(see @ http://www.php.net/manual/en/function.base64-encode.php):
+<?php
+function urlsafe_b64encode($string)
+{
+  $data = base64_encode($string);
+  $data = str_replace(array('+','/','='),array('-','_','.'),$data);
+  return $data;
+}
+function urlsafe_b64decode($string)
+{
+  $data = str_replace(array('-','_','.'),array('+','/','='),$string);
+  $mod4 = strlen($data) % 4;
+  if ($mod4) {
+    $data .= substr('====', $mod4);
+  }
+  return base64_decode($data);
+}
+?>
+===============================================================================
+
+Addendum to my previous note: apparently there was some sort of character
+encoding breakage; PHP does not pad if no padding is needed, and the extra
+padding I saw was the result of chr(X) returning multiple bytes or something.
+
+The pad/unpad functions I gave are still binary-safe, though, and are to the
+best of my knowledge completely compatible with NIST 800-38a.
+===============================================================================
+
+If the data is already n*blocksize long, PHP pads with another full block of "\
+0", so there will be between 1 and mcrypt_enc_get_block_size($td) bytes of
+padding.
+
+You can create binary-safe padding by unconditionally adding a 0x80 to the
+string, then stripping trailing "\0"s PHP added, plus the one 0x80 byte.
+
+<?php
+function pad($text) {
+  // Add a single 0x80 byte and let PHP pad with 0x00 bytes.
+  return pack("a*H2", $text, "80");
+}
+function unpad($text) {
+  // Return all but the trailing 0x80 from text that had the 0x00 bytes removed
+  return substr(rtrim($text, "\0"), 0, -1);
+}
+?>
+===============================================================================
+
+Behaviour change: Since 5.2.x mcrypt_generic will issue a warning when the
+datastring is empty.
+===============================================================================
+
+I was able get php and perl to play together with blowfish using cipher block
+chaining.  The blowfish key needs to be atleast 8 chars (even though blowfish
+min is 8 bits, perl didn't like keys smaller than 8 chars) and max 56.  The iv
+must be exactly 8 chars and padding needs to be null because php pads with
+nulls.  Also, php needs libmcrypt >= 2.4.9 to be compatible with perl.
+
+PERL
+----
+
+use Crypt::CBC;
+$cipher = Crypt::CBC->new( {'key' => 'my secret key',
+                                    'cipher'=> 'Blowfish',
+                                    'iv' => '12345678',
+                                    'regenerate_key' => 0,
+                                    'padding' => 'null',
+                                    'prepend_iv' => 0
+                                    });
+$cc = 'my secret text';
+$encrypted = $cipher->encrypt($cc);
+$decrypted = $cipher->decrypt($encrypted);
+
+print "encrypted : ".$encrypted;
+print "<br>";
+print "decrypted : ".$decrypted;
+
+PHP
+---
+
+$cc = 'my secret text';
+$key = 'my secret key';
+$iv = '12345678';
+
+$cipher = mcrypt_module_open(MCRYPT_BLOWFISH,'','cbc','');
+
+mcrypt_generic_init($cipher, $key, $iv);
+$encrypted = mcrypt_generic($cipher,$cc);
+mcrypt_generic_deinit($cipher);
+
+mcrypt_generic_init($cipher, $key, $iv);
+$decrypted = mdecrypt_generic($cipher,$encrypted);
+mcrypt_generic_deinit($cipher);
+
+echo "encrypted : ".$encrypted;
+echo "<br>";
+echo "decrypted : ".$decrypted;
+===============================================================================
+
+If you wish to store encrypted data in a cookie variable on the browser you
+will encounter problems when decrypting the data. This is because cookies will
+only store US-ASCII characters and your encrypted data may contain non-US-ASCII
+characters.
+
+The solution:
+
+base64_encode your encrypted string before you store it in the cookie and
+base64_decode the string stored in the cookie becore decrypting.
+
+Example:
+
+function setEncryptedCookie($cookieName, $data)
+{
+  setcookie($cookieName, base64_encode($this->encrypt($data)), time()+$this->
+expire); 
+}
+
+function getEncryptedCookie($cookieName)
+{
+  return $this->decrypt(base64_decode($_COOKIE[$cookieName]));
+}
+===============================================================================
+
+If you are encrypting binary and there is a null terminator partway through
+your encryption, you will loose the rest of the string.  A workaround is to
+base64_encode your binary string first.
+
+We found this problem while trying to encrypt CC information.  Some CC values
+would not decrypt after we converted them to a binary string.
+
+We were using the MCRYPT_RIJNDAEL_256 module to encrypt with.
+
+Hope this helps someone.

@@ -1,0 +1,2101 @@
+
+print_r
+
+(PHP 4, PHP 5, PHP 7)
+
+print_r — 打印关于变量的易于理解的信息。
+
+描述
+
+bool print_r ( mixed $expression [, bool $return ] )
+
+
+    Note: 参数 return 是在 PHP 4.3.0 的时候加上的
+
+print_r() 显示关于一个变量的易于理解的信息。如果给出的是 string、integer 或 
+float，将打印变量值本身。如果给出的是 array，将会按照一定格式显示键和元素。
+object 与数组类似。
+
+记住，print_r() 将把数组的指针移到最后边。使用 reset() 可让指针回到开始处。
+
+<pre>
+<?php
+    $a = array ('a' => 'apple', 'b' => 'banana', 'c' => array ('x','y','z'));
+    print_r ($a);
+?>
+</pre>
+
+上边的代码将输出：
+
+<pre>
+Array
+(
+    [a] => apple
+    [b] => banana
+    [c] => Array
+        (
+            [0] => x
+            [1] => y
+            [2] => z
+        )
+)
+</pre>
+
+如果想捕捉 print_r() 的输出，可使用 return 参数。若此参数设为 TRUE，print_r()
+将不打印结果（此为默认动作），而是返回其输出。
+
+Example #1 return 参数示例
+
+<?php
+    $b = array ('m' => 'monkey', 'foo' => 'bar', 'x' => array ('x', 'y', 'z'));
+    $results = print_r ($b, true); //$results 包含了 print_r 的输出结果
+?>
+
+    Note: 如果想在 PHP 4.3.0 之前的版本中捕捉 print_r() 的输出，可使用输出控制
+    函数。
+
+    Note: 在 PHP 4.0.4 之前的版本中，如果给出的 array 或 object 包含了直接或间
+    接指向自身的引用，print_r() 将永远继续下去。print_r($GLOBALS) 就是一个例子
+    ，因为 $GLOBALS 自身即是全局变量，其包含了指向自身的引用。
+
+参见 ob_start()、var_dump() 和 var_export()。
+
+
+User Contributed Notes 49 notes
+
+===============================================================================
+
+I add this function to the global scope on just about every project I do, it
+makes reading the output of print_r() in a browser infinitely easier.
+
+<?php
+function print_r2($val){
+        echo '<pre>';
+        print_r($val);
+        echo  '</pre>';
+}
+?>
+
+It also makes sense in some cases to add an if statement to only display the
+output in certain scenarios, such as:
+
+if(debug==true)
+if($_SERVER['REMOTE_ADDR'] == '127.0.0.1')
+===============================================================================
+
+Here is another version that parses the print_r() output. I tried the one
+posted, but I had difficulties with it. I believe it has a problem with nested
+arrays. This handles nested arrays without issue as far as I can tell.
+
+<?php
+function print_r_reverse($in) {
+    $lines = explode("\n", trim($in));
+    if (trim($lines[0]) != 'Array') {
+        // bottomed out to something that isn't an array
+        return $in;
+    } else {
+        // this is an array, lets parse it
+        if (preg_match("/(\s{5,})\(/", $lines[1], $match)) {
+            // this is a tested array/recursive call to this function
+            // take a set of spaces off the beginning
+            $spaces = $match[1];
+            $spaces_length = strlen($spaces);
+            $lines_total = count($lines);
+            for ($i = 0; $i < $lines_total; $i++) {
+                if (substr($lines[$i], 0, $spaces_length) == $spaces) {
+                    $lines[$i] = substr($lines[$i], $spaces_length);
+                }
+            }
+        }
+        array_shift($lines); // Array
+        array_shift($lines); // (
+        array_pop($lines); // )
+        $in = implode("\n", $lines);
+        // make sure we only match stuff with 4 preceding spaces (stuff for
+this array and not a nested one)
+        preg_match_all("/^\s{4}\[(.+?)\] \=\> /m", $in, $matches, 
+PREG_OFFSET_CAPTURE | PREG_SET_ORDER);
+        $pos = array();
+        $previous_key = '';
+        $in_length = strlen($in);
+        // store the following in $pos:
+        // array with key = key of the parsed array's item
+        // value = array(start position in $in, $end position in $in)
+        foreach ($matches as $match) {
+            $key = $match[1][0];
+            $start = $match[0][1] + strlen($match[0][0]);
+            $pos[$key] = array($start, $in_length);
+            if ($previous_key != '') $pos[$previous_key][1] = $match[0][1] - 1;
+            $previous_key = $key;
+        }
+        $ret = array();
+        foreach ($pos as $key => $where) {
+            // recursively see if the parsed out value is an array too
+            $ret[$key] = print_r_reverse(substr($in, $where[0], $where[1] - 
+$where[0]));
+        }
+        return $ret;
+    }
+}
+
+?>
+===============================================================================
+
+Here is a function that formats the output of print_r as a expandable/
+collapsable tree list using HTML and JavaScript.
+<?php
+function print_r_tree($data)
+{
+    // capture the output of print_r
+    $out = print_r($data, true);
+
+    // replace something like '[element] => <newline> (' with <a href=
+"javascript:toggleDisplay('...');">...</a><div id="..." style="display: none;">
+    $out = preg_replace('/([ \t]*)(\[[^\]]+\][ \t]*\=\>[ \t]*[a-z0-9 \t_]+)\n[
+\t]*\(/iUe',"'\\1<a href=\"javascript:toggleDisplay(\''.(\$id = substr(md5(rand
+().'\\0'), 0, 7)).'\');\">\\2</a><div id=\"'.\$id.'\" style=\"display: none;\">
+'", $out);
+
+    // replace ')' on its own on a new line (surrounded by whitespace is ok)
+with '</div>
+    $out = preg_replace('/^\s*\)\s*$/m', '</div>', $out);
+
+    // print the javascript function toggleDisplay() and then the transformed
+output
+    echo '<script language="Javascript">function toggleDisplay(id) {
+document.getElementById(id).style.display = (document.getElementById
+(id).style.display == "block") ? "none" : "block"; }</script>'."\n$out";
+}
+?>
+Pass it a multidimensional array or object and each sub-array/object will be
+hidden and replaced by a html link that will toggle its display on and off.
+Its quick and dirty, but great for debugging the contents of large arrays and
+objects.
+Note: You'll want to surround the output with <pre></pre>
+===============================================================================
+
+Sometimes print_r produces large output, especially when the data hierarchy is
+too deep. It is very difficult to analyze the dump about 1Mb length.
+
+It would be great to have some way to fold arrays and objects and to look
+deeper into hierarchy only on demand.
+
+Here is the solution. Just pass the print_r output to debug_var function:
+
+debug_var('title', print_r($var, true));
+
+and it will produce nice html with folding option.
+
+<?php
+  ob_start();
+?>
+Locals: Array
+(
+    [arr] => Array
+        (
+            [0] => Bon Object
+                (
+                    [n] => id
+                    [v] => 1
+                    [dv] =>
+                    [dn] =>
+                )
+
+        )
+
+    [b] => Bon Object
+        (
+            [n] => id
+            [v] => 1
+            [dv] =>
+            [dn] =>
+        )
+
+    [k] => 0
+    [row] => Array
+        (
+            [aid] => 1
+            [bonus] => spell.id: 125;
+            [req] =>
+            [brcache] =>
+            [auto] => 0
+        )
+
+    [sp] =>
+)
+<?php
+  $str = ob_get_contents();
+  ob_end_clean();
+
+  debug_var('locals', $str);
+
+function debug_var($name,$data)
+{
+    $captured = preg_split("/\r?\n/",$data);
+    print "<script>function toggleDiv(num){
+      var span = document.getElementById('d'+num);
+      var a = document.getElementById('a'+num);
+      var cur = span.style.display;
+      if(cur == 'none'){
+        a.innerHTML = '-';
+        span.style.display = 'inline';
+      }else{
+        a.innerHTML = '+';
+        span.style.display = 'none';
+      }
+    }</script>";
+    print "<b>$name</b>\n";
+    print "<pre>\n";
+    foreach($captured as $line)
+    {
+        print debug_colorize_string($line)."\n";
+    }
+    print "</pre>\n";
+}
+
+function next_div($matches)
+{
+  static $num = 0;
+  ++$num;
+  return "$matches[1]<a id=a$num href=\"javascript: toggleDiv($num)\">+</a>
+<span id=d$num style=\"display:none\">(";
+}
+
+/**
+* colorize a string for pretty display
+*
+* @access private
+* @param $string string info to colorize
+* @return string HTML colorized
+* @global
+*/
+function debug_colorize_string($string)
+{
+    $string = preg_replace("/\[(\w*)\]/i", '[<font color="red">$1</font>]', 
+$string);
+    $string = preg_replace_callback("/(\s+)\($/", 'next_div', $string);
+    $string = preg_replace("/(\s+)\)$/", '$1)</span>', $string);
+    /* turn array indexes to red */
+    /* turn the word Array blue */
+    $string = str_replace('Array','<font color="blue">Array</font>',$string);
+    /* turn arrows graygreen */
+    $string = str_replace('=>','<font color="#556F55">=></font>',$string);
+    return $string;
+}
+?>
+
+This example uses ideas from this article:
+http://www.zend.com/zend/tut/tutorial-DebugLib.php
+===============================================================================
+
+Print arrays formatted for a browser easily:
+
+<?php
+function print_html_r( $aData ) {
+    echo nl2br( eregi_replace( " ", " ", print_r( $data, TRUE ) ) );   
+}
+?>
+===============================================================================
+
+You can't use print_r($var, TRUE) inside a function which is a callback from
+ob_start() or you get the following error:
+Fatal error: print_r(): Cannot use output buffering in output buffering display
+handlers
+===============================================================================
+
+A simple function to send the output of print_r to firebug.
+The script creates a dummy console object with a log method for when firebug is
+disabled/not available.
+
+<?php
+function debug ($data) {
+    echo "<script>\r\n//<![CDATA[\r\nif(!console){var console={log:function()
+{}}}";
+    $output    =    explode("\n", print_r($data, true));
+    foreach ($output as $line) {
+        if (trim($line)) {
+            $line    =    addslashes($line);
+            echo "console.log(\"{$line}\");";
+        }
+    }
+    echo "\r\n//]]>\r\n</script>";
+}
+?>
+===============================================================================
+
+I use this all the time when debugging objects, but when you have a very large
+object with big arrays of sub-objects, it's easy to get overwhelmed with the
+large amount of output....sometimes you don't want to see absolutely every
+sub-object.
+
+I made this function to debug objects while "hiding" sub-objects of certain
+types.  This also color codes the output for a more readable printout.
+
+<?php
+
+function wtf($var, $arrayOfObjectsToHide=null, $fontSize=11)
+{
+    $text = print_r($var, true);
+
+    if (is_array($arrayOfObjectsToHide)) {
+   
+        foreach ($arrayOfObjectsToHide as $objectName) {
+   
+            $searchPattern = '#('.$objectName.' Object\n(\s+)\().*?\n\2\)\n#s';
+            $replace = "$1<span style=\"color: #FF9900;\">--&gt; HIDDEN -
+courtesy of wtf() &lt;--</span>)";
+            $text = preg_replace($searchPattern, $replace, $text);
+        }
+    }
+
+    // color code objects
+    $text = preg_replace('#(\w+)(\s+Object\s+\()#s', '<span style="color: #
+079700;">$1</span>$2', $text);
+    // color code object properties
+    $text = preg_replace('#\[(\w+)\:(public|private|protected)\]#', '[<span
+style="color: #000099;">$1</span>:<span style="color: #009999;">$2</span>]', 
+$text);
+   
+    echo '<pre style="font-size: '.$fontSize.'px; line-height: '.$fontSize.'px;
+">'.$text.'</pre>';
+}
+
+// example usage:
+wtf($myBigObject, array('NameOfObjectToHide_1', 'NameOfObjectToHide_2'));
+
+?>
+===============================================================================
+
+The following will output an array in a PHP parsable format:
+
+<?php
+function serialize_array(&$array, $root = '$root', $depth = 0)
+{
+        $items = array();
+
+        foreach($array as $key => &$value)
+        {
+                if(is_array($value))
+                {
+                        serialize_array($value, $root . '[\'' . $key . '\']', 
+$depth + 1);
+                }
+                else
+                {
+                        $items[$key] = $value;
+                }
+        }
+
+        if(count($items) > 0)
+        {
+                echo $root . ' = array(';
+
+                $prefix = '';
+                foreach($items as $key => &$value)
+                {
+                        echo $prefix . '\'' . $key . '\' => \'' . addslashes(
+$value) . '\'';
+                        $prefix = ', ';
+                }
+
+                echo ');' . "\n";
+        }
+}
+?>
+===============================================================================
+
+Here is a print_r that produces xml:
+(now you can expand/collapse the nodes in your browser)
+
+<?php
+header('Content-Type: text/xml; charset=UTF-8');
+echo print_r_xml($some_var);
+
+function print_r_xml($arr,$first=true) {
+  $output = "";
+  if ($first) $output .= "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<data>\n"
+;
+  foreach($arr as $key => $val) {
+    if (is_numeric($key)) $key = "arr_".$key; // <0 is not allowed
+    switch (gettype($val)) {
+      case "array":
+        $output .= "<".htmlspecialchars($key)." type='array' size='".count($val
+)."'>".
+          print_r_xml($val,false)."</".htmlspecialchars($key).">\n"; break;
+      case "boolean":
+        $output .= "<".htmlspecialchars($key)." type='bool'>".($val?"true":
+"false").
+          "</".htmlspecialchars($key).">\n"; break;
+      case "integer":
+        $output .= "<".htmlspecialchars($key)." type='integer'>".
+          htmlspecialchars($val)."</".htmlspecialchars($key).">\n"; break;
+      case "double":
+        $output .= "<".htmlspecialchars($key)." type='double'>".
+          htmlspecialchars($val)."</".htmlspecialchars($key).">\n"; break;
+      case "string":
+        $output .= "<".htmlspecialchars($key)." type='string' size='".strlen(
+$val)."'>".
+          htmlspecialchars($val)."</".htmlspecialchars($key).">\n"; break;
+      default:
+        $output .= "<".htmlspecialchars($key)." type='unknown'>".gettype($val).
+          "</".htmlspecialchars($key).">\n"; break;
+    }
+  }
+  if ($first) $output .= "</data>\n";
+  return $output;
+}
+ 
+?>
+===============================================================================
+
+I always use this function in my code, because most of my functions return an
+Array or Boolean :
+
+<?php
+
+function printr ( $object , $name = '' ) {
+
+    print ( '\'' . $name . '\' : ' ) ;
+
+    if ( is_array ( $object ) ) {
+        print ( '<pre>' )  ;
+        print_r ( $object ) ;
+        print ( '</pre>' ) ;
+    } else {
+        var_dump ( $object ) ;
+    }
+
+}
+
+?>
+
+( print_r gives no output on FALSE and that can be annoying! )
+===============================================================================
+
+You cannot use print_r(), var_dump() nor var_export() to get static member
+variables of a class. However, in PHP5 you can use Reflection classes for this:
+
+<?php
+
+$reflection = new ReflectionClass('Static');
+print_r($reflection->getStaticProperties());
+
+?>
+===============================================================================
+
+For those of you needing to print an array within a buffer callback function,
+I've created this quick function. It simply returns the array as a readable
+string rather than printing it. You can even choose whether to return it in
+normal text-mode or HTML. It's recursive, so multi-dimensial arrays are
+supported. I hope someone finds this useful!
+
+<?php
+
+    function return_array($array, $html = false, $level = 0) {
+        $space = $html ? "&nbsp;" : " ";
+        $newline = $html ? "<br />" : "\n";
+        for ($i = 1; $i <= 6; $i++) {
+            $spaces .= $space;
+        }
+        $tabs = $spaces;
+        for ($i = 1; $i <= $level; $i++) {
+            $tabs .= $spaces;
+        }
+        $output = "Array" . $newline . $newline;
+        foreach($array as $key => $value) {
+            if (is_array($value)) {
+                $level++;
+                $value = return_array($value, $html, $level);
+                $level--;
+            }
+            $output .= $tabs . "[" . $key . "] => " . $value . $newline;
+        }
+        return $output;
+    }
+
+?>
+===============================================================================
+
+I was having problems using print_r because I didn't like the fact that if tags
+where included in the array it would still be parsed by the browsers.
+
+Heres a simple fix for anyone who is having the same problem as I did. This
+will output your text properly for viewing through the browser instead of the
+browser's "view source" or CLI.
+
+Script:
+<?php
+
+     $MyArray[0]="<div align='center'>My Text</div>";
+
+     echo "<pre>".htmlspecialchars(print_r($MyArray,true))."</pre>";
+
+?>
+
+Output:
+<pre>Array
+(
+    [0] =&gt; &lt;div align='center'&gt;My Text&lt;/div&gt;
+)
+</pre>
+===============================================================================
+
+Another slight modification to the previous post to allow for empty array
+elements
+
+added the following lines after the first preg_match block
+<?php
+        } else if ($expecting == 2 && preg_match('/^\[(.+?)\] \=\>$/', $trim, 
+$matches)) { // array element
+            // the array element is blank
+            list ($fullMatch, $key) = $matches;
+            $topArray[$key] = $element;
+        }
+
+?>
+===============================================================================
+
+Another attempt that tries to overcome the memory blowout when the passed in
+data has mutual recursion.
+
+<?php
+function safe_print_r($data, $nesting = 5, $indent = '') {
+    if (! is_object($data) && ! is_array($data)) {
+        var_dump($data);
+    } elseif ($nesting < 0) {
+        echo "** MORE **\n";
+    } else {
+        echo ucfirst(gettype($data)) . " (\n";
+        foreach ((array) $data as $k => $v) {
+            echo $indent . "\t[$k] => ";
+            safe_print_r($v, $nesting - 1, "$indent\t");
+        }
+        echo "$indent)\n";
+    }
+}
+?>
+===============================================================================
+
+I've seen a lot of tries to give an easy way to output the "print_r" info in a
+decent way in you favorite browser.
+
+Here's mine:
+
+echo ("<pre>");
+print_r("-->here goes your data to output<--");
+echo ("<pre>");
+
+I personaly think this is the easyest way.
+Grz
+===============================================================================
+
+This is an update from Matt's print_r_reverse() solution that works not only
+with Arrays, but also with stdClass objects.
+
+I expect someone finds it useful.
+
+<?php
+function print_r_reverse($in) {
+    $lines = explode("\n", trim($in));
+    if ( (trim($lines[0]) != 'Array') && (trim($lines[0]) != 'stdClass Object')
+){
+        // bottomed out to something that isn't an array or object
+        return $in;
+    } else {
+        // this is an array or stdClass object, lets parse it
+        if (preg_match("/(\s{4,})\(/", $lines[1], $match)) {
+            // this is a tested array/recursive call to this function
+            // take a set of spaces off the beginning
+            $spaces = $match[1];
+            $spaces_length = strlen($spaces);
+            $lines_total = count($lines);
+            for ($i = 0; $i < $lines_total; $i++) {
+                if (substr($lines[$i], 0, $spaces_length) == $spaces) {
+                    $lines[$i] = substr($lines[$i], $spaces_length);
+                }
+            }
+        }
+        $class = trim( $lines[0] );
+        array_shift($lines); // Array or stdClass Object
+        array_shift($lines); // (
+        array_pop($lines); // )
+        $in = implode("\n", $lines);
+
+        // make sure we only match stuff with 4 preceding spaces (stuff for
+this array and not a nested one)
+        preg_match_all("/^\s{4}\[(.+?)\] \=\> /m", $in, $matches, 
+PREG_OFFSET_CAPTURE | PREG_SET_ORDER);
+        $pos = array();
+        $previous_key = '';
+        $in_length = strlen($in);
+        // store the following in $pos:
+        // array with key = key of the parsed array's item
+        // value = array(start position in $in, $end position in $in)
+        foreach ($matches as $match) {
+            $key = $match[1][0];
+            $start = $match[0][1] + strlen($match[0][0]);
+            $pos[$key] = array($start, $in_length);
+            if ($previous_key != '') $pos[$previous_key][1] = $match[0][1] - 1;
+            $previous_key = $key;
+        }
+        // behave differently depending on the type
+        switch( $class ){
+            case 'Array':
+                $ret = array();
+                foreach ($pos as $key => $where) {
+                    // recursively see if the parsed out value is an array/
+object too
+                    $ret[$key] = print_r_reverse(substr($in, $where[0], $where[
+1] - $where[0]));
+                }
+                break;
+            case 'stdClass Object':
+                $ret = new stdClass();
+                foreach ($pos as $key => $where) {
+                    // recursively see if the parsed out value is an array/
+object too
+                    $ret->$key = print_r_reverse(substr($in, $where[0], $where[
+1] - $where[0]));
+                }
+                break;
+            default:
+                throw new Exception( 'Type not allowed' );
+        }
+
+        return $ret;
+    }
+}
+?>
+===============================================================================
+
+This is a happy medium between the overly complex usages and the simplistic. It
+prints out the debug in a black and green monochrome look.
+
+function formatDebug($value, $log=false) {
+       
+        $contents = print_r($value, true); 
+        $line="\n"
+        ."<pre style=\"margin:18px 4px; padding:6px; text-align:left;
+background:#000; color:#00FF00; font-family:courier;\">";
+        .htmlspecialchars($contents,ENT_QUOTES) // Escape HTML special chars
+        ."</pre>";
+       
+        if($log==true){
+            error_log($contents);//Send to log
+        }
+        return $line;
+    }
+===============================================================================
+
+I prefer to use
+<?php
+printf("<pre>%s</pre>",print_r($_POST, true));
+?>
+===============================================================================
+
+function : debug_print
+
+<?php
+// --------------------------------------------------------------
+
+function debug_print($var, $nfo='DEBUG', $htm=false, $ret=false) {
+   
+    $var_str = print_r($var, true);
+   
+    if ($htm !== false) { $var_str = htmlentities($var_str); }
+   
+    $outstr = '';
+   
+    $outstr = '<p>--------- <strong>'.$nfo.'</strong> ---------</p>'."\n";
+   
+    $outstr .= '<pre style="margin:18px 4px; padding:6px; text-align:left;
+background:#DEDEDE; color:#000099;">'."\n";
+    $outstr .= $var_str."\n";
+    $outstr .= '</pre>'."\n";
+   
+    if ($ret !== false) { $result = $outstr; }
+        else { print $outstr; $result = true; }
+   
+    return $result;
+}
+
+// --------------------------------------------------------------
+?>
+
+usage:
+
+<?php
+// --------------------------------------------
+
+$data = array('some', 'example', 'test');
+
+// --- direct output ---
+debug_print($data);
+
+// --- returned output ---
+$debug_str = debug_print($data, 'some text', false, true);
+print $debug_str;
+
+// --------------------------------------------
+?>
+===============================================================================
+
+print_r is used for debug purposes. Yet I had some classes where I just wanted
+the values coming out of the database, not all the other crap. thus i wrote the
+following function. If your class has an toArray function, that one will be
+called otherwise it will return the object as is. print_neat_classes_r is the
+function that should be called!
+
+<?php
+print_neat_classes_r($array, $return=false){
+        return print_r(self::neat_class_print_r($array), $return);
+    }
+   
+function do_print_r($array, $return=false){
+        if(is_object($array) && method_exists($array, 'toArray')){
+            return $array->toArray();
+        }else if(is_array($array)){
+            foreach($array as $key=>$obj){
+                $array[$key] = self::do_print_r($obj, $return);
+            }
+            return $array;
+        }else{
+            return $array;
+        }
+    }
+?>
+===============================================================================
+
+Here is a nice version of print_r that prints things with colors and tables.
+I've called it print_nice
+
+<?php
+function print_nice($elem,$max_level=10,$print_nice_stack=array()){
+    if(is_array($elem) || is_object($elem)){
+        if(in_array(&$elem,$print_nice_stack,true)){
+            echo "<font color=red>RECURSION</font>";
+            return;
+        }
+        $print_nice_stack[]=&$elem;
+        if($max_level<1){
+            echo "<font color=red>nivel maximo alcanzado</font>";
+            return;
+        }
+        $max_level--;
+        echo "<table border=1 cellspacing=0 cellpadding=3 width=100%>";
+        if(is_array($elem)){
+            echo '<tr><td colspan=2 style="background-color:#333333;"><strong>
+<font color=white>ARRAY</font></strong></td></tr>';
+        }else{
+            echo '<tr><td colspan=2 style="background-color:#333333;"><strong>'
+;
+            echo '<font color=white>OBJECT Type: '.get_class($elem).'</font></
+strong></td></tr>';
+        }
+        $color=0;
+        foreach($elem as $k => $v){
+            if($max_level%2){
+                $rgb=($color++%2)?"#888888":"#BBBBBB";
+            }else{
+                $rgb=($color++%2)?"#8888BB":"#BBBBFF";
+            }
+            echo '<tr><td valign="top" style="width:40px;background-color:'.
+$rgb.';">';
+            echo '<strong>'.$k."</strong></td><td>";
+            print_nice($v,$max_level,$print_nice_stack);
+            echo "</td></tr>";
+        }
+        echo "</table>";
+        return;
+    }
+    if($elem === null){
+        echo "<font color=green>NULL</font>";
+    }elseif($elem === 0){
+        echo "0";
+    }elseif($elem === true){
+        echo "<font color=green>TRUE</font>";
+    }elseif($elem === false){
+        echo "<font color=green>FALSE</font>";
+    }elseif($elem === ""){
+        echo "<font color=green>EMPTY STRING</font>";
+    }else{
+        echo str_replace("\n","<strong><font color=red>*</font></strong><br>\n"
+,$elem);
+    }
+}
+?>
+===============================================================================
+
+If you have to catch the output without showing it at all at first (for
+example, if you want to append the print_r output to a file), you can do this:
+
+<?php
+
+ob_start();
+print_r( $some_array );
+$output = ob_get_clean();
+
+// if you want to append the print_r output of $some_array to, let's say,
+log.txt:
+
+file_put_contents( 'log.txt', file_get_contents( 'log.txt' ) . $output )
+
+?>
+===============================================================================
+
+This is an alternative for printing arrays. It bolds array values.
+
+<?php
+function print_array(&$a, $str = "")
+{
+    if ($str[0]) {
+        echo "$str =";
+    }
+    echo ' array( ';
+    foreach ($a as $k => $v) {
+
+        echo "[$k]".' => ';
+
+        if (is_array($v)) {
+            print_array($v);
+        }
+        else {   
+               echo "<strong>$a[$k]</strong> ";
+        }
+    }
+    echo ')  ';
+}
+$a1 = array ("apples", "oranges", "pears");
+$a2 = array ("potatos", "green beans", "squash");
+$a3 = array ("euros", "dollars", "pesos", "dinars");
+$test = range(1, 9);
+array_push($test, array ("fruit" => $a1, "vegies" => $a2, "money" => $a3));
+print_array($test, "test");
+?>
+===============================================================================
+
+I have written a nice debugging function.
+This function handles arrays beautifully.
+<?php
+//Debug variables, $i and $k are for recursive use
+function DebugDisplayVar($input, $name = "Debug", $i = "0", $k = array("Error"
+)){
+    if(is_array($input))
+    {    foreach ($input as $i => $value){
+            $temp = $k;
+            $temp[] = $i;
+            DebugDisplayVar($value, $name, $i, $temp);}
+    }else{//if not array
+        echo "$".$name;//[$k]
+        foreach ($k as $i => $value){
+            if($value !=="Error"){echo "[$value]";}
+        }
+        echo " = $input<br>";
+}    }
+
+//outputs
+Debug[0] = value
+Debug[1] = another value
+ect...
+
+?>
+===============================================================================
+
+A slight modification to the previous post to allow for arrays containing mutli
+line strings. haven't fully tested it with everything, but seems to work great
+for the stuff i've done so far.
+
+<?php
+
+function print_r_reverse(&$output)
+{
+    $expecting = 0; // 0=nothing in particular, 1=array open paren '(', 2=array
+element or close paren ')'
+    $lines = explode("\n", $output);
+    $result = null;
+    $topArray = null;
+    $arrayStack = array();
+    $matches = null;
+    while (!empty($lines) && $result === null)
+    {
+        $line = array_shift($lines);
+        $trim = trim($line);
+        if ($trim == 'Array')
+        {
+            if ($expecting == 0)
+            {
+                $topArray = array();
+                $expecting = 1;
+            }
+            else
+            {
+                trigger_error("Unknown array.");
+            }
+        }
+        else if ($expecting == 1 && $trim == '(')
+        {
+            $expecting = 2;
+        }
+        else if ($expecting == 2 && preg_match('/^\[(.+?)\] \=\> (.+)$/', $trim
+, $matches)) // array element
+        {
+            list ($fullMatch, $key, $element) = $matches;
+            if (trim($element) == 'Array')
+            {
+                $topArray[$key] = array();
+                $newTopArray =& $topArray[$key];
+                $arrayStack[] =& $topArray;
+                $topArray =& $newTopArray;
+                $expecting = 1;
+            }
+            else
+            {
+                $topArray[$key] = $element;
+            }
+        }
+        else if ($expecting == 2 && $trim == ')') // end current array
+        {
+            if (empty($arrayStack))
+            {
+                $result = $topArray;
+            }
+            else // pop into parent array
+            {
+                // safe array pop
+                $keys = array_keys($arrayStack);
+                $lastKey = array_pop($keys);
+                $temp =& $arrayStack[$lastKey];
+                unset($arrayStack[$lastKey]);
+                $topArray =& $temp;
+            }
+        }
+        // Added this to allow for multi line strings.
+    else if (!empty($trim) && $expecting == 2)
+    {
+        // Expecting close parent or element, but got just a string
+        $topArray[$key] .= "\n".$line;
+    }
+        else if (!empty($trim))
+        {
+            $result = $line;
+        }
+    }
+  
+    $output = implode(n, $lines);
+    return $result;
+}
+
+/**
+* @param string $output : The output of a multiple print_r calls, separated by
+newlines
+* @return mixed[] : parseable elements of $output
+*/
+function print_r_reverse_multiple($output)
+{
+    $result = array();
+    while (($reverse = print_r_reverse($output)) !== NULL)
+    {
+        $result[] = $reverse;
+    }
+    return $result;
+}
+
+$output = '
+Array
+(
+    [a] => apple
+    [b] => banana
+    [c] => Array
+        (
+            [0] => x
+            [1] => y
+            [2] => z
+            [3] => Array
+            (
+                [nest] => yes
+                [nest2] => Array
+                (
+                    [nest] => some more
+                    asffjaskkd
+                )
+                [nest3] => o rly?
+            )
+        )
+)
+
+some extra stuff
+';
+var_dump(print_r_reverse($output), $output);
+
+?>
+
+This should output
+
+array(3) {
+  ["a"]=>
+  string(5) "apple"
+  ["b"]=>
+  string(6) "banana"
+  ["c"]=>
+  array(4) {
+    [0]=>
+    string(1) "x"
+    [1]=>
+    string(1) "y"
+    [2]=>
+    string(1) "z"
+    [3]=>
+    array(3) {
+      ["nest"]=>
+      string(3) "yes"
+      ["nest2"]=>
+      array(1) {
+        ["nest"]=>
+        string(40) "some more
+                    asffjaskkd"
+      }
+      ["nest3"]=>
+      string(6) "o rly?"
+    }
+  }
+}
+string(18) "nsome extra stuffn"
+
+Added:
+else if (!empty($trim) && $expecting == 2)
+{
+    // Expecting close parent or element, but got just a string
+    $topArray[$key] .= "\n".$line;
+}
+===============================================================================
+
+This is a better print_r reverse algorithm, that works with arbitrary nested
+arrays.  Anything else it treats as strings.  The second function allows you to
+take a string with multiple print_r results concatenated, and returns the
+result of parsing each of them.
+
+<?php
+
+/**
+* @param string &$output : The output of a print_r call; this parameter is
+DESTRUCTIVE, and will be set to the remainder
+*                             of $output which is not parsed.
+* @return mixed : the first parseable element of $output
+*/
+function print_r_reverse(&$output)
+{
+    $expecting = 0; // 0=nothing in particular, 1=array open paren '(', 2=array
+element or close paren ')'
+    $lines = explode("\n", $output);
+    $result = null;
+    $topArray = null;
+    $arrayStack = array();
+    $matches = null;
+    while (!empty($lines) && $result === null)
+    {
+        $line = array_shift($lines);
+        $trim = trim($line);
+        if ($trim == 'Array')
+        {
+            if ($expecting == 0)
+            {
+                $topArray = array();
+                $expecting = 1;
+            }
+            else
+            {
+                trigger_error("Unknown array.");
+            }
+        }
+        else if ($expecting == 1 && $trim == '(')
+        {
+            $expecting = 2;
+        }
+        else if ($expecting == 2 && preg_match('/^\[(.+?)\] \=\> (.+)$/', $trim
+, $matches)) // array element
+        {
+            list ($fullMatch, $key, $element) = $matches;
+            if (trim($element) == 'Array')
+            {
+                $topArray[$key] = array();
+                $newTopArray =& $topArray[$key];
+                $arrayStack[] =& $topArray;
+                $topArray =& $newTopArray;
+                $expecting = 1;
+            }
+            else
+            {
+                $topArray[$key] = $element;
+            }
+        }
+        else if ($expecting == 2 && $trim == ')') // end current array
+        {
+            if (empty($arrayStack))
+            {
+                $result = $topArray;
+            }
+            else // pop into parent array
+            {
+                // safe array pop
+                $keys = array_keys($arrayStack);
+                $lastKey = array_pop($keys);
+                $temp =& $arrayStack[$lastKey];
+                unset($arrayStack[$lastKey]);
+                $topArray =& $temp;
+            }
+        }
+        else if (!empty($trim))
+        {
+            $result = $line;
+        }
+    }
+   
+    $output = implode(n, $lines);
+    return $result;
+}
+
+/**
+* @param string $output : The output of a multiple print_r calls, separated by
+newlines
+* @return mixed[] : parseable elements of $output
+*/
+function print_r_reverse_multiple($output)
+{
+    $result = array();
+    while (($reverse = print_r_reverse($output)) !== NULL)
+    {
+        $result[] = $reverse;
+    }
+    return $result;
+}
+
+$output = '
+Array
+(
+    [a] => apple
+    [b] => banana
+    [c] => Array
+        (
+            [0] => x
+            [1] => y
+            [2] => z
+            [3] => Array
+            (
+                [nest] => yes
+                [nest2] => Array
+                (
+                    [nest] => some more
+                )
+                [nest3] => o rly?
+            )
+        )
+)
+
+some extra stuff
+';
+var_dump(print_r_reverse($output), $output);
+
+?>
+
+The above example will output:
+
+array(3) {
+  ["a"]=>
+  string(5) "apple"
+  ["b"]=>
+  string(6) "banana"
+  ["c"]=>
+  array(4) {
+    [0]=>
+    string(1) "x"
+    [1]=>
+    string(1) "y"
+    [2]=>
+    string(1) "z"
+    [3]=>
+    array(3) {
+      ["nest"]=>
+      string(3) "yes"
+      ["nest2"]=>
+      array(1) {
+        ["nest"]=>
+        string(9) "some more"
+      }
+      ["nest3"]=>
+      string(6) "o rly?"
+    }
+  }
+}
+string(20) "
+some extra stuff
+"
+===============================================================================
+
+If you need to import an print_R output back to an array you could use this.
+
+This could also be (ab)used to convert a object into a array...
+
+<?php
+function object2array($printr) {                   
+        $newarray = array();       
+        $a[0] = &$newarray;       
+        if (preg_match_all('/^\s+\[(\w+).*\] => (.*)\n/m', $printr, $match)) { 
+                     
+            foreach ($match[0] as $key => $value) {   
+                (int)$tabs = substr_count(substr($value, 0, strpos($value, "["
+)), "        ");               
+                if ($match[2][$key] == 'Array' || substr($match[2][$key], -6) =
+= 'Object') {                   
+                    $a[$tabs+1] = &$a[$tabs][$match[1][$key]];
+                }                           
+                else {
+                    $a[$tabs][$match[1][$key]] = $match[2][$key];             
+     
+                }
+            }
+        }   
+        return $newarray;   
+    }
+?>
+===============================================================================
+
+This works around the hacky nature of print_r in return mode (using output
+buffering for the return mode to work is hacky...):
+
+<?php
+/**
+  * An alternative to print_r that unlike the original does not use output
+buffering with
+  * the return parameter set to true. Thus, Fatal errors that would be the
+result of print_r
+  * in return-mode within ob handlers can be avoided.
+  *
+  * Comes with an extra parameter to be able to generate html code. If you need
+a
+  * human readable DHTML-based print_r alternative, see http://
+krumo.sourceforge.net/
+  *
+  * Support for printing of objects as well as the $return parameter
+functionality
+  * added by Fredrik Wollsén (fredrik dot motin at gmail), to make it work as a
+drop-in
+  * replacement for print_r (Except for that this function does not output
+  * paranthesises around element groups... ;) )
+  *
+  * Based on return_array() By Matthew Ruivo (mruivo at gmail)
+  * (http://se2.php.net/manual/en/function.print-r.php#73436)
+  */
+function obsafe_print_r($var, $return = false, $html = false, $level = 0) {
+    $spaces = "";
+    $space = $html ? "&nbsp;" : " ";
+    $newline = $html ? "<br />" : "\n";
+    for ($i = 1; $i <= 6; $i++) {
+        $spaces .= $space;
+    }
+    $tabs = $spaces;
+    for ($i = 1; $i <= $level; $i++) {
+        $tabs .= $spaces;
+    }
+    if (is_array($var)) {
+        $title = "Array";
+    } elseif (is_object($var)) {
+        $title = get_class($var)." Object";
+    }
+    $output = $title . $newline . $newline;
+    foreach($var as $key => $value) {
+        if (is_array($value) || is_object($value)) {
+            $level++;
+            $value = obsafe_print_r($value, true, $html, $level);
+            $level--;
+        }
+        $output .= $tabs . "[" . $key . "] => " . $value . $newline;
+    }
+    if ($return) return $output;
+      else echo $output;
+}
+?>
+
+Built on a function earlier posted in these comments as stated in the Doc
+comment. Cheers! /Fredrik (Motin)
+===============================================================================
+
+We had an interesting problem dumping an object that
+contained embedded HTML. The application makes use
+of buffer manipulation functions, so print_r's 2nd argument
+wasn't helpful. Here is how we solved the problem:
+
+$object = new ObjectContainingHTML();
+$savedbuffercontents = ob_get_clean();
+print_r($object);
+$print_r_output = ob_get_clean();
+ob_start();
+echo $savedbuffercontents;
+echo htmlentities($print_r_output);
+===============================================================================
+
+For very long arrays I have written a little function which formats an array
+quite nice and uses javascript for browsing it like a tree. The function is
+very customizable with the $style parameter.
+For me it's of great use for browsing large array's, for example when those are
+used in language-files in some script and so on. It may even be used in "real"
+scripts for the "real" front-end, cause the tree can very easily be styled
+(look at the function or the outputted source and you'll see what i mean).
+
+Here's the function:
+
+<?php
+
+function print_r_html($arr, $style = "display: none; margin-left: 10px;")
+{ static $i = 0; $i++;
+  echo "\n<div id=\"array_tree_$i\" class=\"array_tree\">\n";
+  foreach($arr as $key => $val)
+  { switch (gettype($val))
+    { case "array":
+        echo "<a onclick=\"document.getElementById('";
+        echo array_tree_element_$i."').style.display = ";
+        echo "document.getElementById('array_tree_element_$i";
+        echo "').style.display == 'block' ?";
+        echo "'none' : 'block';\"\n";
+        echo "name=\"array_tree_link_$i\" href=\"#array_tree_link_$i\">".
+htmlspecialchars($key)."</a><br />\n";
+        echo "<div class=\"array_tree_element_\" id=\"array_tree_element_$i\"
+style=\"$style\">";
+        echo print_r_html($val);
+        echo "</div>";
+      break;
+      case "integer":
+        echo "<b>".htmlspecialchars($key)."</b> => <i>".htmlspecialchars($val).
+"</i><br />";
+      break;
+      case "double":
+        echo "<b>".htmlspecialchars($key)."</b> => <i>".htmlspecialchars($val).
+"</i><br />";
+      break;
+      case "boolean":
+        echo "<b>".htmlspecialchars($key)."</b> => ";
+        if ($val)
+        { echo "true"; }
+        else
+        { echo "false"; }
+        echo  "<br />\n";
+      break;
+      case "string":
+        echo "<b>".htmlspecialchars($key)."</b> => <code>".htmlspecialchars(
+$val)."</code><br />";
+      break;
+      default:
+        echo "<b>".htmlspecialchars($key)."</b> => ".gettype($val)."<br />";
+      break; }
+    echo "\n"; }
+  echo "</div>\n"; }
+
+?>
+
+The function as it is now does not support the $return parameter as print_r
+does and will create an endless loop like print_r did in php-versions < 4.0.3
+when there is an element which contains a reference to a variable inside of the
+array to print out :-/
+
+I've tested it with PHP 5.0.6 and PHP 4.2.3 - no problems except those already
+mentioned.
+
+please e-mail me if you've got a solution for the problems i've mentioned, i
+myself are not able to solve them 'cause i don't know how the hell i can find
+out whether a variable is a reference or not.
+===============================================================================
+
+Do you think it is difficult to see what print_r() returns?
+
+<?php
+   echo '<pre>';
+   print_r($array);
+   echo '</pre>';
+?>
+
+And if you have to write this many times in a page, use this:
+
+<?php
+   function preint_r($array)
+   {
+      echo '<pre>';
+      print_r($array);
+      echo '</pre>';
+   }
+?>
+===============================================================================
+
+Here is a print_r() clone but support max level limit.
+
+When we want to print a big object, this will help us get a clean dumping data.
+
+<?php
+
+/**
+* Recrusive print variables and limit by level.
+*
+* @param   mixed  $data   The variable you want to dump.
+* @param   int    $level  The level number to limit recrusive loop.
+*
+* @return  string  Dumped data.
+*
+* @author  Simon Asika (asika32764[at]gmail com)
+* @date    2013-11-06
+*/
+function print_r_level($data, $level = 5)
+{
+    static $innerLevel = 1;
+   
+    static $tabLevel = 1;
+   
+    static $cache = array();
+   
+    $self = __FUNCTION__;
+   
+    $type       = gettype($data);
+    $tabs       = str_repeat('    ', $tabLevel);
+    $quoteTabes = str_repeat('    ', $tabLevel - 1);
+   
+    $recrusiveType = array('object', 'array');
+   
+    // Recrusive
+    if (in_array($type, $recrusiveType))
+    {
+        // If type is object, try to get properties by Reflection.
+        if ($type == 'object')
+        {
+            if (in_array($data, $cache))
+            {
+                return "\n{$quoteTabes}*RECURSION*\n";
+            }
+           
+            // Cache the data
+            $cache[] = $data;
+           
+            $output     = get_class($data) . ' ' . ucfirst($type);
+            $ref        = new \ReflectionObject($data);
+            $properties = $ref->getProperties();
+           
+            $elements = array();
+           
+            foreach ($properties as $property)
+            {
+                $property->setAccessible(true);
+               
+                $pType = $property->getName();
+               
+                if ($property->isProtected())
+                {
+                    $pType .= ":protected";
+                }
+                elseif ($property->isPrivate())
+                {
+                    $pType .= ":" . $property->class . ":private";
+                }
+               
+                if ($property->isStatic())
+                {
+                    $pType .= ":static";
+                }
+               
+                $elements[$pType] = $property->getValue($data);
+            }
+        }
+        // If type is array, just retun it's value.
+        elseif ($type == 'array')
+        {
+            $output = ucfirst($type);
+            $elements = $data;
+        }
+       
+        // Start dumping datas
+        if ($level == 0 || $innerLevel < $level)
+        {
+            // Start recrusive print
+            $output .= "\n{$quoteTabes}(";
+           
+            foreach ($elements as $key => $element)
+            {
+                $output .= "\n{$tabs}[{$key}] => ";
+               
+                // Increment level
+                $tabLevel = $tabLevel + 2;
+                $innerLevel++;
+               
+                $output  .= in_array(gettype($element), $recrusiveType) ? $self
+($element, $level) : $element;
+               
+                // Decrement level
+                $tabLevel = $tabLevel - 2;
+                $innerLevel--;
+            }
+           
+            $output .= "\n{$quoteTabes})\n";
+        }
+        else
+        {
+            $output .= "\n{$quoteTabes}*MAX LEVEL*\n";
+        }
+    }
+   
+    // Clean cache
+    if($innerLevel == 1)
+    {
+        $cache = array();
+    }
+   
+    return $output;
+}// End function
+
+// TEST ------------------------------------
+
+class testClass
+{
+    protected $a = 'aaa';
+   
+    private $b = 'bbb';
+   
+    public $c = array(1, 2, ['a', 'b', 'c'], 4);
+   
+    static public $d = 'ddd';
+   
+    static protected $e = 'eee';
+}
+
+$test = new testClass;
+
+$test->testClass = $test;
+
+echo '<pre>' . print_r_level($test, 3) . '</pre>';
+
+?>
+
+will output
+-------------------------------------------------------------
+
+testClass Object
+(
+    [a:protected] => aaa
+    [b:testClass:private] => bbb
+    [c] => Array
+        (
+            [0] => 1
+            [1] => 2
+            [2] => Array
+                *MAX LEVEL*
+
+            [3] => 4
+        )
+
+    [d:static] => ddd
+    [e:protected:static] => eee
+    [testClass] =>
+        *RECURSION*
+
+)
+===============================================================================
+
+A simple function that will output an array more easily to read than print_r();
+
+<?php
+function echo_array($array,$return_me=false){
+    if(is_array($array) == false){
+        $return = "The provided variable is not an array.";
+    }else{
+        foreach($array as $name=>$value){
+            if(is_array($value)){
+                $return .= "";
+                $return .= "['<b>$name</b>'] {<div style='margin-left:10px;'>\
+n";
+                $return .= echo_array($value,true);
+                $return .= "</div>}";
+                $return .= "\n\n";
+            }else{
+                if(is_string($value)){
+                    $value = "\"$value\"";
+                }
+                $return .= "['<b>$name</b>'] = $value\n\n";
+            }
+        }
+    }
+    if($return_me == true){
+        return $return;
+    }else{
+        echo "<pre>".$return."</pre>";
+    }
+}
+?>
+===============================================================================
+
+Bear in mind that print_r actually reserves some memory to do something - so,
+for example thing like:
+
+<?php
+function shutdown_handler()
+{
+    file_put_contents($_SERVER['DOCUMENT_ROOT']."/log.txt", print_r($_REQUEST, 
+true));
+}
+
+ini_set('memory_limit', '1M');
+register_shutdown_function("shutdown_handler");
+
+$array = array();
+while(true)
+    $array[] = new stdClass();
+?>
+
+will just not work. Try using var_export, and presto, everything is fine.
+===============================================================================
+
+my take on the highlighted markupped debug function:
+
+<?php
+/**
+* print_array()
+* Does a var_export of the array and returns it between <pre> tags
+*
+* @param mixed $var any input you can think of
+* @return string HTML
+*/
+function print_array($var)
+{
+    $input =var_export($var,true);
+    $input = preg_replace("! => \n\W+ array \(!Uims", " => Array ( ", $input);
+    $input = preg_replace("!array \(\W+\),!Uims", "Array ( ),", $input);
+    return("<pre>".str_replace('><?', '>', highlight_string('<'.'?'.$input, 
+true))."</pre>");
+}
+?>
+===============================================================================
+
+Here's a PHP version of print_r which can be tailored to your needs. Shows
+protected and private properties of objects and detects recursion (for objects
+only!). Usage:
+
+void u_print_r ( mixed $expression [, array $ignore] )
+
+Use the $ignore parameter to provide an array of property names that shouldn't
+be followed recursively.
+
+<?php
+
+function u_print_r($subject, $ignore = array(), $depth = 1, $refChain = array
+())
+{
+    if ($depth > 20) return;
+    if (is_object($subject)) {
+        foreach ($refChain as $refVal)
+            if ($refVal === $subject) {
+                echo "*RECURSION*\n";
+                return;
+            }
+        array_push($refChain, $subject);
+        echo get_class($subject) . " Object ( \n";
+        $subject = (array) $subject;
+        foreach ($subject as $key => $val)
+            if (is_array($ignore) && !in_array($key, $ignore, 1)) {
+                echo str_repeat(" ", $depth * 4) . '[';
+                if ($key{0} == "\0") {
+                    $keyParts = explode("\0", $key);
+                    echo $keyParts[2] . (($keyParts[1] == '*')  ? ':protected' 
+: ':private');
+                } else
+                    echo $key;
+                echo '] => ';
+                u_print_r($val, $ignore, $depth + 1, $refChain);
+            }
+        echo str_repeat(" ", ($depth - 1) * 4) . ")\n";
+        array_pop($refChain);
+    } elseif (is_array($subject)) {
+        echo "Array ( \n";
+        foreach ($subject as $key => $val)
+            if (is_array($ignore) && !in_array($key, $ignore, 1)) {
+                echo str_repeat(" ", $depth * 4) . '[' . $key . '] => ';
+                u_print_r($val, $ignore, $depth + 1, $refChain);
+            }
+        echo str_repeat(" ", ($depth - 1) * 4) . ")\n";
+    } else
+        echo $subject . "\n";
+}
+
+?>
+
+Example:
+
+<?php
+
+class test {
+
+    public $var1 = 'a';
+    protected $var2 = 'b';
+    private $var3 = 'c';
+    protected $array = array('x', 'y', 'z');
+
+}
+
+$test = new test();
+$test->recursiveRef = $test;
+$test->anotherRecursiveRef->recursiveRef = $test;
+$test->dont->follow = 'me';
+
+u_print_r($test, array('dont'));
+
+?>
+
+Will produce:
+
+test Object (
+    [var1] => a
+    [var2:protected] => b
+    [var3:private] => c
+    [array:protected] => Array (
+        [0] => x
+        [1] => y
+        [2] => z
+    )
+    [recursiveRef] => *RECURSION*
+    [anotherRecursiveRef] => stdClass Object (
+        [recursiveRef] => *RECURSION*
+    )
+)
+===============================================================================
+
+Bases on thbley´s sript i use this one to log some actions.
+It will return a tabbed like string which you can output or whatever.
+
+Input fields like "Password" will not be shown.
+
+<?php
+
+function print_r_string($arr,$first=true,$tab=0)
+{
+    $output = "";
+    $tabsign = ($tab) ? str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;',$tab) : '';
+    if ($first) $output .= "<pre><br>\n";
+    foreach($arr as $key => $val)
+    {
+        switch (gettype($val))
+        {
+            case "array":
+                $output .= $tabsign."[".htmlspecialchars($key)."] = array(".
+count($val).")<br>\n".$tabsign."(<br>\n";
+                $tab++;
+                $output .= print_r_string($val,false,$tab);
+                $tab--;
+                $output .= $tabsign.")<br>\n";
+            break;
+            case "boolean":
+                $output .= $tabsign."[".htmlspecialchars($key)."] bool = '".(
+$val?"true":"false")."'<br>\n";
+            break;
+            case "integer":
+                $output .= $tabsign."[".htmlspecialchars($key)."] int = '".
+htmlspecialchars($val)."'<br>\n";
+            break;
+            case "double":
+                $output .= $tabsign."[".htmlspecialchars($key)."] double = '".
+htmlspecialchars($val)."'<br>\n";
+            break;
+            case "string":
+                $output .= $tabsign."[".htmlspecialchars($key)."] string = '".
+((stristr($key,'passw')) ? str_repeat('*', strlen($val)) : htmlspecialchars(
+$val))."'<br>\n";
+            break;
+            default:
+                $output .= $tabsign."[".htmlspecialchars($key)."] unknown = '".
+htmlspecialchars(gettype($val))."'<br>\n";
+            break;
+        }
+    }
+    if ($first) $output .= "</pre><br>\n";
+    return $output;
+}
+
+echo print_r_string(array($_POST,$_GET)); // for Example
+?>
+===============================================================================
+
+Here's an array_depth() function that calculates the depth of an array using
+the indentation in the output of print_r():
+
+<?php
+
+function array_depth($array) {
+    $max_indentation = 1;
+
+    $array_str = print_r($array, true);
+    $lines = explode("\n", $array_str);
+
+    foreach ($lines as $line) {
+        $indentation = (strlen($line) - strlen(ltrim($line))) / 4;
+
+        if ($indentation > $max_indentation) {
+                $max_indentation = $indentation;
+        }
+    }
+
+    return ceil(($max_indentation - 1) / 2) + 1;
+}
+
+?>
+
+It's better than writing a recursive function to do the same thing, as print_r
+() handles the problem of infinitely-deep arrays for you quite nicely.
+===============================================================================
+
+There is a library to create nice output of variables, arrays, hash-tables and
+even objects. It is great for developing/debugging and looks very much better
+than any print_r output.
+
+Usage:
+<?php
+debug::show($myVar, 'caption');
+?>
+
+You can download it for free at http://sourceforge.net/projects/phpcorestdfuncs
+
+For an example take a look at http://demo.corvent.ch/stdfuncs/
+===============================================================================
+
+print_r(), just like var_dump() does NOT cast an object, not even if it has a
+__toString() method - which is normal.
+
+<?php
+class A {
+    public function __toString() {
+        return 'In class A';
+    }
+}
+$a = new A;
+echo $a; // In class A
+print_r($a); // A Object()
+// you can simulate the echo by casting it manually
+print_r((string)$a);  // In class A
+===============================================================================
+
+i've been using a similar idea like Sawey's for quite a long time,
+but was always disappointed that you don't see the name of the
+variable passed to the function (eg calling it many times, you don't
+know which value was provided by a certain variable at a certain time).
+so i combined sawey's idea with one found on php.net to solve that problem.
+for shellscripting the function only uses <pre>-tags when called in the web.
+
+<?php
+/* how print_r should be ;) */
+function my_r(&$var, $scope=false, $label=false){
+
+  if (is_string($scope) && $label==false) $label=$scope;
+  if (!is_array($scope)) $scope = &$GLOBALS;
+
+  $origin = $var;
+  $var = $checker = "very_weird_value#".rand()."#isnt_it";
+  $vname = false;
+
+  foreach ($scope as $key => $value){
+    if ($value === $checker){ $vname = "\$".$key; }
+    if (is_array($value) && $key!="GLOBALS"){
+      if ($pfad=aver($var,$value)){
+        $vname = "\$${key}[\"". implode("\"][\"",$pfad)."\"]";
+      }
+    }
+    if (is_object($value)){
+      if ($pfad=aver($var,get_object_vars($value))){
+        if (sizeof($pfad)<2) $vname = "\$${key}->".$pfad[0];
+        else{
+          $vname ="\$${key}->".$pfad[0];
+          $vname.="[\"".implode("\"][\"", array_slice($pfad,1))."\"]";
+        }
+      }
+    }
+    if ($vname) break;
+  }
+  $var = $origin;
+
+  if ($_SERVER["SERVER_NAME"] && !isset($_SERVER["TERM"])) echo "<pre>";
+  if ($vname){
+    echo $vname;
+    if ($label) echo " #" . $label . "# ";
+    else echo ": ";
+  }else{
+    if ($label) echo "$label: ";
+  }
+  print_r($var);
+  if ($_SERVER["SERVER_NAME"] && !isset($_SERVER["TERM"])) echo "</pre>";
+}
+
+/* this function is needed to check in multidimensional arrays
+if the value of interest exists. if yes, the path is returned */
+function aver($needle,$haystack) { // array value exists recursive
+  foreach($haystack as $key=>$val) {
+    if(is_array($val) && $needle != $val && $key != "GLOBALS") {
+      if($foo=aver($needle,$val)) return array_merge(array($key),$foo);
+    }elseif($val === $needle) return array($key);
+  }
+  return false;
+}
+?>
+===============================================================================
+
+<?php
+
+// Displays a multi-dimensional array as a HTML List (Tree structure).
+function displayTree($var) {
+     $newline = "\n";
+     foreach($var as $key => $value) {
+         if (is_array($value) || is_object($value)) {
+             $value = $newline . "<ul>" . displayTree($value) . "</ul>";
+         }
+
+         if (is_array($var)) {
+             if (!stripos($value, "<li class=")) {
+                $output .= "<li class=\"file\">" . $value . "</li>" . $newline;
+             }
+             else {
+                $output .= $value . $newline;
+             }
+        
+         }
+         else { // is_object
+            if (!stripos($value, "<li class=")) {
+               $value = "<ul><li class=\"file\">" . $value . "</li></ul>" . 
+$newline;
+            }
+           
+            $output .= "<li class=\"folder\">" . $key . $value . "</li>" . 
+$newline;
+         }
+        
+     }
+    
+     return $output;
+}
+?>
+
+///////////////////
+
+Also need to add this to your style sheet (and get the necessary images...):
+
+li.folder
+{
+list-style-image: url(../img/folder.gif);
+}
+
+li.file
+{
+list-style-image: url(../img/file.gif);
+}
+
+///////////////////
+
+Example Usage:
+
+<?php
+     ...
+
+    echo "<ul>";
+     echo displayTree($array);
+     echo "</ul>";
+?>
+===============================================================================
+
+If you're like me and just want an exact version of print_r() except formatted
+to HTML without a bunch of bs, here you go.
+
+The output is identical to print_r() but renders in HTML.
+
+<?php
+// Displays a multi-dimensional array as a HTML unordered lists.
+function displayTree($array) {
+     $newline = "<br>";
+     foreach($array as $key => $value) {    //cycle through each item in the
+array as key => value pairs
+         if (is_array($value) || is_object($value)) {        //if the VALUE is
+an array, then
+            //call it out as such, surround with brackets, and recursively call
+displayTree.
+             $value = "Array()" . $newline . "(<ul>" . displayTree($value) . "
+</ul>)" . $newline;
+         }
+        //if value isn't an array, it must be a string. output its' key and
+value.
+        $output .= "[$key] => " . $value . $newline;
+     }
+     return $output;
+}
+?>
+===============================================================================
+
+Since i use print_r for debugging a lot, i always use the following function in
+my scripts, which makes life a lot easier :-)
+
+<?php
+if (!function_exists("preprint")) {
+    function preprint($s, $return=false) {
+        $x = "<pre>";
+        $x .= print_r($s, 1);
+        $x .= "</pre>";
+        if ($return) return $x;
+        else print $x;
+    }
+}
+?>
+
+-------------------
+
+USAGE:  preprint($x);   <- where $x = array().
+
+-------------------
+
+The optional 2. parameter can be set to "true", so the html-code is returned.
+
+Have fun,
+===============================================================================
+
+Sometimes, when page is called by ajax and you're not actually feeling
+convenient to see output of debugging, you may log it in file like shown below:
+
+<?php
+
+// Log superglobals
+$g=print_r($_GET,true);
+$p=print_r($_POST,true);
+$f=print_r($_FILES,true);
+$s=print_r($_SESSION,true);
+       
+$txt='';
+$txt.="/n".'GET: '.$g;
+$txt.="/n".'POST: '.$p;
+$txt.="/n".'FILES: '.$f;
+$txt.="/n".'SESSION: '.$s;
+       
+file_put_contents('requests.txt',$txt);
+
+?>
+===============================================================================
+
+Many developers have submitted bugs to the PHP development team with regards to
+print_r showing protected and private properties of objects (PHP 5).  This is
+not a bug; sensitive information (ex. database connection object) should be 
+encapsulated within a private member function of your class.
+===============================================================================
+
+We can all agree that print_r() output is very spartan looking. The debug data
+needs to be organized better, and presented in a graceful way. In the era of
+Web 2.0 it is somewhat strange to use plain text to dump information. A DHTML
+powered informatiion dumping tool will be quite better - like the the
+open-source alternative of print_r(); -- Krumo (http://krumo.sourceforge.net).
+
+It renders the output using DHTML and collapsible nodes, it's layout is
+"skinable" and you can change it to fit your aesthetic taste. Krumo makes the
+output "human-readable" for real :) Plus it is compliant with both PHP4 and
+PHP5. Plus it detects "reference recursion". Plus you can use it to dump all
+various sort of data like debug back-traces, the superglobals ($_SERVER, $_ENV,
+$_REQUEST, $_COOKIE, $_GET, $_POST, $_SESSION), all the included files, all the
+declared classes, all the declared constants, all your PHP settings, all your
+php.ini values (if it is readable), all the loaded extensions, all the HTTP
+request headers, all the declared interfaces (for PHP5), all the file paths
+from INCLUDE_PATH, all the values of any particular INI file. Additionally it
+is designed to be easy to use - for example you can disable all the Krumo dumps
+instead of cleaning your code out of all print_r()'s and var_dump()'s. Anyway,
+if you check the site (http://krumo.sourceforge.net), you can found a lot of
+examples, demonstrations, documentation and all sort of helpful information.

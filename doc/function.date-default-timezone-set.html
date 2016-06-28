@@ -1,0 +1,550 @@
+
+date_default_timezone_set
+
+(PHP 5 >= 5.1.0, PHP 7)
+
+date_default_timezone_set — 设定用于一个脚本中所有日期时间函数的默认时区
+
+说明
+
+bool date_default_timezone_set ( string $timezone_identifier )
+
+date_default_timezone_set() 设定用于所有日期时间函数的默认时区。
+
+    Note:
+
+    自 PHP 5.1.0 起（此版本日期时间函数被重写了），如果时区不合法则每个对日期时
+    间函数的调用都会产生一条 E_NOTICE 级别的错误信息，如果使用系统设定或 TZ 环
+    境变量则还会产生 E_STRICT 级别的信息。
+
+除了用此函数，你还可以通过 INI 设置 date.timezone 来设置默认时区。
+
+参数
+
+timezone_identifier
+
+    时区标识符，例如 UTC 或 Europe/Lisbon。合法标识符列表见所支持的时区列表。
+
+返回值
+
+如果 timezone_identifier 参数无效则返回 FALSE，否则返回 TRUE。
+
+范例
+
+Example #1 获取默认时区
+
+<?php
+date_default_timezone_set('America/Los_Angeles');
+
+$script_tz = date_default_timezone_get();
+
+if (strcmp($script_tz, ini_get('date.timezone'))){
+    echo 'Script timezone differs from ini-set timezone.';
+} else {
+    echo 'Script timezone and ini-set timezone match.';
+}
+?>
+
+更新日志
+
+版本                    说明
+5.3.0 现在会抛出 E_WARNING 而不是 E_STRICT。
+5.1.2 本版本开始验证 timezone_identifier 参数。
+
+参见
+
+  • date_default_timezone_get() - 取得一个脚本中所有日期时间函数所使用的默认时
+    区
+  • 所支持的时区列表
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+I'm sure I'm not the only one who is distressed by the recent default behavior
+change to E_NOTICE when the timezone isn't explicitly set in the program or in
+.ini.  I insure that the clock on the server IS correct, and I don't want to
+have to set it in two places (the system AND PHP).  So I want to read it from
+the system.  But PHP won't accept that answer, and insists on a call to this
+function.  So, here's my answer:
+
+<?php
+function setTimezone($default) {
+    $timezone = "";
+   
+    // On many systems (Mac, for instance) "/etc/localtime" is a symlink
+    // to the file with the timezone info
+    if (is_link("/etc/localtime")) {
+       
+        // If it is, that file's name is actually the "Olsen" format timezone
+        $filename = readlink("/etc/localtime");
+       
+        $pos = strpos($filename, "zoneinfo");
+        if ($pos) {
+            // When it is, it's in the "/usr/share/zoneinfo/" folder
+            $timezone = substr($filename, $pos + strlen("zoneinfo/"));
+        } else {
+            // If not, bail
+            $timezone = $default;
+        }
+    }
+    else {
+        // On other systems, like Ubuntu, there's file with the Olsen time
+        // right inside it.
+        $timezone = file_get_contents("/etc/timezone");
+        if (!strlen($timezone)) {
+            $timezone = $default;
+        }
+    }
+    date_default_timezone_set($timezone);
+}
+?>
+
+Use it by calling it with a fallback default answer.
+
+Yes, I know it doesn't work on Windows.  Neither do I :)  Perhaps someone wants
+to add that functionality.
+
+Hope this helps someone.
+===============================================================================
+
+This creates a huge problem for downloadable programs, which obviously cannot
+be hardcoded as this suggests, since the coder has no idea where they will be
+run.
+
+Seems to me that if the server's timezone cannot be relied on, then THAT is the
+the problem which needs fixed. Not, cause the coder's syntactically-correct
+work to generate bogus error messages.
+===============================================================================
+
+I experienced that using this function highly increases performance of
+functions like getdate() or date() using PHP 5.2.6 on Windows.
+I experienced similar results on Linux servers with PHP 5.2.6 and 5.2.10,
+although the difference was not that significant on these servers: The PHP
+5.2.10 server did run with date_default_timezone_set ("only") twice as fast as
+without. The 5.2.6 server did 5 times faster with date_default_timezone_set. As
+you can see below, the 5.2.6-Windows machine did a LOT faster.
+Of course these machines have completely different hardware and can not really
+be compared, but all show improved performance.
+
+I checked PHP 4.4.9 on Windows (without date_default_timezone_set of course)
+and noticed that its as fast as PHP 5.2.6 with date_default_timezone_set.
+
+The following script shows this:
+
+<?php
+
+# uncomment to see difference
+# date_default_timezone_set(date_default_timezone_get());
+
+function getmicrotime()
+{
+list($usec, $sec) = explode(' ',microtime());
+return ($sec.substr($usec,1,7));
+}
+
+$start=mktime(0,0,0,1,1,2005);
+$end=mktime(0,0,0,1,1,2020);
+$nr=50000;
+
+$start_time=getmicrotime();
+for($i=0;$i<$nr;$i++) {
+# $value=getdate(rand($start,$end));
+  date("H:i:s d.m.Y",rand($start,$end));
+}
+$end_time=getmicrotime();
+
+echo "Time: ".($end_time-$start_time);
+
+// With date_default_timezone_set(): "Time: 0.379343986511"
+// Without date_default_timezone_set(): "Time: 7.4971370697"
+
+?>
+
+Note that the timezone is not changed, it is only set again. I really wonder
+why this makes such a big performance difference, but its good to know.
+===============================================================================
+
+I found a need to change the timezone based on a DB record, so it would display
+properly for each record.  So I wrapped some of the other posts into this small
+class:
+
+<?php
+class TZStack
+{
+    private $stack = array();
+    public function __construct(){}
+    public function push($newTZ)
+    {
+        array_push($this->stack, date_default_timezone_get());
+        if (isset($newTZ) && ("" != $newTZ))
+        {
+            date_default_timezone_set($newTZ);
+        }
+    }
+    public function pop()
+    {
+        if (count($this->stack) > 0)
+        {
+            date_default_timezone_set(array_pop($this->stack));
+        }
+    }
+}
+// the global TZ stack for the rest of the code  to use.
+$tzStack = new TZStack();
+// In case I need to know the TZ at the web server. :)
+$script_tz = date_default_timezone_get();
+?>
+
+Then in my per-record code:
+
+<?php
+    foreach($records as $item)
+    {
+        $tzStack->push($item['TZ']);
+        $TZ = date("T", time());
+        // code that displays this record, using $TZ.
+        $tzStack->pop();
+    }
+?>
+===============================================================================
+
+The problem:
+
+date() [function.date]: It is not safe to rely on the system's timezone
+settings. Please use the date.timezone setting, the TZ environment variable or
+the date_default_timezone_set() function. In case you used any of those methods
+and you are still getting this warning, you most likely misspelled the timezone
+identifier. We selected 'America/Los_Angeles' for 'PST/-8.0/no DST' instead
+
+Of course this is a problem that recently surfaced since PHP5. Quick fix is to
+set your time zone, add this line to your php code:
+
+date_default_timezone_set("America/Los_Angeles");
+===============================================================================
+
+After poundering and knocking my head on the table, I finally got a proper fix
+for Windows and PHP timezone handling.
+
+Since Windows applies the DST to ActiveTimeBias in the registry, you only need
+this to apply.
+The only problem is, that it cant use the timezone_set command.
+
+You can request a response back in any date-format you wish, or use the default
+one given in the function itself.
+
+<?php
+
+// Return proper time
+function time_zone_fix($timeGiven = "H:i:s")
+{
+    $shell = new COM("WScript.Shell") or die("Requires Windows Scripting Host"
+);
+    $time_bias = -($shell->RegRead("HKEY_LOCAL_MACHINE\\SYSTEM\\
+CurrentControlSet\\Control\\TimeZoneInformation\\
+ActiveTimeBias")) / 60;
+    $timestamp_bias = 60 * 60 * $time_bias;
+    echo $time_bias . "<br />";
+    return gmdate($timeGiven, strtotime($timestamp_bias . " seconds"));
+}
+?>
+===============================================================================
+
+I was having major issues with the date.timezone setting after I updated from
+5.3.3 to 5.4.29. I still need to update further, and perhaps it's a bug in this
+version that will be fixed when I update..
+
+But to fix the issue of php not being about to find my time zone, I added a
+.htaccess file to the root of my web directory. All I have in it is this one
+line (without quotes)
+
+"php_value date.timezone America/Denver"
+
+And now the timezone is set in any directory I browse in. Very strange, and I
+still haven't figured out why It wont work from the php.ini file. But here's
+how to overcome the frustration.
+===============================================================================
+
+Most of the scripts here depend on PHP identifying the correct zone when one is
+not set, but that does not always happen.
+
+For example PHP 5.3.3 gives a 'UTC' result for a detected '8.0/no DST'. Not
+much help.
+
+So for those of us who for very good reasons really cannot set time zones in
+scripts of in .ini files, here is a function
+for use in a Windows environment that sets the default time zone to the OS time
+zone and returns the detected and set texts.
+
+<?php
+function date_system_timezone_set(){
+  $shell = new COM("WScript.Shell") or die("Requires Windows Scripting Host");
+  $time_bias = -($shell->RegRead(
+"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control
+\\TimeZoneInformation\\Bias"))/60;
+  $ab = -($shell->RegRead(
+"HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control
+\\TimeZoneInformation\\ActiveTimeBias"))/60;
+  $sc = $shell->RegRead(
+"HKEY_USERS\\.DEFAULT\\Control Panel\\International\\sCountry");
+  foreach(timezone_abbreviations_list() as $tza) foreach($tza as $entry){
+    $country = strtok($entry['timezone_id'],'/');
+    $locale = strtok('|');
+    if($country==$sc && $ab==($entry['offset']/60/60) && ($ds = $time_bias!=$ab
+)==$entry['dst']){
+      date_default_timezone_set($timezone_identifier = $country."/".$locale);
+      return sprintf('%.1f',$ab)."/".($ds?'':'no ').'DST'." ".
+$timezone_identifier;
+     }
+   }
+  return false;
+}
+?>
+===============================================================================
+
+Regarding my post 3 years before:
+The performance impact seems to be caused by the fact that a log message is
+written if you do not set a timezone. And writing a log message to disk can
+take significantly longer than actually calculating date() or getdate() - esp.
+on systems with slow IO like the Windows machine I used 3 years ago.
+
+PHP 4 did not produce any log messages, and therefore was as fast as PHP5 with
+a timezone set.
+
+So if you run date() or getdate() a lot of times, this will cause a lot of log
+messages to be written to disk (if you did not disable them in your php.ini
+settings), which will take its time.
+
+So either use this function or set the ini-setting "date.timezone" to make
+things faster.
+(And have a look into your logfiles! Solving all those warnings will not only
+save you disk space but will also speed up your web application.)
+===============================================================================
+
+If you want users to choose their own timezones, here's some code that gets all
+available timezones but only uses one city for each possible value:
+
+<?php
+
+$timezones = DateTimeZone::listAbbreviations();
+
+$cities = array();
+foreach( $timezones as $key => $zones )
+{
+    foreach( $zones as $id => $zone )
+    {
+        /**
+         * Only get timezones explicitely not part of "Others".
+         * @see http://www.php.net/manual/en/timezones.others.php
+         */
+        if ( preg_match( '/^(America|Antartica|Arctic|Asia|Atlantic|Europe|
+Indian|Pacific)\//', $zone['timezone_id'] ) )
+            $cities[$zone['timezone_id']][] = $key;
+    }
+}
+
+// For each city, have a comma separated list of all possible timezones for
+that city.
+foreach( $cities as $key => $value )
+    $cities[$key] = join( ', ', $value);
+
+// Only keep one city (the first and also most important) for each set of
+possibilities.
+$cities = array_unique( $cities );
+
+// Sort by area/city name.
+ksort( $cities );
+
+?>
+===============================================================================
+
+It's really a hassle that there is no way to set the timezone offset. I
+attempted to use the code that searched for the correct timezone name by offset
+from below. I found it didn't work reliably since various cities may have
+different rules about time DST etc. My solution is to actually search the array
+and do a test to insure the offset is what I expect it to be. It seems very
+kludgey (if thats a word) but it works.
+
+<?php
+function setTimezoneByOffset($offset)
+    {
+      $testTimestamp = time();
+        date_default_timezone_set('UTC');
+        $testLocaltime = localtime($testTimestamp,true);
+        $testHour = $testLocaltime['tm_hour'];       
+
+     
+    $abbrarray = timezone_abbreviations_list();
+    foreach ($abbrarray as $abbr)
+    {
+        //echo $abbr."<br>";
+      foreach ($abbr as $city)
+      {
+                date_default_timezone_set($city['timezone_id']);
+                $testLocaltime     = localtime($testTimestamp,true);
+                $hour                     = $testLocaltime['tm_hour'];       
+                $testOffset =  $hour - $testHour;
+                if($testOffset == $offset)
+                {
+                    return true;
+                }
+      }
+    }
+    return false;
+    }
+?>
+===============================================================================
+
+A simple method for conversation between two time zone.
+
+<?php
+$date = new DateTime("2012-07-05 16:43:21", new DateTimeZone('Europe/Paris'));
+
+date_default_timezone_set('America/New_York');
+
+echo date("Y-m-d h:iA", $date->format('U'));
+
+// 2012-07-05 10:43AM
+?>
+===============================================================================
+
+Note that there may be some unexpected side-effects that result from using
+either set_default_timezone() or the putenv("TZ=...") workalike for earlier PHP
+versions.  ANY date formatted and output either by PHP or its apache host
+process will be unconditionally expressed in that timezone.
+
+[red. That is only true for the putenv() hack - Derick]
+
+This does indeed include the web server's logs and other output files and
+reports which by default usually do not include any indication of timezone.
+This has a further side-effect on log processing and analysis, obviously.
+===============================================================================
+
+This is a good script if you know or control your system so that you know that
+the local TZ in your OS is correct. Unfortunately, this script still creates an
+warning message under BSD UNIX.
+
+To fix this, just add an "@" in front of "localtime" as:
+
+$arr = @localtime($iTime);
+===============================================================================
+
+While it's easy to change timezones based on names or abbreviations, I haven't
+found any straightforward way of doing so using an offset integer.  This
+situation comes up if you're using AJAX to get information about a user's
+timezone; javascript's getTimezoneOffset() method just sends you an offset
+number. So, here's my clunky solution: an adaptation of chris' function at
+http://us.php.net/manual/en/function.timezone-name-from-abbr.php.
+
+<?php
+    function set_tz_by_offset($offset) {
+        $offset = $offset*60*60;
+        $abbrarray = timezone_abbreviations_list();
+        foreach ($abbrarray as $abbr) {
+            //echo $abbr."<br>";
+                foreach ($abbr as $city) {
+                    //echo $city['offset']." $offset<br>";
+                        if ($city['offset'] == $offset) { // remember to
+multiply $offset by -1 if you're getting it from js
+                               date_default_timezone_set($city['timezone_id']);
+                               return true;
+                        }
+                }
+        }
+    date_default_timezone_set("ust");
+       return false;
+       }
+
+set_tz_by_offset(-1);
+
+?>
+
+[EDIT BY thiago AT php DOT net: This code has contributions from iateadonut at
+gmail dot com]
+===============================================================================
+
+People complaining that there's no way to set the offset - you are wrong. You
+can easily set the offset from GMT (see "Other" in available zones). And since
+all zones are offset from GMT it's just easy math with + or - to get that. So
+if you i.e. want the offset not from GMT but your timezone, then compute offset
+of your zone from GMT (say if you in Berlin its +1 now (mind summer time!)) and
+then offset for your target zone (i.e NYC is -5) then sum abs! of these values
+and set the sign of bigger (abs) value -> total offset from your european zone
+to NYC is then abs(-5)+abs(1) = 6 and set "-" as NYC zone absolute value is
+bigger. So whatever time is in Berlin, in NYC it's 6hrs earlier. But it's
+better to do two step calculation and calculate always from GMT
+===============================================================================
+
+Timezone using other approaches:
+<?php $datetime = strtotime($originaldatetime) + $time;
+$datetime = date('M d, Y h:i A', $datetime);?>
+
+$time obtained from table below:
+-25200|International Date Line (West) GMT-12|
+-21600|Midway Island, Samoa GMT-11|
+-18000|Hawaii, Honolulu GMT-10|
+-14400|Alaska GMT-9|
+-10800|Pacific Standard Time, US, Canada GMT-8|
+-7200|British Columbia N.E., Santa Fe, Mountain Time GMT-7|
+-3600|Central America, Chicago, Guatamala, Mexico City GMT-6|
+0|US, Canada, Bogota, Boston, New York GMT-5|
++3600|Canada, Santiago, Atlantic Standard Time GMT-4|
++7200|Brazilia, Buenos Aires, Georgetown, Greenland GMT-3|
++10800|Mid-Atlantic GMT-2|
++14400|Azores, Cape Verde Is., Western Africa Time GMT-1|
++18000|London, Iceland, Ireland, Morocco, Portugal GMT|
++21600|Amsterdam, Berlin, Bern, Madrid, Paris, Rome, GMT+1|
++25200|Athens, Cairo, Cape Town, Finland, Greece, Israel GMT+2|
++28800|Ankara, Aden, Baghdad, Beruit, Kuwait, Moscow GMT+3|
++32400|Abu Dhabi, Baku, Kabul, Tehran, Tbilisi, Volgograd GMT+4|
++36000|Calcutta, Colombo, Islamabad, Madras, New Dehli GMT+5|
++39600|Almaty, Dhakar, Kathmandu, Colombo, Sri Lanka GMT+6|
++43200|Bangkok, Hanoi, Jakarta, Phnom Penh, Australia GMT+7|
++46800|Taipei, Beijing, Hong Kong, Singapore, GMT+8|
++50400|Seoul, Tokyo, Central Australia GMT+9|
++54000|Brisbane, Canberra, Guam, Melbourne, Sydney, GMT+10|
++57600|Magadan, New Caledonia, Solomon Is. GMT+11|
++61200|Auckland, Fiji, Kamchatka, Marshall, Wellington, GMT+12|
+===============================================================================
+
+If you want to set the default timezone to the user's local timezone, you have
+to combine PHP and JavaScript. Here's how to do it:
+
+<?php
+session_start();
+if(!isset($_SESSION['timezone']))
+{
+    if(!isset($_REQUEST['offset']))
+    {
+    ?>
+    <script>
+    var d = new Date()
+    var offset= -d.getTimezoneOffset()/60;
+    location.href = "<?php echo $_SERVER['PHP_SELF']; ?>?offset="+offset;
+    </script>
+    <?php   
+    }
+    else
+    {
+        $zonelist = array('Kwajalein' => -12.00, 'Pacific/Midway' => -11.00, 
+'Pacific/Honolulu' => -10.00, 'America/Anchorage' => -9.00, 'America/
+Los_Angeles' => -8.00, 'America/Denver' => -7.00, 'America/Tegucigalpa' => -
+6.00, 'America/New_York' => -5.00, 'America/Caracas' => -4.30, 'America/
+Halifax' => -4.00, 'America/St_Johns' => -3.30, 'America/Argentina/
+Buenos_Aires' => -3.00, 'America/Sao_Paulo' => -3.00, 'Atlantic/South_Georgia' 
+=> -2.00, 'Atlantic/Azores' => -1.00, 'Europe/Dublin' => 0, 'Europe/Belgrade' 
+=> 1.00, 'Europe/Minsk' => 2.00, 'Asia/Kuwait' => 3.00, 'Asia/Tehran' => 3.30, 
+'Asia/Muscat' => 4.00, 'Asia/Yekaterinburg' => 5.00, 'Asia/Kolkata' => 5.30, 
+'Asia/Katmandu' => 5.45, 'Asia/Dhaka' => 6.00, 'Asia/Rangoon' => 6.30, 'Asia/
+Krasnoyarsk' => 7.00, 'Asia/Brunei' => 8.00, 'Asia/Seoul' => 9.00, 'Australia/
+Darwin' => 9.30, 'Australia/Canberra' => 10.00, 'Asia/Magadan' => 11.00, 
+'Pacific/Fiji' => 12.00, 'Pacific/Tongatapu' => 13.00);
+        $index = array_keys($zonelist, $_REQUEST['offset']);
+        $_SESSION['timezone'] = $index[0];
+    }
+}
+date_default_timezone_set($_SESSION['timezone']);
+
+//rest of your code goes here
+?>

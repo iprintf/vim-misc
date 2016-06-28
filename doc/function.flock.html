@@ -1,0 +1,1154 @@
+
+flock
+
+(PHP 4, PHP 5, PHP 7)
+
+flock — 轻便的咨询文件锁定
+
+说明
+
+bool flock ( resource $handle , int $operation [, int &$wouldblock ] )
+
+flock() 允许执行一个简单的可以在任何平台中使用的读取/写入模型（包括大部分的
+Unix 派生版和甚至是 Windows）。
+
+在 PHP 5.3.2版本之前，锁也会被 fclose() 释放（在脚本结束后会自动调用）。
+
+PHP 支持以咨询方式（也就是说所有访问程序必须使用同一方式锁定, 否则它不会工作）
+锁定全部文件的一种轻便方法。默认情况下，这个函数会阻塞到获取锁；这可以通过下面
+文档中 LOCK_NB 选项来控制（在非 Windows 平台上）。
+
+参数
+
+handle
+
+    文件系统指针，是典型地由 fopen() 创建的 resource(资源)。
+
+operation
+
+    operation 可以是以下值之一：
+      □ LOCK_SH取得共享锁定（读取的程序）。
+      □ LOCK_EX 取得独占锁定（写入的程序。
+      □ LOCK_UN 释放锁定（无论共享或独占）。
+
+    如果不希望 flock() 在锁定时堵塞，则是 LOCK_NB（Windows 上还不支持）。
+
+wouldblock
+
+    如果锁定会堵塞的话（EWOULDBLOCK 错误码情况下），可选的第三个参数会被设置为
+    TRUE。（Windows 上不支持）
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+5.3.2 在文件资源句柄关闭时不再自动解锁。现在要解锁必须手动进行。
+4.0.1 增加了常量 LOCK_XXX。之前你必须使用 1 代表 LOCK_SH，2 代表 LOCK_EX，3 代
+      表LOCK_UN，4 代表 LOCK_NB。
+
+范例
+
+Example #1 flock() 例子
+
+<?php
+
+$fp = fopen("/tmp/lock.txt", "r+");
+
+if (flock($fp, LOCK_EX)) {  // 进行排它型锁定
+    ftruncate($fp, 0);      // truncate file
+    fwrite($fp, "Write something here\n");
+    fflush($fp);            // flush output before releasing the lock
+    flock($fp, LOCK_UN);    // 释放锁定
+} else {
+    echo "Couldn't get the lock!";
+}
+
+fclose($fp);
+
+?>
+
+Example #2 flock() 使用 LOCK_NB 选项
+
+<?php
+$fp = fopen('/tmp/lock.txt', 'r+');
+
+/* Activate the LOCK_NB option on an LOCK_EX operation */
+if(!flock($fp, LOCK_EX | LOCK_NB)) {
+    echo 'Unable to obtain lock';
+    exit(-1);
+}
+
+/* ... */
+
+fclose($fp);
+?>
+
+注释
+
+    Note:
+
+    flock() uses mandatory locking instead of advisory locking on Windows.
+    Mandatory locking is also supported on Linux and System V based operating
+    systems via the usual mechanism supported by the fcntl() system call: that
+    is, if the file in question has the setgid permission bit set and the group
+    execution bit cleared. On Linux, the file system will also need to be
+    mounted with the mand option for this to work.
+
+    Note:
+
+    由于 flock() 需要一个文件指针，因此可能不得不用一个特殊的锁定文件来保护打算
+    通过写模式打开的文件的访问（在 fopen() 函数中加入 "w" 或 "w+"）。
+
+    Note:
+
+    May only be used on file pointers returned by fopen() for local files, or
+    file pointers pointing to userspace streams that implement the 
+    streamWrapper::stream_lock() method.
+
+Warning
+
+Assigning another value to handle argument in subsequent code will release the
+lock.
+
+Warning
+
+在部分操作系统中 flock() 以进程级实现。当用一个多线程服务器 API（比如 ISAPI）时
+，可能不可以依靠 flock() 来保护文件，因为运行于同一服务器实例中其它并行线程的
+PHP 脚本可以对该文件进行处理。
+
+flock() 不支持旧的文件系统，如 FAT 以及它的派生系统。因此，此环境下总是返回
+FALSE（尤其是对 Windows 98 用户来说）。
+
+
+User Contributed Notes 35 notes
+
+===============================================================================
+
+The supplied documentation is vague, ambiguous and lacking, and the user
+comments contain erroneous information! The flock function follows the
+semantics of the Unix system call bearing the same name. Flock utilizes
+ADVISORY locking only; that is, other processes may ignore the lock completely;
+it only affects those that call the flock call.
+
+LOCK_SH means SHARED LOCK. Any number of processes MAY HAVE A SHARED LOCK
+simultaneously. It is commonly called a reader lock.
+
+LOCK_EX means EXCLUSIVE LOCK. Only a single process may possess an exclusive
+lock to a given file at a time.
+
+If the file has been LOCKED with LOCK_SH in another process, flock with LOCK_SH
+will SUCCEED. flock with LOCK_EX will BLOCK UNTIL ALL READER LOCKS HAVE BEEN
+RELEASED.
+
+If the file has been locked with LOCK_EX in another process, the CALL WILL
+BLOCK UNTIL ALL OTHER LOCKS have been released.
+
+If however, you call flock on a file on which you possess the lock, it will try
+to change it. So: flock(LOCK_EX) followed by flock(LOCK_SH) will get you a
+SHARED lock, not "read-write" lock.
+===============================================================================
+
+LOCK_NB seems to be checked and works fine in Windows, too, in PHP 5.3.3.
+
+For instance, try concurrently running two instances of the following script
+(via the CLI). The second prints "Didn't quite get the lock..." as expected,
+whereas w/o the LOCK_NB flag, it just hangs.
+
+<?php
+$x = fopen("flocktest.txt", "w");
+if (flock($x, LOCK_EX|LOCK_NB)) {
+    print "No problems, I got the lock, now I'm going to sit on it.";
+    while (true)
+        sleep(5);
+} else {
+    print "Didn't quite get the lock. Quitting now. Good night.";
+}
+fclose($x);
+?>
+===============================================================================
+
+I just spent some time (again) to understand why a reading with
+file_get_contents() and file was returning me an empty string "" or array()
+whereas the file was existing and the contents not empty.
+
+In fact, i was locking file when writing it (file_put_contents third arg) but
+not testing if file was locked when reading it (and the file was accessed a
+lot).
+
+So, please pay attention that file_get_contents(), file() and maybe others php
+files functions are going to return empty data like if the contents of the file
+was an empty string.
+
+To avoid this problem, you have to set a LOCK_SH on your file before reading it
+(and then waiting if locked).
+
+Something like this :
+
+<?php
+public static function getContents($path, $waitIfLocked = true) {
+    if(!file_exists($path)) {
+        throw new Exception('File "'.$path.'" does not exists');
+    }
+    else {
+        $fo = fopen($path, 'r');
+        $locked = flock($fo, LOCK_SH, $waitIfLocked);
+       
+        if(!$locked) {
+            return false;
+        }
+        else {
+            $cts = file_get_contents($path);
+           
+            flock($fo, LOCK_UN);
+            fclose($fo);
+           
+            return $cts;
+        }
+    }
+}
+?>
+
+Code to test by yourself :
+
+abc.txt :
+someText
+
+file.php :
+<?php
+$fo = fopen('abc.txt', 'r+');
+
+flock($fo, LOCK_EX);
+sleep(10);
+flock($fo, LOCK_UN);
+?>
+
+file2.php :
+<?php
+var_dump(file_get_contents('abc.txt'));
+var_dump(file('abc.txt'));
+?>
+
+Then launch file.php and switch to file2.php during the 10 seconds and see the
+difference before/after
+===============================================================================
+
+Regarding the change in PHP 5.3.2 with locked files:
+
+Without having studied the PHP source code in detail, the situation appears to
+be as follows when the PHP function fclose() is called:
+
+Before 5.3.2 PHP would check if the file was locked, then release the lock, and
+then close the file.
+
+From 5.3.2 PHP just closes the file.
+
+But note, that the operating system releases the lock automatically when the
+file is closed. Therefore a call to fclose() STILL releases the lock (this is
+tested with PHP 5.3.2, Linux, x64).
+===============================================================================
+
+Here's a handy class to allow retrying a write with flock a set number of
+times. If it can't flock, it will sleep for a brief random interval and try
+again. If you have a lot of concurrent writes going on, you can use it to avoid
+data corruption.
+
+<?php
+class SafeWriter
+{
+    // suggested mode 'a' for writing to the end of the file
+    public static function writeData($path, $mode, $data)
+    {
+        $fp = fopen($path, $mode);
+        $retries = 0;
+        $max_retries = 100;
+
+        if (!$fp) {
+            // failure
+            return false;
+        }
+
+        // keep trying to get a lock as long as possible
+        do {
+            if ($retries > 0) {
+                usleep(rand(1, 10000));
+            }
+            $retries += 1;
+        } while (!flock($fp, LOCK_EX) and $retries <= $max_retries);
+
+        // couldn't get the lock, give up
+        if ($retries == $max_retries) {
+            // failure
+            return false;
+        }
+
+        // got the lock, write the data
+        fwrite($fp, "$data\n");
+        // release the lock
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        // success
+        return true;
+    }
+}
+?>
+===============================================================================
+
+When writing to a file, you should avoid using w+ because it would erase the
+contents of the file before locking
+
+If you need to write the complete file again you could use the following
+instead:
+
+<?php
+$fp = fopen('yourfile.txt', 'a') ;
+
+if (flock($fp, LOCK_EX)) {
+    ftruncate($fp, 0) ; // <-- this will erase the contents such as 'w+'
+   
+    fputs($fp, 'test string') ;
+   
+    flock($fp, LOCK_UN) ;
+}
+
+fclose($fp) ;
+?>
+
+Best,
+Fernando Gabrieli
+===============================================================================
+
+you can wrap a lock as an object to make it a scope-based lock. when the lock
+object is no longer referenced, like when it's unset or the owner returns, the
+destructor will call unlock.
+
+this way you can just create a lock object and forget about it.
+
+<?php
+class lock {
+
+    private $handle;
+
+    public static function read ( $handle ) {
+        $lock = new static();
+        $lock->handle = $handle;
+        return flock($handle,LOCK_SH) ? $lock : false;
+    }
+
+    public static function write ( $handle ) {
+        $lock = new static();
+        $lock->handle = $handle;
+        return flock($handle,LOCK_EX) ? $lock : false;
+    }
+
+    public function __destruct ( ) {
+        flock($this->handle,LOCK_UN);
+    }
+
+}
+?>
+===============================================================================
+
+Actually, there is no use of the while loop with the usleep. My testing has
+revealed the following:
+
+<?php
+//some code here
+flock($file_handle, LOCK_EX) // <- Your code will pause here untill you get the
+lock for indefinite amount of time or till your script times out
+//some code here
+?>
+
+This will actually check for the lock without pausing and then it will sleep:
+
+<?php
+//code here
+while (!flock($file_handle, LOCK_EX | LOCK_NB)) {
+//Lock not acquired, try again in:
+usleep(round(rand(0, 100)*1000)) //0-100 miliseconds
+}
+//lock acquired
+//rest of the code
+?>
+
+The problem is, if you have a busy site and a lots of locking, the while loop
+may not acquire the lock for some time. Locking without LOCK_NB is much more
+persistent and it will wait for the lock for as long as it takes. It is almose
+guaranteed that the file will be locked, unless the script times out or
+something.
+
+Consider these two scripts: 1st one is ran, and the second one is ran 5 seconds
+after the first.
+
+<?php
+//1st script
+$file_handle = fopen('file.test', 'r+');
+flock($file_handle, LOCK_EX); //lock the file
+sleep(10); //sleep 10 seconds
+fclose($file_handle); //close and unlock the file
+?>
+
+<?php
+//2nd script
+$file_handle = fopen('file.test', 'r+');
+flock($file_handle, LOCK_EX); //lock the file
+fclose($file_handle); //close and unlock the file
+?>
+
+If you run 1st and then the 2nd script,the 2nd script will wait untill the 1st
+has finished. As soon as the first script finishes, the second one will acquire
+the lock and finish the execution. If you use flock($file_handle, LOCK_EX |
+LOCK_NB) in the 2nd script while the 1st script is running, it would finish
+execution immediately and you would not get the lock.
+===============================================================================
+
+I just want to add a note about making atomic lock on NFS, there is only two
+ways:
+
+- 1 (the most robust but the most complicate) - It's to use link() to create a
+  hard link to a file you want to lock (on the same FS of course).
+  (On most NFS implementations, Link() is atomic)
+
+Once you created a hard link (not a symbolic link), with a unique randomly
+generated name, call stat() on it and count the number of link (nlink), if
+there
+is only 2 then the file is locked.
+
+If there is more than two you have to unlink() the link you just created and
+create a new one with a new unique name (else NFS will use its cache and stat
+will return wrong data) then call stat() on the new link and test the number of
+links again, repeat this operation until you get the lock.
+
+You have to use usleep() between the link() attempts with a fixed + random
+sleep value to avoid dead lock situations (link() and unlink() may be atomic
+but not instantaneous)
+
+Also note than when you unlink a file through NFS, if NFS think that the file
+is still in use, it will create a .nfs link to this file until it realizes the
+file is no longer in use... A wrong timing could generate thousands of those
+files and a deadlock situation.  Because of this when a deadlock situation
+occurs or if your stat() command returns a very high number of links, you have
+to look for .nfs file in the same directory you created your links and unlink
+all the .nfs file you find (sometimes NFS take its time to remove them)
+
+- 2 (the simplest) - the second method is to use a lock server and lock daemons
+  on each client that will forward lock request to the server... (this is more
+dangerous than the first method because the daemons may be killed...)
+
+Here is for reference the function I created to make atomic locks through NFS
+(this function is in production since at least 4 years now), it's just for
+reference because it uses many external functions to do its job but you can see
+the principle:
+
+http://pastey.net/85793
+===============================================================================
+
+I have found that if you open a currently locked file with 'w' or 'w+' ("file
+pointer at the beginning of the file and truncate the file to zero length") 
+then it will not truncate the file when the lock is released and the file
+available.
+
+Example I used to test it:
+<?php
+// a.php
+$fp = fopen( "/tmp/lock.txt", "w+" );
+flock( $fp, LOCK_EX ); // exclusive lock
+
+$steps = 10;
+// write to the file
+for ($i=0; $i< $steps; $i++) {
+    fwrite($fp, 'a '.time().' test '. $i."\n");
+    sleep(1);
+}
+flock( $fp, LOCK_UN ); // release the lock
+fclose( $fp );
+?>
+
+----------
+<?php
+// b.php
+
+$fp = fopen( "/tmp/lock.txt", "w+" );
+flock( $fp, LOCK_EX ); // exclusive lock
+
+// ftruncate($fp, 0) is needed here! <----
+
+$steps = 5;
+// write to the file
+for ($i=0; $i< $steps; $i++) {
+    fwrite($fp, 'b '.time().' test '. $i."\n");
+    sleep(1);
+}
+flock( $fp, LOCK_UN ); // release the lock
+fclose( $fp );
+?>
+
+Loading a.php then loading b.php right after will result in:
+b 1054075769 test 0
+b 1054075770 test 1
+b 1054075771 test 2
+b 1054075772 test 3
+b 1054075773 test 4
+a 1054075764 test 5
+a 1054075765 test 6
+a 1054075766 test 7
+a 1054075767 test 8
+a 1054075768 test 9
+
+As you can see, b.php does not truncate the file as the w+ would suggest if the
+file were instantly available. But only moves the pointer to the begining of
+the file. If b.php was loaded after a.php finished then there would be no "a
+..." lines in the file, since it would be truncated.
+
+To fix this you have to add ftruncate($fp, 0) right after the flock.
+
+'r+' and 'a' seem to work fine, though.
+===============================================================================
+
+If you are interested in using file locking as indicator that your console app
+is running and you don't want to start it again:
+
+if (!flock($fp, LOCK_EX | LOCK_NB, $wouldblock)) {
+                if ($wouldblock) {
+                    //Another process holds the lock!
+              
+                } else {
+                    //Couldn't lock for another reason, e.g. no such file
+            
+                }
+            } else {
+                //Lock obtained
+
+                startJob();
+            }
+Please note that this is platform independent solution, but you have
+restrictions in PHP version (5.5.22 on Windows).
+Also, some old file systems are not supported.
+===============================================================================
+
+Simple Helper for lock files creation
+
+<?php
+
+class FileLocker {
+    protected static $loc_files = array();
+
+    public static function lockFile($file_name, $wait = false) {
+        $loc_file = fopen($file_name, 'c');
+        if ( !$loc_file ) {
+            throw new \Exception('Can\'t create lock file!');
+        }
+        if ( $wait ) {
+            $lock = flock($loc_file, LOCK_EX);
+        } else {
+            $lock = flock($loc_file, LOCK_EX | LOCK_NB);
+        }
+        if ( $lock ) {
+            self::$loc_files[$file_name] = $loc_file;
+            fprintf($loc_file, "%s\n", getmypid());
+            return $loc_file;
+        } else if ( $wait ) {
+            throw new \Exception('Can\'t lock file!');
+        } else {
+            return false;
+        }
+    }
+
+    public static function unlockFile($file_name) {
+        fclose(self::$loc_files[$file_name]);
+        @unlink($file_name);
+        unset(self::$loc_files[$file_name]);
+    }
+
+}
+
+if ( !FileLocker::lockFile('/tmp/1.lock') ) {
+    echo "Can't lock file\n";
+    die();
+}
+sleep(10);
+FileLocker::unlockFile('/tmp/1.lock');
+echo "All Ok\n";
+===============================================================================
+
+Note that Example #1 contains a bug: ftruncate() does *not* re-set the file
+pointer to the beginning of the file. You need to execute a call to rewind()
+afterward. I realize that the ftruncate page does mention this, but if anybody
+copies the example above (as I did), their program will not work correctly
+unless they fix this.
+===============================================================================
+
+if you are used to reply with qualified error messages by using "track_errors =
+1" and $php_errormsg,  flock() will nark you, if you use LOCK_NB .
+
+If flock() fails due to LOCK_NB $php_errormsg will not be created and filled
+with an error message like 'could not lock file, file already locked'.
+
+You can use some little workaround which does also on WIN:
+
+#---------------------------------
+GLOBAL $MYERRORMSG;
+
+function some_file_operations($filename)
+{
+    GLOBAL $MYERRORMSG;
+
+    # ...
+    # ...
+
+    if (! @flock($fh, LOCK_SH | LOCK_NB, $wb))
+       {
+        if (!isset($php_errormsg)) $php_errormsg = 'could not lock file, file
+already locked';
+        $MYERRORMSG = $php_errormsg;
+        return false;
+    }   
+}
+#--------------------------------
+
+In case of fail $MYERRORMSG now will hold a qualified error message
+===============================================================================
+
+I've been having trouble getting Flock to work when I read a file, delete it,
+and then output slightly changed information back to the same location.  When
+deleting with Unlink, there's a very brief period of time where no file
+exists.  But, if you do an fopen using the "w" mode, it keeps the file in
+existence, but deletes all of its data when you go to write to it.  That way,
+the file never actually disappears, and another script accessing the same file
+with flock won't get a "file doesn't exist" error.
+===============================================================================
+
+Use rename or unlink on handled file breaked LOCK_EX flock on handle (Linux
+only).
+
+Example:
+
+$handle = fopen($lockFile, 'c');
+var_dump(flock($handle, LOCK_EX | LOCK_NB)); // false because flock use other
+php process
+rename($lockFile, $lockFile.'.old'); // or unlink
+var_dump(flock($handle, LOCK_EX | LOCK_NB)); // always true (!!!)
+===============================================================================
+
+You cannot combine gzopen with flock; so:
+
+<?php
+$f = gzopen($file,'w');
+$o = flock($f, LOCK_EX);
+var_dump($o);
+flush();
+?>
+
+Gives:
+
+boolean false
+===============================================================================
+
+I use exclusive writing to replace standard flock():
+
+<?php
+// get/set lock file name
+function m_lock_file( $format = null ) {
+    static $file_format = './%s.lock';
+   
+    if ($format !== null) {
+        $file_format = $format;
+    }
+   
+    return $file_format;
+}
+
+// acquire/check/release lock
+function m_lock( $lockId, $acquire = null ) {
+    static $handlers = array();
+   
+    if (is_bool($acquire)) {
+        $file = sprintf(m_lock_file(), md5($lockId), $lockId);
+    }
+   
+    if ($acquire === false) {
+        if (isset($handlers[$lockId])) {
+            @fclose($handlers[$lockId]);
+            @unlink($file);
+            unset($handlers[$lockId]);
+        } else {
+            trigger_error("Lock '$lockId' is already unlocked", E_USER_WARNING
+);
+        }
+    }
+   
+    if ($acquire === true) {
+        if (!isset($handlers[$lockId])) {
+            $handler = false;
+            $count = 100;
+            do {
+                if (!file_exists($file) || @unlink($file)) {
+                    $handler = @fopen($file, "x");
+                }
+                if (false === $handler) {
+                    usleep(10000);
+                } else {
+                    $handlers[$lockId] = $handler;
+                }
+            } while (false === $handler && $count-- > 0);
+        } else {
+            trigger_error("Lock '$lockId' is already locked", E_USER_WARNING);
+        }
+    }
+   
+    return isset($handlers[$lockId]);
+}
+?>
+
+Usage sample:
+
+<?php
+$lockId = "qq";
+
+m_lock($lockId, true);
+if (m_lock($lockId)) {
+    echo "locked";
+
+    // here you can perform any thread-safe operations
+    usleep(300 * 1000);
+
+    m_lock($lockId, false);
+} else {
+    echo "not locked";
+}
+
+?>
+===============================================================================
+
+Notice: On NFS with NFS locking daemon you cannot open file for reading and
+than lock exklusively:
+
+$rFopened  = fopen($sFile,'r');
+$bResult   = flock($rFopened, LOCK_EX);
+
+var_dump($bResult); // returns FALSE
+
+Mixed fopen modes (a+, w+ ...) works with LOCK_EX fine.
+===============================================================================
+
+Like a user already noted, most Linux kernels (at least the Redhat ones) will
+return false, even if you locked the file. This is because the lock is only
+ADVISORY (you can check that in /proc/locks). What you have to do there is to
+evalute the 3rd parameter of flock(), $eWouldBlock. See for an example below.
+Note however that if you
+lock the file in non blocking mode, flock() will work as expected (and blocks
+the script).
+
+<?php
+                                                                               
+$fp = fopen( "/var/lock/process.pid", "a" );
+if ( !$fp || !flock($fp,LOCK_EX|LOCK_NB,$eWouldBlock) || $eWouldBlock ) {
+  fputs( STDERR, "Failed to acquire lock!\n" );
+  exit;
+}
+                                                                               
+// do your work here
+                                                                               
+fclose( $fp );
+unlink( "/var/lock/process.pid" );
+                                                                               
+?>
+===============================================================================
+
+besides from what the manual says about locking a file opendend in w or w+ and
+using a special lock file for these cases, you should simply truncate the file
+yourself with ftruncate() after writing:
+
+<?php
+
+$data='some data';
+$handle=fopen('file','r+');
+flock($handle,LOCK_EX);
+fwrite($handle,$data);
+ftruncate($handle,ftell($handle));
+flock($handle,LOCK_UN);
+fclose($handle);
+
+?>
+
+now the file will have the size of $data without opening the file in w mode but
+with a lock on the file.
+
+to the previous writers jpriebe and mallory:
+of course the lock is lost in this case, but thats simply because the file is
+closed by PHP. and closing the file means unlocking it (same as when you use
+fclose() yourself).
+===============================================================================
+
+I have noticed that if you change the value of your fopen ressource, the lock
+is working no longer..
+
+<?php
+
+$fo = fopen('lockfile.txt','a');
+
+flock($fo,LOCK_EX);
+
+$fo = '';
+
+// Lock is disable
+
+?>
+===============================================================================
+
+Just a comment about the last method to lock files using filemtime().
+What if   filemtime($fp[1]) == $fp[3]   because somebody modified the file less
+than 1s after the value of $fp[3] was picked up?
+Then this modification will be lost...?
+
+This system to lock files is made to prevent problems when two modifications
+are so close that they can interfere, so the case "less than 1s" will often
+happen?
+
+However, lose some modifications is better than spoil all the file...
+===============================================================================
+
+Further information on flock: The system is not restarted if a signal is
+delivered to the process, so flock will happily return false in case of
+SIGALRM, SIGFPE or something else.
+===============================================================================
+
+Indeed, flock() will not work reliably when the underlying filesystem is NFS.
+The proper way to perform file locking, in this case, would be to use PHP's
+link() function. From the Linux man page of open():
+
+       O_EXCL When used with O_CREAT, if the file  already  exists  it  is  an
+              error  and  the open will fail. In this context, a symbolic link
+              exists, regardless of where its points to.  O_EXCL is broken  on
+              NFS file systems, programs which rely on it for performing lock-
+              ing tasks will contain a race condition.  The solution for  per-
+              forming  atomic  file  locking  using  a lockfile is to create a
+              unique file on the same fs  (e.g.,  incorporating  hostname  and
+              pid),  use  link(2)  to  make  a link to the lockfile. If link()
+              returns 0, the lock is successful.  Otherwise,  use  stat(2)  on
+              the  unique  file to check if its link count has increased to 2,
+              in which case the lock is also successful.
+===============================================================================
+
+flock on Solaris is slightly strange: it will fail if you try to get an
+exclusive lock on a file not opened for writing. That is, for reading files,
+you MUST use a shared lock. From the Solaris man page for flock:
+
+"Read permission is required on a file to obtain a shared lock, and write 
+permission is required to obtain an exclusive lock."
+
+In contrast, this is from the Linux man page for flock:
+
+"The mode used to open the file doesn’t matter to flock."
+
+So, beware...
+===============================================================================
+
+I ran into a loop because I just checked for true (= you got the lock) as
+return value of flock() and tried again when I got a false.
+
+<?php
+    function naive_wait_for_file($fp) {
+        while (true) {
+            if (flock($fp, LOCK_EX)) {
+                return;
+            }
+            $k = rand(0, 20);
+            usleep(round($k * 10000));  # k * 10ms
+        }
+    }
+?>
+
+Unfortunately in one case the $fp I put in was invalid, so I always got false
+and got stuck.
+Lesson: check if your $fp is valid before entering the loop, or look closer if
+you get a false.
+
+<?php
+    function wait_for_file($fp) {
+        if ($fp === false) {
+            return;
+        }
+        while (true) {
+            if (flock($fp, LOCK_EX)) {
+                return;
+            }
+            $k = rand(0, 20);
+            usleep(round($k * 10000));  # k * 10ms
+        }
+    }
+?>
+===============================================================================
+
+just wanted to say that you will most likely fail if you use a separate lock
+file together with register_shutdown_function.
+
+my script did some different actions... resizing pictures, rotating them and
+this stuff. it needed a "database" file to get the correct file locations. this
+database file also stored some flags. and of course the script had to save that
+file when it was done.
+
+because of my script exited on many different points depending on the action i
+used register_shutdown_function to save the file. it wanted to use a locking
+system to be sure the script doesn't overwrite the data another process had
+written into it some microseconds before. i was running on windows 2000 and
+apache2 on my developing machine, and flock always returned true for some
+reason... so i used a separate lock file. the script looked for it at the
+beginning and exited if it was found. otherwise it created it. but this file
+had to be deleted at the end. i put the unlink command into the registered
+shutdown-function but it never deleted the file. i tried clearstatcache and
+some other stuff but it didn't help.
+
+maybe this helps someone.
+===============================================================================
+
+I'm thinking that a good way to ensure that no data is lost would be to create
+a buffer directory that could store the instructions for what is to be written
+to a file, then whenever the file is decidedly unlocked, a single execution
+could loop through every file in that directory and apply the indicated changes
+to the file.
+
+I'm working on writing this for a flat-file based database.  The way it works
+is, whenever a command is issued (addline, removeline, editline), the command
+is stored in a flat file stored in a folder named a shortened version of the
+filename to be edited and named by the time and a random number.  In that file
+is a standardized set of commands that define what is to be done to what file
+(the likes of "file: SecuraLog/index_uid" new line "editline: 14").
+
+Each execution will check every folder in that directory for files and a
+certain amount of time (I don't know how long, maybe 1-2 seconds) is spent
+making pending changes to unlocked files.  This way no changes will be lost
+(i.e. person 1 makes a change at the same time as person 2, and person 1 loses
+the race by just enough to have their changed version of the file overwritten
+by person 2's version) and there will be no problems with opening an empty open
+file.
+===============================================================================
+
+You should lock the file _before_ opening it, and unlock _after_ closing it.
+Othervise an another process might be able to access the file between the lock/
+unlock and the open/close operation.
+===============================================================================
+
+"Assigning another value to handle argument in subsequent code will release the
+lock."
+Note: this is also true for losing the handle's context completely (like
+returning from a function, in which the handle was a local variable).
+
+<?php
+touch("testfile");
+
+function mylock() {
+  $F1 = fopen("testfile","r");
+  if (flock($F1,LOCK_EX|LOCK_NB)) echo "First lock OK\n"; else echo "First lock
+FAIL\n";
+  $F2 = fopen("testfile","r");
+  if (flock($F2,LOCK_EX|LOCK_NB)) echo "Second lock OK\n"; else echo "Second
+lock FAIL\n";
+}
+
+mylock();
+echo "Function returned.\n";
+mylock();
+
+unlink("testfile");
+?>
+
+Prints out:
+
+First lock OK
+Second lock FAIL
+Function returned.
+First lock OK
+Second lock FAIL
+
+This will lock the testfile, then attempt to lock it again with a new file
+handle (obviously failing). Trying this again, though, results in proper
+locking again (and then failing again), because when exiting the function both
+handles are lost and automatically unlocked.
+===============================================================================
+
+I've been testing a few custom file access functions but I always liked the
+simplicity of file_get_contents(). Of course it doesn't seem to respect any
+file locks created with flock(). I created the function below to wrap around
+file_get_contents() so it can support locked files. It's an odd way of doing it
+but it works for me.
+
+<?php
+function flock_get_contents($filename){
+
+    $return = FALSE;
+
+    if(is_string($filename) && !empty($filename)){
+        if(is_readable($filename)){
+            if($handle = @fopen($filename, 'r')){
+                while(!$return){
+                    if(flock($handle, LOCK_SH)){
+                        if($return = file_get_contents($filename)){
+                            flock($handle, LOCK_UN);
+                        }
+                    }
+                }
+                fclose($handle);
+            }
+        }
+    }
+   
+    return $return;
+}
+?>
+===============================================================================
+
+If you don't want use secondary lock file while truncating, try this:
+
+<?php
+
+$fp = fopen("/tmp/lock.txt", "a+");
+
+if (flock($fp, LOCK_EX)) { // do an exclusive lock
+   ftruncate($fp, 0);
+   fwrite($fp, "Write something here\n");
+   flock($fp, LOCK_UN); // release the lock
+} else {
+   echo "Couldn't lock the file !";
+}
+
+fclose($fp);
+
+?>
+===============================================================================
+
+I just spend a long time to understand why write function returns me "0", on a
+basic file opening and then writing.
+
+I discovered that if you use LOCK_SH and then you write something, that will
+not work :
+
+<?php
+$fp = fopen('file.txt', 'a');
+
+flock($fp,LOCK_SH);
+
+$written = fputs($fp, 'data');
+
+var_dump($written); // 0 and file is not changed
+
+fclose($fp);
+?>
+===============================================================================
+
+Because:
+1) flock() is not safe if multiple php sessions are simultaneously locking.
+2) fopen( , 'a') is not safe if multiple php sessions are simultaneously
+appending.
+3) usleep and sleep are known for having problems.
+
+I wrote the Weblog function, it's purpose is to append a line to logging. This
+function handles the concurrency as follows:
+- Try to create a lockfile named: $directory . date('Ymd') . $logfile . 1 .
+lock
+- If this fails, try to create lockfile named: $directory . date('Ymd') .
+$logfile . 2 . lock
+- etc. After 100 tries return false.
+
+- When the lockfile is acquired the file named: $directory.date
+('Ymd').$logfile.1 (or .2 or .3 or .25) is opened or created.
+- If created the a "extended log file" header is written.
+- Write out the line.
+- Close the flie and if created set the correct access rights. (I had some
+problems creating files on a webserver, I did not see them when I opened a FTP
+session to the webdirectory. The chmod did the trick for me).
+
+- Remove the lockfile.
+
+There is only one drawback, multiple logfiles are created.
+e.g. (executed on 15 september 2010)
+    Weblog('./' , 'visit', 'Somebody requested the index page');
+Could lead to 100 files, depending how many concurrent php sessions are
+simultaneously trying to append a logline:
+./20100915visit.1
+./20100915visit.2
+./20100915visit.3
+./20100915visit.4
+...
+./20100915visit.100
+
+This function is donated to the public domain. Maybe you can give me some
+credit by leaving in the author comment, but it is not required. You may modify
+this as you wish.
+(This function was inspired by the function m_lock_file presented by Kuzma dot
+Deretuke at gmail dot com)
+
+<?php
+function Weblog($directory, $logfile, $message)
+{
+    // Created 15 september 2010: Mirco Babin
+    $curtime = time();
+    $logfile = date('Ymd',$curtime) . $logfile;
+
+    if (!isset($directory) || $directory === false)
+        $directory = './';
+    if (substr($directory,-1) !== '/')
+        $directory = $directory . '/';
+       
+    $count = 1;
+    while(1)
+    {
+        $logfilename = $directory . $logfile . '.' . $count;
+       
+        $lockfile = $logfilename . '.lock';
+        $lockhandle = false;
+        if (!file_exists($lockfile) || @unlink($lockfile))
+            $lockhandle = @fopen($lockfile, 'xb');
+        if ($lockhandle !== false) break;
+
+        $count++;
+        if ($count > 100) return false;
+    }
+   
+    if (file_exists($logfilename))
+        {
+            $created   = false;
+            $loghandle = @fopen($logfilename, 'ab');
+        }
+    else
+        {
+            $loghandle = @fopen($logfilename, 'xb');
+            if ($loghandle !== false)
+                {
+                    $created = true;
+                   
+                    $str = '#version: 1.0' . "\r\n" .
+                           '#Fields: date time c-ip x-msg' . "\r\n";
+                    fwrite($loghandle,$str);
+                }
+            }
+   
+    if ($loghandle !== false)
+        {
+            $str = date('Y-m-d',$curtime) . "\t" .
+                   date('H:i:s', $curtime) .  "\t" .
+                   (isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 
+'-') . "\t" .
+                   '"' . str_replace('"', '""', $message) . '"' . "\r\n";
+            fwrite($loghandle,$str);
+           
+            fclose($loghandle);
+           
+            if ($created) chmod($logfilename,0644); // Read and write for
+owner, read for everybody else
+           
+            $result = true;
+        }
+    else
+        {
+            $result = false;
+        }
+   
+    fclose($lockhandle);
+    @unlink($lockfile);
+
+    return $result;
+}
+?>

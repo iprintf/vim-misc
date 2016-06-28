@@ -1,0 +1,425 @@
+
+symlink
+
+(PHP 4, PHP 5, PHP 7)
+
+symlink — 建立符号连接
+
+说明
+
+bool symlink ( string $target , string $link )
+
+symlink() 对于已有的 target 建立一个名为 link 的符号连接。
+
+参数
+
+target
+
+    连接的目标。
+
+link
+
+    连接的名称。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                               说明
+5.3.0 此函数在 Windows 平台上可用（Vista、Server 2008 或更高版本）。
+
+范例
+
+Example #1 创建一个符号连接
+
+<?php
+$target = 'uploads.php';
+$link = 'uploads';
+symlink($target, $link);
+
+echo readlink($link);
+?>
+
+注释
+
+    Note: 仅针对 Windows：运行 PHP 于Vista、Server 2008 或更高版本才能正常使用
+    。之前版本的 Windows 不支持符号连接。
+
+参见
+
+  • link() - 建立一个硬连接
+  • readlink() - 返回符号连接指向的目标
+  • linkinfo() - 获取一个连接的信息
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+Here is a simple way to control who downloads your files...
+
+You will have to set: $filename, $downloaddir, $safedir and $downloadURL.
+
+Basically $filename is the name of a file, $downloaddir is any dir on your
+server, $safedir is a dir that is not accessible by a browser that contains a
+file named $filename and $downloadURL is the URL equivalent of your
+$downloaddir.
+
+The way this works is when a user wants to download a file, a randomly named
+dir is created in the $downloaddir, and a symbolic link is created to the file
+being requested.  The browser is then redirected to the new link and the
+download begins.
+
+The code also deletes any past symbolic links created by any past users before
+creating one for itself.  This in effect leaves only one symbolic link at a
+time and prevents past users from downloading the file again without going
+through this script.  There appears to be no problem if a symbolic link is
+deleted while another person is downloading from that link.
+
+This is not too great if not many people download the file since the symbolic
+link will not be deleted until another person downloads the same file.
+
+Anyway enjoy:
+
+<?php
+$letters = 'abcdefghijklmnopqrstuvwxyz';
+srand((double) microtime() * 1000000);
+$string = '';
+for ($i = 1; $i <= rand(4,12); $i++) {
+   $q = rand(1,24);
+   $string = $string . $letters[$q];
+}
+$handle = opendir($downloaddir);
+while ($dir = readdir($handle)) {
+   if (is_dir($downloaddir . $dir)){
+      if ($dir != "." && $dir != ".."){
+         @unlink($downloaddir . $dir . "/" . $filename);
+         @rmdir($downloaddir . $dir);
+      }
+   }
+}
+closedir($handle);
+mkdir($downloaddir . $string, 0777);
+symlink($safedir . $filename, $downloaddir . $string . "/" . $filename);
+Header("Location: " . $downloadURL . $string . "/" . $filename);
+?>
+===============================================================================
+
+Symlinks on windows  are created by Symlink() which accept only absolute paths 
+but not relative paths .relative paths on windows are not supported for
+symlinks
+===============================================================================
+
+sym/hard linking i love to do it relative a lot but not that trivial when
+thinking wrong :-)
+manpage says: the target is the _linkname_ and from that point to create
+relative links successful is to start from the directory where the link should
+be created e.g.:
+/myfiles/now/here/
+/myfiles/links/
+
+chdir( realpath(dirname($target)));
+You need to create/find out the relativ path to the source, otherwise the
+absolut path will be used in a link.
+
+if you start to create the target path from the source eg:
+"/myfiles/now/here/../../later/" and links should go to /myfiles/later/ you
+need to use realpath( dirname() ) set the new location using chdir() and start
+from here to link to the source which is ../now/here/
+This you can find out e.g.: when having the absolut path of source and target:
+$dirTo = realpath(dirname($to));
+chdir($dirTo);
+$linkName = basename($to);
+$target = $dirTo . DIRECTORY_SEPARATOR . $linkName;
+$srcFile = getRelativeDirectory($from, $to); //basicly a function which will
+find the from -> to, but in this case the from ist the target where you need to
+start.
+below you can find some examples how to split the path in chunks to find a
+relativ path
+===============================================================================
+
+On IIS (Internet Information Services), you need to set permissions to allow
+the creation of symbolic links.
+
+Go to Local Security Policy -> Local Policies -> User Rights Assignment and
+right click on Create symbolic links -> Properties -> Add User or Group and add
+the "IUSR" user, which should be the user associated with IIS.
+A restart may be required.
+
+If this doesn't work, go to IIS Manager -> Authentication -> select Anonymous
+Authentication -> Edit and enter your current logged in user, which should be
+an administrator.
+Hit OK and now the symlink() function in php should work fine.
+===============================================================================
+
+<?
+
+/**
+* A function to emulate symbolic links on Windows.
+* Uses the junction utility available at:
+* http://www.sysinternals.com
+* Note that this will only work on NTFS volumes.
+*
+* The syntax of the junction utility is:
+* junction <junction directory> <junction target>
+*
+* Note that the parameter order of the Junction command
+* is the reverse of the symlink function!
+*
+* @param string $target
+* @param string $link
+*/
+function _symlink( $target, $link ) {
+  if ($_SERVER['WINDIR'] || $_SERVER['windir']) {
+    exec('junction "' . $link . '" "' . $target . '"');
+  } else {
+    symlink($target,$link);
+  }
+}
+
+function _unlink($link ) {
+  if ($_SERVER['WINDIR'] || $_SERVER['windir']) {
+    exec('junction -d "' . $link . '"');
+  } else {
+    unlink($link);
+  }
+}
+?>
+===============================================================================
+
+This function sometimes just fails to work for no appearent reason, returning
+FALSE and not creating a symlink. Doing the same with exec('ln -s source dest')
+works perfectly. I recommend using the latter.
+===============================================================================
+
+Be warned that at least with php 5.3 on windows 2008 R2 the symlink function is
+effected by the statcache.
+
+I got error 183 indicating the link existed. While the symlink was actually
+moved to a different location by  another process and would certainly not exist
+anymore.
+Calling clearstatcache with a filename does not work. Most probably as the
+filename is converted to a device path (e.g. "\Device\HarddiskVolume1\D-Drive\
+www\pp\#static\index.html") which is a requirement for the windows call.
+
+easiest is to just call clearstatcache without a filename to resolve the issue.
+
+if you really want to call clearstatcache with a filename you could use
+readlink on the already deleted symlink (that still lives in the statcache) to
+get the filename.
+For example something like this:
+<?php
+if(@symlink('d:/www/pp/#static/index.html','d:/www/index.html')===false){
+//link failed, perhaps a statcache issue? We try to get the target, if it is a
+statcache issue this should work just fine
+
+if(($rl = @readlink($target))===false) return false; //not a cache issue as
+stat on a non-existing file failed, something else must be wrong...
+
+//clear the stat cache for the actual target, strangely enough this works
+even-though this is the target and not the symlink to be created (*)
+clearstatcache(true,$rl);
+
+if(@symlink($source,$target) ===false) return false; //can't create the symlink
+?>
+
+*It looks for PHP on windows like the statcache is maintained on the target
+instead of the actual symlink (this would ease in getting the file properties
+and limit the size of the statcache)
+===============================================================================
+
+The one difference to using symlinks for controlled file access vs. readfile()
+is that the HTTP server will handle content-type of the symlink automatically.
+
+If you always want it to be downloaded, this can be a negative point. However,
+if you want a file of non-predefined type to be viewable in the browser, this
+can be a real asset.
+
+Of course, you can use fileinfo/mime-magic to do that, but those require a
+module which isn't always available on shared hosting.
+===============================================================================
+
+Olszewski_marek makes a good suggestion, but the readfile() function can also
+be used to obscure file downloads from end users.
+
+/* Setup the file that will be sent */
+$downloadDir = "some/secret/directory/";
+$file = "theFileName.dat";
+
+/* Required for IE, otherwise Content-disposition is ignored */
+if(ini_get('zlib.output_compression')) ini_set('zlib.output_compression',
+'Off');
+
+/* Output HTTP headers that force "Save As" dialog */
+header("Pragma: public");
+header("Expires: 0");
+header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+header("Cache-Control: private",false);
+header("Content-Type: application/octet-stream");
+header("Content-Disposition: attachment; filename=\\"$file\\";");
+header("Content-Transfer-Encoding: binary");
+header("Content-Length: ".@filesize($downloadDir.$file));
+
+/* Prevent the script from timing out for large files */
+set_time_limit(0);
+
+/* Send the entire file using @ to ignore all errors */
+@readfile($downloadDir.$file);
+
+/* Exit immediately so no garbage follows the file contents */
+exit;
+===============================================================================
+
+To make your code portable on unix AND win32, do the following
+1. Download http://www.dynawell.com/reskit/microsoft/win2000/linkd.zip
+2. Unzip, put linkd.exe in C:\Windows\System32 or C:\WINNT\System32
+3. Include in your code the following
+<?
+function _syslink($t /*target*/ ,$l /*link*/ ) {
+if ($_SERVER["WINDIR"]) {
+  $p=dirname($_SERVER["SCRIPT_FILENAME"])."/";
+  exec("linkd ".$p.$t." ".$p.$l);
+} else syslink($t,$l);
+}
+function _unlink($l /*link*/ ) {
+if ($_SERVER["WINDIR"]) {
+  $p=dirname($_SERVER["SCRIPT_FILENAME"])."/";
+  exec("linkd ".$p.$l." /D");
+} else unlink($l);
+}
+?>
+4. Enjoy
+_symlink(TARGET,LINK) works like symlink() on *nix
+_unlink(LINK) to delete properly the link created
+===============================================================================
+
+If symlink seems not to work correctly, try to define the target argument as an
+absolute path.
+Coding on MacOsX PHP5.5, I noticed that in some cases using an absolute path on
+the target argument was the only way I could have a proper symlink created.
+===============================================================================
+
+Context:  php cli on windows OS.
+
+Do not forget to start the console with "Run as Administrator" else symlink
+will return 'false' and raise the following error :
+Warning: symlink(): Cannot create symlink, error code(1314)
+===============================================================================
+
+On Linux with PHP 5.4.5 i run into a strange Problem when creating a symlink.
+My script tests with is_link() and is_file() for a symlink and if its not
+exists, creating this with symlink. So far no problems. But if i manual delete
+this symlink and this script runs short after, the script does not found the
+symlink as aspected. But the script fails when creating the symlink with:
+"symlink(): File exists"
+
+<?php
+if(is_link($symfile) and is_file($symfile)) echo 'yah!';
+else symlink($orginalfile, $symfile); // error :(
+?>
+
+clearstatcache() does not work, as aspected, because is_link/is_file already
+works.
+
+But I figured out a short workaround with using rename:
+
+<?php
+if(is_link($symfile) and is_file($symfile)) echo 'yah!';
+else{
+    $randfile = 'anywhere_with_rights/random_name';
+    symlink($orginalfile, $randfile);
+    rename($randfile, $symfile);
+    // voilà ... no error
+    }
+?>
+===============================================================================
+
+Um, duh... that's all I gotta say about by previous note. Please delete it. :)
+
+Windows Vista has its own symlink program now (mklink). Hopefully future
+versions of PHP for Windows will have this function put it?
+
+Anyway, this will work on Vista (assuming your PHP user has the proper
+permissions):
+<?php
+define('SYMLINK_FILE', 0);
+define('SYMLINK_DIR', 1);
+define('SYMLINK_JUNCTION', 2);
+function symlink ($target, $link, $flag = SYMLINK_FILE) {
+    switch ($flag) {
+       case SYMLINK_DIR: $pswitch = '/d'; break;
+       case SYMLINK_JUNCTION: $pswitch = '/j'; break;
+       case SYMLINK_FILE:
+       default: $pswitch = ''; break;
+    }
+    // Change / to \ because it will break otherwise.
+    $target = str_replace('/', '\\', $target);
+    $link = str_replace('/', '\\', $link);
+    return exec('mklink ' . $pswitch . ' "' . $link . '" "' . $target . '"');
+}
+?>
+===============================================================================
+
+Keep in mind when using a shared filesystem such as NFS, that you probably
+don't want to create a symbolic link with absolute paths e.g.
+
+On Server1 you are running a PHP script that needs to create a symbolic link
+called widget2 which links to widget1 inside an NFS share mounted on your
+localhost at /mnt/nfs/widgets
+
+On Server2 this same NFS share is mounted under /usr/local/widgets
+
+If you used absolute paths on Server1, then Server2 would try to reference /mnt
+/nfs/widgets/widget1 which it won't be able to find...
+
+You need to cd into the directory first, then create the link - that way the
+link will be relative. Unless you run the PHP script from the same directory
+where you'll be creating the symbolic links, then you can't use symlink(). Use
+exec() instead as follows:
+
+<?php
+
+exec("cd <nfs mount path>; ln -s <target> <link_name>");
+
+?>
+===============================================================================
+
+Olszewski seems pretty good, but just to boost the security a bit, the fifth
+line of his script should read
+<?
+...
+    $q = rand(1,26);
+...
+?>
+
+instead of rand(1,24).
+===============================================================================
+
+Remember to use absolute paths in both $target and $link.
+Use $_SERVER['DOCUMENT_ROOT'] plus your desired paths.
+===============================================================================
+
+Olszewski's method of creating downloadable links on the fly is pretty good.
+
+I use a different technique under Apache where if you want a file, you might
+use a url like:
+
+mydomain.com/files/mysecretfile.doc
+
+But in fact Apache redirects this to a script with a url like:
+
+mydomain.com/utilities/downloadfile.php?filename=mysecretfile.doc
+
+(The browser address bar will still show the first url).
+
+The script downloadfile.php can then handle all the mucky stuff like checking
+session variables to see if someone is logged on, whether they have access to
+mysecretfile.doc, and if you want to encrypt before download.
+
+An advantage of this is that the php code to achieve the equivalent of
+Olszewski's is shorter, so might execute faster. But more importantly, a casual
+hacker might think all he has to do is find myverysecurefile.doc under the /
+home/user/public_html/files/mysecretfile.doc, or copy the url - but there's
+nothing there! He won't find it or get an Apache error page.

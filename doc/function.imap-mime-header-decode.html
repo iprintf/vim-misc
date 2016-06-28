@@ -1,0 +1,320 @@
+
+imap_mime_header_decode
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_mime_header_decode — Decode MIME header elements
+
+说明
+
+array imap_mime_header_decode ( string $text )
+
+Decodes MIME message header extensions that are non ASCII text (see » RFC2047).
+
+参数
+
+text
+
+    The MIME text
+
+返回值
+
+The decoded elements are returned in an array of objects, where each object has
+two properties, charset and text.
+
+If the element hasn't been encoded, and in other words is in plain US-ASCII,
+the charset property of that element is set to default.
+
+范例
+
+Example #1 imap_mime_header_decode() example
+
+<?php
+$text = "=?ISO-8859-1?Q?Keld_J=F8rn_Simonsen?= <keld@example.com>";
+
+$elements = imap_mime_header_decode($text);
+for ($i=0; $i<count($elements); $i++) {
+    echo "Charset: {$elements[$i]->charset}\n";
+    echo "Text: {$elements[$i]->text}\n\n";
+}
+?>
+
+以上例程会输出：
+
+Charset: ISO-8859-1
+Text: Keld Jørn Simonsen
+
+Charset: default
+Text:  <keld@example.com>
+
+In the above example we would have two elements, whereas the first element had
+previously been encoded with ISO-8859-1, and the second element would be plain
+US-ASCII.
+
+参见
+
+  • imap_utf8() - Converts MIME-encoded text to UTF-8
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+In response to Sven dot Dickert at planb dot de: if you encounter problems with
+"=?utf-8?Q?" appearing in your headers, I found that simply using "imap_utf8
+($string)" decoded the "$string" properly and solved my problem perfectly.
+===============================================================================
+
+A nice way to decode strings is to use the mb_list_encodings(), but I had two
+problems with it:
+sometimes, the charset is uppercase in the header an lowercase in
+mb_list_encodings() and sometimes, the charset is not in the mb_list_encodings
+() list.
+
+<?php
+function upperListEncode() { //convert mb_list_encodings() to uppercase
+    $encodes=mb_list_encodings();
+    foreach ($encodes as $encode) $tencode[]=strtoupper($encode);
+    return $tencode;
+    }
+
+function decode($string) {
+    $tabChaine=imap_mime_header_decode($string);
+    $texte='';
+    for ($i=0; $i<count($tabChaine); $i++) {
+       
+        switch (strtoupper($tabChaine[$i]->charset)) { //convert charset to
+uppercase
+            case 'UTF-8': $texte.= $tabChaine[$i]->text; //utf8 is ok
+                break;
+            case 'DEFAULT': $texte.= $tabChaine[$i]->text; //no convert
+                break;
+            default: if (in_array(strtoupper($tabChaine[$i]->charset),
+upperListEncode())) //found in mb_list_encodings()
+                        {$texte.= mb_convert_encoding($tabChaine[$i]->text,
+'UTF-8',$tabChaine[$i]->charset);}
+                     else { //try to convert with iconv()
+                          $ret = iconv($tabChaine[$i]->charset, "UTF-8", 
+$tabChaine[$i]->text);   
+                          if (!$ret) $texte.=$tabChaine[$i]->text;  //an error
+occurs (unknown charset)
+                          else $texte.=$ret;
+                        }                   
+                break;
+            }
+        }
+       
+    return $texte;   
+    }
+?>
+===============================================================================
+
+This function does not code a-z 0-9 like the function posted by bandpay at
+hotmail dot com
+
+function encode_iso88591($string) {
+    if( ereg("[^A-Za-z0-9\ ]", $string) ) {
+        $text = "=?iso-8859-1?q?";
+        for( $i = 0 ; $i < strlen($string) ; $i++ ) {
+            if( ereg("[^A-Za-z0-9]", $string[$i]) ) {
+                $text .= "=".dechex(ord($string[$i]));
+            } else {
+                $text .= $string[$i];
+            }
+        }
+        return $text."?=";
+    } else     return $string;
+}
+===============================================================================
+
+Here's a "flatMimeDecode" version converting UTF-8 to iso-8859-1:
+
+function flatMimeDecode($string) {
+        $array = imap_mime_header_decode ($string);
+        $str = "";
+        foreach ($array as $key => $part) {
+            if($part->charset == "UTF-8"){
+            $str .= utf8_decode ($part->text);
+            }else{
+            $str .= $part->text;
+            }
+        }
+        return $str;
+    }
+===============================================================================
+
+Beware of multilined subjects containing whitespaces which are not part of the
+subject itself, but needed as functional characters for the clients.
+
+i.e. you can have a mail header containing content like
+Subject: =?iso-8859-1?Q?WG=3A_Mobilit=E4t_verschlechtert_--=3E_174?=
+    =?iso-8859-1?Q?6?=
+
+(carriage return and tabspace).
+imap_mime_header_decode returns 5 parts (and not expected 2)
+for this example.
+- The first containing the space between "subject:" and the subject itself.
+- The second is the first encoded text
+- The third will be the line-break within the head lines.
+The were inserted to keep rfc compliant line length and are NOT part of the
+original subject entered by the sender.
+- The fourth will be the second part of the subject.
+- The fifth is a line break - the last character will be a line break any time
+other head lines or mailbody will follow, so it's needed in the head - but not
+part of the original subject.
+===============================================================================
+
+The example of diego is working well, he has a (very) little
+mistake in his code. Here is the corrected version:
+
+<?php
+//return supported encodings in lowercase.
+function mb_list_lowerencodings() { $r=mb_list_encodings();
+  for ($n=sizeOf($r); $n--; ) { $r[$n]=strtolower($r[$n]); } return $r;
+}
+
+//  Receive a string with a mail header and returns it
+// decoded to a specified charset.
+// If the charset specified into a piece of text from header
+// isn't supported by "mb", the "fallbackCharset" will be
+// used to try to decode it.
+function decodeMimeString($mimeStr, $inputCharset='utf-8', $targetCharset=
+'utf-8', $fallbackCharset='iso-8859-1') {
+  $encodings=mb_list_lowerencodings();
+  $inputCharset=strtolower($inputCharset);
+  $targetCharset=strtolower($targetCharset);
+  $fallbackCharset=strtolower($fallbackCharset);
+
+  $decodedStr='';
+  $mimeStrs=imap_mime_header_decode($mimeStr);
+  for ($n=sizeOf($mimeStrs), $i=0; $i<$n; $i++) {
+    $mimeStr=$mimeStrs[$i];
+    $mimeStr->charset=strtolower($mimeStr->charset);
+    if (($mimeStr == 'default' && $inputCharset == $targetCharset)
+      || $mimStr->charset == $targetCharset) {
+      $decodedStr.=$mimStr->text;
+    } else {
+      $decodedStr.=mb_convert_encoding(
+        $mimeStr->text, $targetCharset,
+        (in_array($mimeStr->charset, $encodings) ?
+          $mimeStr->charset : $fallbackCharset)
+        )
+      );
+    }
+  } return $decodedStr;
+}
+?>
+===============================================================================
+
+The previous comment (from hans) seems to make no sense at all, since it will
+not change the encoding and possibly result in a "multiencoding" string (that
+the browser and anything else will be unable to render, of course).
+
+    I use a little function to decode the whole header to a specified encoding.
+It is as follow:
+
+<?php
+//return supported encodings in lowercase.
+function mb_list_lowerencodings() { $r=mb_list_encodings();
+  for ($n=sizeOf($r); $n--; ) { $r[$n]=strtolower($r[$n]); } return $r;
+}
+
+//  Receive a string with a mail header and returns it
+// decoded to a specified charset.
+// If the charset specified into a piece of text from header
+// isn't supported by "mb", the "fallbackCharset" will be
+// used to try to decode it.
+function decodeMimeString($mimeStr, $inputCharset='utf-8', $targetCharset=
+'utf-8', $fallbackCharset='iso-8859-1') {
+  $encodings=mb_list_lowerencodings();
+  $inputCharset=strtolower($inputCharset);
+  $targetCharset=strtolower($targetCharset);
+  $fallbackCharset=strtolower($fallbackCharset);
+
+  $decodedStr='';
+  $mimeStrs=imap_mime_header_decode($mimeStr);
+  for ($n=sizeOf($mimeStrs), $i=0; $i<$n; $i++) {
+    $mimeStr=$mimeStrs[$i];
+    $mimeStr->charset=strtolower($mimeStr->charset);
+    if (($mimeStr == 'default' && $inputCharset == $targetCharset)
+      || $mimStr->charset == $targetCharset) {
+      $decodedStr.=$mimStr->text;
+    } else {
+      $decodedStr.=mb_convert_encoding(
+        $mimeStr->text, $targetCharset,
+        (in_array($mimeStr->charset, $encodings) ?
+          $mimeStr->charset : $fallbackCharset)
+        )
+      );
+    }
+  } return $decodedStr;
+}
+?>
+
+    Hope it helps.
+===============================================================================
+
+Beware! imap_mime_header_decode in 4.0.6 is _not_ RFC2047 conform. The string
+=?utf-7?Q?Petra_M+APw-ller?= will not converted into Petra M ller cause the
+charset utf7 is unknown.  Same goes to =?utf-8?Q?Petra_M=C3=BCller?= for
+charset utf8.
+===============================================================================
+
+I wrote a simple ks_c_5601-1987(2byte)
+encode
+
+function encode_ksc5601( $string )
+{
+$encode = base64_encode( $string );
+$text = "=?ks_c_5601-1987?B?";
+$text = $text.$encode."?=";
+return $text;
+}
+===============================================================================
+
+<?php
+
+function decode_iso88591($string){
+  if (strpos(strtolower($string), '=?iso-8859-1') === false) {
+    return $string;
+  }
+  $string = explode('?', $string);
+  return strtolower($string[2]) == 'q' ? quoted_printable_decode($string[3]) : 
+base64_decode($string[3]);
+}
+
+?>
+===============================================================================
+
+imap_mime_header_decode, utf-7 and utf-8 problem, i solved the problem using
+below function. note that iconv function for code converting.
+you must replace "EUC-KR" as iconv parameter with charset you want such as
+"iso-8859-1".
+
+function mime_decode($s) {
+  $elements = imap_mime_header_decode($s);
+  for($i = 0;$i < count($elements);$i++) {
+    $charset = $elements[$i]->charset;
+    $text =$elements[$i]->text;
+    if(!strcasecmp($charset, "utf-8") ||
+       !strcasecmp($charset, "utf-7"))
+    {
+      $text = iconv($charset, "EUC-KR", $text);
+    }
+    $decoded = $decoded . $text;
+  }
+  return $decoded;
+}
+===============================================================================
+
+This is obvious, but nevertheless here is a "flat" version:
+<?php   
+private function flatMimeDecode($string) {
+    $array = imap_mime_header_decode($string);
+    $str = "";
+    foreach ($array as $key => $part) {
+        $str .= $part->text;
+    }
+    return $str;
+}
+?>

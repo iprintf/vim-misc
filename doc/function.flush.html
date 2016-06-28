@@ -1,0 +1,761 @@
+
+flush
+
+(PHP 4, PHP 5, PHP 7)
+
+flush — 刷新输出缓冲
+
+说明
+
+void flush ( void )
+
+刷新PHP程序的缓冲，而不论PHP执行在何种情况下（CGI ，web服务器等等）。该函数将当
+前为止程序的所有输出发送到用户的浏览器。
+
+flush() 函数不会对服务器或客户端浏览器的缓存模式产生影响。因此，必须同时使用 
+ob_flush() 和flush() 函数来刷新输出缓冲。
+
+个别web服务器程序，特别是Win32下的web服务器程序，在发送结果到浏览器之前，仍然会
+缓存脚本的输出，直到程序结束为止。
+
+有些Apache的模块，比如mod_gzip，可能自己进行输出缓存，这将导致flush()函数产生的
+结果不会立即被发送到客户端浏览器。
+
+甚至浏览器也会在显示之前，缓存接收到的内容。例如 Netscape 浏览器会在接受到换行
+或 html 标记的开头之前缓存内容，并且在接受到 </table> 标记之前，不会显示出整个
+表格。
+
+一些版本的 Microsoft Internet Explorer 只有当接受到的256个字节以后才开始显示该
+页面，所以必须发送一些额外的空格来让这些浏览器显示页面内容。
+
+
+User Contributed Notes 33 notes
+
+===============================================================================
+
+This will show each line at a time with a pause of 2 seconds.
+(Tested under IEx and Firefox)
+
+<?php
+
+if (ob_get_level() == 0) ob_start();
+
+for ($i = 0; $i<10; $i++){
+
+        echo "<br> Line to show.";
+        echo str_pad('',4096)."\n";   
+
+        ob_flush();
+        flush();
+        sleep(2);
+}
+
+echo "Done.";
+
+ob_end_flush();
+
+?>
+===============================================================================
+
+For a Windows system using IIS, the ResponseBufferLimit takes precedence over
+PHP's output_buffering settings. So you must also set the ResponseBufferLimit
+to be something lower than its default value.
+
+For IIS versions older than 7, the setting can be found in the %windir%\
+System32\inetsrv\fcgiext.ini file (the FastCGI config file). You can set the
+appropriate line to:
+  ResponseBufferLimit=0
+
+For IIS 7+, the settings are stored in %windir%\System32\inetsrv\config. Edit
+the applicationHost.config file and search for PHP_via_FastCGI (assuming that
+you have installed PHP as a FastCGI module, as per the installation
+instructions, with the name PHP_via_FastCGI). Within the add tag, place the
+following setting at the end:
+  responseBufferLimit="0"
+So the entire line will look something like:
+  <add name="PHP_via_FastCGI" path="*.php" verb="*" modules="FastCgiModule"
+scriptProcessor="C:\PHP\php-cgi.exe" resourceType="Either" responseBufferLimit=
+"0" />
+Alternatively you can insert the setting using the following command:
+  %windir%\system32\inetsrv\appcmd.exe set config /section:handlers "/[name=
+'PHP_via_FastCGI'].ResponseBufferLimit:0"
+===============================================================================
+
+ob_flush();flush();
+
+Not the other way around, because it wont work.
+===============================================================================
+
+I would like to point out that there is a function to replace ob_flush and
+flush. If you set ob_implicit_flush(true); at the top of the page it will
+automatically flush any echo or print you do in the rest of the script.
+
+Note that you still need a minimum amount of data to come through the browser
+filter. I would advice using str_pad($text,4096); since this automatically
+lenghtens the text with spaces to 4 KB which is the minimum limit when using
+FireFox and linux.
+
+I hope this helps you all out a bit.
+===============================================================================
+
+Netscape will flush the output as expected at the point it is called from
+within your script. IE, however, needs a boost.
+
+IE seems to have a condition where it will flush data when it hits an end (</
+table>) tag AND has at least 256 chars of data.
+
+So, pad your output with necessary spaces, wrap your progressing data around
+open (<table>) and end (</table>) tags, and then call flush() so that one
+script will work for Netscape as well.
+
+TESTING ENVIRONMENT
+IE: Ver/6.0.2800
+Netscape: Ver/7.1
+PHP: Ver/4.3.4
+Apache: Ver/1.3.27
+===============================================================================
+
+This is what I use to turn off pretty much anything that could cause unwanted
+output buffering and turn on implicit flush:
+
+<?php
+
+    @apache_setenv('no-gzip', 1);
+    @ini_set('zlib.output_compression', 0);
+    @ini_set('implicit_flush', 1);
+    for ($i = 0; $i < ob_get_level(); $i++) { ob_end_flush(); }
+    ob_implicit_flush(1);
+
+?>
+
+If it still fails though, keep in mind that Internet Explorer and Safari have a
+1k buffer before incremental rendering kicks in, so you'll want to output some
+padding as well.
+===============================================================================
+
+Sorry if this is off topic, but it's the closest place I could find :)  I had
+an issue with essentially running a CPU intensive task while updating the
+browser with a progress bar via javascript and flushing the buffer a lot.
+
+When the script was running, it effectively blocked other pages from running. 
+I had a few extra httpd_preforks processes just waiting to be used, but they
+just sat there.  I wasn't reading a file, locking database tables or anything
+that I would suspect an exclusive lock on, just outputting a bunch of text to
+the browser.  I even tried throttling my loops to see if it was processor
+related but still had problems.
+
+Finally, I found this in the php.ini file and changed the On to Off and it
+worked.
+
+[Sockets]
+; Use the system read() function instead of the php_read() wrapper.
+sockets.use_system_read = Off
+
+Posting in case someone else has the same issue (or if someone knows why this
+would make a difference :) ).
+===============================================================================
+
+After searching through the PHP site, google and various forums, not finding a
+solution to my script not outputting anything while calling flush and ob_flush,
+I thought of trying to tell PHP to call:
+
+session_write_close();
+
+before starting echo'ing. It worked like a charm. I couldn't find any
+references to this, so I hope this note will help someone in the future.
+===============================================================================
+
+If flush() function does not work. You must set next options in php.ini like:
+
+--[code]--
+output_buffering = Off 
+;output_handler =  
+zlib.output_compression = Off 
+;zlib.output_handler =  
+--[^code^]--
+
+If things does not work you must view headers from the server and check `Server
+` string.
+In my case, as the frontend was Nginx webserver and Apache work as backend.
+Accordingly, buffering must be disabled in Nginx config file.
+To stop buffering you must add next string to config file:
+
+--[code]--
+proxy_buffering off;
+--[^code^]--
+
+and restart Nginx daemon.  More information about  configuration you find in
+documentation on the nginx website.
+===============================================================================
+
+On Windows xampp 1.3 with php 4.3.4 is use this functions
+to force a flush.
+<?php
+function dummyErrorHandler ($errno, $errstr, $errfile, $errline) {
+}
+
+function forceFlush() {   
+    ob_start();
+    ob_end_clean();
+    flush();
+    set_error_handler("dummyErrorHandler");
+    ob_end_flush();
+    restore_error_handler();
+}
+?>
+
+ob_end_flush generates a warning, which is supressed, using the
+dummy-errorhander. You could also use @, but then nusphere will also print the
+warning.
+===============================================================================
+
+Regarding Apache2
+flush() will produce the same results as ob_flush() when output buffering is
+involved.
+===============================================================================
+
+Like IE, Safari needs a fair amount of data before it'll display anything,
+actually more than explorer.  The following code works for me in Firefox and
+Safari, and should work in IE as well.
+
+<?php
+
+for($i = 0; $i < 40000; $i++)
+{
+echo ' '; // extra spaces
+}
+// keeps it flowing to the browser 
+flush();
+// 50000 microseconds keeps things flowing in safari, IE, firefox, etc
+usleep(50000);
+
+?>
+
+This code came from a comment on a blog discussing browser functionality with
+flush();
+===============================================================================
+
+IE 7, Opera 9.6, any. All is quite simple. Today I just fogot what i do every
+night, :)
+
+<?php
+// All you need is 256 spaces first
+echo str_repeat(" ", 256)."<pre>"; flush();
+
+// and ANY TAG before \r\n
+echo "working...<br/>\r\n"; flush(); sleep(1); // this in cycle
+?>
+===============================================================================
+
+It is a bit complicated to work with the funktion flush() and you have to
+experiment with it a bit.
+So if you design a site which has a timeloop at the end that calls a other site
+via a form data input (Data Submit) you have
+to give something out to the buffer to get that new site loaden quick.
+
+For example:
+
+<?php
+$instant=gettimeofday();
+$timenow=$instant["sec"];//Start Time
+
+//timeloop(e.g. for security_save after 30 min)
+while (1) { echo "<b></b>";//Useless (only to quickload next
+                                    //or same Site when do a switch)
+flush();                          //giveout buffer
+$instant=gettimeofday();
+$timeactual=$instant["sec"]; //get Actual Time in Secs
+$flag=(($timeactual>$timenow+$diff)? 1:0);//$diff=switchTime
+if ($flag) { what_do_at_switch_Time();//Sec.Save etc.etc.
+$timenow=$timeactual; } //Set new Start Time
+sleep(5); //Or so...(Important)
+} //End of while-Loop
+?>
+
+So you can programm a security save or other function in your site and if you
+do a switch the upload of the new or same site (the called site) works...
+===============================================================================
+
+In my testing, Internet Explorer 6.0 wouldn't flush anything nested in <table>
+or <td> tags, regardless of padding. But at the <body> level everything flushed
+with no fuss -- no padding or tags required.
+
+Both Firefox 1.0 and Safari 2.0 could flush within tables, and both required a
+tag after the text (like <br>). Safari could flush only after the first 1024
+characters where received. Firefox needed at least 8 characters per flush (but
+it could flush anything at the <body> level).
+
+So the only thing that worked on all those browsers was this:
+
+<html>
+<body>
+<?php  // not in table tags for IE
+echo str_pad('',1024);  // minimum start for Safari
+for ($i=10; $i>0; $i--) {
+    echo str_pad("$i<br>\n",8);
+    // tag after text for Safari & Firefox
+    // 8 char minimum for Firefox
+    flush();  // worked without ob_flush() for me
+    sleep(1);
+}
+?>
+</body>
+</html>
+===============================================================================
+
+I had a bunch of problems trying to get flush working on my windows box, I
+finally found a solution after reading everyones here and it not working.
+
+1) Set output_buffering = 0
+2) Set zlib.output_compression = 0
+
+I then used Wireshark to monitor network packets, and indeed the server was
+pusing the data, but the browser was not displaying it.. So it was a browser
+buffer issue (I am on Firefox 13)
+
+For me I needed to send about 1k of data before it would display the data. To
+do this I added more header information..
+In php.ini I set default_charset = "utf-8"
+And that was enough to give me enough for the buffer issue.
+
+You can also try doing
+echo str_repeat(" ", 1024), "\n";
+at the start of the script.
+
+hope this helps
+===============================================================================
+
+If flush is not working probably mod_gzip is enabled.
+To disable it just add following lines to .htaccess
+
+<IfModule mod_gzip.c>
+mod_gzip_on no
+</IfModule>
+===============================================================================
+
+This helped me getting flushing to work.
+Using apache with deflate.
+
+Turning compression off for this script: (add it somewhere at the top of the
+script)
+apache_setenv('no-gzip', '1');
+
+However, this only works if php is running as a module rather than a
+cgi-extension and safe mode must be disabled.
+
+You can also turn the compression off for a directory by making a .htaccess
+file and adding the following entry:
+mod_gzip_on Off
+
+However that affects the whole directory.
+Hope I could help.
+===============================================================================
+
+Modified progress bar.. Works in IE, Mozilla+FF.
+
+<html>
+<head>
+<style type="text/css"><!--
+
+div {
+margin: 1px;
+height: 20px;
+padding: 1px;
+border: 1px solid #000;
+width: 275px;
+background: #fff;
+color: #000;
+float: left;
+clear: right;
+top: 38px;
+z-index: 9
+}
+
+.percents {
+background: #FFF;
+border: 1px solid #CCC;
+margin: 1px;
+height: 20px;
+position:absolute;
+width:275px;
+z-index:10;
+left: 10px;
+top: 38px;
+text-align: center;
+}
+
+.blocks {
+background: #EEE;
+border: 1px solid #CCC;
+margin: 1px;
+height: 20px;
+width: 10px;
+position: absolute;
+z-index:11;
+left: 12px;
+top: 38px;
+filter: alpha(opacity=50);
+-moz-opacity: 0.5;
+opacity: 0.5;
+-khtml-opacity: .5
+}
+
+-->
+</style>
+</head>
+<body>
+
+<?php
+
+if (ob_get_level() == 0) {
+    ob_start();
+}
+echo str_pad('Loading... ',4096)."<br />\n";
+for ($i = 0; $i < 25; $i++) {
+    $d = $d + 11;
+    $m=$d+10;
+    //This div will show loading percents
+    echo '<div class="percents">' . $i*4 . '%&nbsp;complete</div>';
+    //This div will show progress bar
+    echo '<div class="blocks" style="left: '.$d.'px">&nbsp;</div>';
+    flush();
+    ob_flush();
+    sleep(1);
+}
+ob_end_flush();
+?>
+<div class="percents" style="z-index:12">Done.</div>
+</body>
+</html>
+===============================================================================
+
+mod_security 2.x core rules will also prevent flush() from working.
+===============================================================================
+
+I just had some problems with flush() and ob_flush(). What I did to resolve
+this problem took me some time to figure out so I'd like to share what I came
+up with.
+
+The main problem is the php setting "output_buffering" which can be set too
+large and will prevent your text from outputting. To change this value you can
+either set it in php.ini or you can add the line
+
+php_value output_buffering "0"
+
+to your .htaccess file. It will not work with ini_set() since it is
+PHP_INI_PERDIR.
+
+Next thing is to begin with ob_start();
+Then you need
+ob_flush();
+flush();
+before any echo or print.
+
+Your code might look like this:
+
+<?php
+ob_start();
+
+for($i=0;$i<70;$i++)
+{
+    echo 'printing...<br />';
+    ob_flush();
+    flush();
+
+    usleep(300000);
+}
+
+?>
+
+Hope this helps anyone with the same problems.
+===============================================================================
+
+had problems flushing tables to screen.
+this worked for me
+
+<?php
+if (ob_get_level() == 0) ob_start();
+loop{
+    tables and stuff
+    echo str_pad("<br>\n",8);
+}
+ob_flush();
+flush();  // needed ob_flush
+usleep(50000);// delay minimum of .05 seconds to allow ie to flush to screen
+?>
+===============================================================================
+
+Hello,
+
+I had the same problems with sending a javascript after the <body></body>
+content has been sent to the browser (the script updates the content of an
+iframe).
+
+Two solutions work for me:
+   - add enough data (i.e.: extra dummy text like spaces) or,
+   - echo the '</body>' tag at the end of the page
+
+Note, that for the latter to work one should:
+   - turn of output_buffering in php.ini and either:
+      * turn on implicit_flush in its php.ini or,
+      * call ob_implicit_flush(); at the beginning of a script
+
+I preferr echoing the '</body>' tag at the end as it doesn't require any extra
+data to be sent over the wire and its much a neater coding technique.
+
+Notes:
+   - these worakarounds aren't needed when using perl and cgi,... .
+   - you can leave the zlib.output_compression in your php.ini switched on
+
+Kind regards and hoped this is of any help.
+
+Maurits
+===============================================================================
+
+I figured out a way to create a simple progress bar that is for the most part
+cross platform. Seeing as I got my ideas from this site it's only share to give
+back to the community.
+
+Note: Something interesting about browser buffering... you have to have the
+<html><body> for Firefox and some other browsers to recognize items by their id
+in Javascript. So I recommend using some sort of header function before calling
+this function.
+
+<?php
+
+function fn_progress_bar($intCurrentCount = 100, $intTotalCount = 100)
+{
+    static $intNumberRuns = 0;
+    static $intDisplayedCurrentPercent = 0;
+    $strProgressBar = '';
+    $dblPercentIncrease = (100 / $intTotalCount);
+    $intCurrentPercent = intval($intCurrentCount * $dblPercentIncrease);
+    $intNumberRuns++;
+       
+    if(1 == $intNumberRuns)
+    {
+        $strProgressBar = <<< BAR
+<table width='50%' id='progress_bar' summary='progress_bar' align='center'>
+<tbody><tr>
+<td id='progress_bar_complete' width='0%' align='center' style='background:#
+CCFFCC;'>&nbsp;</td>
+<td style='background:#FFCCCC;'>&nbsp;</td>
+</tr></tbody></table>
+<script type='text/javascript' language='javascript'>
+function dhd_fn_progress_bar_update(intCurrentPercent)
+{
+    document.getElementById('progress_bar_complete').style.width =
+intCurrentPercent+'%';
+    document.getElementById('progress_bar_complete').innerHTML =
+intCurrentPercent+'%';
+}
+</script>
+BAR;
+    }
+    else if($intDisplayedCurrentPercent <> $intCurrentPercent)
+    {
+        $intDisplayedCurrentPercent = $intCurrentPercent;
+        $strProgressBar = <<< BAR
+<script type='text/javascript' language='javascript'>
+dhd_fn_progress_bar_update($intCurrentPercent);
+</script>
+BAR;
+    }
+    if(100 <= $intCurrentPercent)
+    {
+        $intNumberRuns = $intDisplayedCurrentPercent = 0;
+        $strProgressBar = <<< BAR
+<script type='text/javascript' language='javascript'>
+document.getElementById('progress_bar').style.visibility='hidden';
+</script>
+BAR;
+    }
+    echo $strProgressBar;
+    flush();
+    ob_flush();
+}
+
+?>
+===============================================================================
+
+combining some ideas i was finally able to get a long running script to give me
+real time feedback on what it was doing.  this was a wamp setup with php
+running as cgi.  i'm pretty sure that apache just wasn't sending any of the
+buffered output because it was trying to be helpful. also trying to be helpful,
+i hope this example solution helps someone.
+
+<?php
+// thx mandor at mandor
+ini_set('max_execution_time', 0);
+ini_set('implicit_flush', 1);
+ob_implicit_flush(1);
+
+echo 'doing something';  my_flush();
+sleep(5);
+echo 'doing something else'; my_flush();
+sleep(5);
+echo 'finally done - hooray';
+
+function my_flush() {
+  // following matt at hevanet's lead
+  for ($i=0;$i<10000;$i++) echo ' ';
+  ob_flush();
+  flush();
+}
+===============================================================================
+
+I've spent days trying to figure out why flush didn't work all of a sudden,
+while it used to work perfectly. Apparently, it was McAfee Spamkiller that
+caused problems. Disabling it didn't work, I had to completely remove it. Hope
+this helps someone.
+===============================================================================
+
+If you're not explictly using the buffering functions, then ob_flush() is only
+necessary if output buffering is turned on in your php.ini file.
+
+flush() is only necessary if implicit_flush is turned off in your php.ini file.
+Setting implicit_flush to on will remove the need for all these flush() calls,
+but it's generally only good in an extremely controlled environment. Turning on
+implicit_flush in a production environment can be bad.
+===============================================================================
+
+Hi all.
+Been scratching my head over data NOT flushed to IE (6) even though I tried
+strpad 4096 chars, all headers OK,  TABLE and no TABLE, flush and ob_flush -
+still a blank page. Tried adding a sleep(1) before flushing - and everything
+worked as a charm. 
+
+/Mikael
+===============================================================================
+
+This is an extention of Rusty's comment below:
+
+After sitting here for hours trying to make IE6 flush data out in the middle of
+a page (with it working perfectly in Firefox), I finally figured out the
+problem. IE will not display flushed data (even if it has it) unless the table
+that contains it is complete.
+
+Every new element you want IE to display must not be in ANY kind of table at
+all. You must end all your tables.
+===============================================================================
+
+Many of the suggestions below are very helpful but I would just like to clarify
+something. 
+
+If you are making calls to a .php script with AJAX (xmlHttpReq) and use flush,
+this will send data to your script HOWEVER it will not set the
+xmlHttpReq.readyState to 4 -- which is a requirement to use the information
+sent (Firefox does however allow you to use the responseText property with a
+readyState == 3 but IE will throw an error).
+
+To get around this, you will need to make sure of a couple things:
+
+In your Apache php.ini config file, check to make sure that output buffering is
+disabled:
+
+output_buffering = off
+
+Next, disable gzip compression for the .php script that is called from your
+AJAX script by using the excellent suggestion from Mandor by placing the
+following at the top of your script:
+
+@apache_setenv('no-gzip', 1);
+@ini_set('zlib.output_compression', 0);
+
+What causes this problem is that while the php child process is running under
+apache, apache is waiting for the script to complete before completely closing
+the connection.  Scripts that send information directly to the browser with
+echos and prints will get away with using flush followed by a sleep command and
+then clean up procedures.  However, if you notice in the status bar of your
+browser window, the connection is still held open by apache until the script
+completed ("Transferring" ... yadda yadda).
+
+By turning off the Apache compression, the connection is terminated directly
+after a flush while still giving the user the ability to run a sleep command
+followed by clean up code.
+
+This bit me because the AJAX was returning <img> tags to newly created images
+by php.  The cleanup script would then remove those images after completion. 
+
+Since Apache held the connection open, the readyState only changed to 4 AFTER
+my php cleanup fired -- thereby erasing the links referred to my the <img>
+tags.
+
+With this solution, the readyState will change to 4 BEFORE the sleep command
+begins.
+
+I hope this saves someone a lot of time and frustration.  AJAX requests are an
+entirely different beast compared with simple outputting to a browser window.
+===============================================================================
+
+in order to display in HTML pages something like a "progress bar" or if you
+want to force the web server to flush output to the browser, or the browser to
+flush as well, you can print a long enough "dummy" string to make the output
+buffer grow, as you probably know, like:
+
+<?php
+print "[";
+
+for($i = 0; $i < 100; $i++){
+  $spaces.=" ";
+} // for
+
+//and then
+
+for($i = 0; $i < 10; $i++){
+  for($ii = 0; $ii < 200000; $ii++){
+    //do something slow here
+  } // for
+  print "$spaces|";
+  flush();
+} // for
+
+print "]";
+
+/*
+but this somethin may be not really what you expect in
+a progress bar, as it prints spaces (although rendered as single by the
+browser) between the bar units..
+you can solve this using
+  $spaces.="<!-- bufferme -->";
+
+/*
+
+print "[";
+
+for($i = 0; $i < 100; $i++){
+  $spaces.="<!-- bufferme -->";
+} // for
+
+//and then
+
+for($i = 0; $i < 10; $i++){
+  for($ii = 0; $ii < 200000; $ii++){
+    //do something slow here
+  } // for
+  print "$spaces|";
+  flush();
+} // for
+
+print "]";
+
+//which looks nice as a progress bar..
+?>
+===============================================================================
+
+Try to add more white spaces if your ob_flush() and flush() don't work,
+especially under NGINX.
+However, too many white spaces can be a challenge to your web browser.
+<?php
+    ob_clean();
+    while(true){
+        echo str_repeat(' ',1024*1024*4);
+        echo 'hello, world ...<br />';
+        ob_flush();
+        flush();
+        usleep(1000);
+    }
+===============================================================================
+
+If flush() don't work remember to check if you have any antivirus caching the
+data sent to the browser.

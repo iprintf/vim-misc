@@ -1,0 +1,192 @@
+
+com_load_typelib
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+com_load_typelib — 装载一个 Typelib
+
+说明
+
+bool com_load_typelib ( string $typelib_name [, bool $case_insensitive = true ]
+)
+
+Loads a type-library and registers its constants in the engine, as though they
+were defined using define().
+
+Note that it is much more efficient to use the  configuration setting to
+pre-load and register the constants, although not so flexible.
+
+If you have turned on  , then PHP will attempt to automatically register the
+constants associated with a COM object when you instantiate it. This depends on
+the interfaces provided by the COM object itself, and may not always be
+possible.
+
+参数
+
+typelib_name
+
+    typelib_name can be one of the following:
+      □ The filename of a .tlb file or the executable module that contains the
+        type library.
+
+      □ The type library GUID, followed by its version number, for example
+        {00000200-0000-0010-8000-00AA006D2EA4},2,0.
+
+      □ The type library name, e.g. Microsoft OLE DB ActiveX Data Objects 1.0
+        Library.
+
+    PHP will attempt to resolve the type library in this order, as the process
+    gets more and more expensive as you progress down the list; searching for
+    the type library by name is handled by physically enumerating the registry
+    until we find a match.
+
+case_insensitive
+
+    The case_insensitive behaves in the same way as the parameter with the same
+    name in the define() function.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+Hello PHP community, I want to help in a problem I found in this COM built-in
+function: com_load_typelib(), when I executed it in order to open a COM Server
+process (for example: Word, Excel, etc.) I was in trouble to release the object
+from memory, I figured it out, this is the solution:
+
+Change a configuration in the php.ini:
+
+; autoregister constants of a components typlib on com_load()
+com.autoregister_typelib = true
+
+When com.autoregister_typelib directive is true, PHP parser manage the COM
+server type library, I hope it helps.
+===============================================================================
+
+Some libraries load other libraries as part of their functionality. For example
+Crystal Reports Object Factory uses the CreateObject() method to create an
+instance of a Crystal Design RunTime Application. If you want to use constants
+defined in the newly loaded library, you will need to manually register the
+library - even with com.autoregister_typelib set to true.
+
+<?php
+echo 'com.autoregister_typelib = ', ini_get('com.autoregister_typelib'), 
+PHP_EOL;
+
+$o_CrObjectFactory = New COM('CrystalReports11.ObjectFactory.1');
+
+$o_CrApplication = $o_CrObjectFactory->CreateObject(
+"CrystalDesignRunTime.Application");
+
+echo 'Will not be defined : ', crOpenReportByDefault, PHP_EOL;
+
+com_load_typelib('CrystalDesignRunTime.Application');
+
+echo 'Will now be defined : ', crOpenReportByDefault, PHP_EOL;
+?>
+
+outputs ...
+
+com.autoregister_typelib = 1
+Will not be defined :
+Notice: Use of undefined constant crOpenReportByDefault - assumed
+'crOpenReportByDefault' in C:\refl.php on line 8
+crOpenReportByDefault
+Will now be defined : 0
+===============================================================================
+
+I had some problems with a third-party Word-controlling code that is somewhat
+similar to Richard's example. (Word 2007 SP1, XP SP2.) Rewrote some parts
+according to that example, no luck. Error messages from Word were crazy:
+
+"Bad parameter" -- it didn't like wdGoToBookmark but was ok with its numeric
+equivalent -1;
+
+"Call to undefined method variant::SaveAs()" -- the same with Save() that was
+suitable in my case, so no options were remaining.
+
+But then I ran the example via php.exe in the command line, and it worked!
+Eventually it turned out that Apache service must be run as some real user
+instead of SYSTEM.
+===============================================================================
+
+In case any of you were wondering what com_load_typelib actually DOES, I have
+found that it loads constants\enums that the COM obeject has defined.  The
+example below is using the Nero COM object (from Nero Burning rom, version
+6+).  The Nero object defines a bunch of constants, but they can not be used as
+PHP constants unless you use the mentioned function.  So the example below will
+work just fine:
+
+<?php
+$aNero = new COM("Nero.Nero") or die ("Nero didn't load, too bad");
+com_load_typelib("Nero.Nero");
+$aNero->GetDrives(NERO_MEDIA_CD);
+?>
+
+But this one will not, since PHP will return a message saying that the constant
+is undefined:
+
+<?php
+$aNero = new COM("Nero.Nero") or die ("Nero didn't load, too bad");
+$aNero->GetDrives(NERO_MEDIA_CD);
+?>
+
+This one took me a while to figure out, hope it helps. 
+
+Also, check out http://www.php.net/manual/en/faq.com.php to find out how to get
+COM events working in PHP.
+===============================================================================
+
+<?php
+// Some servers may have an auto timeout, so take as long as you want.
+set_time_limit(0);
+
+// Show all errors, warnings and notices whilst developing.
+error_reporting(E_ALL);
+
+// Used as a placeholder in certain COM functions where no parameter is
+required.
+$empty = new VARIANT();
+
+// Load the appropriate type library.
+com_load_typelib('Word.Application');
+
+// Create an object to use.
+$word = new COM('word.application') or die('Unable to load Word');
+print "Loaded Word, version {$word->Version}\n";
+
+// Open a new document with bookmarks of YourName and YourAge.
+$word->Documents->Open('C:/Unfilled.DOC');
+
+// Fill in the information from the form.
+$word->Selection->GoTo(wdGoToBookmark,$empty,$empty,'YourName'); // Note use of
+wdGoToBookmark, from the typelibrary and the use of $empty.
+$word->Selection->TypeText($_GET['YourName']);
+
+$word->Selection->GoTo(wdGoToBookmark,$empty,$empty,'YourAge');
+$word->Selection->TypeText($_GET['YourAge']);
+
+// Save it, close word and finish.
+$word->Documents[1]->SaveAs("C:/{$_GET['YourName']}.doc");
+$word->Quit();
+$word->Release();
+$word = null;
+print "Word closed.\n";
+?>
+
+The example document is ...
+
+Hello [Bookmark of YourName], you are [Bookmark of YourAge] years old.
+
+and it would be called ...
+
+word.php?YourName=Richard%20Quadling&YourAge=35
+
+Regards,
+
+Richard.

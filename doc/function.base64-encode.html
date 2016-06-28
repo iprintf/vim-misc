@@ -1,0 +1,850 @@
+
+base64_encode
+
+(PHP 4, PHP 5, PHP 7)
+
+base64_encode — 使用 MIME base64 对数据进行编码
+
+说明
+
+string base64_encode ( string $data )
+
+使用 base64 对 data 进行编码。
+
+设计此种编码是为了使二进制数据可以通过非纯 8-bit 的传输层传输，例如电子邮件的主
+体。
+
+Base64-encoded 数据要比原始数据多占用 33% 左右的空间。
+
+参数
+
+data
+
+    要编码的数据。
+
+返回值
+
+编码后的字符串数据，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 base64_encode() 示例
+
+<?php
+$str = 'This is an encoded string';
+echo base64_encode($str);
+?>
+
+以上例程会输出：
+
+VGhpcyBpcyBhbiBlbmNvZGVkIHN0cmluZw==
+
+参见
+
+  • base64_decode() - 对使用 MIME base64 编码的数据进行解码
+  • chunk_split() - 将字符串分割成小块
+  • convert_uuencode() - 使用 uuencode 编码一个字符串
+  • » RFC 2045 6.8 章节
+
+
+User Contributed Notes 33 notes
+
+===============================================================================
+
+For anyone interested in the 'base64url' variant encoding, you can use this
+pair of functions:
+
+<?php
+function base64url_encode($data) {
+  return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+function base64url_decode($data) {
+  return base64_decode(str_pad(strtr($data, '-_', '+/'), strlen($data) % 4, '='
+, STR_PAD_RIGHT));
+}
+?>
+===============================================================================
+
+Base64 encoding of large files.
+
+Base64 encoding converts triples of eight-bit symbols into quadruples of
+six-bit symbols. Reading the input file in chunks that are a multiple of three
+bytes in length results in a chunk that can be encoded independently of the
+rest of the input file. MIME additionally enforces a line length of 76
+characters plus the CRLF. 76 characters is enough for 19 quadruples of six-bit
+symbols thus representing 19 triples of eight-bit symbols. Reading 57 eight-bit
+symbols provides exactly enough data for a complete MIME-formatted line.
+Finally, PHP's default buffer size is 8192 bytes - enough for 143 MIME lines'
+worth of input.
+
+So if you read from the input file in chunks of 8151 (=57*143) bytes you will
+get (up to) 8151 eight-bit symbols, which encode as exactly 10868 six-bit
+symbols, which then wrap to exactly 143 MIME-formatted lines. There is no need
+to retain left-over symbols (either six- or eight-bit) from one chunk to the
+next. Just read a chunk, encode it, write it out, and go on to the next chunk.
+Obviously the last chunk will probably be shorter, but encoding it is still
+independent of the rest.
+
+<?php
+
+while(!feof($input_file))
+{
+    $plain = fread($input_file, 57 * 143);
+    $encoded = base64_encode($plain);
+    $encoded = chunk_split($encoded, 76, "\r\n");
+    fwrite($output_file, $encoded);
+}
+
+?>
+
+Conversely, each 76-character MIME-formatted line (not counting the trailing
+CRLF) contains exactly enough data for 57 bytes of output without needing to
+retain leftover bits that need prepending to the next line. What that means is
+that each line can be decoded independently of the others, and the decoded
+chunks can then be concatenated together or written out sequentially. However,
+this does make the assumption that the encoded data really is MIME-formatted;
+without that assurance it is necessary to accept that the base64 data won't be
+so conveniently arranged.
+===============================================================================
+
+A function I'm using to return local images as base64 encrypted code, i.e.
+embedding the image source into the html request.
+
+This will greatly reduce your page load time as the browser will only need to
+send one server request for the entire page, rather than multiple requests for
+the HTML and the images. Requests need to be uploaded and 99% of the world are
+limited on their upload speed to the server.
+
+<?php
+function base64_encode_image ($filename=string,$filetype=string) {
+    if ($filename) {
+        $imgbinary = fread(fopen($filename, "r"), filesize($filename));
+        return 'data:image/' . $filetype . ';base64,' . base64_encode(
+$imgbinary);
+    }
+}
+?>
+
+used as so
+
+<style type="text/css">
+.logo {
+    background: url("<?php echo base64_encode_image ('img/logo.png','png'); ?>
+") no-repeat right 5px;
+}
+</style>
+
+or
+
+<img src="<?php echo base64_encode_image ('img/logo.png','png'); ?>"/>
+===============================================================================
+
+function urlsafe_b64encode($string) {
+    $data = base64_encode($string);
+    $data = str_replace(array('+','/','='),array('-','_',''),$data);
+    return $data;
+}
+
+function urlsafe_b64decode($string) {
+    $data = str_replace(array('-','_'),array('+','/'),$string);
+    $mod4 = strlen($data) % 4;
+    if ($mod4) {
+        $data .= substr('====', $mod4);
+    }
+    return base64_decode($data);
+}
+
+Php version of perl's MIME::Base64::URLSafe, that provides an url-safe base64
+string encoding/decoding (compatible with python base64's urlsafe methods)
+===============================================================================
+
+Unfortunately my "function" for encoding base64 on-the-fly from 2007 [which has
+been removed from the manual in favor of this post] had 2 errors!
+The first led to an endless loop because of a missing "$feof"-check, the second
+caused the rare mentioned errors when encoding failed for some reason in larger
+files, especially when
+setting fgets($fh, 2) for example. But lower values then 1024 are bad overall
+because they slow down the whole process, so 4096 will be fine for all
+purposes, I guess.
+The error was caused by the use of "empty()".
+
+Here comes the corrected version which I have tested for all kind of files and
+length (up to 4,5 Gb!) without any error:
+
+<?php
+$fh = fopen('Input-File', 'rb');
+//$fh2 = fopen('Output-File', 'wb');
+
+$cache = '';
+$eof = false;
+
+while (1) {
+
+    if (!$eof) {
+        if (!feof($fh)) {
+            $row = fgets($fh, 4096);
+        } else {
+            $row = '';
+            $eof = true;
+        }
+    }
+
+    if ($cache !== '')
+        $row = $cache.$row;
+    elseif ($eof)
+        break;
+
+    $b64 = base64_encode($row);
+    $put = '';
+
+    if (strlen($b64) < 76) {
+        if ($eof) {
+            $put = $b64."\n";
+            $cache = '';
+        } else {
+            $cache = $row;
+        }
+
+    } elseif (strlen($b64) > 76) {
+        do {
+            $put .= substr($b64, 0, 76)."\n";
+            $b64 = substr($b64, 76);
+        } while (strlen($b64) > 76);
+
+        $cache = base64_decode($b64);
+
+    } else {
+        if (!$eof && $b64{75} == '=') {
+            $cache = $row;
+        } else {
+            $put = $b64."\n";
+            $cache = '';
+        }
+    }
+
+    if ($put !== '') {
+        echo $put;
+        //fputs($fh2, $put);
+        //fputs($fh2, base64_decode($put));        // for comparing
+    }
+}
+
+//fclose($fh2);
+fclose($fh);
+?>
+===============================================================================
+
+This function supports "base64url" as described in Section 5 of RFC 4648, "Base
+64 Encoding with URL and Filename Safe Alphabet"
+
+    <?php
+    function base64url_encode($plainText)
+    {
+        $base64 = base64_encode($plainText);
+        $base64url = strtr($base64, '+/', '-_');
+        return ($base64url);   
+    }
+    ?>
+
+You may wish to rtrim (or escape) trailing ='s for use in a URI.
+===============================================================================
+
+An even faster way to line-breaks every 64th character is using the chunk_split
+function:
+
+<?php
+$string = chunk_split(base64_encode($string), 64, "\n");
+?>
+===============================================================================
+
+There is an error on the example of passing an array through an HTML Form.
+
+In the line:
+$array = unserialize(base64_decode($coded_array);
+
+There is a ')' missing. it should be:
+$array = unserialize(base64_decode($coded_array));
+===============================================================================
+
+Just a minor tweak of massimo's functions.
+
+<?
+$data = str_replace(array('+','/','='),array('-','_','.'),$data);
+//replace '=' with '.' instead of with nothing, that way the process is
+reversible.  '.' is uri-safe according to http://www.w3.org/Addressing/URL/
+5_URI_BNF.html
+?>
+===============================================================================
+
+If the function doesn't exist, this is a messy but effective way of doing it:
+
+<?
+
+echo bencode("Gabriel Malca");
+// R2FicmllbCBNYWxjYQ==
+
+function bencode($string='') {
+    $binval = convert_binary_str($string);
+    $final = "";
+    $start = 0;
+    while ($start < strlen($binval)) {
+        if (strlen(substr($binval,$start)) < 6)
+            $binval .= str_repeat("0",6-strlen(substr($binval,$start)));
+        $tmp = bindec(substr($binval,$start,6));
+        if ($tmp < 26)
+            $final .= chr($tmp+65);
+        elseif ($tmp > 25 && $tmp < 52)
+            $final .= chr($tmp+71);
+        elseif ($tmp == 62)
+            $final .= "+";
+        elseif ($tmp == 63)
+            $final .= "/";
+        elseif (!$tmp)
+            $final .= "A";
+        else
+            $final .= chr($tmp-4);
+        $start += 6;
+    }
+    if (strlen($final)%4>0)
+        $final .= str_repeat("=",4-strlen($final)%4);
+    return $final;
+}
+
+function convert_binary_str($string) {
+    if (strlen($string)<=0) return;
+    $tmp = decbin(ord($string[0]));
+    $tmp = str_repeat("0",8-strlen($tmp)).$tmp;
+    return $tmp.convert_binary_str(substr($string,1));
+}
+
+?>
+===============================================================================
+
+@gutzmer at usa dot net
+
+Nice idea! However...
+
+The function base64url_decode doesn't pad strings longer than 4 chars.
+str_pad will only pad the string if the second argument is larger than the
+length of the original string. So the correct function should be:
+
+<?php
+function base64url_decode($data) {
+  $len = strlen($data);
+  return base64_decode(str_pad(strtr($data, '-_', '+/'), $len + $len % 4, '=', 
+STR_PAD_RIGHT));
+}
+
+Note that base64_decode works fine without the padding, that is why your 
+function works.
+===============================================================================
+
+I've used base64_encode and base64_decode for file attachment both in MySQL
+(using a BLOB field) and MSSQL (using a TEXT field). For MSSQL remember to set
+in PHP.INI file both mssql.textsize and mssql.textlimit to 2147483647.
+
+Here's the code:
+
+######### MSSQL(mssql_)/MySQL(mysql_) file attach
+$val=$HTTP_POST_FILES['lob_upload']['tmp_name'];
+$valn=$HTTP_POST_FILES['lob_upload']['name'];
+$valt=$HTTP_POST_FILES['lob_upload']['type'];
+
+$data=base64_encode(addslashes(fread(fopen($val, "r"), filesize($val))));
+
+mssql_connect("srv","usr","pass") or die ("");
+mssql_select_db("db") or die ("");
+$query = "UPDATE $table SET $field='$data', $fieldname='$valn', $fieldtype=
+'$valt' WHERE DocID='$DocID'";
+$result = mssql_query($query) or die(mssql_error());
+mssql_close();
+
+######### MSSQL(mssql_)/MySQL(mysql_) open file attached
+mssql_connect("srv","usr","pass") or die ("");
+mssql_select_db("db") or die ("");
+$query = "SELECT $field,$fieldtype FROM $table WHERE DocID='$DocID'";
+$result = mssql_query($query) or die(mssql_error());
+$row = mssql_fetch_array($result);
+
+header("Content-type: $row[1]");
+echo stripslashes(base64_decode($row[0]));
+
+This strategy is good for Microsoft Word, Acrobat PDF, JPG image and so on
+(even zipped files!!!)
+===============================================================================
+
+Wikipedia has a list of 8 or so variations on the last 2 characters in Base64 
+(https://en.wikipedia.org/wiki/Base64). The following functions can handle all
+of them:
+
+<?php
+function base64_encode2($data, $a = "+/=") {
+    $l = strlen($a);
+    if ($l === 3) {
+        return strtr(base64_encode($data), "+/=", $a);
+    } else if ($l === 2) {
+        return rtrim(strtr(base64_encode($data), "+/", $a), '=');
+    } else {
+        throw new InvalidArgumentException("Argument #2 must be 2 or 3 bytes."
+);
+    }
+}
+
+function base64_decode2($data, $strict = false, $a = "+/=") {
+    $l = strlen($a);
+    if ($l === 3) {   
+        return base64_decode(strtr($data, $a, "+/="), $strict);
+    } else if ($l === 2) {
+        return base64_decode(strtr($data, $a, "+/"), $strict);
+    } else {
+        throw new InvalidArgumentException("Argument #2 must be 2 or 3 bytes."
+);
+    }
+}
+?>
+
+Example usage:
+
+<?php
+$decoded = "ABC123";
+
+// base64 XML identifier:
+$encoded = base64_encode2($decoded, "_:");
+$decoded = base64_decode2($encoded, false, "_:");
+
+// base64 URL (RFC 6920):
+// base64 XML name token:
+$encoded = base64_encode($decoded, "-_")
+$decoded = base64_decode($encoded, false, "-_");
+
+// modified base64 XML name token:
+$encoded = base64_encode2($decoded, ".-");
+$decoded = base64_decode2($encoded, false, ".-");
+
+// modified base64 for Regular Expressions:
+$encoded = base64_encode2($decoded, "!-");
+$decoded = base64_decode2($encoded, false, "!-");
+
+// base64 used in YUI library:
+$encoded = base64_encode2($decoded, "._-");
+$decoded = base64_decode2($encoded, false, "._-");
+?>
+===============================================================================
+
+<?php
+    /**
+     * Generates a random URL-safe base64 string.
+     *
+     * See RFC 3548 for the definition of URL-safe base64.
+     * If $n is not specified, Secure::RANDOM_LENGTH is assumed. It may be
+larger in future.
+     *
+     * @param int $n Specifies the length of the random string
+     * @param bool $padding
+     * @return string The result may contain A-Z, a-z, 0-9, "-" and "_". "=" is
+also used if $padding is true.
+     */
+    public static function newToken($n = null, $padding = false)
+    {
+        // Generate a new unique token
+        if (!function_exists('openssl_random_pseudo_bytes')) {
+            // Generate a random pseudo bytes token if
+openssl_random_pseudo_bytes is available
+            // This is more secure than uniqid, because uniqid relies on
+microtime, which is predictable
+            $s = pack('a*', openssl_random_pseudo_bytes($n ?: static::
+RANDOM_LENGTH));
+            $s = str_replace(["\n", "\r", "\n\r"], '', $s);
+        } else {
+            // Otherwise, fall back to a hashed uniqid
+            $s = substr(hash('sha256', uniqid(null, true)), 0, $n ?: static::
+RANDOM_LENGTH);
+        }
+
+        return $padding ? strtr(base64_encode($s), '+/', '-_') : rtrim(strtr(
+base64_encode($s), '+/', '-_'), '=');
+    }
+?>
+===============================================================================
+
+<?php
+$image = 'example.png';
+
+// Read image path, convert to base64 encoding
+$imageData = base64_encode(file_get_contents($image));
+
+// Format the image SRC:  data:{mime};base64,{data};
+$src = 'data: '.mime_content_type($image).';base64,'.$imageData;
+
+// Echo out a sample image
+echo "<img src=\"$src\" alt=\"\" />";
+?>
+===============================================================================
+
+I needed a simple way to obfuscate auto_increment primary keys in databases
+when they are visible to users in URIs or API calls. The users should not be
+able to increment the id in the URL and see the next data record in the
+database table.
+
+My solution (uses modified base64 functions by Tom):
+
+function base64url_encode($plainText) {
+   
+    $base64 = base64_encode($plainText);
+    $base64url = strtr($base64, '+/=', '-_,');
+    return $base64url;  
+}
+
+function base64url_decode($plainText) {
+   
+    $base64url = strtr($plainText, '-_,', '+/=');
+    $base64 = base64_decode($base64url);
+    return $base64;  
+}
+
+function encryptId($int, $class='') {
+   
+    return base64url_encode($int.'-'.substr(sha1($class.$int.encryptionKey), 0,
+6));
+}
+
+function decryptId($string, $class='') {
+   
+    $parts = explode('-', base64url_decode($string));
+    if (count($parts) != 2) {
+       
+        return 0;
+    }
+   
+    $int = $parts[0];
+    return substr(sha1($class.$int.encryptionKey), 0, 6) === $parts[1]
+        ? (int)$int
+        : 0;
+}
+
+- The optional 2nd argument is the class name, so two equal ids of different
+tables will not result in two equal obfuscated ids.
+
+- encryptionKey is a global secret key for encryption.
+
+- decryptId() checks if the second part of the base64 encoded string is
+correct.
+===============================================================================
+
+Note that at least some Windows systems will not print a line of characters
+longer than a certain length unless it has line breaks of some kind.  So if you
+base-64 encode a file, print it back for debugging purposes, and see nothing,
+don't be alarmed.
+===============================================================================
+
+If you use base64encoded strings as cookie names, make sure you remove '='
+characters. At least Internet Explorer refuses cookie names containing '='
+characters or urlencoded cookie names containing %xx character replacements.
+Use the function below to turn base64 encoded strings to bare alphabets (get
+rid of / and + characters as well)
+
+<?php
+function base64clean($base64string)
+{
+     $base64string = str_replace(array('=','+','/'),'',$base64string);
+
+     return $base64string;
+}
+?>
+===============================================================================
+
+output images into html:
+
+<?php
+
+$imgfile = "test.gif";
+
+$handle = fopen($filename, "r");
+
+$imgbinary = fread(fopen($imgfile, "r"), filesize($imgfile));
+
+echo '<img src="data:image/gif;base64,' . base64_encode($imgbinary) . '" />';
+
+?>
+
+gif - data:image/gif;base64,...
+jpg - data:image/jpeg;base64,...
+png - data:image/png;base64,...
+etc.
+===============================================================================
+
+I am finding a length restriction with base64_encode (or possibly with echo) in
+PHP 4.3.9.
+This works ok for me:
+<?php
+echo strlen(str_repeat('-', 3273)); // 3273
+echo strlen(base64_encode(str_repeat('-', 3273))); // 4364
+echo base64_encode(str_repeat('-', 3273)); // LS0t repeated
+?>
+But change the length to 3274 and the third echo prints nothing.
+<?php
+echo strlen(str_repeat('-', 3274)); // 3274
+echo strlen(base64_encode(str_repeat('-', 3274))); // 4368
+echo base64_encode(str_repeat('-', 3274)); // Nothing at all printed
+?>
+This has obvious implications if you're wanting to encode a fairly large
+serialized array and echo it to a form field.
+===============================================================================
+
+To make base64_encode encode a URL safe string compatible with .net
+HttpServerUtility.UrlTokenEncode function use this:
+
+<?php
+url_safe_base64_encode($string)
+  {
+    #First base64 encode
+    $data = base64_encode($string);
+
+    #Base64 strings can end in several = chars. These need to be translated
+into a number
+    $no_of_eq = substr_count($data, "=");
+    $data = str_replace("=", "", $data);
+    $data = $data.$no_of_eq;
+
+    #Then replace all non-url safe characters
+    $data = str_replace(array('+','/'),array('-','_'),$data);
+    return $data;
+  }
+?>
+===============================================================================
+
+I omitted the strtr functions in my examples.  Here are corrected functions:
+
+<?php
+function encode($x) {
+    return strtr(base64_encode(substr($_SESSION['Cksum'],rand(0,28),4) . $x), 
+'+/=', '-_~');
+}
+
+function decode($x) {
+    $y = base64_decode(strtr($x, '-_~', '+/='));
+    if (strpos($_SESSION['Cksum'],substr($y,0,4)) === false) return false;
+    return substr($y,4-strlen($y));
+}
+?>
+===============================================================================
+
+I have another solution that is simple and elegant.  Create a pseudorandom
+string of characters.  Then, each time you want to obfuscate your key, append a
+random substring from the pseudorandom string and use base64 encoding.  When
+you want to de-obfuscate, convert back from base64.  If the prefix is not in
+your pseudorandom source, then the value is forged.  Otherwise, strip the
+prefix and recover your original key.
+
+The advantages are that the string will look different even for the same key,
+and encoding and decoding should be extremely fast.
+
+Here's an example:
+
+<?php
+
+// Call makeCksum once upon landing on the homepage
+function makeCksum() {
+       $str = "";
+       for ($i=0;$i<32;++$i)
+               $str .= chr(rand(32,126));
+       $_SESSION['Cksum'] = $str;
+}
+
+function encode($x) {
+    return base64_encode(substr($_SESSION['Cksum'],rand(0,28),4) . $x);
+}
+
+function decode($x) {
+    $y = base64_decode($x);
+    if (strpos($_SESSION['Cksum'],substr($y,0,4)) === false) return false;
+    return substr($y,4-strlen($y));
+}
+?>
+===============================================================================
+
+You can use base64_encode to transfer image file into string text and then
+display them. I used this to store my images in a database and display them
+form there. First I open the files using fread, encoded the result, and stored
+that result in the database. Useful for creating random images.
+
+image.php:
+
+<?
+
+header(" Content-Type: image/jpeg");
+header(" Content-Disposition: inline");
+$sql = "SELECT data FROM image where name='".$img."'";
+$result = mysql_query($sql);
+$row = mysql_fetch_row($result);
+$image = $row[0];
+echo base64_decode($image);
+
+?>
+
+And in the html file you put:
+
+<img src="image.php?img=test3"  border="0" alt="">
+
+Guy Laor
+===============================================================================
+
+If you want to decode base64 encoded data in Javascript, you can use the tool
+(Webtoolkit.base64) on this website: http://www.webtoolkit.info/
+===============================================================================
+
+I had massive problems storing a serialized Object which contained UTF-8 parts
+and some ascii parts (from the serialization i think) into mysql.
+
+So i used base64_encode to get a clean string which could be safely decoded and
+unserialized.
+
+this is bulletproof - if you ever have trouble use this.
+the runtime is imho no problem.
+===============================================================================
+
+$data = str_replace(array('+','/','='),array('-','_',),$data); //
+MIME::Base64::URLSafe implementation
+      
+$data = str_replace(array('+','/'),array('-','_'),$data); // Python raise
+"TypeError: Incorrect padding" if you remove "=" chars when decoding
+===============================================================================
+
+Using Function:
+Output for HTML Put:
+<img src="$self?image=file" border="0" alt="file">
+<img src="$self?image=folder" border="0" alt="folder">
+
+function getimage ($image) {
+    switch ($image) {
+    case 'file':
+        return base64_decode('R0lGODlhEQANAJEDAJmZmf///wAAAP///yH5BAHoAwMALAAAA
+AARAA0AAAItnIGJxg0B42rsiSvCA/REmXQWhmnih3LUSGaqg35vF
+bSXucbSabunjnMohq8CADsA');
+    case 'folder':
+        return base64_decode('R0lGODlhEQANAJEDAJmZmf///8zMzP///
+yH5BAHoAwMALAAAAA
+ARAA0AAAIqnI+ZwKwbYgTPtIudlbwLOgCBQJYmCYrn+m3smY5v
+Gc+0a7dhjh7ZbygAADsA');
+    case 'hidden_file':
+        return base64_decode('R0lGODlhEQANAJEDAMwAAP///5mZmf///yH5BAHoAwMALAAAA
+AARAA0AAAItnIGJxg0B42rsiSvCA/REmXQWhmnih3LUSGaqg35vF
+bSXucbSabunjnMohq8CADsA');
+    case 'link':
+        return base64_decode('R0lGODlhEQANAKIEAJmZmf///wAAAMwAAP///wAAAAAAAAAAA
+CH5BAHoAwQALAAAAAARAA0AAAM5SArcrDCCQOuLcIotwgTYUll
+NOA0DxXkmhY4shM5zsMUKTY8gNgUvW6cnAaZgxMyIM2zBLCaHlJgAADsA');
+    case 'smiley':
+        return base64_decode('R0lGODlhEQANAJECAAAAAP//AP///wAAACH5BAHoAwIALAAAA
+AARAA0AAAIslI+pAu2wDAiz0jWD3hqmBzZf1VCleJQch0rkdnppB3
+dKZuIygrMRE/oJDwUAOwA=');
+    case 'arrow':
+        return base64_decode('R0lGODlhEQANAIABAAAAAP///yH5BAEKAAEALAAAAAARAA0AA
+AIdjA9wy6gNQ4pwUmav0yvn+hhJiI3mCJ6otrIkxxQAOw==');
+    }
+}
+===============================================================================
+
+If you encode text that contains symbols like < > and want to send it in GET
+query, be sure to urlencode the result of base64_encode, as it sometimes adds
+a  + (and it's a special symbol) at the end:
+
+<?php
+    echo base64_encode('<html>');
+?>
+
+returns:
+
+PGh0bWw+
+
+A function like this could also be useful:
+
+<?php
+    function base64_urlencode($str) {
+        return urlencode(base64_encode($str));
+    };
+?>
+===============================================================================
+
+If you want to send a very long value over URL, you might consider using
+base64_encode, and discover that IE6 only supports 2000 or so chars.
+
+So, Using a little bit of magic you can do this and be happy:
+
+<?php
+$string = 'Blah';
+
+$encoded = strtr(base64_encode(addslashes(gzcompress(serialize($string),9))), 
+'+/=', '-_,');
+
+$string= unserialize(gzuncompress(stripslashes(base64_decode(strtr($encoded, 
+'-_,', '+/=')))));
+
+?>
+===============================================================================
+
+a note on URI -safe base64.
+Simply replacing + = and / with _ - and . doesn't work as the base64_encode
+function will insert \r \n chars as well which are not URI-safe. So unless we
+have a base64encode function that does not insert any newline and padddings,
+the output can never be URI -safe.
+
+referring to the note posted by " web at pkasperski dot com"
+
+- you might as well use $encoded = strtr ( base64_encode ($data),
+'ABCDEFG.....', 'aBcDEfG....' ).
+
+this is more efficient. Also, Is simply changing the casing of the letters 
+more secure? Why don't you try swapping letters around instead
+
+- for your utf8_encode function, the "ord" function returns  a number in the
+range 0-255. Remember that strings in PHP are actually a sequence of bytes
+rather than chars. So your utf8 encode func may not work properly. and the line
+"for ($n = 0; $n < strlen($input); $n++) {" is inefficient, you should assign 
+a variable $count to  strlen($input) and use it.
+
+referring to
+"dlyaza aT yahoo DOT com"
+
+whats the usefulness of encoding your images in a php file??
+
+referring to  "php at ianco dot co dot uk"
+
+- what version of php are you using? Your code works fine for me. I see all the
+output.
+===============================================================================
+
+<?php
+$file="test.jpg";
+$file_cont=file_get_contents($file);
+$image=base64_encode($file_cont);
+$src = 'data:;base64,'.$image;
+
+if(copy($src,'test2.jpg'))
+  {
+      echo "success";
+  }
+  else
+  {
+      echo "Error";
+  }
+?>
+===============================================================================
+
+Note that some applications, such as OpenSSL's enc command, require that there
+be a line break every 64 characters in order for their base64 decode function
+to work. The following function will take care of this problem:
+
+<?php
+function ($encodeMe) {
+    $data = base64_encode($encodeMe);
+    $datalb = "";
+    while (strlen($data) > 64) {
+        $datalb .= substr($data, 0, 64) . "\n";
+        $data = substr($data,64);
+    }
+    $datalb .= $data;
+    return $datalb;
+}
+?>

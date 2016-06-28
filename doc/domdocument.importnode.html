@@ -1,0 +1,358 @@
+
+DOMDocument::importNode
+
+(PHP 5, PHP 7)
+
+DOMDocument::importNode — Import node into current document
+
+说明
+
+public DOMNode DOMDocument::importNode ( DOMNode $importedNode [, bool $deep ]
+)
+
+This function returns a copy of the node to import and associates it with the
+current document.
+
+参数
+
+importedNode
+
+    The node to import.
+
+deep
+
+    If set to TRUE, this method will recursively import the subtree under the
+    importedNode.
+
+        Note:
+
+        To copy the nodes attributes deep needs to be set to TRUE
+
+返回值
+
+The copied node or FALSE, if it cannot be copied.
+
+错误／异常
+
+DOMException is thrown if node cannot be imported.
+
+范例
+
+Example #1 DOMDocument::importNode() example
+
+Copying nodes between documents.
+
+<?php
+
+$orgdoc = new DOMDocument;
+$orgdoc->loadXML("<root><element><child>text in child</child></element></root>"
+);
+
+// The node we want to import to a new document
+$node = $orgdoc->getElementsByTagName("element")->item(0);
+
+
+// Create a new document
+$newdoc = new DOMDocument;
+$newdoc->formatOutput = true;
+
+// Add some markup
+$newdoc->loadXML("<root><someelement>text in some element</someelement></root>"
+);
+
+echo "The 'new document' before copying nodes into it:\n";
+echo $newdoc->saveXML();
+
+// Import the node, and all its children, to the document
+$node = $newdoc->importNode($node, true);
+// And then append it to the "<root>" node
+$newdoc->documentElement->appendChild($node);
+
+echo "\nThe 'new document' after copying the nodes into it:\n";
+echo $newdoc->saveXML();
+?>
+
+以上例程会输出：
+
+The 'new document' before copying nodes into it:
+<?xml version="1.0"?>
+<root>
+  <someelement>text in some element</someelement>
+</root>
+
+The 'new document' after copying the nodes into it:
+<?xml version="1.0"?>
+<root>
+  <someelement>text in some element</someelement>
+  <element>
+    <child>text in child</child>
+  </element>
+</root>
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+The behavior of importNode($node, false) is different in PHP 5.2.9-2 and PHP
+5.2.17.
+The second option is explicitly set to false. In PHP 5.2.9-2 importNode()
+imports the elements WITHOUT attributes. In PHP 5.2.17 the elements imported
+ALONG with their attributes.
+<?php
+$xml="
+<html>
+<a href='yandex.com'>Yandex.com</a>
+<a href='rik.dn.ua'>RiK.dn.ua</a>
+</html>
+";
+$doc=new domDocument('1.0');
+$doc->loadXML($xml);
+$list=$doc->getElementsByTagName('a');
+$doc1=new domDocument('1.0');
+$doc1->formatOutput=true;
+for($i=0; $i<$list->length; $i++) $doc1->appendChild($doc1->importNode($list->
+item($i), false));
+$doc1->save('file.xml');
+?>
+
+file.xml PHP 5.2.9-2
+<?xml version="1.0"?>
+<a/>
+<a/>
+
+file.xml PHP 5.2.17
+<?xml version="1.0"?>
+<a href="yandex.com"/>
+<a href="rik.dn.ua"/>
+===============================================================================
+
+When you use function/method below, php automaticaly inserts namespaces (if you
+have some). If you want to join xml files exactly, then you can just use
+placeholders and treat xml as a string.
+<?php
+function joinXMLStrings($file1, $file2)
+{
+    //remove xml declaration
+    $file2 = trim(preg_replace('/<\?xml.*\?>/', '', $file2, 1));
+
+    //insert file2 in the place of placeholder in the first file
+    $file1 = trim(preg_replace('/<\?file2\s\?>/', $file2, $file1, 1));
+}
+?>
+
+so function looks like this and you insert two xml files. First file has to
+have placeholder (where you insert file2). Placeholder in this case will be <?
+file2 ?>
+
+!!!this is only for ilustration - test before you use it
+===============================================================================
+
+As of PHP 5.1.6 with libxml 2.6.26 and DOM/XML API version 20031129, importNode
+() does nothing if attempting to import from the same document.  Meaning, if
+you do an $ret = importNode and then appendChild($ret) or insertBefore($ret,
+...) then you will end up *moving* the node instead of ending up with a copy.
+
+If you expect importNode to give you a copy of the source (in this case, a deep
+copy) then you must account for them being from the same document.  This
+function addresses this:
+
+<?
+// Import $b into $a's document
+function myimport($a, $b)
+{
+  if ($a->ownerDocument->isSameNode($b->ownerDocument))
+  {
+    $temp = new DOMDocument();
+    $ret = $temp->importNode($b, TRUE);
+    return $a->ownerDocument->importNode($ret, TRUE);
+  }
+  else
+  {
+    return $a->ownerDocument->importNode($b, TRUE);
+  }
+}
+?>
+
+(Function was freshly coded for this note but I based it off another, working
+function of mine.)
+
+This function checks if the documents are the same and uses a new document
+(guaranteed to be different this way) to force a copy into $temp and then force
+a copy back into $a->ownerDocument.
+
+Obviously, no error checking has been done.
+===============================================================================
+
+Assume that $source and $dest are instances of DOMDocument. Assume that
+$sourcedoc contains an element with ID 'sourceID' and that $destdoc contains an
+element with ID 'destID'. Assume that we have already set up source and
+destination element variables thus:
+
+<?php
+$src = $sourcedoc->getElementById('sourceID');
+$dst = $destdoc->getElementById('destID');
+?>
+
+Finally, assume that $sel has more than one child node.
+
+In order to import the child elements of $src as children of $dst, you might do
+something like this:
+
+<?php
+$src = $dest->importNode($src, TRUE);
+
+foreach ($src->childNodes as $el) $dst->appendChild($el);
+?>
+
+But this does not work. foreach gets confused, because (as noted below)
+appending an imported element to another existing element in the same document
+causes it to be removed from its current parent element.
+
+Therefore, the following technique should be used:
+
+<?php
+foreach ($src->childNodes as $el) $dst->appendChild($destdoc->importNode($el, 
+TRUE));
+?>
+===============================================================================
+
+method (can be used as a function as well) that joins two xml files. first
+argument is parent xml (the one to be inserted into), second child (the one to
+be inserted) and third is optional argument that specifies the parent's tag
+where to insert children xml. If not specified then children is inserted as the
+last element, just before end of the root
+<?php
+    protected function joinXML($parent, $child, $tag = null)
+    {
+        $DOMChild = new DOMDocument;
+        $DOMChild->loadXML($child);
+        $node = $DOMChild->documentElement;
+       
+        $DOMParent = new DOMDocument;
+        $DOMParent->formatOutput = true;
+        $DOMParent->loadXML($parent);
+
+        $node = $DOMParent->importNode($node, true);
+
+        if ($tag !== null) {
+            $tag = $DOMParent->getElementsByTagName($tag)->item(0);
+            $tag->appendChild($node);
+        } else {
+            $DOMParent->documentElement->appendChild($node);
+        }
+
+        return $DOMParent->saveXML();
+    }
+?>
+===============================================================================
+
+DOMDocument->importNode with seconds argument false will leave attributes
+behind. To fix this:
+
+$__DOM->importNode
+   (
+      $__INPUT->cloneNode(false), true
+   );
+
+$__DOM (DOMDocument) will import the $__INPUT node (DOMElement) INCLUDING
+attributes.
+===============================================================================
+
+When you left out the second argument or enter false, not only the child nodes
+are ommited. The attributes of the node are also cut off.
+===============================================================================
+
+Editing XML with PHP can be a pain in the Secretary of State Powell, so here's
+a script to replace an XML node with a user-provided one through the POST. It's
+usually a good idea to run the $_POST['xml'] through a validation check and
+clean it for other thing before running this.
+
+Pretty much this script expects a user-provided node called $_POST['xml'] and
+the XPath of the node in the original document that you want to replace called
+$_POST['XPath']. It also loads the original XML document from $xml. The
+function nodeRunner begins with the root node of the document you're editting
+and the XPath for the root element (these are more to make recursion easy than
+anything else).
+
+$doc = new DOMDocument();
+$doc->loadXML($xml); // $xml expects an XML string
+       
+function nodeRunner ($node,$xpath) {
+    global $doc;
+    if ($xpath == $_POST['XPath']) {
+           
+        $xmlPost = new DOMDocument();
+        $xmlPost->loadXML($_POST['xml']);
+       
+        $newNode = $doc->importNode($xmlPost->firstChild,true);
+       
+        $node->parentNode->replaceChild($newNode,$node);
+    } else {
+       
+        $page = 1;
+        $section = 1;
+       
+        if ($node->hasChildNodes()) {
+            foreach ($node->childNodes as $nodling) {
+                $nodeName = $nodling->nodeName;
+                if ($nodeName == 'page' || $nodeName == 'section') {
+                    nodeRunner ($nodling,$xpath."/".$nodeName."[".$$nodeName."]
+");
+                    $$nodeName++;
+                }
+            }
+        }
+    }
+}
+   
+nodeRunner ($doc->documentElement,"/root[1]"); // /root should be explicit name
+of the root  element of the XPath
+   
+$doc->saveXML();
+===============================================================================
+
+I think this should do the same:
+
+<?
+// Import $b into $a's document
+function myimport($a, $b)
+{
+   if ($a->ownerDocument->isSameNode($b->ownerDocument))
+   {
+    return $b->cloneNode(TRUE);
+   }
+   else
+   {
+    return $a->ownerDocument->importNode($b, TRUE);
+   }
+}
+?>
+===============================================================================
+
+One useful use of importNode is to copy one node onto another.
+
+function CopyXMLNode($SourceNode,$DestNode)
+{
+  if ($SourceNode->nodeName != '#text')
+   {
+     //Copy this node
+    $node = $DestNode->ownerDocument->importNode($SourceNode, true);
+    $node = $DestNode->appendChild($node);
+    //Now copy the child nodes
+    foreach ($SourceNode->childNodes AS $item)
+     {
+     $this->CopyXMLNode($item,$node);
+     }
+    }
+  }
+===============================================================================
+
+importNode returns a copy of the node to import and associates it with the
+current document, but not import the node to the current DOMDocument. Use
+appendChild for import the copy of the node to current DOMDocument.
+
+<?
+$domNode = $dom->importNode($aDomNode, true);
+$currentDomDocument->appendChild($domNode);
+?>

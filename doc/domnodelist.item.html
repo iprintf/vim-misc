@@ -1,0 +1,322 @@
+
+DOMNodelist::item
+
+(PHP 5, PHP 7)
+
+DOMNodelist::item — Retrieves a node specified by index
+
+说明
+
+DOMNode DOMNodelist::item ( int $index )
+
+Retrieves a node specified by index within the DOMNodeList object.
+
+Tip
+
+If you need to know the number of nodes in the collection, use the length
+property of the DOMNodeList object.
+
+参数
+
+index
+
+    Index of the node into the collection.
+
+返回值
+
+The node at the indexth position in the DOMNodeList, or NULL if that is not a
+valid index.
+
+范例
+
+Example #1 Traversing all the entries of the table
+
+<?php
+
+$doc = new DOMDocument;
+$doc->load('book.xml');
+
+$items = $doc->getElementsByTagName('entry');
+
+for ($i = 0; $i < $items->length; $i++) {
+    echo $items->item($i)->nodeValue . "\n";
+}
+
+?>
+
+Alternatively, you can use foreach, which is a much more convenient way:
+
+<?php
+
+foreach ($items as $item) {
+    echo $item->nodeValue . "\n";
+}
+
+?>
+
+以上例程会输出：
+
+Title
+Author
+Language
+ISBN
+The Grapes of Wrath
+John Steinbeck
+en
+0140186409
+The Pearl
+John Steinbeck
+en
+014017737X
+Samarcande
+Amine Maalouf
+fr
+2253051209
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+Actually "item" returns DOMElement and not DOMNode. DOMElement extends only
+DOMNode.
+
+http://3v4l.org/KAj7c
+===============================================================================
+
+calling domnodelist->item($i) with an index $i greater than domnodelist->length
+- 1 , will return the entire document, will not produce an error, and will not
+circle back to the start of the list.
+===============================================================================
+
+DOMNodeList::item does not return in constant time!
+
+If you need to iterate over large nodelist then you'd better use standard
+navigation.
+
+Instead of:
+
+<?php
+foreach ($nodelist as $node) {
+    // do something
+}
+?>
+
+you could do:
+
+<?php
+$node = $parentnode->firstChild;
+
+do {
+    // do something
+} while ($node = $node->nextSibling);
+?>
+===============================================================================
+
+SimpleXML has its own SPL iterator. See http://www.php.net/~helly/php/ext/spl/
+classSimpleXMLIterator.html . But I guess that there are none for DOM nodes. By
+the way, two out of three implementations I found over the Net were not
+recursive, so I wrote my own. Here is the snippet:
+
+<?php
+
+class DOMNodeListIterator implements RecursiveIterator
+{
+    private
+        $nodes,
+        $offset;
+
+    function __construct(DOMNodeList $nodes)
+    {
+        return $this -> nodes = $nodes;
+    }
+   
+    function rewind()
+    {
+        return $this -> offset = 0;
+    }
+   
+    function current()
+    {
+        return $this -> nodes -> item($this -> offset);
+    }
+
+    function key()
+    {
+        return $this -> current() -> nodeName;
+    }
+   
+    function next()
+    {
+        return $this -> offset++;
+    }
+   
+    function valid()
+    {
+        return $this -> offset < $this -> nodes -> length;
+    }
+   
+    function hasChildren()
+    {
+        return isset($this -> current() -> childNodes -> length) && $this -> 
+current() -> childNodes -> length > 0;
+    }
+   
+    function getChildren()
+    {
+        return new self($this -> current() -> childNodes);
+    }
+}
+
+?>
+
+Remember to use RecursiveIteratorIterator::SELF_FIRST flag when you create your
+iterator iterator.
+
+<?php
+
+$iterator = new DOMNodeListIterator($document -> childNodes);
+$iterator = new RecursiveIteratorIterator($iterator, RecursiveIteratorIterator
+::SELF_FIRST);
+
+?>
+
+Should work, has just few minutes though. :)
+===============================================================================
+
+DOMNodelist::item can return a DOMElement object, which extends DOMNode class.
+But it can also return a DOMText object.
+
+<?php
+$xml = '
+<root>
+  <node/>
+  <node>
+    <sub>more</sub>
+  </node>
+  <node>
+    <sub>another</sub>
+  </node>
+  <node>value</node>
+</root>
+';
+
+$doc = new DOMDocument();
+$doc->loadXML($xml);
+
+$items = $doc->documentElement->childNodes;
+for ($i = 0; $i < $items->length; $i++)
+  echo get_class($items->item($i)).PHP_EOL;
+?>
+
+Results in this output:
+
+DOMText
+DOMElement
+DOMText
+DOMElement
+DOMText
+DOMElement
+DOMText
+DOMElement
+DOMText
+===============================================================================
+
+@ tfg_allardyce at gmail dot com
+
+You could loop through the list backwards, that way, you are only ever taking
+off the last item from the list, and hence wont have disrupted the order.
+===============================================================================
+
+It seems that with zend.ze1_compatibility_mode on, the only way to iterate over
+the items list is with :
+for ($i = 0; $i < $nodeList->length; ++$i) {
+    $nodeName = $nodeList->item($i)->nodeName;
+    $nodeValue = $nodeList->item($i)->nodeValue;
+}
+
+As other attemps failed :
+
+for ($i = 0; $i < $nodeList->length; ++$i) {
+    $node = &$nodeList->item($i);
+    $nodeName = $node->nodeName;
+    $nodeValue = $node->nodeValue;
+}
+
+or :
+foreach ($nodeList as $node) {
+    echo $node->nodeName;
+    echo $node->nodeValue;
+}
+===============================================================================
+
+Keep in mind that DOMNodelists are "live" - changes to the document or node
+that the DOMNodelist was derived from will be reflected in the DOMNodelist. In
+other words, a list of a parent node's children will change if you change the
+parent's children!
+===============================================================================
+
+tfg_allardyce at gmail dot com
+
+I have had exactly this problem.
+
+To rectify I've had to do this:
+<?php
+$old_element = $doc->getElementsByTagName('Element1')->item(0);
+$new_element = $doc->createElement('NewElement1');
+
+$old_element_childNodes = $old_element->childNodes;
+$length = $old_element_childNodes->length;
+
+for($i = 0; $i < $length; $i++)
+{       
+    $oldChildren_array[] = $old_element_childNodes->item($i);
+}
+
+foreach($oldChildren_array as $old_c)
+{
+    $new_element->appendChild($old_c);
+}
+?>
+
+Rather than this:
+(which I will bug report)
+<?php
+$old_element = $doc->getElementsByTagName('Element1')->item(0):
+$new_element = $doc->createElement('NewElement1');
+
+foreach($old_element->childNode as $node)
+{
+     $new_element->appendChild($node);
+}
+
+?>
+
+Using the latter, randomally removes the children!
+===============================================================================
+
+NodeList are something annoying because you can't output the content with a
+simple print_r, so I did a little function that add all the node to a new empty
+DOMDocument and output it as a string.
+Have fun.
+
+<?php
+
+public function domNodeList_to_string($DomNodeList) {
+    $output = '';
+    $doc = new DOMDocument;
+    while ( $node = $DomNodeList->item($i) ) {
+        // import node
+        $domNode = $doc->importNode($node, true);
+        // append node
+        $doc->appendChild($domNode);
+        $i++;
+    }
+    $output = $doc->saveXML();
+    $output = print_r($output, 1);
+    // I added this because xml output and ajax do not like each others
+    $output = htmlspecialchars($output);
+    return $output;
+}
+
+?>

@@ -1,0 +1,248 @@
+
+序列化接口
+
+(No version information available, might only be in Git)
+
+简介
+
+自定义序列化的接口。
+
+实现此接口的类将不再支持 __sleep() 和 __wakeup()。不论何时，只要有实例需要被序
+列化，serialize 方法都将被调用。它将不会调用 __destruct() 或有其他影响，除非程
+序化地调用此方法。当数据被反序列化时，类将被感知并且调用合适的 unserialize() 方
+法而不是调用 __construct()。如果需要执行标准的构造器，你应该在这个方法中进行处
+理。
+
+接口摘要
+
+Serializable {
+/* 方法 */
+abstract public string serialize ( void )
+abstract public mixed unserialize ( string $serialized )
+}
+
+Example #1 Basic usage
+
+<?php
+class obj implements Serializable {
+    private $data;
+    public function __construct() {
+        $this->data = "My private data";
+    }
+    public function serialize() {
+        return serialize($this->data);
+    }
+    public function unserialize($data) {
+        $this->data = unserialize($data);
+    }
+    public function getData() {
+        return $this->data;
+    }
+}
+
+$obj = new obj;
+$ser = serialize($obj);
+
+$newobj = unserialize($ser);
+
+var_dump($newobj->getData());
+?>
+
+以上例程的输出类似于：
+
+string(15) "My private data"
+
+Table of Contents
+
+  • Serializable::serialize — 对象的字符串表示
+  • Serializable::unserialize — 构造对象
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Here's an example how to un-, serialize more than one property:
+
+class Example implements \Serializable
+{
+    protected $property1;
+    protected $property2;
+    protected $property3;
+
+    public function __construct($property1, $property2, $property3)
+    {
+        $this->property1 = $property1;
+        $this->property2 = $property2;
+        $this->property3 = $property3;
+    }
+
+    public function serialize()
+    {
+        return serialize([
+            $this->property1,
+            $this->property2,
+            $this->property3,
+        ]);
+    }
+
+    public function unserialize($data)
+    {
+        list(
+            $this->property1,
+            $this->property2,
+            $this->property3
+        ) = unserialize($data);
+    }
+
+}
+===============================================================================
+
+Serializing child and parent classes:
+
+<?php
+class MyClass implements Serializable {
+    private $data;
+   
+    public function __construct($data) {
+        $this->data = $data;
+    }
+   
+    public function getData() {
+        return $this->data;
+    }
+   
+    public function serialize() {
+        echo "Serializing MyClass...\n";
+        return serialize($this->data);
+    }
+   
+    public function unserialize($data) {
+        echo "Unserializing MyClass...\n";
+        $this->data = unserialize($data);
+    }
+}
+
+class MyChildClass extends MyClass {
+    private $id;
+    private $name;
+   
+    public function __construct($id, $name, $data) {
+        parent::__construct($data);
+        $this->id = $id;
+        $this->name = $name;
+    }
+   
+    public function serialize() {
+        echo "Serializing MyChildClass...\n";
+        return serialize(
+            array(
+                'id' => $this->id,
+                'name' => $this->name,
+                'parentData' => parent::serialize()
+            )
+        );
+    }
+   
+    public function unserialize($data) {
+        echo "Unserializing MyChildClass...\n";
+        $data = unserialize($data);
+       
+        $this->id = $data['id'];
+        $this->name = $data['name'];
+        parent::unserialize($data['parentData']);
+    }
+   
+    public function getId() {
+        return $this->id;
+    }
+   
+    public function getName() {
+        return $this->name;
+    }
+}
+
+$obj = new MyChildClass(15, 'My class name', 'My data');
+
+$serial = serialize($obj);
+$newObject = unserialize($serial);
+
+echo $newObject->getId() . PHP_EOL;
+echo $newObject->getName() . PHP_EOL;
+echo $newObject->getData() . PHP_EOL;
+
+?>
+
+This will output:
+
+Serializing MyChildClass...
+Serializing MyClass...
+Unserializing MyChildClass...
+Unserializing MyClass...
+15
+My class name
+My data
+===============================================================================
+
+You can prevent an object getting unserialized by returning NULL. Instead of a
+serialized object, PHP will return the serialized form of NULL:
+
+<?php
+class testNull implements Serializable {
+    public function serialize() {       
+        return NULL;
+    }
+    public function unserialize($data) {
+    }
+}
+
+$obj = new testNull;
+$string = serialize($obj);
+echo $string; // "N;"
+?>
+
+That's perhaps better than throwing exceptions inside of the serialize function
+if you want to prevent serialization of certain objects.
+===============================================================================
+
+Here's the way you could implement serializable so that *ALL* descendant
+serialize themselves without the need of re-writing for all descendant the
+functions serialize() and unserialize().
+
+Note : this will only serialize "visible" properties, this it won't serialize
+private descendant properties. If you dont want a property of a descendant to
+be serialized, make it private.
+
+class Pot implements Serializable
+{
+    protected $_a;
+    protected $_b;
+
+    public function serialize()
+    {
+        return serialize(get_object_vars($this));
+    }
+    public function unserialize($data)
+    {
+        $values = unserialize($data);
+        foreach ($values as $key=>$value) {
+            $this->$key = $value;
+        }
+    }
+}
+
+And now one descendant:
+
+class PotId implements Pot
+{
+    protected $_k;
+}
+
+class Pots implements PotId
+{
+    protected $_l;
+}
+
+$pots = new Pots();
+
+and calling serialize($pots) will serialize all properties ($_a, $_b, $_k, $l).

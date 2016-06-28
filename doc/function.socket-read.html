@@ -1,0 +1,359 @@
+
+socket_read
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+socket_read — Reads a maximum of length bytes from a socket
+
+说明
+
+string socket_read ( resource $socket , int $length [, int $type =
+PHP_BINARY_READ ] )
+
+The function socket_read() reads from the socket resource socket created by the
+socket_create() or socket_accept() functions.
+
+参数
+
+socket
+
+    A valid socket resource created with socket_create() or socket_accept().
+
+length
+
+    The maximum number of bytes read is specified by the length parameter.
+    Otherwise you can use \r, \n, or \0 to end reading (depending on the type
+    parameter, see below).
+
+type
+
+    Optional type parameter is a named constant:
+      □ PHP_BINARY_READ (Default) - use the system recv() function. Safe for
+        reading binary data.
+      □ PHP_NORMAL_READ - reading stops at \n or \r.
+
+返回值
+
+socket_read() returns the data as a string on success, or FALSE on error
+(including if the remote host has closed the connection). The error code can be
+retrieved with socket_last_error(). This code may be passed to socket_strerror
+() to get a textual representation of the error.
+
+    Note:
+
+    socket_read() returns a zero length string ("") when there is no more data
+    to read.
+
+参见
+
+  • socket_accept() - Accepts a connection on a socket
+  • socket_bind() - 给套接字绑定名字
+  • socket_connect() - 开启一个套接字连接
+  • socket_listen() - Listens for a connection on a socket
+  • socket_last_error() - Returns the last error on the socket
+  • socket_strerror() - Return a string describing a socket error
+  • socket_write() - Write to a socket
+
+
+User Contributed Notes 17 notes
+
+===============================================================================
+
+Another way to bypass the annoying thing with telnet, that send each character
+as a string ,is to check if the response is "\r\n", that is the string that
+telnet sends when the user presses enter.
+
+Here is an example:
+<?php
+error_reporting(E_ALL);
+
+/* Allow the script to hang around waiting for connections. */
+set_time_limit(0);
+
+/* Turn on implicit output flushing so we see what we're getting
+* as it comes in. */
+ob_implicit_flush();
+
+$address = '127.0.0.1';
+$port = 100;
+
+if (($sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP)) === false) {
+    echo "socket_create() failed: reason: " . socket_strerror(socket_last_error
+()) . "\n";
+}
+
+if (socket_bind($sock, $address, $port) === false) {
+    echo "socket_bind() failed: reason: " . socket_strerror(socket_last_error(
+$sock)) . "\n";
+}
+else
+  echo 'Socket ' . $address . ':' . $port . " has been opened\n";
+
+if (socket_listen($sock, 5) === false) {
+    echo "socket_listen() failed: reason: " . socket_strerror(socket_last_error
+($sock)) . "\n";
+}
+else
+   echo "Listening for new clients..\n";
+
+   $client_id = 0;
+do {
+    if (($msgsock = socket_accept($sock)) === false) {
+        echo "socket_accept() failed: reason: " . socket_strerror(
+socket_last_error($sock)) . "\n";
+        break;
+    }
+    else {
+        $client_id += 1;
+      echo "Client #" .$client_id .": Connect\n";
+    }
+     
+    /* Send instructions. */
+    $msg = "\nWelcome to the PHP Test Server. \n" .
+        "To quit, type 'quit'. To shut down the server type 'shutdown'.\n";
+    socket_write($msgsock, $msg, strlen($msg));
+$cur_buf = '';
+    do {
+        if (false === ($buf = socket_read($msgsock, 2048))) {
+            echo "socket_read() failed: reason: " . socket_strerror(
+socket_last_error($msgsock)) . "\n";
+            break 2;
+        }
+        if ($buf == "\r\n") {
+        if ($cur_buf == 'quit') {
+            echo 'Client #' .$client_id .': Disconnect' . "\n";
+            break;
+        }
+        if ($cur_buf == 'shutdown') {
+            socket_close($msgsock);
+            break 2;
+        }
+        //else {
+       $talkback = "Unknown command: " . str_replace("\r\n", '\r\n', $cur_buf)
+."\n";
+       socket_write($msgsock, $talkback, strlen($talkback));
+       // }
+        echo 'Client #' .$client_id .': ' . $cur_buf . "\n";
+        $cur_buf = '';
+        }
+        else $cur_buf .= $buf;
+    } while (true);
+    socket_close($msgsock);
+} while (true);
+
+socket_close($sock);
+?>
+===============================================================================
+
+quote:
+"Note:
+socket_read() returns a zero length string ("") when there is no more data to
+read."
+
+This is not true!
+
+In a while loop 
+(example case few bytes to receive - just enough for 1 call, but you use a loop
+to be sure you received all data)
+if you use
+<? socket_set_block($socket); ?>
+you will get:
+1st call in loop: data
+2nd call in loop: a block forever, if there isnt data anymore or w/e happen to
+the "other side"
+
+So ofc you want to use
+<? socket_set_nonblock($socket); ?>
+and you will get:
+1st call in loop: data
+2nd call in loop: socket_read() returns FALSE (bool) and socket_last_error()
+gives you a SOCKET_EWOULDBLOCK (http://de1.php.net/manual/de/
+sockets.constants.php)
+
+There is not a single time i got a empty string back from socket_read.
+And im "working" on this problem(bug?) since a week or so.
+
+You better use socket_recv() instead.
+(good luck)
+===============================================================================
+
+if you'd like to make a "socket_read" on a linux-system connected with a
+flash-client (v. 6.0 r81) you have to send a string to the connected port:
+
+<?php
+
+   ...  //initialising communication
+
+    $string = "ready to get/send data\0";
+    socket_write($socket, $string);
+
+    //now you can read from...
+    $line = trim(socket_read($socket, MAXLINE));
+
+    ...  // do some stuff, finaly close connection
+?>
+===============================================================================
+
+PHP 5.2.0 / Win32 / Apache 1.3 - It seems like...
+
+PHP_BINARY_READ - works, but returns '', not FALSE...
+- is blocking, until data received or connection closed
+- does pass-through \r\n etc.
+- returns data on data, '' on connection closed
+- you can detect closed connection by checking for '' (not FALSE as stated i
+manual)
+
+PHP_NORMAL_READ - not working so good...
+- is non-blocking
+- does not pass-through \r\n etc.
+- returns false on no-data, false on connection closed :(
+- (no way here to detect a closed connection...?)
+- (is this a bug? http://bugs.php.net/bug.php?id=21880 )
+- (is this a bug? http://bugs.php.net/bug.php?id=21197 )
+- (could not get data from this option at all in fact...)
+
+PHP_BINARY_READ seems to be the "right way to go"
+for now. Both checking for '' and false to detect closed
+connection is probably smart, as this "bug"(?) may
+be fixed...
+===============================================================================
+
+PHP_NORMAL_READ - reading stops at \n or \r.
+
+This seems to be meant literally.
+If there is a \r, then it will stop reading, even if there is a \n right after
+it. You have to call the read again just to get rid of the \n.
+===============================================================================
+
+Just a note that on my system the length seems to have an undocumented upper
+bound of 65536. I was being lazy and not read()ing in a while loop until I
+pointed it at real data ;)
+===============================================================================
+
+I don't know if is it stated anywhere with this clearance, but here is the
+source code for detecting the connection abort/closure for sockets testing with
+socket_read function:
+
+<?php
+$buf = @socket_read($routes[$i][$connectionid]['tunnelsrc'], $buffer_size);
+if ($buf === '')
+{
+    $routes[$i][$connectionid]['disconnected']='Conenction abort at source
+side';
+}
+?>
+
+($buf === '') is the key :)
+
+I was making an ecrypted tunnel script with mcrypt and was annoying that i
+could not detect the connection abort from any side.
+===============================================================================
+
+On non-blocking connections it may not return full length requested.
+===============================================================================
+
+A way to wait for a message response by the socket or take the first message
+incoming.
+
+Note that if the server turn offline, you have a socket resource, but while
+trying socket_read(), it gives you a warning message that will fill your hard
+drive kickly due to logging.
+
+The example above try read the message at best 3 times, 3 seconds sleeping for
+another reading.
+<?php
+function waitResponse($response = "") {
+   $status = "";
+   $tries = 3;
+   $counter = 0;
+   while ($status == $response) {
+            $status = socket_read($socket, 1024);
+            if(!$status){
+               if($counter >= $tries){
+                  break;
+               }else{
+                  $counter++;
+                  sleep(3);
+               }
+            }
+   }
+return $response;
+}
+===============================================================================
+
+This paragraph is confusing:
+
+socket_read() returns the data as a string on success, or FALSE on error
+(including if the remote host has closed the connection). The error code can be
+retrieved with socket_last_error(). This code may be passed to socket_strerror
+() to get a textual representation of the error.
+Note: socket_read() returns a zero length string ("") when there is no more
+data to read.
+
+My tests (on PHP 5.1.4) show that when you socket_read() on a shutdown-socket,
+it returns FALSE when using PHP_NORMAL_READ, but returns "" when reading in
+PHP_BINARY_READ.
+===============================================================================
+
+Windows telnet sends/recieves one character at a time. Try adding
+PHP_NORMAL_READ to the end of socket_read, that might help.
+===============================================================================
+
+It seems like in socket_* functions in BLOCKING mode where is no way to check
+if more than $length bytes are still available in socket (like
+stream_get_meta_data()['unread_bytes']).
+So you need to choose your prefered maximum $length (like 133693415:) or use
+non-blocking mode (for realy big data reciving).
+===============================================================================
+
+if you want to use a non block socket you must to use socket_last_error
+
+if(!socket_last_error($sc)){
+   if($buffer=socket_read($sc,512,PHP_NORMAL_READ)){
+      echo $buffer;
+   }
+}
+
+if you use it your script wont take all your memory
+===============================================================================
+
+You may download a generic server class at http://www.php-tools.de
+This class will accept the sockets read data from it and hands it to a callback
+function. Furthermore there are methods for connection handling included.
+===============================================================================
+
+Messed up the end of my previous one. Corrected version here:
+
+a simple work around to non-blocking working with normal read is like so:
+
+$read = array($socket);
+$write  = NULL;
+$except = NULL;
+while(1) {
+    $num_changed_sockets = socket_select($read, $write, $except, 0, 1);
+    if ( $num_changed_sockets > '0' ) {
+        socket_read($socket,10000,PHP_NORMAL_READ);
+    }
+}
+===============================================================================
+
+PHP on win32 developers, please look at this bug report before using the
+PHP_NORMAL_READ option:
+
+http://bugs.php.net/bug.php?id=21197
+
+In a nutshell, using PHP_NORMAL_READ will make your calls to socket_read()
+return an empty buffer every time.
+===============================================================================
+
+the proper way to detect a closed connection is to check socket_last_error.
+
+Connection reset by peer is 104 (either use socket_strerror or don't suppress
+errors for the time being to find these out), sooo.
+
+while($buffer=@socket_read($sock,512,PHP_NORMAL_READ)){
+    echo $buffer;
+}
+if(socket_last_error($sock) == 104) {
+    echo "Connection closed";
+}

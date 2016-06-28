@@ -1,0 +1,391 @@
+
+ssh2_sftp
+
+(PECL ssh2 >= 0.9.0)
+
+ssh2_sftp — Initialize SFTP subsystem
+
+说明
+
+resource ssh2_sftp ( resource $session )
+
+Request the SFTP subsystem from an already connected SSH2 server.
+
+参数
+
+session
+
+    An SSH connection link identifier, obtained from a call to ssh2_connect().
+
+返回值
+
+This method returns an SSH2 SFTP resource for use with all other ssh2_sftp_*()
+methods and the ssh2.sftp:// fopen wrapper.
+
+范例
+
+Example #1 Opening a file via SFTP
+
+<?php
+$connection = ssh2_connect('shell.example.com', 22);
+ssh2_auth_password($connection, 'username', 'password');
+
+$sftp = ssh2_sftp($connection);
+
+$stream = fopen("ssh2.sftp://$sftp/path/to/file", 'r');
+?>
+
+参见
+
+  • ssh2_scp_recv() - Request a file via SCP
+  • ssh2_scp_send() - Send a file via SCP
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+Here is an example of how to send a file with SFTP:
+
+<?php
+
+class SFTPConnection
+{
+    private $connection;
+    private $sftp;
+
+    public function __construct($host, $port=22)
+    {
+        $this->connection = @ssh2_connect($host, $port);
+        if (! $this->connection)
+            throw new Exception("Could not connect to $host on port $port.");
+    }
+
+    public function login($username, $password)
+    {
+        if (! @ssh2_auth_password($this->connection, $username, $password))
+            throw new Exception("Could not authenticate with username $username
+" .
+                                "and password $password.");
+
+        $this->sftp = @ssh2_sftp($this->connection);
+        if (! $this->sftp)
+            throw new Exception("Could not initialize SFTP subsystem.");
+    }
+
+    public function uploadFile($local_file, $remote_file)
+    {
+        $sftp = $this->sftp;
+        $stream = @fopen("ssh2.sftp://$sftp$remote_file", 'w');
+
+        if (! $stream)
+            throw new Exception("Could not open file: $remote_file");
+
+        $data_to_send = @file_get_contents($local_file);
+        if ($data_to_send === false)
+            throw new Exception("Could not open local file: $local_file.");
+
+        if (@fwrite($stream, $data_to_send) === false)
+            throw new Exception("Could not send data from file: $local_file.");
+
+        @fclose($stream);
+    }
+}
+
+try
+{
+    $sftp = new SFTPConnection("localhost", 22);
+    $sftp->login("username", "password");
+    $sftp->uploadFile("/tmp/to_be_sent", "/tmp/to_be_received");
+}
+catch (Exception $e)
+{
+    echo $e->getMessage() . "\n";
+}
+
+?>
+===============================================================================
+
+I added some functionality for scanning the filesystem and receiving and
+deleting files.
+
+class SFTPConnection
+{
+    private $connection;
+    private $sftp;
+
+    public function __construct($host, $port=22)
+    {
+        $this->connection = @ssh2_connect($host, $port);
+        if (! $this->connection)
+            throw new Exception("Could not connect to $host on port $port.");
+    }
+
+    public function login($username, $password)
+    {
+        if (! @ssh2_auth_password($this->connection, $username, $password))
+            throw new Exception("Could not authenticate with username $username
+" . "and password $password.");
+        $this->sftp = @ssh2_sftp($this->connection);
+        if (! $this->sftp)
+            throw new Exception("Could not initialize SFTP subsystem.");
+    }
+
+    public function uploadFile($local_file, $remote_file)
+    {
+        $sftp = $this->sftp;
+        $stream = @fopen("ssh2.sftp://$sftp$remote_file", 'w');
+        if (! $stream)
+            throw new Exception("Could not open file: $remote_file");
+        $data_to_send = @file_get_contents($local_file);
+        if ($data_to_send === false)
+            throw new Exception("Could not open local file: $local_file.");
+        if (@fwrite($stream, $data_to_send) === false)
+            throw new Exception("Could not send data from file: $local_file.");
+        @fclose($stream);
+    }
+   
+        function scanFilesystem($remote_file) {
+              $sftp = $this->sftp;
+            $dir = "ssh2.sftp://$sftp$remote_file"; 
+              $tempArray = array();
+            $handle = opendir($dir);
+          // List all the files
+            while (false !== ($file = readdir($handle))) {
+            if (substr("$file", 0, 1) != "."){
+              if(is_dir($file)){
+//                $tempArray[$file] = $this->scanFilesystem("$dir/$file");
+               } else {
+                 $tempArray[]=$file;
+               }
+             }
+            }
+           closedir($handle);
+          return $tempArray;
+        }   
+
+    public function receiveFile($remote_file, $local_file)
+    {
+        $sftp = $this->sftp;
+        $stream = @fopen("ssh2.sftp://$sftp$remote_file", 'r');
+        if (! $stream)
+            throw new Exception("Could not open file: $remote_file");
+        $contents = fread($stream, filesize("ssh2.sftp://$sftp$remote_file")); 
+         
+        file_put_contents ($local_file, $contents);
+        @fclose($stream);
+    }
+       
+    public function deleteFile($remote_file){
+      $sftp = $this->sftp;
+      unlink("ssh2.sftp://$sftp$remote_file");
+    }
+}
+===============================================================================
+
+I changed the read function to:
+
+    public function receiveFile($remote_file, $local_file)
+    {
+        $sftp = $this->sftp;
+        $stream = @fopen("ssh2.sftp://$sftp$remote_file", 'r');
+        if (! $stream)
+            throw new Exception("Could not open file: $remote_file");
+        $size = $this->getFileSize($remote_file);           
+        $contents = '';
+        $read = 0;
+        $len = $size;
+        while ($read < $len && ($buf = fread($stream, $len - $read))) {
+          $read += strlen($buf);
+          $contents .= $buf;
+        }       
+        file_put_contents ($local_file, $contents);
+        @fclose($stream);
+    }
+
+    public function getFileSize($file){
+      $sftp = $this->sftp;
+        return filesize("ssh2.sftp://$sftp$file");
+    }
+===============================================================================
+
+if anyone is interested on how to get a directory listing:
+$SSH_CONNECTION= ssh2_connect('shell.example.com', 22);
+ssh2_auth_password($SSH_CONNECTION, 'username', 'password');
+//-------------------------------------------------------------------
+//this function finds all files within  given directory and returns them
+function scanFilesystem($dir) {
+    $tempArray = array();
+    $handle = opendir($dir);
+  // List all the files
+    while (false !== ($file = readdir($handle))) {
+    if (substr("$file", 0, 1) != "."){
+           if(is_dir($file)){
+            $tempArray[$file]=scanFilesystem("$dir/$file");
+        } else {
+            $tempArray[]=$file;
+        }
+    }
+    }
+   closedir($handle);
+  return $tempArray;
+}
+
+//-------------------------------------------------------------------
+$sftp = ssh2_sftp($SSH_CONNECTION);
+
+//code to get listing of all OUTGOING files
+$dir = "ssh2.sftp://$sftp/outgoing";
+$outgoing = scanFilesystem($dir);
+sort($outgoing);
+print_r($outgoing);
+===============================================================================
+
+When uploading (writing) a file you must use an absolute path, not a relative
+one.
+
+If, like me, you want to use a relative path, you can use the following code:
+
+$fh=fopen("ssh2.sftp://$sftp".ssh2_sftp_realpath($sftp,".")."/
+fileinmyhomedir.txt");
+===============================================================================
+
+In
+
+$stream = fopen("ssh2.sftp://$sftp/path/to/file", 'r');
+
+please make sure that you are specifying the "absolute" path to a file.
+
+If not, you'll get errors like
+
+"Unable to open file ..."
+
+The reasoning is simple ... ssh2.sftp://$sftp points to the "root" directory on
+the remote server, where, most likely, one does not have access.
+
+It is necessary to point it to your "home" directory.  For example, "ssh2.sftp:
+//$sftp/home/username/filename" ... where "/home/username" is where your home
+directory is.
+===============================================================================
+
+Note that you must enter the full wrapper URI order for functions that accept
+those parameters to work properly. For example, this (which is referenced more
+than once in other comments) does not work:
+
+while (false !== ($file = readdir($handle))) if (is_dir($file)) { /* ... */ }
+
+This does work:
+
+$sc = ssh2_sftp(...);
+while (false !== ($file = readdir($handle))) if (is_dir("ssh2.sftp://$sc/$file
+")) { /* ... */ }
+
+You need to pass the "path" into these functions as an fopen() wrapper URI.
+===============================================================================
+
+If you wish to store once the protocol + ressource used ("ssh2.sftp://$sftp";)
+There's a little trick to know...
+This won't work :
+
+<?php
+function connect(){
+    $connection = ssh2_connect('shell.example.com', 22);
+    ssh2_auth_password($connection, 'username', 'password');
+    $sftp = ssh2_sftp($connection);
+    return "ssh2.sftp://$sftp";
+}
+$remote = connect();
+is_file( $remote."/path/to/file");
+// Warning
+// Message: is_file(): ## is not a valid SSH2 SFTP resource
+?>
+
+You need to have $sftp still avaible at moment the function (is_file, filesize,
+fopen, ...) uses it
+Otherwise, I guess the GC cleans it up and closes the ssh2_stfp connection
+That's why this work :
+
+<?php
+function connect(){
+    //...
+    global $sftp;
+    $sftp = ssh2_sftp($connection);
+    return "ssh2.sftp://$sftp";
+}
+$remote = connect();
+is_file( $remote."/path/to/file");
+
+// Or way better :
+
+class myClass {
+    public function connect(){
+        //...
+        $this->sftp     = ssh2_sftp($connection);
+        $this->remote   = "ssh2.sftp://".$this->sftp;
+    }
+    public function test(){
+        is_file( $this->remote."/path/to/file");
+    }
+}
+$obj = new myClass();
+$obj->connect();
+$obj->test();
+?>
+===============================================================================
+
+Not sure if this is a bug of some kind of security feature.
+
+When reading files using ssh2.sftp anything inside php tags is inexplicably
+stripped.
+
+foo.php
+one
+<?
+echo 'two';
+?>
+echo 'three';
+
+$stream = fopen("ssh2.sftp://$sftp$file", 'r');
+echo filesize("ssh2.sftp://$sftp$file"); //CORRECT
+echo fread($stream, filesize("ssh2.sftp://$sftp$file")); //prints "onethree"
+
+Not sure why this happens and haven't found a workaround.
+===============================================================================
+
+The sftp class provided by David Barnes works great.  However, if you get
+errors about fopen and it failing to open a stream, try the fully qualified
+path on the remote server.
+
+For example, if you are uploading a file to /Users/username/Sites/file.txt this
+may not work:
+
+<?php
+try {
+    $sftp = new SFTPConnection("localhost", 22);
+    $sftp->login("username", "password");
+    $sftp->uploadFile("/tmp/to_be_sent", "Sites/file.txt");
+}
+catch (Exception $e) {
+    echo $e->getMessage() . "\n";
+}
+?>
+
+but this will:
+
+<?php
+try {
+    $sftp = new SFTPConnection("localhost", 22);
+    $sftp->login("username", "password");
+    $sftp->uploadFile("/tmp/to_be_sent", "/Users/username/Sites/file.txt");
+}
+catch (Exception $e) {
+    echo $e->getMessage() . "\n";
+}
+?>
+
+Don't assume that since you are connecting as that user that you are starting
+in its home space.
+
+Another possible option is that you need to use http://us.php.net/manual/en/
+function.ssh2-sftp-mkdir.php first to make the directory if it does not exist
+already, and then upload the file into it.

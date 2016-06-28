@@ -1,0 +1,1779 @@
+
+imagecreatefromjpeg
+
+(PHP 4, PHP 5, PHP 7)
+
+imagecreatefromjpeg — 由文件或 URL 创建一个新图象。
+
+说明
+
+resource imagecreatefromjpeg ( string $filename )
+
+imagecreatefromjpeg() 返回一图像标识符，代表了从给定的文件名取得的图像。
+
+Tip
+
+如已启用fopen 包装器，在此函数中， URL 可作为文件名。关于如何指定文件名详见 
+fopen()。各种 wapper 的不同功能请参见支持的协议和封装协议，注意其用法及其可提供
+的预定义变量。
+
+参数
+
+filename
+
+    JPEG 图像的路径。
+
+返回值
+
+成功后返回图象资源,失败后返回 FALSE 。
+
+范例
+
+Example #1 处理创建过程中的错误
+
+<?php
+function LoadJpeg($imgname)
+{
+    /* 尝试打开 */
+    $im = @imagecreatefromjpeg($imgname);
+
+    /* See if it failed */
+    if(!$im)
+    {
+        /* Create a black image */
+        $im  = imagecreatetruecolor(150, 30);
+        $bgc = imagecolorallocate($im, 255, 255, 255);
+        $tc  = imagecolorallocate($im, 0, 0, 0);
+
+        imagefilledrectangle($im, 0, 0, 150, 30, $bgc);
+
+        /* Output an error message */
+        imagestring($im, 1, 5, 5, 'Error loading ' . $imgname, $tc);
+    }
+
+    return $im;
+}
+
+header('Content-Type: image/jpeg');
+
+$img = LoadJpeg('bogus.image');
+
+imagejpeg($img);
+imagedestroy($img);
+?>
+
+以上例程的输出类似于：
+
+例子输出：加载图片出现错误时的处理范例
+
+注释
+
+    Note: JPEG 支持仅在 PHP 与 GD-1.8 或更高版本一起编译时可用。
+
+Warning
+
+Windows 版本的 PHP 在 4.3.0 版之前不支持通过此函数访问远程文件，即使已经启用
+allow_url_fopen.
+
+
+User Contributed Notes 63 notes
+
+===============================================================================
+
+This little function allows you to create an image based on the popular image
+types without worrying about what it is:
+
+<?php
+function imageCreateFromAny($filepath) {
+    $type = exif_imagetype($filepath); // [] if you don't have exif you could
+use getImageSize()
+    $allowedTypes = array(
+        1,  // [] gif
+        2,  // [] jpg
+        3,  // [] png
+        6   // [] bmp
+    );
+    if (!in_array($type, $allowedTypes)) {
+        return false;
+    }
+    switch ($type) {
+        case 1 :
+            $im = imageCreateFromGif($filepath);
+        break;
+        case 2 :
+            $im = imageCreateFromJpeg($filepath);
+        break;
+        case 3 :
+            $im = imageCreateFromPng($filepath);
+        break;
+        case 6 :
+            $im = imageCreateFromBmp($filepath);
+        break;
+    }   
+    return $im; 
+}
+?>
+===============================================================================
+
+This function does not honour EXIF orientation data.  Pictures that are rotated
+using EXIF, will show up in the original orientation after being handled by
+imagecreatefromjpeg().  Below is a function to create an image from JPEG while
+honouring EXIF orientation data.
+
+<?php
+    function imagecreatefromjpegexif($filename)
+    {
+        $img = imagecreatefromjpeg($filename);
+        $exif = exif_read_data($filename);
+        if ($img && $exif && isset($exif['Orientation']))
+        {
+            $ort = $exif['Orientation'];
+
+            if ($ort == 6 || $ort == 5)
+                $img = imagerotate($img, 270, null);
+            if ($ort == 3 || $ort == 4)
+                $img = imagerotate($img, 180, null);
+            if ($ort == 8 || $ort == 7)
+                $img = imagerotate($img, 90, null);
+
+            if ($ort == 5 || $ort == 4 || $ort == 7)
+                imageflip($img, IMG_FLIP_HORIZONTAL);
+        }
+        return $img;
+    }
+?>
+===============================================================================
+
+There is my actual script to resize image without distortion to generate a
+thumbnail and/or show a smaller to browser.
+
+<?php
+// usual header used on my all pages
+ob_start("ob_gzhandler");
+$PHP_SELF=$_SERVER['PHP_SELF'];
+include "include/errors.php"; //error log script
+
+// actual script begins here
+$type=false;
+function open_image ($file) {
+    //detect type and process accordinally
+    global $type;
+    $size=getimagesize($file);
+    switch($size["mime"]){
+        case "image/jpeg":
+            $im = imagecreatefromjpeg($file); //jpeg file
+        break;
+        case "image/gif":
+            $im = imagecreatefromgif($file); //gif file
+      break;
+      case "image/png":
+          $im = imagecreatefrompng($file); //png file
+      break;
+    default:
+        $im=false;
+    break;
+    }
+    return $im;
+}
+
+$url = $_GET['url'];
+if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE']) && (strtotime($_SERVER[
+'HTTP_IF_MODIFIED_SINCE']) == filemtime($url))) {
+  // send the last mod time of the file back
+    header('Last-Modified: '.gmdate('D, d M Y H:i:s', filemtime($url)).' GMT', 
+true, 304); //is it cached?
+} else {
+
+$image = open_image($url);
+
+if ($image === false) { die ('Unable to open image'); }
+
+$w = imagesx($image);
+$h = imagesy($image);
+
+//calculate new image dimensions (preserve aspect)
+if(isset($_GET['w']) && !isset($_GET['h'])){
+    $new_w=$_GET['w'];
+    $new_h=$new_w * ($h/$w);
+} elseif (isset($_GET['h']) && !isset($_GET['w'])) {
+    $new_h=$_GET['h'];
+    $new_w=$new_h * ($w/$h);
+} else {
+    $new_w=isset($_GET['w'])?$_GET['w']:560;
+    $new_h=isset($_GET['h'])?$_GET['h']:560;
+    if(($w/$h) > ($new_w/$new_h)){
+        $new_h=$new_w*($h/$w);
+    } else {
+        $new_w=$new_h*($w/$h);   
+    }
+}
+
+$im2 = ImageCreateTrueColor($new_w, $new_h);
+imagecopyResampled ($im2, $image, 0, 0, 0, 0, $new_w, $new_h, $w, $h);
+//effects
+if(isset($_GET['blur'])){
+    $lv=$_GET['blur'];
+    for($i=0; $i<$lv;$i++){
+        $matrix=array(array(1,1,1),array(1,1,1),array(1,1,1));
+        $divisor = 9;
+        $offset = 0;
+        imageconvolution($im2, $matrix, $divisor, $offset);
+    }
+}
+if(isset($_GET['sharpen'])){
+    $lv=$_GET['sharpen'];
+    for($i=0; $i<$lv;$i++){
+        $matrix = array(array(-1,-1,-1),array(-1,16,-1),array(-1,-1,-1));
+        $divisor = 8;
+        $offset = 0;
+        imageconvolution($im2, $matrix, $divisor, $offset);
+    }
+}
+
+header('Content-type: image/jpeg');
+$name=explode(".", basename($_GET['url']));
+header("Content-Disposition: inline; filename=".$name[0]."_t.jpg");
+header('Last-Modified: ' . gmdate('D, d M Y H:i:s', filemtime($url)) . ' GMT');
+header("Cache-Control: public");
+header("Pragma: public");
+imagejpeg($im2);
+//imagedestroy($im2);
+//imagedestroy($image);
+}  
+
+?>
+===============================================================================
+
+did you found that sometimes it hang the php when imagecreatefromjpeg() run on
+bad JPEG. I found that this is cause by the JPEG file U used dont have EOI (end
+of image)
+the FF D9 at the end of your JPEG
+
+JPEG image should start with 0xFFD8 and end with 0xFFD9
+
+// this may help to fix the error
+function check_jpeg($f, $fix=false ){
+# [070203]
+# check for jpeg file header and footer - also try to fix it
+    if ( false !== (@$fd = fopen($f, 'r+b' )) ){
+        if ( fread($fd,2)==chr(255).chr(216) ){
+            fseek ( $fd, -2, SEEK_END );
+            if ( fread($fd,2)==chr(255).chr(217) ){
+                fclose($fd);
+                return true;
+            }else{
+                if ( $fix && fwrite($fd,chr(255).chr(217)) ){return true;}
+                fclose($fd);
+                return false;
+            }
+        }else{fclose($fd); return false;}
+    }else{
+        return false;
+    }
+}
+===============================================================================
+
+In John's human readable code version of Karolis code to dynimicly allocate
+need memory there are a few bugs. If you didn't compile with the
+"--enable-memory-limit" option, this script will error with a level E_ERROR.
+Bellow is a fixed version rapped as a function. To view replacement functions
+for memory_get_usage() look at http://us2.php.net/manual/en/
+function.memory-get-usage.php
+
+<?php
+function setMemoryForImage( $filename ){
+    $imageInfo = getimagesize($filename);
+    $MB = 1048576;  // number of bytes in 1M
+    $K64 = 65536;    // number of bytes in 64K
+    $TWEAKFACTOR = 1.5;  // Or whatever works for you
+    $memoryNeeded = round( ( $imageInfo[0] * $imageInfo[1]
+                                           * $imageInfo['bits']
+                                           * $imageInfo['channels'] / 8
+                             + $K64
+                           ) * $TWEAKFACTOR
+                         );
+    //ini_get('memory_limit') only works if compiled with
+"--enable-memory-limit" also
+    //Default memory limit is 8MB so well stick with that.
+    //To find out what yours is, view your php.ini file.
+    $memoryLimit = 8 * $MB;
+    if (function_exists('memory_get_usage') &&
+        memory_get_usage() + $memoryNeeded > $memoryLimit)
+    {
+        $newLimit = $memoryLimitMB + ceil( ( memory_get_usage()
+                                            + $memoryNeeded
+                                            - $memoryLimit
+                                            ) / $MB
+                                        );
+        ini_set( 'memory_limit', $newLimit . 'M' );
+        return true;
+    }else
+        return false;
+    }
+}
+?>
+===============================================================================
+
+###--- imagecreatefromjpeg only opens JPEG files from your disk.
+###--- To load JPEG images from a URL, use the function below.
+
+function LoadJPEG ($imgURL) {
+
+    ##-- Get Image file from Port 80 --##
+    $fp = fopen($imgURL, "r");
+    $imageFile = fread ($fp, 3000000);
+    fclose($fp);
+
+    ##-- Create a temporary file on disk --##
+    $tmpfname = tempnam ("/temp", "IMG");
+
+    ##-- Put image data into the temp file --##
+    $fp = fopen($tmpfname, "w");
+    fwrite($fp, $imageFile);
+    fclose($fp);
+
+    ##-- Load Image from Disk with GD library --##
+    $im = imagecreatefromjpeg ($tmpfname);
+
+    ##-- Delete Temporary File --##
+    unlink($tmpfname);
+
+    ##-- Check for errors --##
+    if (!$im) {
+        print "Could not create JPEG image $imgURL";
+    }
+
+    return $im;
+}
+
+$imageData = LoadJPEG("http://www.example.com/example.jpg");
+
+Header( "Content-Type: image/jpeg");
+
+imagejpeg($imageData, '', 100);
+===============================================================================
+
+I was experiencing troubles with imagecreatefromjpeg() as it outputted errors
+even when called with @ in front. ini_set("gd.jpeg_ignore_warning", 1) didnt
+work for me, so I came up with another simple solution.
+
+The problem is caused by gd error output, so by redirecting STDERR to /dev/null
+all the error messages in it are supressed and you can still use regular STDOUT
+for your error output.
+
+So, just use
+<?
+fclose( STDERR );
+$STDERR = fopen( "/dev/null", "wb" );
+?>
+===============================================================================
+
+If imagecreatefromjpeg() fails with "PHP Fatal error:  Call to undefined
+function:  imagecreatefromjpeg()", it does NOT necessarily mean that you don't
+have GD installed.
+
+If phpinfo() shows GD, but not JPEG support, then that's the problem.  You
+would think that --with-gd would do the right thing since it does check for the
+existance of libjpeg (and finds it) and add that feature to GD, but it doesn't
+in v4.4.4 at least on RHEL v2.1, RHEL v3, CentOS v2.1 or CentOS v4.3.
+
+On those platforms, it's *important* that --with-jpeg-dir be *before*
+--with-gd.  If it's not, GD won't build with jpeg support as if --with-jpeg-dir
+had never been specified...
+===============================================================================
+
+Last night I posted the following note under move_upload_file and looked
+tonight to see if it got into the system.  I happen to also pull up
+imagecreatefromjpeg and got reminded of many resize scripts in this section. 
+Unfortunately, my experience was not covered by most of the examples below
+because each of them assumed less than obvious requirements of the server and
+browser.  So here is the post again under this section to help others uncover
+the mystery in file uploading and resizing arbitrary sized images.  I have been
+testing for several days with hundreds of various size images and it seems to
+work well.  Many additional features could be added such as transparency, alpha
+blending, camera specific knowledge, more error checking.  Best of luck.
+
+---  from move_upload_file post ---
+
+I have for a couple of years been stymed to understand how to effectively load
+images (of more than 2MB) and then create thumbnails.  My note below on general
+file uploading was an early hint of some of the system default limitations and
+I have recently discovered the final limit  I offer this as an example of the
+various missing pieces of information to successfully load images of more than
+2MB and then create thumbnails.  This particular example assumes a picture of a
+user is being uploaded and because of browser caching needs a unique number at
+the end to make the browser load a new picture for review at the time of
+upload.  The overall calling program I am using is a Flex based application
+which calls this php file to upload user thumbnails.
+
+The secret sauce is:
+
+1.  adjust server memory size, file upload size, and post size
+2.  convert image to standard formate (in this case jpg) and scale
+
+The server may be adjusted with the .htaccess file or inline code.  This
+example has an .htaccess file with file upload size and post size and then
+inline code for dynamic system memory.
+
+htaccess file:
+php_value post_max_size 16M
+php_value upload_max_filesize 6M
+
+<?php
+//  $img_base = base directory structure for thumbnail images
+//  $w_dst = maximum width of thumbnail
+//  $h_dst = maximum height of thumbnail
+//  $n_img = new thumbnail name
+//  $o_img = old thumbnail name
+function convertPic($img_base, $w_dst, $h_dst, $n_img, $o_img)
+  {ini_set('memory_limit', '100M');   //  handle large images
+   unlink($img_base.$n_img);         //  remove old images if present
+   unlink($img_base.$o_img);
+   $new_img = $img_base.$n_img;
+    
+   $file_src = $img_base."img.jpg";  //  temporary safe image storage
+   unlink($file_src);
+   move_uploaded_file($_FILES['Filedata']['tmp_name'], $file_src);
+             
+   list($w_src, $h_src, $type) = getimagesize($file_src);  // create new
+dimensions, keeping aspect ratio
+   $ratio = $w_src/$h_src;
+   if ($w_dst/$h_dst > $ratio) {$w_dst = floor($h_dst*$ratio);} else {$h_dst = 
+floor($w_dst/$ratio);}
+
+   switch ($type)
+     {case 1:   //   gif -> jpg
+        $img_src = imagecreatefromgif($file_src);
+        break;
+      case 2:   //   jpeg -> jpg
+        $img_src = imagecreatefromjpeg($file_src);
+        break;
+      case 3:  //   png -> jpg
+        $img_src = imagecreatefrompng($file_src);
+        break;
+     }
+   $img_dst = imagecreatetruecolor($w_dst, $h_dst);  //  resample
+  
+   imagecopyresampled($img_dst, $img_src, 0, 0, 0, 0, $w_dst, $h_dst, $w_src, 
+$h_src);
+   imagejpeg($img_dst, $new_img);    //  save new image
+
+   unlink($file_src);  //  clean up image storage
+   imagedestroy($img_src);       
+   imagedestroy($img_dst);
+  }
+
+$p_id = (Integer) $_POST[uid];
+$ver = (Integer) $_POST[ver];
+$delver = (Integer) $_POST[delver];
+convertPic("your/file/structure/", 150, 150, "u".$p_id."v".$ver.".jpg", "u".
+$p_id."v".$delver.".jpg");
+
+?>
+===============================================================================
+
+Tips for Windows User to Set up GD(dynamic graphic lib) with PHP.
+
+Problem I meet:
+
+When i run following function, which terminates at  
+
+$img = @imagecreatefromjpeg($image_path);
+
+error message is : undefined function imagecreatefromjpeg();
+
+no other code of the script gets executed.
+
+Solution:
+
+In one word, you need to turn on gd lib,
+which hold the implementation of imagecreatefromjpeg();
+
+please follow below steps:
+
+my php install dir is: c:/php/
+first you must try to find:
+c:/php/php.ini 
+c:/php/ext/php_gd2.dll(php 5)
+c:/php/extension/php_gd2.dll(php 4)
+
+The php_gd2.dll is included in a standard PHP installation for Windows,
+however, it's not enabled by default.
+You have to turn it on,
+You may simply uncomment the line "extension=php_gd2.dll" in php.ini and
+restart the PHP extension.
+
+Change:
+,extension=php_gd2.dll
+
+To:
+extension=php_gd2.dll
+
+You may also have to correct the extension directory setting
+from:
+extension_dir = "./"
+extension_dir = "./extensions"
+To (FOR WINDOWS):
+extension_dir = "c:/php/extensions"(php 4)
+extension_dir = "c:/php/ext"(php 5)
+
+Cheers!
+===============================================================================
+
+If you have a blank in the file name, and you use a local URL, this function
+works.  Not so with a fully qualified URL
+
+<?php
+$url = 'RAY_rgb 300x100.jpg';
+$img = ImageCreateFromJPEG($url);
+// WORKS PERFECTLY
+
+$url = 'http://www.example.com/RAY_rgb 300x100.jpg';
+$img = ImageCreateFromJPEG($url);
+// FAILS Warning: imagecreatefromjpeg() [function.imagecreatefromjpeg]:
+gd-jpeg: JPEG library reports unrecoverable error
+?>
+===============================================================================
+
+Had to fight with this error message:
+
+imagecreatefromjpeg(): gd-jpeg: JPEG library reports unrecoverable error
+
+and found, that some picture tools like GIMP are adding EXIF-Informantions
+about changes.
+Those pictures are running in the above problem.
+
+Using an easy picture tool like Windows Paint - save the image new - and
+imagecreatefromjpeg worked for me.
+===============================================================================
+
+people, those long codes...
+If you need to resize an image just write:
+
+$size= getimagesize($path);
+
+                                            if ($size['mime'] == 'image/jpeg')
+                                            {
+                                                $image = imagecreatefromjpeg
+($path);
+                                                imagejpeg($image, $path, 30);
+                                               
+                                                echo '<img src="'. $path.'"
+width="50%" height="50%"></img></a><br />';
+                                            }
+===============================================================================
+
+For a script that allows you to calculate the "fudge factor" discussed below by
+Karolis and Yaroukh, try the following. Grab a few images, preferably some
+large ones (the script should cope with images of up to 10 megapixels or so),
+some small ones, and some ones in between. Add their filenames to the $images
+array, then load the script in your browser.
+
+<?php
+
+header('Content-Type: text/plain');
+
+ini_set('memory_limit', '50M');
+
+function format_size($size) {
+  if ($size < 1024) {
+    return $size . ' bytes';
+  }
+  else {
+    $size = round($size / 1024, 2);
+    $suffix = 'KB';
+    if ($size >= 1024) {
+      $size = round($size / 1024, 2);
+      $suffix = 'MB';
+    }
+    return $size . ' ' . $suffix;
+  }
+}
+
+$start_mem = memory_get_usage();
+
+echo <<<INTRO
+The memory required to load an image using imagecreatefromjpeg() is a function
+of the image's dimensions and the images's bit depth, multipled by an overhead.
+It can calculated from this formula:
+Num bytes = Width * Height * Bytes per pixel * Overhead fudge factor
+Where Bytes per pixel = Bit depth/8, or Bits per channel * Num channels / 8.
+This script calculates the Overhead fudge factor by loading images of
+various sizes.
+INTRO;
+
+echo "\n\n";
+
+echo 'Limit: ' . ini_get('memory_limit') . "\n";
+echo 'Usage before: ' . format_size($start_mem) . "\n";
+
+// Place the images to load in the following array:
+$images = array('image1.jpg', 'image2.jpg', 'image3.jpg');
+$ffs = array();
+
+echo "\n";
+
+foreach ($images as $image) {
+  $info = getimagesize($image);
+  printf('Loading image %s, size %s * %s, bpp %s... ',
+         $image, $info[0], $info[1], $info['bits']);
+  $im = imagecreatefromjpeg($image);
+  $mem = memory_get_usage();
+  echo 'done' . "\n";
+  echo 'Memory usage: ' . format_size($mem) . "\n";
+  echo 'Difference: ' . format_size($mem - $start_mem) . "\n";
+  $ff = (($mem - $start_mem) /
+         ($info[0] * $info[1] * ($info['bits'] / 8) * $info['channels']));
+  $ffs[] = $ff;
+  echo 'Difference / (Width * Height * Bytes per pixel): ' . $ff . "\n";
+  imagedestroy($im);
+  $start_mem = memory_get_usage();
+  echo 'Destroyed. Memory usage: ' . format_size($start_mem) . "\n";
+
+  echo "\n";
+}
+
+echo 'Mean fudge factor: ' . (array_sum($ffs) / count($ffs));
+
+?>
+===============================================================================
+
+When working with uploaded jpeg files it is usually a good idea to execute a
+little but very useful program called jhead
+( http://www.sentex.net/~mwandel/jhead/ ).
+
+This will clean up unnecessary jpeg header information which can cause trouble.
+Some cameras or applications write binary data into the headers which may
+result in ugly results such as strange colors when you resample the image later
+on.
+
+Usage:
+<?php
+exec("/path/to/jhead -purejpg /path/to/image");
+// for example when you uploaded a file through a form, do this before you
+proceed:
+exec("/path/to/jhead -purejpg ".$file['tmp_name']);
+?>
+
+I didn't have the chance to test this but I guess this might even solve the
+problem caused by images that were taken with Canon PowerShot cameras which
+crash PHP.
+
+This is from the jhead documentation: "-purejpg: Delete all JPEG sections that
+aren't necessary for rendering the image. Strips any metadata that various
+applications may have left in the image."
+
+jhead got some other useful options as well...
+===============================================================================
+
+I am using PHP 4.3.8 and GD 2.0.23-compatible, and this function does not
+return an empty string on failure as stated. This line:
+
+<?php
+var_dump(imagecreatefromjpeg('bogus filename'));
+?>
+
+outputs:
+
+bool(false)
+
+Of course this doesn't matter unless you're using a strict comparison operator
+to evaluate the result, but I thought I'd point it out.
+===============================================================================
+
+I have to say recompiling PHP from the sources and enabling JPEG support in gd
+took me awhile to figure out.
+
+Somewhere especially configure --help should have stated that --with-jpeg-dir
+is MANDATORY if you want to have JPEG support. And even if you did so, it
+doesn't mean you'll get it. If it's wrongly configured, no error is going to be
+output, all you get is "no JPEG support". What's more confusing is when JPEG
+support is disabled phpinfo won't say "JPEG Support: disabled", but just omit
+the entry so you won't even realize something is wrong.
+
+If you recompile PHP or gd, make sure:
+- rm -f config.cache FIRST
+- make clean (this helps A LOT), actually you can just delete modules/gd.*, and
+every *.o in ext/gd. this part actually gave me the best headache
+- ./configure --with-jpeg-dir=/usr/lib OR any other directory which contains
+the BINARY library of libjpeg
+- make, make install
+
+phpinfo should now display jpeg support... good luck.
+(you lucky guys who already have PHP 5 installed on your server... you don't
+have to go through all the mess I had)
+===============================================================================
+
+The ImageCreateFromJPEG() function is capable of throwing an emalloc() error. 
+If this happens, the script will die, but the error will be in your error
+logs.  You should ensure that you have memory available before creating a large
+image from a jpeg file.
+===============================================================================
+
+I played with "imagecreatefromjpeg()" function and, after a few tests, I found
+that the filename that it requires as parameter should be only a simple
+filename: the function does not work if in the string of the filename is
+specified a path to that file.
+The quickest workaround found: do a chdir() to the directory of your image file
+before try to use "imagecreatefromjpeg()" with your file as parameter.
+I did not test the other functions (imagecreatefromgd2(), imagecreatefromgd(),
+imagecreatefromgif() etc.), but I suppose that they work in the same way.
+I think that little trick should be specified in the manual.
+===============================================================================
+
+I encountered a very strange behaviour:
+The background:
+Each time users uploaded images, the original file was stored along with a
+thumbnail and a medium sized version for small-sized slideshows.
+that means that on upload all of these original images were acknowledged by php
+as valid jpg
+
+The change:
+I created a new slideshow script that featured full-screen display. My old
+"medium-sized" version were only about 600px wide which caused them to luck all
+ugly after stretching that to modern screen sizes.
+--> I created a small script that opens all original images and saves bigger
+"medium-sized" versions than the once I had.
+
+the problem:
+for some reason about 1/3 of all images (not the last third but always the same
+images) were now labeled as "... is not a valid JPEG file ..." by php
+
+the cause:
+still unknown
+
+the solution:
+<?php
+...
+$src_img = @imagecreatefromjpeg($myJPGfile_relative);
+if (!$src_img) {
+    $src_img = LoadJPEG("http://example.com/".$myJPGfile);
+}
+?>
+
+Each time the local approach fails the script falls back to loading the same
+file "from the outside" via the below mentioned "LoadJPEG" script - big thanks
+to the author!
+That worked even though I'm talking about the exact same file on the exact same
+server. The only difference is that one time it's accessed locally and the
+second via port 80.
+
+when using this, watch for correct paths relative to your script and the
+possibly different path relative to your domain.
+===============================================================================
+
+I've found a bug in CentOS 4.x that, while previously addressed, does not seem
+to be directly addressed here as far as the nature of the bug is concerned.
+
+If you are having a problem getting this function to work on CentOS 4.4 (may
+appear earlier) and are receiving this error:
+
+Call to undefined function imagecreatefromjpeg()
+
+This is because the installation *does* support JPG by default if you have
+libjpeg installed. However, the config script finds libjpeg in /usr/lib but it
+is never successfully added to the PHP build.
+
+To fix this, you should recompile PHP and be absolutely sure to add
+'--with-jpeg-dir' to the config command. This should appear BEFORE the
+--with-gd option. Example:
+
+'--with-jpeg-dir' '--with-gd'
+
+If you don't put it before --with-gd, the option is completely ignored.
+
+As always, be sure to do a 'make clean' before a 'make install'. I made the
+mistake of forgetting to check and wasted 30 minutes trying to resolve this
+problem simply because I forgot to clean up after myself previously.
+===============================================================================
+
+In a post by Angel Leon, an example script was given that forms a thumbnail
+gallery using imagecreatefromjpeg.  I am fairly new to php scripts, but I found
+that the script did not display the table of thumbnail images if the row wasn't
+"filled" with images.. i.e. if there were 5 images in the folder and the script
+specified 3 rows in the table, then the page would only display the thumbnails
+for the first row and only three images were shown.  I found that if you
+specified the variable row with this equation, then the table would display
+properly:
+
+$row = intval(count($files)+($row_size-1));
+
+(This is the first line in the createThumbTable function.)
+===============================================================================
+
+regarding e dot a dot schultz at gmail dot com post
+
+i tried the script (with the bugfixes posted later) and still got
+memorytrouble. most often it is still not enough memory to upload big images,
+even if it seems to calculate right. so this helped my perfectly:
+
+$newLimit = $newLimit+3000000; (before passing it to the ini_set() function).
+
+extremly simple and maybe not the best solution, but it works for now (you sure
+can give it less than an additional 3mb, just try what works for you).
+===============================================================================
+
+It is worth noting that all of the imagecreate* functions quite intentionally
+do not look in the include_path
+===============================================================================
+
+The prior script by "e dot a dot schultz at gmail dot com", have a bug
+
+$memoryLimitMB don't have a value
+
+Add
+         $memoryLimitMB = 8;
+Before
+          $memoryLimit = 8 * $MB;
+And change that line for:
+          $memoryLimit = $memoryLimitMB * $MB;
+
+--------------
+
+Something similar happens with the script by "JohnBrook at pobox dot com"
+
+$memoryLimit don't have a value
+
+Change:
+
+$memoryLimit = $memoryLimit * $MB;
+
+For:
+  $memoryLimit = $memoryLimitMB * $MB;
+===============================================================================
+
+Matt reported that PHP crashs using imagecreatefromjpeg() - that's true and it
+took me a lot of time to find the error - but not only the Canon PowerShot S70,
+also the Canon PowerShot  A400 lets PHP (5.1.2) crash, without any chance to
+catch it!
+
+So I exclude all Canon PowerShot images with the following check:
+
+    function check_canonpowershot($filename)
+    {
+        if (strpos(file_get_contents($filename), 'Canon PowerShot') !== false)
+        {
+            return true;
+        }
+        return false;
+    }
+===============================================================================
+
+Also, here is the same formula presented in a somewhat more human-readable way,
+if you'd rather:
+
+<?php
+$MB = Pow(1024,2);   // number of bytes in 1M
+$K64 = Pow(2,16);    // number of bytes in 64K
+$TWEAKFACTOR = 1.8;   // Or whatever works for you
+$memoryNeeded = round( ( $imageInfo[0] * $imageInfo[1]
+                                        * $imageInfo['bits']
+                                        * $imageInfo['channels'] / 8
+                          + $K64
+                        ) * $TWEAKFACTOR
+                     );
+$memoryHave = memory_get_usage();
+$memoryLimitMB = (integer) ini_get('memory_limit');
+$memoryLimit = $memoryLimit * $MB;
+
+if ( function_exists('memory_get_usage')
+     && $memoryHave + $memoryNeeded > $memoryLimit
+   ) {
+   $newLimit = $memoryLimitMB + ceil( ( $memoryHave
+                                      + $memoryNeeded
+                                      - $memoryLimit
+                                      ) / $MB
+                                    );
+   ini_set( 'memory_limit', $newLimit . 'M' );
+}
+?>
+===============================================================================
+
+Additional note on allocating memory: The 1.65 in the formula provided below by
+yaroukh and Karolis is evidently a "fudge factor" arrived at through
+experimentation. I found that I had to nudge it up a little bit in order to
+accurately predict the memory that would be needed, otherwise the allocation
+still failed. In my case, I went right to 1.8 and that has worked so far. Your
+mileage may vary, so experiment as needed.
+===============================================================================
+
+Hello Karolis
+
+My solution was intended to solve situations when your webhoster puts a limit
+on the memory usage; in such a situations ini_set doesn't work ofcourse (even
+for variables that have 'PHP_INI_ALL' flag in a typical PHP-installation).
+
+Have a nice day
+  Yaroukh
+===============================================================================
+
+In addition to yaroukh at gmail dot com comment.
+
+It seems that even a small image can eat up your default memory limit real
+quick. Config value 'memory_limit' is marked PHP_INI_ALL, so you can change it
+dynamically using ini_set. Therefore, we can "allocate memory dynamically", to
+prevent those memory limit exceeded errors.
+
+<?php
+
+$imageInfo = getimagesize('PATH/TO/YOUR/IMAGE');
+$memoryNeeded = round(($imageInfo[0] * $imageInfo[1] * $imageInfo['bits'] * 
+$imageInfo['channels'] / 8 + Pow(2, 16)) * 1.65);
+                   
+if (function_exists('memory_get_usage') && memory_get_usage() + $memoryNeeded >
+(integer) ini_get('memory_limit') * pow(1024, 2)) {
+                       
+    ini_set('memory_limit', (integer) ini_get('memory_limit') + ceil(((
+memory_get_usage() + $memoryNeeded) - (integer) ini_get('memory_limit') * pow(
+1024, 2)) / pow(1024, 2)) . 'M');
+                       
+}
+
+?>
+===============================================================================
+
+Estimated memory needed for ImageCreateFromJPEG
+
+First I supposed simple width*height*bpp will be enough, it isn't though; there
+is some pretty big overhead.
+
+$imageInfo = GetImageSize($imageFilename);
+$memoryNeeded = Round(($imageInfo[0] * $imageInfo[1] * $imageInfo['bits'] *
+$imageInfo['channels'] / 8 + Pow(2, 16)) * 1.65);
+
+With memory_limit enabled running out of memory causes script to crash; above
+written will tel you how much memory you're gonna need for creating an
+image-resource out of image-file. So in conjunction with Memory_Get_Usage() and
+Get_CFG_Var('memory_limit') you can avoid the mentioned ending. (Yet there
+won't be too many images blocked from processing that would still fit in the
+memory, as the results of this are pretty accurate.)
+===============================================================================
+
+here is a code, inspired by the button of
+tl at comvironment dot com
+
+but here, you can make as many buttons as you need by cutting the image in as
+many parts as defined in the table
+
+<?php
+class Button_Array{
+    var $tab_button = array();// the text of each button you want to create
+    var $im;//the image file
+   
+    function Button_Array($fileName, $tab_string){
+        $this -> tab_button = $tab_string;
+        $this -> im = $fileName;
+       
+        //parameters
+        $font  = 10;
+
+        //cut the full image in X parts
+        //X = the number of buttons you want
+         $imgFull=ImageCreateFromJPEG($this -> im);
+         list($width, $heightFull, $type, $attr) = getimagesize($this -> im);
+        
+         $height = round($heightFull/sizeof($this->tab_button),0);
+
+       
+        for ($i=0;$i<sizeof($this->tab_button);$i++ ) {
+
+            $pos=$i*$height;
+           
+            $imgParts[$i]=ImageCreateTrueColor($width,$height);
+            if(imagecopy($imgParts[$i],$imgFull,0,0,0,$pos,$width,$height)){
+           
+                //manips
+                $textColor = imagecolorallocate ($imgParts[$i],0,20,90);   
+                ImageString ($imgParts[$i],$font,200,10,$this->tab_button[$i],
+$textColor);
+               
+                //cr ation du fichier
+                ImageJPEG($imgParts[$i] , $this->tab_button[$i].'.jpg',85);
+            }
+        }
+    }
+}
+
+$tab[]="topic1";
+$tab[]="topic2";
+$tab[]="topic3";
+$tab[]="topic4";
+$tab[]="more topics";
+
+$tabButton=new Button_Array("a.jpg",$tab);
+
+echo "<table border=0 cellspacing=0 cellpadding=0>";
+foreach ($tab as $source) {
+    echo "<tr><td><img src='$source.jpg'></td></tr>";
+}
+echo "</table>";
+
+?>
+===============================================================================
+
+the check_jpeg function listed above has a small "bug" when u set $fix=true...
+after the fix, the function does not close the file... and the
+imagecreatefromjpeg would still crash on an open file.
+
+    //# [070203]
+    //# check for jpeg file header and footer - also try to fix it
+    function check_jpeg($f, $fix=false ){
+        if ( false !== (@$fd = fopen($f, 'r+b' )) ){
+            if (fread($fd,2)==chr(255).chr(216) ){
+                fseek ( $fd, -2, SEEK_END );
+                if ( fread($fd,2)==chr(255).chr(217) ){
+                    fclose($fd);
+                    return true;
+                }else{
+                    if ($fix && fwrite($fd,chr(255).chr(217)) ){
+                        fclose($fd);
+                        return true;
+                    }                   
+                    fclose($fd);
+                    return false;
+                }
+            } else {
+                fclose($fd);
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+===============================================================================
+
+Under some configurations imagecreatefromjpeg will create files that are owned
+by the webserver rather than the php user. For example, php may be run as
+phpuser and the image will be created under apache.
+
+This can lead to permissions problems - only a +0777 will be enough to be able
+to create a picture.
+
+My solution was to chmod over ftp to 0777 just before the picture is written
+then change back to 0755 when the image has been created.
+
+The alternative of course would be to have a properly configured system...
+===============================================================================
+
+This is a very useful script when you have hundreds of images and you need a
+quick setup for a thumbnail, where you can select how many
+pictures per row, size of the thumbnail, and the size of the pictures when
+clicked, all in one script. Just throw all your images and this script in a
+file named index.php or index.html (if your apache httpd.conf defaults to html
+and runs .html as php).
+
+Script also contains simple text watermarking. See function thumbImage()
+and modify to add image watermarking if you like.
+
+<?
+// 30 Minutes Thumbnail script written by Angel Leon from wedoit4you.com
+// Licensed under the GPL
+// Courtesy of wedoit4you.com
+
+//Instructions:
+//copy this script wherever you have a bunch of .jpgs
+// Invoke your thumbnail like this http://mysite.com/imageFolder/index.php
+//where index.php is this script.
+
+//Modify and redistribute but don't remove our trademark.
+
+//configure script here
+
+//pictures per row
+$row_size = 3;
+
+//height of the pictures in thumbnail
+$thumb_height = 200;
+
+//height of the pictures when clicked (to save bandwidth)
+$big_image_height=668;
+
+//short name of your site
+$waterMark = "mysite.com";
+
+$dh = opendir(".");
+$files = array();
+while (($file = readdir($dh)) !== false) {
+  if (ereg("jpg",$file) || ereg("gif",$file) || ereg("png",$file)) {
+  $files[] = $file;
+  }
+}
+closedir($dh);
+
+if ($show_image) {
+  thumbImage($show_image,$big_image_height,$waterMark);
+} else if ($thumb_image) {
+  thumbImage($thumb_image,$thumb_height,$waterMark);
+}
+else {
+  echo "<center>" . createThumbTable($files,$row_size) . "</center>";
+}
+
+function createThumbTable($files,$pics_wide) {
+  $row = intval(count($files)/$pics_wide);
+  $picIndex = 0;
+
+  $rs = "Mostrando " . count($files) . " imagenes<br>";
+  $rs .= "<table border=0 cellspacing=1 cellpadding=0 style='border:1px solid
+black'>\n";
+  for ($i=0; $i <$row; $i++) {
+    $rs .= "\t<tr>\n";
+    for ($picIndex,$j=0;
+     $j < $pics_wide && $picIndex < count($files);
+     $j++,$picIndex++) {
+      $rs .= "\t\t<td><a href=index.php?show_image=" .
+    $files[$picIndex] . ">" .
+    "<img src=index.php?thumb_image=" .
+      $files[$picIndex] . " border=0 title='Copyright wedoit4you.com'></a></td>
+\n";
+      //$rs .= "<td>i=$i / $j=$picIndex</td>";
+   
+    }
+    $rs .= "\t</tr>\n";
+  }//for
+  $rs .= "<tr><td colspan=$pics_wide align=center>Free Thumbnail script by <a
+href=http://www.wedoit4you.com>wedoit4you.com</a><br>Written by Angel Leon
+(March 2005)</td></tr></table>\n";
+
+  return $rs;
+} //createThumbTable
+
+function thumbImage($file,$img_height,$waterMark) {
+
+  $img_temp = imagecreatefromjpeg($file);
+
+  $black = @imagecolorallocate ($img_temp, 0, 0, 0);
+  $white = @imagecolorallocate ($img_temp, 255, 255, 255);
+       
+  $font = 2;
+
+  $img_width=imagesx($img_temp)/imagesy($img_temp)*$img_height;
+  $img_thumb=imagecreatetruecolor($img_width,$img_height);
+
+  imagecopyresampled($img_thumb,
+  $img_temp,0,0,0,0,$img_width,
+  $img_height,
+  imagesx ($img_temp),
+  imagesy($img_temp));
+
+  $originx = imagesx($img_thumb) - 100;
+  $originy = imagesy($img_thumb) - 15;
+
+  @imagestring ($img_thumb, $font, $originx + 10, $originy,
+              $waterMark, $black);
+  @imagestring ($img_thumb, $font, $originx + 11, $originy - 1,
+              $waterMark, $white);
+
+  header ("Content-type: image/jpeg");
+  imagejpeg($img_thumb, "", 60);
+                    
+  imagedestroy ($img_thumb);
+}
+
+?>
+===============================================================================
+
+Another thing to note, is the file not might actually be a jpeg , even though
+the filename ends in .jpg. If this is the case the command won't work. You will
+need imagecreatefromgif()
+
+The easiest way to check is to use your favorite editor like vi.
+
+On Line one it will tell you if its a gif or a jpg..
+
+I took a quick look at a few image files. the gifs say GIF87a and the real
+jpegs should say JFIF or something like that.
+===============================================================================
+
+Concerning the path discussion. A relative path works just fine, if it is used
+properly. The thing is just to keep track of where in the file system you
+actually are calling the function from.
+
+E.g. including file A into file B, and then executing file A. Now calls made in
+file B will act as if they actually are made file A, due to the inclusion. So a
+well designed filesystem is very important. Also moving a file might lead to
+this type of path related problems.
+
+Hope this made any sence! :)
+===============================================================================
+
+I have noticed that Nokia's old camera-phones create non-standard JPEG's.
+
+Nokias' JPEG doesn't end with 0xFFD9. Add 0xFFD9 end of file and image works
+fine with imagecreatefromjpeg(). Willertan1980 already sent code to do that.
+===============================================================================
+
+This function DOES accept paths in the filename, just make sure they're
+absolute paths.  A relative path won't work, at least it didn't for me. This is
+in response to jonlup's comment from june 25:
+
+"I played with "imagecreatefromjpeg()" function and, after a few tests, I found
+that the filename that it requires as parameter should be only a simple
+filename: the function does not work if in the string of the filename is
+specified a path to that file."
+===============================================================================
+
+here is my clear method to resize images
+you can check how it works on http://www.jetevents.pl
+
+<?php
+   $maxx=100;    // maximum width
+   $maxy=75;    // maximum height
+
+   $name=strtolower(substr($_FILES['file']['name'],0,-4)).".jpg";  // name of
+file - must be jpg
+     $size = GetImageSize ($_FILES['file']['tmp_name']);        // params of
+image
+
+   if ($size[0]>$size[1]) {$sizemin[0]=$maxx;$sizemin[1]=$maxy;};
+   if ($size[1]>$size[0]) {$sizemin[0]=$maxy;$sizemin[1]=$maxx;};
+  
+   $im=@imagecreatefromjpeg($path);                // path to your gallery
+   $small = imagecreatetruecolor($sizemin[0], $sizemin[1]);    // new image
+   ImageCopyResampled($small, $im, 0, 0, 0, 0, $sizemin[0], $sizemin[1], $size[
+0], $size[1]);
+   // below is main function resampling image
+
+   ImageDestroy($im);                        // free memory
+
+   if (ImageJPEG($small,$path,100))                // try to save image
+       {
+       echo "File $path has been written<br>\n";            // success
+       echo "size: ".$sizemin[0]."x".$sizemin[1] ."<br>\n";
+       }
+     else
+       {
+       echo "<font color=red><b>";                    // failed to write file
+       echo "Error ! File has not been written.";
+       echo "</b></font><br>\n";
+       };
+
+?>
+===============================================================================
+
+Using imagecreate() combined with imagecreatefromjpeg() in PHP 4.3.0 and up
+creates wrong color jpeg's.
+
+Use imagecreatetruecolor() instead of imagecreate() for right color images.
+===============================================================================
+
+small script that calculates square (in %) of eche color on the PNG image.
+
+<?
+$t1=time();
+$im1=ImageCreatefrompng('1.png'); //name of the png file
+echo "<img src=1.png>";
+$widthIm=ImageSX($im1);
+$heightIm=ImageSY($im1);
+$total=$widthIm*$heightIm;
+$cvcol=imagecolorstotal($im1);
+    for ($i=0; $i<$widthIm; $i++){
+    for ($j=0; $j<$heightIm; $j++){
+    $tochka=imagecolorat($im1,$i,$j);
+    $num[$tochka]=$num[$tochka]+1;
+    }
+    }
+echo "<br><br>$widthIm x $heightIm ($total pixels).";
+echo " Number of colors in pallette - $cvcol<br><br>
+";
+echo "<table width=400 border =1>";
+for ($k=0; $k<$cvcol; $k++) {
+$proc=round($num[$k]/$total*100, 2);
+$Palitra =ImageColorsForIndex($im1,$k);
+$Palitra[red]= dechex($Palitra[red]);
+$Palitra[green]= dechex($Palitra[green]);
+$Palitra[blue]= dechex($Palitra[blue]);
+echo "<tr><td>$k</td><td width=100>$Palitra[red]-$Palitra[green]-$Palitra[blue]
+</td>";
+echo "<td width=100>$proc %</td>";
+echo "<td width=100 bgcolor=$Palitra[red],$Palitra";
+echo "[green],$Palitra[blue]>&nbsp;</td></tr>";
+}
+echo "</table>";
+imagedestroy($im1);
+$t2=-$t1+time();
+echo "<br>Time past: $t2 sec";
+?>
+===============================================================================
+
+Here's the answer for your 256 color only problem!!!
+use these functions in order then it works fine!
+
+$img_src=imagecreatefromjpeg('yoursource.jpg');
+$img_dst=imagecreatetruecolor(20,20);
+imagecopyresampled($img_dst, $img_src, 0, 0, 0, 0, 20, 20, 20, 20);
+imagejpeg($img_dst, $g_dstfile, 100);
+imagedestroy($img_dst);
+
+Greetz, GTB
+===============================================================================
+
+For Windows users who wants to enable the GD libary:
+
+It took me some while to figure this out, but in the end it worked (and still
+does) great.
+
+1. First download the latest (stable recommended) version of php
+2. Unzip to f.ex c:\php\
+
+3. Now you should have a file in c:\php\ that's named php.ini.dist (or
+something like that). Rename that to php.ini and copy it to the root of you
+Windows directory.
+
+4. Open the php.ini file (the easiers way is to open the run promnt at your
+start menu and just type php.ini and hit enter).
+
+5. Search (ctrl+f) for extension_dir. The default value is set to "./", make it
+to "./extensions"
+
+6. Now you need to find where in the php.ini the modules for Windows is
+located. Search for gd.
+
+7. Remove the ; char infront of this line: extension=php_gd2.dll
+
+8. Try make a php script with some image functions and see if it works. F.ex
+$im = imageCreate("test.jpg");
+If you get a message that says something like imageCreate function doesn't
+exist the gd libary is not loaded.
+
+9. That's all. Have fun using GD in Windows :)
+===============================================================================
+
+As jpsy sugested Windows users can download the zip to get the gd2_dll
+extension
+
+OR
+
+If you already installed with the windows installer and are too lazy to get the
+zip you can go here
+
+http://www.coupin.net/gd-freetype/windows.php
+
+Download the php_gd2.dll file put it wherever you want, and change the
+
+extension_dir=C:\php\extensions
+
+Wherever you saved the dll to is the path you put in, remember to uncomment
+
+extension=php_gd2.dll
+
+Do not uncomment the one above for gd.dll (the one without the 2)
+===============================================================================
+
+Doing a "make clean", regardless of which platform you're on (including MacOS
+X) should clean up the source tree enough to ensure that config changes take
+effect...
+===============================================================================
+
+As of PHP 5.1.3, if you are dealing with corrupted JPEG images you should set
+the 'gd.jpeg_ignore_warning' directive to 1 to ignore warnings that could mess
+up your code.
+
+In runtime, you should do this:
+
+<?php
+
+ini_set('gd.jpeg_ignore_warning', 1);
+
+?>
+
+Regards,
+Paulo Ricardo
+===============================================================================
+
+[Ed Note: You must have netpbm installed for this to work --alindeman @
+php.net]
+
+Just wanted to let you know that
+imagecreatefromjpeg crashes php
+(command line at least) sometimes with segmentation fault when jpeg is
+corrupted.
+To get rid of the nasty segmentation fault i used
+system ("jpegtopnm f.jpg > f.pnm", $r);
+if ($r != 0) {printf ("invalid jpeg\n"); return; }
+system ("pnmtopng f.pnm > f.png");
+$im =imagecreatefrompng ("f.png");
+===============================================================================
+
+Wow, it only took me 3 hours to get all of the lib paths correct for my
+install. Some of them are /usr, and some are /usr/lib...go figure. I figured
+that I would post this in the hopes that it will save somebody some time.
+
+Remember that if you're using rpm installs...you have to install the devel
+packages. For example, if you're installing mysql from rpm, and you want to
+compile with support for your particular MySql dist, you must install
+mysql-devel*.rpm.
+
+Anyway, I'm a redhat 7.1 install...with all appropriate devel packages
+installed.
+
+./configure \
+--with-mysql=/usr \
+--with-ftp \
+--with-apxs=/home/www/bin/apxs \
+--with-xpm-dir=/usr/X11R6 \
+--with-gdbm=/usr/lib \
+--with-gd=/usr \
+--with-zlib-dir=/usr/lib \
+--with-jpeg-dir=/usr/lib \
+--with-png-dir=/usr/lib \
+--with-tiff-dir=/usr/lib \
+--with-config-file-path=/home/www/conf \
+--with-freetype-dir=/usr/lib \
+--enable-magic-quotes \
+--enable-track-vars
+===============================================================================
+
+I just wanted to note here something i found else where that was very helpful
+to me when using jpeg images.  when using imagecreatefromjpeg()  it can be
+difficult to allocate new colors. 
+
+The work around i found was posted under imagecolorallocate() and prescribes
+that you first use imagecreate(), allocate colors, and then copy the jpeg into
+this image.
+===============================================================================
+
+In response to my own post:
+
+Maybe this is common knowledge but here is how I solved my problem. Hopefully
+this will help out seeing how I couldn't find any other articles on this topic
+with a solution.
+
+This seems to work pretty well. Displays in browser and QT Picture Viewer but
+for some reason Photoshop won't open it. Translation error. Since I'm just
+using it to cache the image for when the our content provider goes down no
+biggie there.
+
+<?php
+$si = fopen($imagePathURL, "r");   // open URL
+   
+    $serverImg = fread($si, 1000000);   // read contents
+       
+fclose($si);   // close file
+?>
+   
+/* open file to save to (w+ creates if file does not exist || b opens binary
+safe [Win32]) Seemed to work fine with out the 'b' on Windows NT but just to be
+safe. */
+
+<?php
+$si = fopen($saveImgTo, "w+b");
+   
+    fwrite($si, $serverImg);   // write contents to file
+   
+fclose($si);   // close file
+?>
+
+Hope this helps somebody...long live PHP
+===============================================================================
+
+Wonder why that's just the only image function you can't get to work? Remember
+that you have to use a gd library that supports JPEG (make it manually and
+<important>edit the makefile</important>)! Especially all gd RPMs from SuSE
+(including 7.0) don't support it as it's not default up to gd 1.8.3.
+===============================================================================
+
+Be sure to allocate your colors AFTER you used this function or else you might
+get some strange colors..
+===============================================================================
+
+To all those having trouble with a message to the effect of:
+CreateImageFromJpeg() not supported in this PHP build
+Start by adding --with-jpeg-dir to your ./configure options as I left this out
+(not knowing I needed it) and I spent the best part of 6 hours trying to
+compile to get this option. (RH 6.2, PHP 4.0.1pl2, Apache 1.3.12, GD 1.8.3)
+===============================================================================
+
+Make a mental note, if it looks like your routine is crashing non-stop, double
+check to make sure you didn't spell the function like so...
+
+imagecreatefromjpg  (should be jpeg)
+
+I spent an entire night overlooking this one small detail. I love how php won't
+crash out with an error saying the function doesn't exist, but then again, that
+could be my host.
+
+http://www.justuspics.com
+===============================================================================
+
+// a function for resize the images(png,jpg,gif) in a directory
+//for the png you must have the zlib actived
+
+//$diror origin directory
+//$dirdest destination directory
+//$val value of resize(1,2,3..)
+//$qual quality(80 if you don't know)
+
+function imgres($diror,$dirdest,$val,$qual){
+$q=$qual;
+//open the directory
+if (is_dir($diror)) {
+   if ($dh = opendir($diror)) {
+      while (($file = readdir($dh)) !== false) {
+        if($file == "." || $file == ".."){continue;}
+                 $k=explode(".",$file);
+            if(strpos($k[1],"jpg")===0 || strpos($k[1],"jpeg")===0){
+            $salva=$dirdest.$file;
+                    $image=$diror.$file;
+            $im =imagecreatefromjpeg("$image");
+            $x=imagesx($im);
+            $y=imagesy($im);   
+            $thumbnail=imagecreatetruecolor($x/$val,$y/$val);
+            $im_ridimensionata=imagecopyresized( $thumbnail, $im, 0, 0, 0, 0,
+$x/$val,
+            $y/$val, $x, $y);
+            imagejpeg($thumbnail, $salva, $q);        
+                    }
+            elseif(strpos($k[1],"gif")===0){
+            $salva=$dirdest.$file;
+                    $image=$diror.$file;
+            $im =imagecreatefromgif("$image");
+            $x=imagesx($im);
+            $y=imagesy($im);   
+            $thumbnail=imagecreatetruecolor($x/$val,$y/$val);
+            $im_ridimensionata=imagecopyresized( $thumbnail, $im, 0, 0, 0, 0,
+$x/$val,
+            $y/$val, $x, $y);
+            imagegif($thumbnail, $salva, $q);
+                }
+            elseif(strpos($k[1],"png")===0){
+            $salva=$dirdest.$file;
+                    $image=$diror.$file;
+            $im =imagecreatefrompng("$image");
+            $x=imagesx($im);
+            $y=imagesy($im);   
+            $thumbnail=imagecreatetruecolor($x/$val,$y/$val);
+            $im_ridimensionata=imagecopyresized( $thumbnail, $im, 0, 0, 0, 0,
+$x/$val,
+            $y/$val, $x, $y);
+            imagepng($thumbnail, $salva, $q);
+                }
+            else{
+                echo "File not compatible(no jpg,gif or png)";
+            }   
+            }
+            closedir($dh);
+            }
+    }
+}
+===============================================================================
+
+script for nokia photos which end with FF D9 and still imagecreatefromjpeg()
+returns error.
+
+<?php
+
+error_reporting( 32 );
+header( 'Content-Type: image/jpeg' );
+
+$imgPath = 'att.jpg';
+
+// Atdod atpakaļ GD_ImageResource
+function imageCreateFromJpegEx($file)
+{
+    $data = file_get_contents($file);
+    $im = @imagecreatefromstring($data);
+    $i = 0;
+    while (!$im)
+    {
+        $data = substr_replace($data, "", -3, -2);
+        $im = @imagecreatefromstring($data);
+    }
+    return $im;
+}
+
+$im = imageCreateFromJpegEx($imgPath);
+imagejpeg( $im );
+
+?>
+
+script by Delfins in latvian php forums
+===============================================================================
+
+For those having trouble getting jpeg support using gd, make sure you
+rm config.cache
+before reconfiguring php. Otherwise the configure script will assume jpeg
+support is still not compiled into gd.
+===============================================================================
+
+I made a script to produce, save, and use dynamic buttons simultaneously. If
+the file exists, it will be shown as usual. If not, this script produces a new
+image and saves it. You only need the background (back.jpg). Maybe it is useful
+for somone.
+
+<?php
+
+class Button {
+
+    var $ib = 'back.jpg';
+    var $im;
+
+    function Button ($fileName, $string) {
+        $this -> im = $fileName;
+        if(!file_exists($this -> im)) {
+            $this -> _createButton($string);
+        }
+    }
+   
+    function getFileName() {
+        return $this -> im;
+    }
+   
+    function _createButton($string) {
+        $font  = 4;
+        $width  = max(400,(ImageFontWidth($font) * strlen($string)) + 4);
+        $height = max(20,(ImageFontHeight($font) + 4));
+       
+        $imgBack=ImageCreateFromJPEG($this -> ib);
+        $imgText=ImageCreateTrueColor($width,$height);
+       
+        $textColor = imagecolorallocate ($imgText,90,90,90);
+       
+        ImageCopy($imgText,$imgBack,0,0,0,0,$width,$height);
+        ImageString ($imgText,$font,2,2,$string,$textColor);
+        ImageJPEG($imgText,$this -> im,85);
+        ImageDestroy($imgBack);
+        ImageDestroy($imgText);
+        chmod ($this -> im,0644);
+    }
+
+}
+
+$button = new Button('button.jpg','button text');
+echo '<img src="' . $button -> getFileName() . '">';
+
+?>
+===============================================================================
+
+I encountered a problem with this function on a windows system. Instead of
+returning false in case of the file not being a JPG, the function resulted in
+an error:
+"imagecreatefromjpeg() : gd-jpeg : JPEG library reports unrecoverable error".
+
+To get around this first check whether the file is a JPEG file using its mime
+type, if it is not return false.
+===============================================================================
+
+Some image where failing with a Warning: imagecreatefromjpeg(): gd-jpeg,
+libjpeg: recoverable error: Premature end of JPEG file
+
+The only way to make it work was to ini_set("gd.jpeg_ignore_warning", 1); and
+then call it with @imagecreatefromjpeg()
+
+It's far less than ideal, but if you're stuck as I was, give it a try.
+===============================================================================
+
+I didn't find any example like this, so I mixed pieces together.. hope this
+will save time to other people!
+
+Here's a complete solution to READ any image (gif jpg png) from the FILESYSTEM,
+SCALE it to a max width/height, SAVE the scaled image to a BLOB field keeping
+the original image type. Quite tricky..
+
+<?php
+
+function scaleImageFileToBlob($file) {
+
+    $source_pic = $file;
+    $max_width = 200;
+    $max_height = 200;
+
+    list($width, $height, $image_type) = getimagesize($file);
+
+    switch ($image_type)
+    {
+        case 1: $src = imagecreatefromgif($file); break;
+        case 2: $src = imagecreatefromjpeg($file);  break;
+        case 3: $src = imagecreatefrompng($file); break;
+        default: return '';  break;
+    }
+
+    $x_ratio = $max_width / $width;
+    $y_ratio = $max_height / $height;
+
+    if( ($width <= $max_width) && ($height <= $max_height) ){
+        $tn_width = $width;
+        $tn_height = $height;
+        }elseif (($x_ratio * $height) < $max_height){
+            $tn_height = ceil($x_ratio * $height);
+            $tn_width = $max_width;
+        }else{
+            $tn_width = ceil($y_ratio * $width);
+            $tn_height = $max_height;
+    }
+
+    $tmp = imagecreatetruecolor($tn_width,$tn_height);
+
+    /* Check if this image is PNG or GIF to preserve its transparency */
+    if(($image_type == 1) OR ($image_type==3))
+    {
+        imagealphablending($tmp, false);
+        imagesavealpha($tmp,true);
+        $transparent = imagecolorallocatealpha($tmp, 255, 255, 255, 127);
+        imagefilledrectangle($tmp, 0, 0, $tn_width, $tn_height, $transparent);
+    }
+    imagecopyresampled($tmp,$src,0,0,0,0,$tn_width, $tn_height,$width,$height);
+
+    /*
+     * imageXXX() has only two options, save as a file, or send to the browser.
+     * It does not provide you the oppurtunity to manipulate the final GIF/JPG/
+PNG file stream
+     * So I start the output buffering, use imageXXX() to output the data
+stream to the browser,
+     * get the contents of the stream, and use clean to silently discard the
+buffered contents.
+     */
+    ob_start();
+
+    switch ($image_type)
+    {
+        case 1: imagegif($tmp); break;
+        case 2: imagejpeg($tmp, NULL, 100);  break; // best quality
+        case 3: imagepng($tmp, NULL, 0); break; // no compression
+        default: echo ''; break;
+    }
+
+    $final_image = ob_get_contents();
+
+    ob_end_clean();
+
+    return $final_image;
+}
+
+?>
+
+So, let's suppose you have a form where a user can upload an image, and you
+have to scale it and save it into your database.
+
+<?php
+   
+    [..] // the user has clicked the Submit button..
+   
+    // Check if the user entered an image
+    if ($_FILES['imagefile']['name'] != '') {
+        $image = scaleImageFileToBlob($_FILES['imagefile']['tmp_name']);
+
+        if ($image == '') {
+            echo 'Image type not supported';
+        } else {
+            $image_type = $_FILES['imagefile']['type'];
+            $image = addslashes($image);
+           
+            $query  = "UPDATE yourtable SET image_type='$image_type', image='
+$image' WHERE ...";
+            $result = mysql_query($query);
+            if ($result) {
+               echo 'Image scaled and uploaded';
+             } else {
+               echo 'Error running the query';
+             }
+        }
+    }
+
+?>
+===============================================================================
+
+If you get this error: "Warning: imagecreatefromjpeg(): gd-jpeg: JPEG library
+reports unrecoverable error" then check the JPEG files. If they are saved in
+CMYK format (instead of RGB) then GD will fail to load them (tested with GD
+2.0.12)

@@ -1,0 +1,594 @@
+
+pack
+
+(PHP 4, PHP 5, PHP 7)
+
+pack — Pack data into binary string
+
+说明
+
+string pack ( string $format [, mixed $args [, mixed $... ]] )
+
+Pack given arguments into a binary string according to format.
+
+The idea for this function was taken from Perl and all formatting codes work
+the same as in Perl. However, there are some formatting codes that are missing
+such as Perl's "u" format code.
+
+Note that the distinction between signed and unsigned values only affects the
+function unpack(), where as function pack() gives the same result for signed
+and unsigned format codes.
+
+参数
+
+format
+
+    The format string consists of format codes followed by an optional repeater
+    argument. The repeater argument can be either an integer value or * for
+    repeating to the end of the input data. For a, A, h, H the repeat count
+    specifies how many characters of one data argument are taken, for @ it is
+    the absolute position where to put the next data, for everything else the
+    repeat count specifies how many data arguments are consumed and packed into
+    the resulting binary string.
+
+    Currently implemented formats are:
+
+                      pack() format characters
+    Code                         Description
+    a    NUL-padded string
+    A    SPACE-padded string
+    h    Hex string, low nibble first
+    H    Hex string, high nibble first
+    c    signed char
+    C    unsigned char
+    s    signed short (always 16 bit, machine byte order)
+    S    unsigned short (always 16 bit, machine byte order)
+    n    unsigned short (always 16 bit, big endian byte order)
+    v    unsigned short (always 16 bit, little endian byte order)
+    i    signed integer (machine dependent size and byte order)
+    I    unsigned integer (machine dependent size and byte order)
+    l    signed long (always 32 bit, machine byte order)
+    L    unsigned long (always 32 bit, machine byte order)
+    N    unsigned long (always 32 bit, big endian byte order)
+    V    unsigned long (always 32 bit, little endian byte order)
+    q    signed long long (always 64 bit, machine byte order)
+    Q    unsigned long long (always 64 bit, machine byte order)
+    J    unsigned long long (always 64 bit, big endian byte order)
+    P    unsigned long long (always 64 bit, little endian byte order)
+    f    float (machine dependent size and representation)
+    d    double (machine dependent size and representation)
+    x    NUL byte
+    X    Back up one byte
+    Z    NUL-padded string (new in PHP 5.5)
+    @    NUL-fill to absolute position
+
+args
+
+返回值
+
+Returns a binary string containing data.
+
+更新日志
+
+版本                                    说明
+5.6.3 The "q", "Q", "J" and "P" codes were added to enable working with 64-bit
+      numbers.
+5.5.0 The "Z" code was added with equivalent functionality to "a" for Perl
+      compatibility.
+
+范例
+
+Example #1 pack() example
+
+<?php
+$binarydata = pack("nvc*", 0x1234, 0x5678, 65, 66);
+?>
+
+The resulting binary string will be 6 bytes long and contain the byte sequence
+0x12, 0x34, 0x78, 0x56, 0x41, 0x42.
+
+注释
+
+Caution
+
+Note that PHP internally stores integer values as signed values of a
+machine-dependent size (C type long). Integer literals and operations that
+yield numbers outside the bounds of the integer type will be stored as float.
+When packing these floats as integers, they are first cast into the integer
+type. This may or may not result in the desired byte pattern.
+
+The most relevant case is when packing unsigned numbers that would be
+representable with the integer type if it were unsigned. In systems where the 
+integer type has a 32-bit size, the cast usually results in the same byte
+pattern as if the integer were unsigned (although this relies on
+implementation-defined unsigned to signed conversions, as per the C standard).
+In systems where the integer type has 64-bit size, the float most likely does
+not have a mantissa large enough to hold the value without loss of precision.
+If those systems also have a native 64-bit C int type (most UNIX-like systems
+don't), the only way to use the I pack format in the upper range is to create 
+integer negative values with the same byte representation as the desired
+unsigned value.
+
+参见
+
+  • unpack() - Unpack data from binary string
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+If you'd like to understand pack/unpack. There is a tutorial here in perl, that
+works equally well in understanding it for php:
+
+http://perldoc.perl.org/perlpacktut.html
+===============================================================================
+
+If you need to unpack a signed short from big-endian or little-endian
+specifically, instead of machine-byte-order, you need only unpack it as the
+unsigned form, and then if the result is >= 2^15, subtract 2^16 from it.
+
+And example would be:
+
+<?php
+$foo = unpack("n", $signedbigendianshort);
+$foo = $foo[1];
+if($foo >= pow(2, 15)) $foo -= pow(2, 16);
+?>
+===============================================================================
+
+Note that the the upper command in perl looks like this:
+
+$binarydata = pack ("n v c*", 0x1234, 0x5678, 65, 66);
+In PHP it seems that no whitespaces are allowed in the first parameter. So if
+you want to convert your pack command from perl -> PHP, don't forget to remove
+the whitespaces!
+===============================================================================
+
+Coder's example is basically an explanation of bindec() and decbin(), not pack
+() and unpack().
+
+Here's some code to convert a string binary expression into its binary-string
+equivalent and vice versa.
+
+(Would be even simpler if pack/unpack offered a 'b' format code....)
+
+<?php
+function bin2bstr($input)
+// Convert a binary expression (e.g., "100111") into a binary-string
+{
+  if (!is_string($input)) return null; // Sanity check
+
+  // Pack into a string
+  return pack('H*', base_convert($input, 2, 16));
+}
+
+function bstr2bin($input)
+// Binary representation of a binary-string
+{
+  if (!is_string($input)) return null; // Sanity check
+
+  // Unpack as a hexadecimal string
+  $value = unpack('H*', $input);
+ 
+  // Output binary representation
+  return base_convert($value[1], 16, 2);
+}
+
+// Returns string(3) "ABC"
+var_dump(bin2bstr('01000001 01000010 01000011'));
+
+// Returns string(24) "010000010100001001000011"
+var_dump(bstr2bin('ABC'));
+?>
+===============================================================================
+
+Even though in a 64-bit architecure intval(6123456789) = 6123456789, and
+sprintf('%b', 5000000000) = 100101010000001011111001000000000
+pack will not treat anything passed to it as 64-bit.  If you want to pack a
+64-bit integer:
+
+<?php
+$big = 5000000000;
+
+$left = 0xffffffff00000000;
+$right = 0x00000000ffffffff;
+
+$l = ($big & $left) >>32;
+$r = $big & $right;
+
+$good = pack('NN', $l, $r);
+
+$urlsafe = str_replace(array('+','/'), array('-','_'), base64_encode($good));
+
+//done!
+
+//rebuild:
+$unurl =  str_replace(array('-','_'), array('+','/'), $urlsafe);
+$binary = base64_decode($unurl);
+
+$set = unpack('N2', $tmp);
+print_r($set);
+
+$original = $set[1] << 32 | $set[2];
+echo $original, "\\r\\n";
+?>
+
+results in:
+Array
+(
+    [1] => 1
+    [2] => 705032704
+)
+5000000000
+
+but ONLY on a 64-bit enabled machine and PHP distro.
+===============================================================================
+
+You will get the same effect with
+
+<?php
+function _readInt($fp)
+{
+   return unpack('V', fread($fp, 4));
+}
+?>
+
+or unpack('N', ...) for big-endianness.
+===============================================================================
+
+<?PHP
+function ntohs($port) {
+  $b=pack("N", $port);
+  return substr($b,2,2);
+}
+?>
+
+I've spent a number of hours (n>=2) finding how to do this,
+it works like the c function 'ntohs', used for eg the socks5 proxy protocol.
+===============================================================================
+
+Using pack to write Arabic char(s) to a file.
+
+<?php
+$text = "&#13574;&#13830;&#13830;";
+
+$text = mb_convert_encoding($text, "UCS-2BE", "HTML-ENTITIES");
+
+$len =  mb_strlen($text);
+
+$bom = mb_convert_encoding("&#65534;", "unicode", "HTML-ENTITIES");
+
+$fp = fopen('text.txt', 'w');
+
+fwrite($fp, pack('a2', $bom)); 
+fwrite($fp, pack("a{$len}", $text));
+fwrite($fp, pack('a2', $bom));
+fwrite($fp, pack('a2', "\n"));
+
+fclose($fp);
+?>
+===============================================================================
+
+/* Convert float from HostOrder to Network Order */
+function FToN( $val )
+{
+    $a = unpack("I",pack( "f",$val ));
+    return pack("N",$a[1] );
+}
+   
+/* Convert float from Network Order to HostOrder */
+function NToF($val )
+{
+    $a = unpack("N",$val);
+    $b = unpack("f",pack( "I",$a[1]));
+    return $b[1];
+}
+===============================================================================
+
+Be aware of format code H always padding the 0 for byte-alignment to the right
+(for odd count of nibbles).
+
+So pack("H", "7") results in 0x70 (ASCII character 'p') and not in 0x07 (BELL
+character)
+as well as pack("H*", "347") results in 0x34 ('4') and 0x70 ('p') and not 0x03
+and 0x47.
+===============================================================================
+
+A helper class to convert integer to binary strings and vice versa. Useful for
+writing and reading integers to / from files or sockets.
+
+<?php
+
+    class int_helper
+    {
+        public static function int8($i) {
+            return is_int($i) ? pack("c", $i) : unpack("c", $i)[1];
+        }
+
+        public static function uInt8($i) {
+            return is_int($i) ? pack("C", $i) : unpack("C", $i)[1];
+        }
+
+        public static function int16($i) {
+            return is_int($i) ? pack("s", $i) : unpack("s", $i)[1];
+        }
+
+        public static function uInt16($i, $endianness=false) {
+            $f = is_int($i) ? "pack" : "unpack";
+
+            if ($endianness === true) {  // big-endian
+                $i = $f("n", $i);
+            }
+            else if ($endianness === false) {  // little-endian
+                $i = $f("v", $i);
+            }
+            else if ($endianness === null) {  // machine byte order
+                $i = $f("S", $i);
+            }
+
+            return is_array($i) ? $i[1] : $i;
+        }
+
+        public static function int32($i) {
+            return is_int($i) ? pack("l", $i) : unpack("l", $i)[1];
+        }
+
+        public static function uInt32($i, $endianness=false) {
+            $f = is_int($i) ? "pack" : "unpack";
+
+            if ($endianness === true) {  // big-endian
+                $i = $f("N", $i);
+            }
+            else if ($endianness === false) {  // little-endian
+                $i = $f("V", $i);
+            }
+            else if ($endianness === null) {  // machine byte order
+                $i = $f("L", $i);
+            }
+
+            return is_array($i) ? $i[1] : $i;
+        }
+
+        public static function int64($i) {
+            return is_int($i) ? pack("q", $i) : unpack("q", $i)[1];
+        }
+
+        public static function uInt64($i, $endianness=false) {
+            $f = is_int($i) ? "pack" : "unpack";
+
+            if ($endianness === true) {  // big-endian
+                $i = $f("J", $i);
+            }
+            else if ($endianness === false) {  // little-endian
+                $i = $f("P", $i);
+            }
+            else if ($endianness === null) {  // machine byte order
+                $i = $f("Q", $i);
+            }
+
+            return is_array($i) ? $i[1] : $i;
+        }
+    }
+?>
+
+Usage example:
+<?php
+    Header("Content-Type: text/plain");
+    include("int_helper.php");
+
+    echo int_helper::uInt8(0x6b) . PHP_EOL;  // k
+    echo int_helper::uInt8(107) . PHP_EOL;  // k
+    echo int_helper::uInt8("\x6b") . PHP_EOL . PHP_EOL;  // 107
+
+    echo int_helper::uInt16(4101) . PHP_EOL;  // \x05\x10
+    echo int_helper::uInt16("\x05\x10") . PHP_EOL;  // 4101
+    echo int_helper::uInt16("\x05\x10", true) . PHP_EOL . PHP_EOL;  // 1296
+
+    echo int_helper::uInt32(2147483647) . PHP_EOL;  // \xff\xff\xff\x7f
+    echo int_helper::uInt32("\xff\xff\xff\x7f") . PHP_EOL . PHP_EOL;  //
+2147483647
+
+    // Note: Test this with 64-bit build of PHP
+    echo int_helper::uInt64(9223372036854775807) . PHP_EOL;  // \xff\xff\xff\
+xff\xff\xff\xff\x7f
+    echo int_helper::uInt64("\xff\xff\xff\xff\xff\xff\xff\x7f") . PHP_EOL . 
+PHP_EOL;  // 9223372036854775807
+
+?>
+===============================================================================
+
+These two functions allow conversion between binary string and signed integer
+with possibility to give the bit length.
+
+Usage:
+<?php
+echo si2bin(-10, 32);
+11111111111111111111111111110110
+echo si2bin(10, 32);
+00000000000000000000000000001010
+echo bin2si("11111111111111111111111111110110", 32);
+-10
+echo bin2si("00000000000000000000000000001010", 32);
+10
+
+// signed integer to binary
+function si2bin($si, $bits=32)
+{
+    if ($si >= -pow(2,$bits-1) and $si <= pow(2,$bits-1) )
+    {
+        if ($si >= 0) // positive or zero
+        {
+            $bin = base_convert($si,10,2);
+            // pad to $bits bit
+            $bin_length = strlen($bin);
+            if ($bin_length < $bits) $bin = str_repeat ( "0", $bits-$bin_length
+).$bin;
+        }
+        else // negative
+        {
+            $si = -$si-pow(2,$bits);
+            $bin = base_convert($si,10,2);
+            $bin_length = strlen($bin);
+            if ($bin_length > $bits) $bin = str_repeat ( "1", $bits-$bin_length
+).$bin;
+        }
+        return $bin;
+    }
+}
+
+// binary to signed integer
+function bin2si($bin,$bits=32)
+{
+    if (strlen($bin)==$bits)
+    {
+        if (substr($bin,0,1) == 0) // positive or zero
+        {
+            $si = base_convert($bin,2,10);
+        }
+        else // negative
+        {
+            $si = base_convert($bin,2,10);
+            $si = -(pow(2,$bits)-$si);
+        }
+        return $si;
+    }
+}
+?>
+===============================================================================
+
+This is how I used pack to convert base2 to base64 since base_convert doesn't
+support base64
+The base conversions don't work for long strings, which is why I convert 1 byte
+at a time
+Hope this helps someone
+
+function base2to64($base2) {
+    if ($remainbits = strlen($base2)%8) $base2 .= str_repeat
+('0',8-$remainbits);
+    $base64 = NULL;
+    for ($i=0;$i<strlen($base2);$i+=8) $base16 .= sprintf('%02x',bindec(sprintf
+('%08d',substr($base2,$i,8))));
+    return base64_encode(pack('H*',$base16));
+}
+function base64to2($base64) {
+    list($base16) = unpack('H*0',base64_decode($base64));
+    $base2 = NULL;
+    for ($i=0;$i<strlen($base16);$i++) $base2 .= sprintf('%04d',base_convert
+(substr($base16,$i,1),16,2));
+    return $base2;
+}
+===============================================================================
+
+a cool function to converrt numbers to Persian numbers(utf-8)
+origin: http://www.farsiweb.info/jalali/jalali.phps
+
+function farsinum($str)
+{
+  $ret = "";
+  for ($i = 0; $i < strlen($str); ++$i) {
+        $c = $str[$i];
+        if( $c >= '0' && $c <= '9' )
+                $out .= pack("C*", 0xDB, 0xB0 + $c);
+        else
+                $ret .= $c;
+  }
+  return $ret;
+}
+===============================================================================
+
+Array pack:
+<?php
+function pack_array($v,$a) {
+return call_user_func_array(pack,array_merge(array($v),(array)$a));
+}
+?>
+===============================================================================
+
+You can use pack to strip the byte order mark (BOM) from a file.
+
+For example, strip the UTF-8 BOM:
+
+<?php
+
+// Strips the UTF-8 mark: (hex value: EF BB BF)
+function trimUTF8BOM($data){
+    if(substr($data, 0, 3) == pack('CCC', 239, 187, 191)) {
+        return substr($data, 3);
+    }
+    return $data;
+}
+
+?>
+
+This function could be easily adjusted to match any byte order mark. Have a
+look at wikipedia for a full list of hex codes for each specific encoding.
+
+- Gerard
+===============================================================================
+
+If you're bugged by http://bugs.php.net/bug.php?id=5889 then you can try this:
+
+Use igbinary-serialize if you don't mind a little overhead.
+
+Or intarray (by the same person) if you don't mind using a slightly
+experimental package which may have problems sharing data between differently
+byte/bit ordered architectures.
+
+I don't believe it would be too difficult to shove a serialize function and
+unserialize function in there if you rip out the code from igbinary for storing
+numeric arrays with the correct endianess. Looking at `igbinary_serialize32`
+and `igbinary_unserialize32` in igbinary.c it should be very easy to copy that
+functionality to intarray.c.
+
+Take away the "<<0" though, that's just stupid :P
+
+Ref: http://opensource.dynamoid.com/
+===============================================================================
+
+When trying to create a ZIP file using the pack function - I experienced
+trouble with the "a" code - It converted all chars correct from the std. ASCII
+charset but not more language specific like ÆøÅ.
+It seems that ZIP files do not use the same HEX for these as everything else
+does.
+The fix was a quick workaround but you'll probably get the picture:
+function UniHex($str) {
+    // æ ø å Æ Ø Å
+    //These are simply one HEX code being replaced by another to correct the
+issue
+    $except = array("E6"=>"91","F8"=>"9B","E5"=>"86","C6"=>"92","D8"=>"9D",   
+"C5"=>"8F");
+    for($i = 0; $i < strlen($str); $i++) {
+        $hex = bin2hex(substr($str, $i, 1));
+        if ($except[strtoupper($hex)])
+            $hex = $except[strtoupper($hex)];
+        $return .= $hex;
+    }
+    return $return;
+}
+And then i replaced an "a100" code with "H".strlen(uniHex($mystring))
+
+This is like i said a quick workaround, but if you find the real reason for
+this i'd be happy to see it
+===============================================================================
+
+How to convert an integer to raw data, specifying the amount of bytes to
+convert to (will be padded with 0's):
+
+    public function toRaw($int, $bytes = 4)
+    {
+        $hex = dechex($int);
+       
+        if (strlen($hex) % 2 != 0)
+            $hex = '0'. $hex;
+
+        $arr = str_split($hex, 2);
+
+        while (count($arr) < $bytes)
+            array_unshift($arr, 0);
+       
+        $arr = array_map('hexdec', $arr);
+        $arr = array_map('chr', $arr);
+
+        return join('', array_reverse($arr));
+    }

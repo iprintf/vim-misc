@@ -1,0 +1,670 @@
+
+mysqli::multi_query
+
+mysqli_multi_query
+
+(PHP 5, PHP 7)
+
+mysqli::multi_query -- mysqli_multi_query — Performs a query on the database
+
+说明
+
+面向对象风格
+
+bool mysqli::multi_query ( string $query )
+
+过程化风格
+
+bool mysqli_multi_query ( mysqli $link , string $query )
+
+Executes one or multiple queries which are concatenated by a semicolon.
+
+To retrieve the resultset from the first query you can use mysqli_use_result()
+or mysqli_store_result(). All subsequent query results can be processed using 
+mysqli_more_results() and mysqli_next_result().
+
+参数
+
+link
+
+    仅以过程化样式：由mysqli_connect() 或 mysqli_init() 返回的链接标识。
+
+query
+
+    The query, as a string.
+
+    Data inside the query should be properly escaped.
+
+返回值
+
+Returns FALSE if the first statement failed. To retrieve subsequent errors from
+other statements you have to call mysqli_next_result() first.
+
+范例
+
+Example #1 mysqli::multi_query() example
+
+面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query  = "SELECT CURRENT_USER();";
+$query .= "SELECT Name FROM City ORDER BY ID LIMIT 20, 5";
+
+/* execute multi query */
+if ($mysqli->multi_query($query)) {
+    do {
+        /* store first result set */
+        if ($result = $mysqli->store_result()) {
+            while ($row = $result->fetch_row()) {
+                printf("%s\n", $row[0]);
+            }
+            $result->free();
+        }
+        /* print divider */
+        if ($mysqli->more_results()) {
+            printf("-----------------\n");
+        }
+    } while ($mysqli->next_result());
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query  = "SELECT CURRENT_USER();";
+$query .= "SELECT Name FROM City ORDER BY ID LIMIT 20, 5";
+
+/* execute multi query */
+if (mysqli_multi_query($link, $query)) {
+    do {
+        /* store first result set */
+        if ($result = mysqli_store_result($link)) {
+            while ($row = mysqli_fetch_row($result)) {
+                printf("%s\n", $row[0]);
+            }
+            mysqli_free_result($result);
+        }
+        /* print divider */
+        if (mysqli_more_results($link)) {
+            printf("-----------------\n");
+        }
+    } while (mysqli_next_result($link));
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程的输出类似于：
+
+my_user@localhost
+-----------------
+Amersfoort
+Maastricht
+Dordrecht
+Leiden
+Haarlemmermeer
+
+参见
+
+  • mysqli_query() - 对数据库执行一次查询
+  • mysqli_use_result() - Initiate a result set retrieval
+  • mysqli_store_result() - Transfers a result set from the last query
+  • mysqli_next_result() - Prepare next result from multi_query
+  • mysqli_more_results() - Check if there are any more query results from a
+    multi query
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+WATCH OUT: if you mix $mysqli->multi_query and $mysqli->query, the latter(s)
+won't be executed!
+
+<?php
+// BAD CODE:
+$mysqli->multi_query(" Many SQL queries ; "); // OK
+$mysqli->query(" SQL statement #1 ; ") // not executed!
+$mysqli->query(" SQL statement #2 ; ") // not executed!
+$mysqli->query(" SQL statement #3 ; ") // not executed!
+$mysqli->query(" SQL statement #4 ; ") // not executed!
+?>
+
+The only way to do this correctly is:
+
+<?php
+// WORKING CODE:
+$mysqli->multi_query(" Many SQL queries ; "); // OK
+while ($mysqli->next_result()) {;} // flush multi_queries
+$mysqli->query(" SQL statement #1 ; ") // now executed!
+$mysqli->query(" SQL statement #2 ; ") // now executed!
+$mysqli->query(" SQL statement #3 ; ") // now executed!
+$mysqli->query(" SQL statement #4 ; ") // now executed!
+?>
+===============================================================================
+
+Getting "Error: Commands out of sync; you can't run this command now" after
+running a multi-query? Make sure you've cleared out the queue of results.
+
+Here's what I've used to discard all subsequent results from a multi-query:
+
+<?php
+while($dbLink->more_results() && $dbLink->next_result()) {
+    $extraResult = $dbLink->use_result();
+    if($extraResult instanceof mysqli_result){
+        $extraResult->free();
+    }
+}
+
+?>
+===============================================================================
+
+I appreciate the advice from crmccar at gmail dot com regarding the proper way
+to check for errors, but I would get an error with his/her code. I fixed it by
+changing the code a little:
+
+<?php
+$sql = file_get_contents( 'sql/test_' . $id . '_data.sql');
+
+$query_array = explode(';', $sql);
+
+// Run the SQL
+$i = 0;
+if( $this->mysqli->multi_query( $sql ) )
+{
+    do {
+        $this->mysqli->next_result();
+
+        $i++;
+    }
+    while( $this->mysqli->more_results() );
+}
+
+if( $this->mysqli->errno )
+{
+    die(
+        '<h1>ERROR</h1>
+        Query #' . ( $i + 1 ) . ' of <b>test_' . $id . '_data.sql</b>:<br /><br
+/>
+        <pre>' . $query_array[ $i ] . '</pre><br /><br />
+        <span style="color:red;">' . $this->mysqli->error . '</span>'
+    );
+}
+?>
+===============================================================================
+
+Here are more details about error checking and return values from multi_query
+().  Testing shows that there are some mysqli properties to check for each
+result:
+
+affected_rows
+errno
+error
+insert_id
+warning_count
+
+If error or errno are not empty then the remaining queries did not return
+anything, even though error and errno will appear to be empty if processing
+further results is continued.
+
+Also note that get_warnings() will not work with multi_query().  It can only be
+used after looping through all results, and it will only get the warnings for
+the last one of the queries and not for any others.  If you need to see or log
+query warning strings then you must not use multi_query(), because you can only
+see the warning_count value.
+===============================================================================
+
+I was developing my own CMS and I was having problem with attaching the
+database' sql file. I thought mysqli_multi_query got bugs where it crashes my
+MySQL server. I tried to report the bug but it showed that it has duplicate bug
+reports of other developers. To my surprise, mysqli_multi_query needs to bother
+with result even if there's none.
+
+I finally got it working when I copied the sample and removed somethings. Here
+is what it looked liked
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+   printf("Connect failed: %s\n", mysqli_connect_error());
+   exit();
+}
+
+$query  = "CREATE TABLE....;...;... blah blah blah;...";
+
+/* execute multi query */
+if (mysqli_multi_query($link, $query)) {
+   do {
+       /* store first result set */
+       if ($result = mysqli_store_result($link)) {
+           //do nothing since there's nothing to handle
+           mysqli_free_result($result);
+       }
+       /* print divider */
+       if (mysqli_more_results($link)) {
+           //I just kept this since it seems useful
+           //try removing and see for yourself
+       }
+   } while (mysqli_next_result($link));
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+bottom-line: I think mysql_multi_query should only be used for attaching a
+database. it's hard to handle results from 'SELECT' statements inside a single
+while loop.
+===============================================================================
+
+mysqli_multi_query handles MySQL Transaction on InnoDB's :-)
+
+<?php
+
+$mysqli  = mysqli_connect( "localhost", "owner", "pass", "db", 3306, "/var/lib/
+mysql/mysql.sock" );
+
+$QUERY = <<<EOT
+START TRANSACTION;
+SELECT @lng:=IF( STRCMP(`main_lang`,'de'), 'en', 'de' )
+FROM `main_data` WHERE  ( `main_activ` LIKE 1 ) ORDER BY `main_id` ASC;
+SELECT `main_id`, `main_type`, `main_title`, `main_body`, `main_modified`,
+`main_posted`
+FROM `main_data`
+WHERE ( `main_type` RLIKE "news|about" AND `main_lang` LIKE @lng AND
+`main_activ` LIKE 1 )
+ORDER BY `main_type` ASC;
+COMMIT;
+EOT;
+
+$query = mysqli_multi_query( $mysqli, $QUERY ) or die( mysqli_error( $mysqli )
+);
+
+if( $query )
+{
+  do {
+    if( $result = mysqli_store_result( $mysqli ) )
+    {
+      $subresult = mysqli_fetch_assoc( $result );
+      if( ! isset( $subresult['main_id'] ) )
+        continue;
+
+      foreach( $subresult AS $k => $v )
+      {
+        var_dump( $k , $v );
+      }
+    }
+  } while ( mysqli_next_result( $mysqli ) );
+}
+
+mysqli_close( $mysqli );
+
+?>
+===============================================================================
+
+Note that you need to use this function to call Stored Procedures!
+
+If you experience "lost connection to MySQL server" errors with your Stored
+Procedure calls then you did not fetch the 'OK' (or 'ERR') message, which is a
+second result-set from a Stored Procedure call. You have to fetch that result
+to have no problems with subsequent queries.
+
+Bad example, will FAIL now and then on subsequent calls:
+<?php
+$sQuery='CALL exampleSP('param')';
+if(!mysqli_multi_query($this->sqlLink,$sQuery))
+  $this->queryError();
+$this->sqlResult=mysqli_store_result($this->sqlLink);
+?>
+
+Working example:
+<?php
+$sQuery='CALL exampleSP('param')';
+if(!mysqli_multi_query($this->sqlLink,$sQuery))
+  $this->queryError();
+$this->sqlResult=mysqli_store_result($this->sqlLink);
+
+if(mysqli_more_results($this->sqlLink))
+  while(mysqli_next_result($this->sqlLink));
+?>
+
+Of course you can do more with the multiple results then just throwing them
+away, but for most this will suffice. You could for example make an "sp"
+function which will kill the 2nd 'ok' result.
+
+This nasty 'OK'-message made me spend hours trying to figure out why MySQL
+server was logging warnings with 'bad packets from client' and PHP mysql_error
+() with 'Connection lost'. It's a shame the mysqli library does catch this by
+just doing it for you.
+===============================================================================
+
+To be able to execute a $mysqli->query() after a $mysqli->multi_query() for
+MySQL > 5.3, I updated the code of jcn50 by this one :
+
+<?php
+    // WORKING CODE:
+    $mysqli->multi_query(" Many SQL queries ; "); // OK
+
+    while ($mysqli->next_result()) // flush multi_queries
+    {
+        if (!$mysqli->more_results()) break;
+    }
+
+    $mysqli->query(" SQL statement #1 ; ") // now executed!
+    $mysqli->query(" SQL statement #2 ; ") // now executed!
+    $mysqli->query(" SQL statement #3 ; ") // now executed!
+    $mysqli->query(" SQL statement #4 ; ") // now executed!
+?>
+===============================================================================
+
+I'd like to reinforce the correct way of catching errors from the queries
+executed by multi_query(), since the manual's examples don't show it and it's
+easy to lose UPDATEs, INSERTs, etc. without knowing it.
+
+$mysqli->next_result() will return false if it runs out of statements OR if the
+next statement has an error. Therefore, it's important to check for errors when
+the loop ends. Also, I believe it's useful to know when and where the loop
+broke, so consider the following code:
+
+<?php
+$statements = array("INSERT INTO tablename VALUES ('1', 'one')", "INSERT INTO
+tablename VALUES ('2', 'two')");
+if ($mysqli->multi_query(implode(';', $statements))) {
+    $i = 0;
+    do {
+        $i++;
+    } while ($mysqli->next_result());
+}
+if ($mysqli->errno) {
+    echo "Batch execution prematurely ended on statement $i.\n";
+    var_dump($statements[$i], $mysqli->error);
+}
+?>
+
+The IF statement on the multi_query() call checks the first result, because
+next_result() starts at the second.
+===============================================================================
+
+if you don't iterate through all results you get "server has gone away" error
+message ...
+
+to resolve this, in php 5.2 it is enough to use
+
+<?php
+  // ok for php 5.2
+  while ($mysqli->next_result());
+?>
+
+to drop unwanted results, but in php 5.3 using only this throws
+
+mysqli::next_result(): There is no next result set. Please, call
+mysqli_more_results()/mysqli::more_results() to check whether to call this
+function/method
+
+so it should be replaced with
+
+<?php
+  // ok for php 5.3
+  while ($mysqli->more_results() && $mysqli->next_result());
+?>
+
+I also tried but failed:
+
+<?php
+
+  // can create infinite look in some cases
+  while ($mysqli->more_results())
+    $mysqli->next_result();
+
+  // also throws error in some cases
+  if ($mysqli->more_results())
+    while ($mysqli->next_result());
+
+?>
+===============================================================================
+
+Use generator.
+PHP 5.5.0
+<?php
+// Quick multiQuery func.
+function multiQuery( mysqli $mysqli, $query ) {
+    if ($mysqli->multi_query( $query )) {
+    do {
+        if ($result = $mysqli->store_result()) {
+            while ($row = $result->fetch_row()) {
+                foreach ($row as $key => $value) yield $key => $value;
+            }
+            $result->free();
+        }
+    } while( $mysqli->more_results() && $mysqli->next_result() );
+    }
+}
+
+$query = "OPTIMIZE TABLE `question`;" .
+         "LOCK TABLES `question` READ;" .
+         "SELECT * FROM `question` WHERE `questionid`=2;" .
+         "SELECT * FROM `question` WHERE `questionid`=7;" .
+         "SELECT * FROM `question` WHERE `questionid`=8;" .
+         "SELECT * FROM `question` WHERE `questionid`=9;" .
+         "SELECT * FROM `question` WHERE `questionid`=11;" .
+         "SELECT * FROM `question` WHERE `questionid`=12;" .
+         "UNLOCK TABLES;" .
+         "TRUNCATE TABLE `question`;";
+
+$mysqli = new mysqli('localhost', 'user', 'pswd', 'dbnm');
+$mysqli->set_charset("cp1251");
+
+// result
+foreach ( multiQuery($mysqli, $query) as $key => $value ) {
+    echo $key, $value, PHP_EOL;
+}
+
+?>
+Good luck!
+===============================================================================
+
+If you want to create a table with triggers, procedures or functions in one
+multiline query you may stuck with a error -
+#1064 - You have an error in your SQL syntax; xxx corresponds to your MySQL
+server version for the right syntax to use near 'DELIMITER' at line 1
+
+The solution is very simple - don't use DELIMITER keyword at all! So, instead
+of :
+
+DELIMITER |
+CREATE TRIGGER $dbName.$iname BEFORE INSERT ON $table FOR EACH ROW
+BEGIN
+    <body>
+EOT|
+DELIMITER ;
+
+just use :
+
+CREATE TRIGGER $dbName.$iname BEFORE INSERT ON $table FOR EACH ROW
+BEGIN
+    <body>
+EOT;
+
+For more information read answers at StackOverflow for question #5311141
+
+http://stackoverflow.com/questions/5311141/
+how-to-execute-mysql-command-delimiter
+===============================================================================
+
+Following code can be used to resolve
+mysqli::next_result(): There is no next result set. Please, call
+mysqli_more_results()/mysqli::more_results() to check whether to call this
+function/method
+
+        $query = "SELECT SOME_COLUMN FROM SOME_TABLE_NAME;";
+        $query .= "SELECT SOME_OTHER_COLUMN FROM SOME_TABLE_NAME";
+        /* execute multi query */
+        if (mysqli_multi_query($this->conn, $query)) {
+            $i = true;
+            do {
+                /* store first result set */
+                if ($result = mysqli_store_result($this->conn)) {
+                    while ($row = mysqli_fetch_row($result)) {
+                        printf("%s\n", $row[0]);
+                    }
+                    mysqli_free_result($result);
+                }
+                /* print divider */
+                if (mysqli_more_results($this->conn)) {
+                    $i = true;
+                    printf("-----------------\n");
+                } else {
+                    $i = false;
+                }
+            } while ($i && mysqli_next_result($this->conn));
+        }
+===============================================================================
+
+Be sure to not send a set of queries that are larger than max_allowed_packet
+size on your MySQL server. If you do, you'll get an error like:
+Mysql Error (1153): Got a packet bigger than 'max_allowed_packet' bytes
+
+To see your MySQL size limitation, run the following query: show variables like
+'max_allowed_packet';
+
+or see http://dev.mysql.com/doc/refman/5.1/en/packet-too-large.html
+===============================================================================
+
+If your second or late query returns no result or even if your query is not a
+valid SQL query, more_results(); returns true in any case.
+===============================================================================
+
+It's very important that after executing mysqli_multi_query you have first
+process the resultsets before sending any another statement to the server,
+otherwise your
+socket is still blocked.
+
+Please note that even if your multi statement doesn't contain SELECT queries,
+the server will send result packages containing errorcodes (or OK packet) for
+single statements.
+===============================================================================
+
+You can use prepared statements on stored procedures.
+
+You just need to flush all the subsequent result sets before closing the
+statement... so:
+
+$mysqli_stmt = $mysqli->prepare(....);
+
+... bind, execute, bind, fetch ...
+
+while($mysqli->more_results())
+{
+    $mysqli->next_result();
+    $discard = $mysqli->store_result();
+}
+
+$mysqli_stmt->close();
+
+Hope that helps :o)
+===============================================================================
+
+Ive just had exactly the same problem as below trying to execute multiple
+stored procedures. I thought i might as well add how to do it the object
+oriented way.
+
+Instead of putting the one statement:
+
+<?php
+$mysqli->next_result();
+?>
+
+Put two:
+
+<?php
+$mysqli->next_result();
+$mysqli->next_result();
+?>
+
+The first statement points (possibly using the term incorrectly) you to the
+return value. The second one will point you to the result of the next query.
+
+I hope this makes sense.
+===============================================================================
+
+Please note that there is no need for the semicolon after the last query. That
+wasted more than hour of my time...
+===============================================================================
+
+If you're importing a sql-file with triggers, functions, stored procedures and
+other stuff, you'll might be using DELIMITER in MySQL.
+Notice: This function assumes that all delimiters are on it's own line, and
+that "DELIMITER" are in all caps.
+
+<?php
+function mysqli_multi_query_file($mysqli, $filename) {
+    $sql = file_get_contents($filename);
+    // remove comments
+    $sql = preg_replace('#/\*.*?\*/#s', '', $sql);
+    $sql = preg_replace('/^-- .*[\r\n]*/m', '', $sql);
+    if (preg_match_all('/^DELIMITER\s+(\S+)$/m', $sql, $matches, PREG_SET_ORDER
+| PREG_OFFSET_CAPTURE)) {
+        $prev = null;
+        $index = 0;
+        foreach ($matches as $match) {
+            $sqlPart = substr($sql, $index, $match[0][1] - $index);
+            // move cursor after the delimiter
+            $index = $match[0][1] + strlen($match[0][0]);
+            if ($prev && $prev[1][0] != ';') {
+                $sqlPart = explode($prev[1][0], $sqlPart);
+                foreach ($sqlPart as $part) {
+                    if (trim($part)) { // no empty queries
+                        $mysqli->query($part);
+                    }
+                }
+            } else {
+                if (trim($sqlPart)) { // no empty queries
+                    $mysqli->multi_query($sqlPart);
+                    while ($mysqli->next_result()) {;}
+                }
+            }
+            $prev = $match;
+        }
+        // run the sql after the last delimiter
+        $sqlPart = substr($sql, $index, strlen($sql)-$index);
+        if ($prev && $prev[1][0] != ';') {
+            $sqlPart = explode($prev[1][0], $sqlPart);
+            foreach ($sqlPart as $part) {
+                if (trim($part)) {
+                    $mysqli->query($part);
+                }
+            }
+        } else {
+            if (trim($sqlPart)) {
+                $mysqli->multi_query($sqlPart);
+                while ($mysqli->next_result()) {;}
+            }
+        }
+    } else {
+        $mysqli->multi_query($sql);
+        while ($mysqli->next_result()) {;}
+    }
+}
+?>

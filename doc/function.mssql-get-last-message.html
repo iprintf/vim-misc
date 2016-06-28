@@ -1,0 +1,246 @@
+
+mssql_get_last_message
+
+(PHP 4, PHP 5, PECL odbtp >= 1.1.1)
+
+mssql_get_last_message — Returns the last message from the server
+
+Warning
+
+This function was REMOVED in PHP 7.0.0.
+
+Alternatives to this function include:
+
+  • PDOStatement::errorInfo()
+  • sqlsrv_errors()
+  • odbc_errormsg()
+
+说明
+
+string mssql_get_last_message ( void )
+
+Gets the last message from the MS-SQL server
+
+参数
+
+此函数没有参数。
+
+返回值
+
+Returns last error message from server, or an empty string if no error messages
+are returned from MSSQL.
+
+范例
+
+Example #1 mssql_get_last_message() example
+
+<?php
+// Connect to MSSQL and select the database
+mssql_connect('KALLESPC\SQLEXPRESS', 'sa', 'phpfi');
+mssql_select_db('php');
+
+// Make a query that will fail
+$query = @mssql_query('SELECT * FROM [php].[dbo].[not-found]');
+
+if (!$query) {
+    // The query has failed, print a nice error message
+    // using mssql_get_last_message()
+    die('MSSQL error: ' . mssql_get_last_message());
+}
+?>
+
+以上例程的输出类似于：
+
+MSSQL error: Invalid object name 'php.dbo.not-found'.
+
+参见
+
+  • mssql_min_error_severity() - Sets the minimum error severity
+  • mssql_min_message_severity() - Sets the minimum message severity
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+I've noticed that there's a few people putting really elongated code out there
+for a MSSQL Connection / Error function.
+
+Firstly, i think that rewriting pre-existing functions is a waste of parsing
+time, so if you're going to try and return an error, usee
+mssql_get_last_message() as you would with mysql_error().
+
+Here is an adapted version of a MySQL Connection function;
+
+    function mssql_autoconnect() {
+        $cString = parse_url($config['connect_url']);
+        $cLink = mssql_connect($cString['host'], $cString['user'], $cString
+['pass']) or die(mssql_get_last_message());
+        mssql_select_db(preg_replace("///",$cString['path']),$cLink);
+        return $cLink;
+    }
+===============================================================================
+
+Here I am again :). My last function stinks :p (well, actually, MSSQL doesn't
+always does the same thing with different errors :/. That last function can't
+cope with that. The following function can cope with that. The only weird thing
+I had with it was that when I entered a table, which don't exists, in my SELECT
+query, the first mssql_get_last_message() doesn't always gets the correct
+message. It sometimes gets the message from the last action. I have no
+explination for it. Anyway: this is the beter version of my last function.  The
+usage is explained in my last post:
+
+<?php
+function query($sQuery, $hDb_conn, $sError, $bDebug)
+{
+    if(!$rQuery = @mssql_query($sQuery, $hDb_conn))
+    {
+        $sMssql_get_last_message = mssql_get_last_message();
+        $sQuery_added  = "BEGIN TRY\n";
+        $sQuery_added .= "\t".$sQuery."\n";
+        $sQuery_added .= "END TRY\n";
+        $sQuery_added .= "BEGIN CATCH\n";
+        $sQuery_added .= "\tSELECT 'Error: '  + ERROR_MESSAGE()\n";
+        $sQuery_added .= "END CATCH";
+        $rRun2= @mssql_query($sQuery_added, $hDb_conn);
+        $aReturn = @mssql_fetch_assoc($rRun2);
+        if(empty($aReturn))
+        {
+            echo $sError.'. MSSQL returned: '.$sMssql_get_last_message.'.<br>
+Executed query: '.nl2br($sQuery);
+        }
+        elseif(isset($aReturn['computed']))
+        {
+            echo $sError.'. MSSQL returned: '.$aReturn['computed'].'.<br>
+Executed query: '.nl2br($sQuery);
+        }
+        return FALSE;
+    }
+    else
+    {
+        return $rQuery;
+    }
+}
+?>
+
+Disclaimer: This is not the original function that I use in my project. The
+original function has Dutch text and uses some other functions that I have. I
+have removed my own functions and translated everything to English. That is
+everything I did. I only used a second function for the error messages. So I
+think everything should work, but I don't know for sure.
+===============================================================================
+
+MS SQL doesn't set errors as mysql does. $php_error is set as a string that
+doesn't help at all. The error comes in form of a Warning, which isn't pretty.
+So what you can do is capture the output of the warning and create your own
+error message, something like this:
+
+function treat_mssql_error($buffer) {
+    $buffer=ereg_replace("<br>\n<b>Warning</b>:  MS SQL message:","<b>Error in
+query (SQL Server)</b>: ",$buffer);
+    $buffer=explode("(severity",$buffer);
+    return $buffer[0]."</font>";
+}
+
+function my_query($query,$cnx) {
+    global $sql_error;
+    ob_start();
+    $result=mssql_query($query,$cnx);
+    if(!$result)
+    {
+        $sql_error=treat_mssql_error(ob_get_contents());
+        ob_end_clean();
+        return false;
+    }
+    ob_end_clean();
+    return true;
+}
+
+you can set treat_mssql_error() to fit your needs, and there u go. A personal
+error handler.
+===============================================================================
+
+If you want to view the last ID inserted, mssql_get_last_message() will not
+return this.
+MySQL have a function mysql_insert_id() that returns it. MSSQl don't.
+To resolve this, you must run this query:
+
+$query="SELECT @@IDENTITY as last_insert_id"
+mssql_query($query, $connection);
+
+and it will return the last ID inserted in the database.
+===============================================================================
+
+As Klaus pointed out earlier, the command MSSQL_GET_LAST_MESSAGE() only returns
+the last line of an error message and that may not be enough for debugging.
+
+I had a failing MSSQL_QUERY returning "the statement has been terminated" via
+MSSQL_GET_LAST_MESSAGE() so I tried Klaus' technique to get more information.
+
+Unfortunately, the connection to the database was also being broken, keeping
+Klaus' technique from looking up the error number.
+
+The solution to my case was to increase the PHP timeout for MSSQL queries from
+the default 60 seconds to 300 by adding this to PHP.INI:
+
+mssql.timeout = 300
+===============================================================================
+
+If you work with stored procedures and want to have a neat error-handling, try
+this:
+procedure:
+CREATE PROCEDURE TEST_ERROR  AS
+RAISERROR('myMessage:test', 2, 1) WITH SETERROR
+
+2 is error-severity, which should be below 11 to prevent php to output error
+directly.
+you get this message with mssql_get_last_message()
+after executing the stored procedure.
+To prevent your code from reacting on all messages you can define a string
+(e.g. 'myMessage:') and parse for it:
+<?php
+$db = mssql_connect(DBHost, DBLogin, DBPassword);
+mssql_select_db(DBName, $db);
+$query = "exec TEST_ERROR";
+$rs = mssql_query($query, $db);
+$lastMsg = mssql_get_last_message();
+if strstr($lastMsg, 'myMessage:') echo $lastMsg;
+?>
+===============================================================================
+
+With ref to last_insert_id;
+
+you can also do "SELECT ident_current('table_name')" with msSQL, which is the
+same thing.
+Don't forget that this counts as a seperate SQL query, so you will have to
+fetch the results as well, which isn't as neat as MySQL_insert_id().
+===============================================================================
+
+To get a numeric error code from mssql you can do a select that looks something
+like "select @@ERROR as ErrorCode".
+
+@@ERROR is a global variable that always contains the error code for the last
+SQL statement run on the current connection.  If there is no error, code will
+equal 0.
+
+@@IDENTITY is another useful one to know.  It is the value of the last identity
+created (similar to MySQL's auto_increment field) and with this you can create
+a function that works like MySQL's mysql_insert_id() function.
+===============================================================================
+
+another exsample
+
+mssql_query("INSERT INTO catalog (id, temp) VALUES (1, 'temp')") or exit
+(mssql_get_last_message());
+===============================================================================
+
+I've found mssql_get_last_message to be useful for fetching errors in the event
+MSSQL queries fail.
+
+<?php
+
+$q = @mssql_query("asdfasdfasfdasfd");
+if (!$q)
+     print "MSSQL Query failed: " . mssql_get_last_message() . "<br />\n";
+
+?>

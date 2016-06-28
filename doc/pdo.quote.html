@@ -1,0 +1,203 @@
+
+PDO::quote
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.2.1)
+
+PDO::quote — Quotes a string for use in a query.
+
+说明
+
+public string PDO::quote ( string $string [, int $parameter_type =
+PDO::PARAM_STR ] )
+
+PDO::quote() places quotes around the input string (if required) and escapes
+special characters within the input string, using a quoting style appropriate
+to the underlying driver.
+
+If you are using this function to build SQL statements, you are strongly
+recommended to use PDO::prepare() to prepare SQL statements with bound
+parameters instead of using PDO::quote() to interpolate user input into an SQL
+statement. Prepared statements with bound parameters are not only more
+portable, more convenient, immune to SQL injection, but are often much faster
+to execute than interpolated queries, as both the server and client side can
+cache a compiled form of the query.
+
+Not all PDO drivers implement this method (notably PDO_ODBC). Consider using
+prepared statements instead.
+
+Caution
+
+Security: the default character set
+
+The character set must be set either on the server level, or within the
+database connection itself (depending on the driver) for it to affect 
+PDO::quote(). See the driver-specific documentation for more information.
+
+参数
+
+string
+
+    The string to be quoted.
+
+parameter_type
+
+    Provides a data type hint for drivers that have alternate quoting styles.
+
+返回值
+
+Returns a quoted string that is theoretically safe to pass into an SQL
+statement. Returns FALSE if the driver does not support quoting in this way.
+
+范例
+
+Example #1 Quoting a normal string
+
+<?php
+$conn = new PDO('sqlite:/home/lynn/music.sql3');
+
+/* Simple string */
+$string = 'Nice';
+print "Unquoted string: $string\n";
+print "Quoted string: " . $conn->quote($string) . "\n";
+?>
+
+以上例程会输出：
+
+Unquoted string: Nice
+Quoted string: 'Nice'
+
+Example #2 Quoting a dangerous string
+
+<?php
+$conn = new PDO('sqlite:/home/lynn/music.sql3');
+
+/* Dangerous string */
+$string = 'Naughty \' string';
+print "Unquoted string: $string\n";
+print "Quoted string:" . $conn->quote($string) . "\n";
+?>
+
+以上例程会输出：
+
+Unquoted string: Naughty ' string
+Quoted string: 'Naughty '' string'
+
+Example #3 Quoting a complex string
+
+<?php
+$conn = new PDO('sqlite:/home/lynn/music.sql3');
+
+/* Complex string */
+$string = "Co'mpl''ex \"st'\"ring";
+print "Unquoted string: $string\n";
+print "Quoted string: " . $conn->quote($string) . "\n";
+?>
+
+以上例程会输出：
+
+Unquoted string: Co'mpl''ex "st'"ring
+Quoted string: 'Co''mpl''''ex "st''"ring'
+
+参见
+
+  • PDO::prepare() - Prepares a statement for execution and returns a statement
+    object
+  • PDOStatement::execute() - 执行一条预处理语句
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+When converting from the old mysql_ functions to PDO, note that the quote
+function isn't exactly the same as the old mysql_real_escape_string function.
+It escapes, but also adds quotes; hence the name I guess :-)
+
+After I replaced mysql_real_escape_string with $pdo->quote, it took me a bit to
+figure out why my strings were turning up in results with quotes around them. I
+felt like a fool when I realized all I needed to do was change ...\"".$pdo->
+quote($foo)."\"... to ...".$pdo->quote($foo)."...
+===============================================================================
+
+This function also converts new lines to \r\n
+===============================================================================
+
+One have to understand that string formatting has nothing to do with
+identifiers.
+And thus string formatting should NEVER ever be used to format an identifier (
+table of field name).
+To quote an identifier, you have to format it as identifier, not as string.
+To do so you have to
+
+- Enclose identifier in backticks.
+- Escape backticks inside by doubling them.
+
+So, the code would be:
+<?php
+function quoteIdent($field) {
+    return "`".str_replace("`","``",$field)."`";
+}
+?>
+this will make your identifier properly formatted and thus invulnerable to
+injection.
+
+However, there is another possible attack vector - using dynamical identifiers
+in the query may give an outsider control over fields the aren't allowed to:
+Say, a field user_role in the users table and a dynamically built INSERT query
+based on a $_POST array may allow a privilege escalation with easily forged
+$_POST array.
+Or a select query which let a user to choose fields to display may reveal some
+sensitive information to attacker.
+
+To prevent this kind of attack yet keep queries dynamic, one ought to use
+WHITELISTING approach.
+
+Every dynamical identifier have to be checked against a hardcoded whitelist
+like this:
+<?php
+$allowed  = array("name","price","qty");
+$key = array_search($_GET['field'], $allowed));
+if ($key == false) {
+    throw new Exception('Wrong field name');
+}
+$field = $db->quoteIdent($allowed[$key]);
+$query = "SELECT $field FROM t"; //value is safe
+?>
+(Personally I wouldn't use a query like this, but that's just an example of
+using a dynamical identifier in the query).
+
+And similar approach have to be used when filtering dynamical arrays for insert
+and update:
+
+<?php
+function filterArray($input,$allowed)
+{
+    foreach(array_keys($input) as $key )
+    {
+        if ( !in_array($key,$allowed) )
+        {
+             unset($input[$key]);
+        }
+    }
+    return $input;
+}
+//used like this
+$allowed = array('title','url','body','rating','term','type');
+$data = $db->filterArray($_POST,$allowed);
+// $data now contains allowed fields only
+// and can be used to create INSERT or UPDATE query dynamically
+?>
+===============================================================================
+
+Note that this function just does what the documentation says: It escapes
+special characters in strings.
+
+It does NOT - however - detect a "NULL" value. If the value you try to quote is
+"NULL" it will return the same value as when you process an empty string (->
+''), not the text "NULL".
+===============================================================================
+
+In foundation quoting is bad idea,there always will be possibillity to escape
+or fraud quote function ,better solution,i mean best solution is using this
+function : htmlentities($string, ENT_QUOTES, 'UTF-8') which translate quote
+into &#39; and $string translated like this can't affect on your code.

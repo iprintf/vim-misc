@@ -1,0 +1,222 @@
+
+imap_thread
+
+(PHP 4 >= 4.0.7, PHP 5, PHP 7)
+
+imap_thread — Returns a tree of threaded message
+
+说明
+
+array imap_thread ( resource $imap_stream [, int $options = SE_FREE ] )
+
+Gets a tree of a threaded message.
+
+参数
+
+imap_stream
+
+    由 imap_open() 返回的 IMAP 流。
+
+options
+
+返回值
+
+imap_thread() returns an associative array containing a tree of messages
+threaded by REFERENCES, or FALSE on error.
+
+Every message in the current mailbox will be represented by three entries in
+the resulting array:
+
+  • $thread["XX.num"] - current message number
+
+  • $thread["XX.next"]
+
+  • $thread["XX.branch"]
+
+范例
+
+Example #1 imap_thread() Example
+
+<?php
+
+// Here we're outputting the threads of a newsgroup, in HTML
+
+$nntp = imap_open('{news.example.com:119/nntp}some.newsgroup', '', '');
+$threads = imap_thread($nntp);
+
+foreach ($threads as $key => $val) {
+  $tree = explode('.', $key);
+  if ($tree[1] == 'num') {
+    $header = imap_headerinfo($nntp, $val);
+    echo "<ul>\n\t<li>" . $header->fromaddress . "\n";
+  } elseif ($tree[1] == 'branch') {
+    echo "\t</li>\n</ul>\n";
+  }
+}
+
+imap_close($nntp);
+
+?>
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+imap_thread() returns threads, but are confined to the current open mailbox you
+defined in imap_open(). This is not useful for, lets say, getting full threads
+( from "Sent Messages" and "Inbox" [took me a day to figure this out]).
+
+If you compare threads on Outlook vs gmail.com you will find that Outlook
+determines threads by subject title, not actual parent > child relationships.
+
+Gmail however, seems to get threads right, but does not include mail you send
+using their web interface in  {imap.google.com:993/imap/ssl}Sent Messages .
+What this means is that threads using php imap won't be perfect for gmail.
+
+If you send mail using Outlook (or any mail client), gmail.com does put it in
+their "Sent Mail".
+
+So all in all, threads for PHP imap are not perfect. But I blame the imap
+specifications (DEAR IMAP GUYS, please add better uids and parent ids. thx
+Chris) more than PHP
+
+So I created the Outlook method for threading (comparing subjects) below:
+
+<?php
+$imap         = imap_open('{imap.gmail.com:993/imap/ssl}INBOX', 
+'youremail@gmail.com', 'yourpassword');
+$subject     = 'Item b';
+$threads     = array();
+
+//remove re: and fwd:
+$subject = trim(preg_replace("/Re\:|re\:|RE\:|Fwd\:|fwd\:|FWD\:/i", '', 
+$subject));
+
+//search for subject in current mailbox
+$results = imap_search($imap, 'SUBJECT "'.$subject.'"', SE_UID);
+
+//because results can be false
+if(is_array($results)) {
+    //now get all the emails details that were found
+    $emails = imap_fetch_overview($imap, implode(',', $results), FT_UID);
+   
+    //foreach email
+    foreach ($emails as $email) {
+        //add to threads
+        //we date date as the key because later we will sort it
+        $threads[strtotime($email->date)] = $email;
+    }   
+}
+
+//now reopen sent messages
+imap_reopen($imap, '{imap.gmail.com:993/imap/ssl}Sent Messages');
+
+//and do the same thing
+
+//search for subject in current mailbox
+$results = imap_search($imap, 'SUBJECT "'.$subject.'"', SE_UID);
+
+//because results can be false
+if(is_array($results)) {
+    //now get all the emails details that were found
+    $emails = imap_fetch_overview($imap, implode(',', $results), FT_UID);
+   
+    //foreach email
+    foreach ($emails as $email) {
+        //add to threads
+        //we date date as the key because later we will sort it
+        $threads[strtotime($email->date)] = $email;
+    }   
+}
+
+//sort keys so we get threads in chronological order
+ksort($threads);
+
+echo '<pre>'.print_r($threads, true).'</pre>';
+exit;
+?>
+
+so if you are going to use imap_thread() for something useful. This is probably
+the most optimal way I can think of:
+
+<?php
+$imap = imap_open('{imap.gmail.com:993/imap/ssl}INBOX', 'youremail@gmail.com', 
+'password');
+$threads = $rootValues = array();
+
+$thread = imap_thread($imap);
+$root = 0;
+
+//first we find the root (or parent) value for each email in the thread
+//we ignore emails that have no root value except those that are infact
+//the root of a thread
+
+//we want to gather the message IDs in a way where we can get the details of
+//all emails on one call rather than individual calls ( for performance )
+
+//foreach thread
+foreach ($thread as $i => $messageId) {
+    //get sequence and type
+    list($sequence, $type) = explode('.', $i);
+   
+    //if type is not num or messageId is 0 or (start of a new thread and no
+next) or is already set
+    if($type != 'num' || $messageId == 0
+       || ($root == 0 && $thread[$sequence.'.next'] == 0)
+       || isset($rootValues[$messageId])) {
+        //ignore it
+        continue;
+    }
+   
+    //if this is the start of a new thread
+    if($root == 0) {
+        //set root
+        $root = $messageId;
+    }
+   
+    //at this point this will be part of a thread
+    //let's remember the root for this email
+    $rootValues[$messageId] = $root;
+   
+    //if there is no next
+    if($thread[$sequence.'.next'] == 0) {
+        //reset root
+        $root = 0;
+    }
+}
+
+//now get all the emails details in rootValues in one call
+//because one call for 1000 rows to a server is better
+//than calling the server 1000 times 
+$emails = imap_fetch_overview($imap, implode(',', array_keys($rootValues)));
+
+//foreach email
+foreach ($emails as $email) {
+    //get root
+    $root = $rootValues[$email->msgno];
+   
+    //add to threads
+    $threads[$root][] = $email;
+}   
+
+//there is no need to sort, the threads will automagically in chronological
+order
+echo '<pre>'.print_r($threads, true).'</pre>';
+imap_close($imap);
+exit;
+?>
+===============================================================================
+
+I figure other people may benefit from an explanation of the resulting array,
+My understanding is:
+
+Key: Essentially a node ID
+Num: The mail ID (where 0 indicates the start of a conversation)
+Next: The node ID of the first child (where 0 indicates there are no children)
+Branch: The node ID of the next sibling (where 0 indicates there is no sibling)
+===============================================================================
+
+One possible option to imap_thread is the constant SE_UID, which will make
+imap_thread return UIDs instead of sequence numbers in the x.num-fields of the
+returned array.

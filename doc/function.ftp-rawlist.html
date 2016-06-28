@@ -1,0 +1,1713 @@
+
+ftp_rawlist
+
+(PHP 4, PHP 5, PHP 7)
+
+ftp_rawlist — 返回指定目录下文件的详细列表
+
+说明
+
+array ftp_rawlist ( resource $ftp_stream , string $directory )
+
+ftp_rawlist() 函数将执行 FTP LIST 命令，并把结果做为一个数组返回。
+
+参数
+
+ftp_stream
+
+    FTP 连接资源。
+
+directory
+
+    目录路径。
+
+recursive
+
+    如果此参数为 TRUE，实际执行的命令将会为 LIST -R。
+
+返回值
+
+返回一个数组，数组的每个元素为返回文本的每一行，输出结构不会被解析。使用函数 
+ftp_systype() 可以用来判断 FTP 服务器的类型，从而可以用来判断返回列表的类型。
+
+范例
+
+Example #1 ftp_rawlist() 例子
+
+<?php
+
+// set up basic connection
+$conn_id = ftp_connect($ftp_server);
+
+// login with username and password
+$login_result = ftp_login($conn_id, $ftp_user_name, $ftp_user_pass);
+
+// get the file list for /
+$buff = ftp_rawlist($conn_id, '/');
+
+// close the connection
+ftp_close($conn_id);
+
+// output the buffer
+var_dump($buff);
+?>
+
+以上例程的输出类似于：
+
+array(3) {
+  [0]=>
+  string(65) "drwxr-x---   3 vincent  vincent      4096 Jul 12 12:16 public_ftp"
+  [1]=>
+  string(66) "drwxr-x---  15 vincent  vincent      4096 Nov  3 21:31 public_html"
+  [2]=>
+  string(73) "lrwxrwxrwx   1 vincent  vincent        11 Jul 12 12:16 www -> public_html"
+}
+
+更新日志
+
+版本           说明
+4.3.0 增加 recursive 参数。
+
+参见
+
+  • ftp_nlist() - 返回给定目录的文件列表
+
+
+User Contributed Notes 51 notes
+
+===============================================================================
+
+Here's a simple function that'll parse the data returned by ftp_rawlist() into
+an associative array. I wrote it because some of the functions listed below are
+way to long, complex or won't work with file names that contain spaces.
+
+<?php
+    function listDetailed($resource, $directory = '.') {
+        if (is_array($children = @ftp_rawlist($resource, $directory))) {
+            $items = array();
+
+            foreach ($children as $child) {
+                $chunks = preg_split("/\s+/", $child);
+                list($item['rights'], $item['number'], $item['user'], $item[
+'group'], $item['size'], $item['month'], $item['day'], $item['time']) = $chunks
+;
+                $item['type'] = $chunks[0]{0} === 'd' ? 'directory' : 'file';
+                array_splice($chunks, 0, 8);
+                $items[implode(" ", $chunks)] = $item;
+            }
+
+            return $items;
+        }
+
+        // Throw exception or return false < up to you
+    }
+?>
+===============================================================================
+
+In case anybody wants to get a detailed listing using the MLSD command over a
+passive connection, the following function might be helpful as a starting point
+for your own implementation:
+
+<?php
+function ftp_mlsd($ftp, $directory) {
+    $ok = @ftp_chdir($ftp, $directory);
+    if (!$ok) {
+        return false;
+    }
+    $ret = ftp_raw($ftp, 'PASV');
+    if (preg_match(
+        '/^227.*\(([0-9]+,[0-9]+,[0-9]+,[0-9]+),([0-9]+),([0-9]+)\)$/',
+        $ret[0], $matches)) {
+        $controlIP = str_replace(',', '.', $matches[1]);
+        $controlPort = intval($matches[2])*256+intval($matches[3]);
+        $socket = fsockopen($controlIP, $controlPort);
+        ftp_raw($ftp, 'MLSD');
+        $s = '';
+        while (!feof($socket)) {
+            $s .= fread($socket, 4096);
+        }
+        fclose($socket);
+        $files = array();
+        foreach (explode("\n", $s) as $line) {
+            if (!$line) {
+                continue;
+            }
+            $file = array();
+            foreach (explode(';', $line) as $property) {
+                list($key, $value) = explode('=', $property);
+                if ($value) {
+                    $file[$key] = $value;
+                } else {
+                    $filename = trim($key);
+                }
+            }
+            $files[$filename] = $file;
+        }
+        return $files;
+    }
+    return false;
+}
+?>
+
+Please note that this function ignores the setting of ftp_pasv(). Making the
+function to work universally for both active and passive connections is left as
+an exercise to the reader ;-)
+===============================================================================
+
+All  parse_rawlist Functions here have one Problem.
+
+when a file starts with a space character like " robots.txt ", it will be
+ignored.
+
+Rename, delete will fail...
+===============================================================================
+
+Previous example (by davidknoll at o2 dot co dot uk) works well if ftp_systype
+() returned "UNIX", but sometimes I am experiencing "Windows_NT". Here is some
+improvement:
+
+<?php
+function parsed_listing($path)
+{
+   $conn = ftp_connect(FTP_HOST);
+   ftp_login($conn, FTP_USER, FTP_PASS);
+   $systype = ftp_systype($conn_id);
+   $list = ftp_rawlist($conn, "-a ".FTP_BASE.$path);
+   ftp_close($conn);
+   $i = 0;
+
+   foreach ($list as $current) {
+      switch ($systype) {
+         case "Windows_NT":
+         ereg("([0-9]{2})-([0-9]{2})-([0-9]{2}) +([0-9]{2}):([0-9]{2})(AM|PM) +
+([0-9]+|<DIR>) +(.+)",$current,$split);
+         if (is_array($split)) {
+            if ($split[3]<70) { $split[3]+=2000; } else { $split[3]+=1900; } //
+4digit year fix
+            $parsed[$i]['isdir'] = ($split[7]=="<DIR>");
+            $parsed[$i]['size'] = $split[7];
+            $parsed[$i]['month'] = $split[1];
+            $parsed[$i]['day'] = $split[2];
+            $parsed[$i]['time/year'] = $split[3];
+            $parsed[$i]['name'] = $split[8];
+            $i++;
+         }
+         break;
+
+         case "UNIX":
+         default:
+
+// etc.
+
+         break;
+      }
+   }
+   return $parsed;
+}
+?>
+===============================================================================
+
+Get a listing of all files including hidden files except '.' or '..' use:
+
+<?php
+ftp_chdir($connid, $dir);
+ftp_rawlist($connid, "-A");
+?>
+
+This had me dancing in circles for some time!
+===============================================================================
+
+Regarding converting permissions from symbolic notation to octal, note that
+Hazem dot Khaled at gmail dot com's chmodnum function produces INCORRECT
+results.  The resutls are base-10 numbers that only LOOK like they are octal
+numbers.  The function also ignores setuid, setgid and sticky bits, and will
+produce incorrect numbers if such a file is encountered.  Instead, this
+brute-force code works.  Maybe there is something more slick, but this isn't
+too CPU-intensive (note that it assumes you've error-checked that you indeed
+have a 10-character string!):
+
+      $permissions = 'drwxr-xr-x';  // or whatever
+      $mode = 0;
+
+      if ($permissions[1] == 'r') $mode += 0400;
+      if ($permissions[2] == 'w') $mode += 0200;
+      if ($permissions[3] == 'x') $mode += 0100;
+      else if ($permissions[3] == 's') $mode += 04100;
+      else if ($permissions[3] == 'S') $mode += 04000;
+
+      if ($permissions[4] == 'r') $mode += 040;
+      if ($permissions[5] == 'w') $mode += 020;
+      if ($permissions[6] == 'x') $mode += 010;
+      else if ($permissions[6] == 's') $mode += 02010;
+      else if ($permissions[6] == 'S') $mode += 02000;
+
+      if ($permissions[7] == 'r') $mode += 04;
+      if ($permissions[8] == 'w') $mode += 02;
+      if ($permissions[9] == 'x') $mode += 01;
+      else if ($permissions[9] == 't') $mode += 01001;
+      else if ($permissions[9] == 'T') $mode += 01000;
+
+      printf('Mode is %d decimal and %o octal', $mode, $mode);
+===============================================================================
+
+With this handy function based on functions presented here you get the file
+list in alphabetical order with all directories on top:
+
+<?php
+function rawlist_dump() {
+  global $ftp_connect;
+  $ftp_rawlist = ftp_rawlist($ftp_connect, ".");
+  foreach ($ftp_rawlist as $v) {
+    $info = array();
+    $vinfo = preg_split("/[\s]+/", $v, 9);
+    if ($vinfo[0] !== "total") {
+      $info['chmod'] = $vinfo[0];
+      $info['num'] = $vinfo[1];
+      $info['owner'] = $vinfo[2];
+      $info['group'] = $vinfo[3];
+      $info['size'] = $vinfo[4];
+      $info['month'] = $vinfo[5];
+      $info['day'] = $vinfo[6];
+      $info['time'] = $vinfo[7];
+      $info['name'] = $vinfo[8];
+      $rawlist[$info['name']] = $info;
+    }
+  }
+  $dir = array();
+  $file = array();
+  foreach ($rawlist as $k => $v) {
+    if ($v['chmod']{0} == "d") {
+      $dir[$k] = $v;
+    } elseif ($v['chmod']{0} == "-") {
+      $file[$k] = $v;
+    }
+  }
+  foreach ($dir as $dirname => $dirinfo) {
+      echo "[ $dirname ] " . $dirinfo['chmod'] . " | " . $dirinfo['owner'] . "
+| " . $dirinfo['group'] . " | " . $dirinfo['month'] . " " . $dirinfo['day'] . "
+" . $dirinfo['time'] . "<br>";
+  }
+  foreach ($file as $filename => $fileinfo) {
+      echo "$filename " . $fileinfo['chmod'] . " | " . $fileinfo['owner'] . " |
+" . $fileinfo['group'] . " | " . $fileinfo['size'] . " Byte | " . $fileinfo[
+'month'] . " " . $fileinfo['day'] . " " . $fileinfo['time'] . "<br>";
+  }
+}
+rawlist_dump();
+?>
+===============================================================================
+
+There are a couple of php-related reasons given here for ftp_rawlist returning
+an empty result. However be aware that ZoneAlarm (and possibly other) firewalls
+can block responses without giving any visible clue so be sure to check that
+first.
+===============================================================================
+
+ftp_rawlist kept returning empty file listing, it would work on some machines
+but not others, it turned out to be ftp_pasv command was needed.
+Very frustrating
+===============================================================================
+
+this is function to check for dirs
+
+<?php
+function ftp_isdir($connect_id,$dir)
+{
+    if(ftp_chdir($connect_id,$dir))
+    {
+        ftp_cdup($connect_id);
+        return true;
+
+    }
+    else
+    {
+        return false;
+    }
+}
+?>
+===============================================================================
+
+To format the _recrusive_ result of this function I use this:
+
+<?php
+$conn_id = ftp_connect(FTP_SERVER);
+
+$login_result = ftp_login($conn_id, FTP_USR, FTP_PASS);
+
+$rawfiles = ftp_rawlist($conn_id, '/', true);
+
+ftp_close($conn_id);
+
+// here the magic begins!
+$structure = array();
+$arraypointer = &$structure;
+foreach ($rawfiles as $rawfile) {
+    if ($rawfile[0] == '/') {
+        $paths = array_slice(explode('/', str_replace(':', '', $rawfile)), 1);
+        $arraypointer = &$structure;
+        foreach ($paths as $path) {
+            foreach ($arraypointer as $i => $file) {
+                if ($file['text'] == $path) {
+                    $arraypointer = &$arraypointer[ $i ]['children'];
+                    break;
+                }
+            }
+        }
+    } elseif(!empty($rawfile)) {
+        $info = preg_split("/[\s]+/", $rawfile, 9);       
+        $arraypointer[] = array(
+            'text'   => $info[8],
+            'isDir'  => $info[0]{0} == 'd',
+            'size'   => byteconvert($info[4]),
+            'chmod'  => chmodnum($info[0]),
+            'date'   => strtotime($info[6] . ' ' . $info[5] . ' ' . $info[7]),
+            'raw'    => $info
+            // the 'children' attribut is automatically added if the folder
+contains at least one file
+        );
+    }
+}
+
+// in $structure is all the data
+print_r($structure);
+
+// little helper functions
+function byteconvert($bytes) {
+    $symbol = array('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB');
+    $exp = floor( log($bytes) / log(1024) );
+    return sprintf( '%.2f ' . $symbol[ $exp ], ($bytes / pow(1024, floor($exp
+))) );
+}
+
+function chmodnum($chmod) {
+    $trans = array('-' => '0', 'r' => '4', 'w' => '2', 'x' => '1');
+    $chmod = substr(strtr($chmod, $trans), 1);
+    $array = str_split($chmod, 3);
+    return array_sum(str_split($array[0])) . array_sum(str_split($array[1])) . 
+array_sum(str_split($array[2]));
+}
+
+?>
+===============================================================================
+
+Why not using POSIX regex to do the job here ? A preg_replace returns the
+information in an associative array with the following keys:
+
+<rights>
+<number>
+<owner>
+<group>
+<file_size>
+<mod_time>
+<file>
+<type> * that's a bonus: it will tell you if the item is either a file or a
+directory
+
+Code is shown below:
+
+$list=@ftp_rawlist($con,$directory) ;
+
+$items=array() ;
+
+foreach($list as $_)
+preg_replace(
+
+'`^(.{10}+)(\s*)(\d{1})(\s*)(\d*|\w*)'.
+'(\s*)(\d*|\w*)(\s*)(\d*)\s'.
+'([a-zA-Z]{3}+)(\s*)([0-9]{1,2}+)'.
+'(\s*)([0-9]{2}+):([0-9]{2}+)(\s*)(.*)$`Ue',
+
+'$items[]=array(
+"rights"=>"$1",
+"number"=>"$3",
+"owner"=>"$5", "group"=>"$7",
+"file_size"=>"$9",
+"mod_time"=>"$10 $12 $14:$15",
+"file"=>"$17",
+"type"=>print_r((preg_match("/^d/","$1"))?"dir":"file",1));',
+
+$_) ; # :p
+===============================================================================
+
+Some FTP servers only allow you to get list of files under current working
+directory. So if you always get result as empty array (array(0){ }), try
+changing the cwd befor get the list:
+
+<?php
+function ftprawlist($connid, $dir) {
+  ftp_chdir($connid, $dir);
+  return ftp_rawlist($connid, "-a");
+}
+?>
+===============================================================================
+
+On my PC (XP and Apache installed) - ftp_rawlist (with Parameter true) does
+only print a folder list - no subfolders, no files.
+So i created this recursive function that writes all filenames (incl. paths) to
+a array. I tested it on Mac, Linux and Windows - it works (as long as you don't
+use folders with spaces...).
+If you need more information: feel free to set more split[x]-Options and write
+them to the $files-array.
+
+<?php
+# the directory where ftp_rawlist starts
+$startdir = "example";
+
+# optional Datatypefilter (leave blank if not needed)
+$suffix   = "gif,png,jpeg,pdf,php";
+# ftp-login
+$ftp_server = "";
+$ftp_user   = "";
+$ftp_pw     = "";
+$ftp_mode   = "";
+$conn_id    = ftp_connect($ftp_server);
+ftp_login($conn_id, $ftp_user, $ftp_pw) OR die("<br>ftp-login failed");
+ftp_pasv($conn_id, true);
+
+#*********************************************************************
+# create filelist (recursiv)
+#*********************************************************************
+$files    = array(); # must be defined here
+$files    = raw_list("$startdir");
+
+#*********************************************************************
+# print result
+#*********************************************************************
+$i = 0; $count = count($files);
+while ($i < $count):
+  echo "$files[$i]<br>";
+  $i++;
+endwhile;
+ftp_close($conn_id);
+
+#*********************************************************************
+# rawlist in recursive form (without parameter true!!!)
+#*********************************************************************
+function raw_list($folder)
+{
+Global $conn_id;
+Global $suffix;
+Global $files;
+$suffixes = explode(",", $suffix);
+$list     = ftp_rawlist($conn_id, $folder);
+$anzlist  = count($list);
+$i = 0;
+while ($i < $anzlist):
+  $split    = preg_split("/[\s]+/", $list[$i], 9, PREG_SPLIT_NO_EMPTY);
+  $ItemName = $split[8];
+  $endung   = strtolower(substr(strrchr($ItemName,"."),1));
+  $path     = "$folder/$ItemName";
+  if (substr($list[$i],0,1) === "d" AND substr($ItemName,0,1) != "."):
+#      array_push($files, $path); # write directory in array if desired
+     raw_list($path);
+  elseif (substr($ItemName,0,2) != "._" AND in_array($endung,$suffixes)):
+     array_push($files, $path);
+  endif;
+  $i++;
+endwhile;
+return $files;
+}
+?>
+
+Ueli, Zurich
+===============================================================================
+
+Please pay attention that ftp_rawlist() function returns empty result if there
+is a folder with space. You must backslash it with addcslashes() function.
+
+IMPORTANT: at the same time any other function like ftp_delete() or ftp_rmdir()
+in opposite, will not be able to delete file/folder if folder name with space
+will be backslashes http://proxy-list.org/
+===============================================================================
+
+The solution of fredvanetten at tinqle dot com is nice but needs further
+evaluation as because of the preg_split and static listing of the variables
+will produce different values: comparing a file of today or an older, from a
+previous year:
+
+Array
+(
+    [time] => 2012
+    [day] => 11
+    [month] => Sep
+    [size] => 37262
+    [group] => group
+    [user] => owner
+    [number] => 1
+    [rights] => -rw-rw-rw-
+)
+
+Array
+(
+    [time] => 14:01
+    [day] => 23
+    [month] => Apr
+    [size] => 37262
+    [group] => group
+    [user] => owner
+    [number] => 1
+    [rights] => -rw-rw-rw-
+)
+===============================================================================
+
+This is a little cleaner:
+
+function parse_rawlist( $array )
+{
+    foreach($array as $curraw)
+    {
+        $struc = array();
+        $current = preg_split("/[\s]+/",$curraw,9);
+
+        $struc['perms']  = $current[0];
+        $struc['number'] = $current[1];
+        $struc['owner']  = $current[2];
+        $struc['group']  = $current[3];
+        $struc['size']  = $current[4];
+        $struc['month']  = $current[5];
+        $struc['day']    = $current[6];
+        $struc['time']  = $current[7];
+        $struc['year']  = $current[8];
+        $struc['raw']  = $curraw;
+        $structure[$struc['name']] = $struc;
+    }
+   return $structure;
+
+}
+===============================================================================
+
+Your code is ok, just replace $i = 0 instead of 1
+Thank you
+
+<?php
+
+function parse_rawlist( $array ) {
+
+   for ( $i = 1; $i < count($array); $i++ ) {
+
+       $current = $array[$i];
+  
+       $structure[$i]['perms']  = substr($current, 0, 10);
+       $structure[$i]['number'] = trim(substr($current, 11, 3));
+       $structure[$i]['owner']  = trim(substr($current, 15, 8));
+       $structure[$i]['group']  = trim(substr($current, 24, 8));
+       $structure[$i]['size']  = trim(substr($current, 33, 8));
+       $structure[$i]['month']  = trim(substr($current, 42, 3));
+       $structure[$i]['day']    = trim(substr($current, 46, 2));
+       $structure[$i]['time']  = substr($current, 49, 5);
+       $structure[$i]['name']  = substr($current, 55, strlen($current) - 55);
+
+   }
+
+   return $structure;
+
+}
+
+?>
+===============================================================================
+
+The following was inspired by a few others here, ofcourse ;-)
+Works for filenames with spaces (leading, trailing, consecutive and what not),
+formats the date a little taking year/time into account, leaves out items not
+in the $filetypes array below, and returns a nice nested assoc array:
+
+<?php
+
+$filetypes = array('-'=>'file', 'd'=>'directory', 'l'=>'link');
+
+$c = ftp_connect('localhost');
+ftp_login($c, 'jackcrow', 'banshee');
+$data = ftp_rawlist($c, '/users/jackcrow');
+
+foreach($data as $line) {
+    if (substr(strtolower($line), 0, 5) == 'total') continue; # first line,
+skip it
+    preg_match('/'. str_repeat('([^\s]+)\s+', 7) .'([^\s]+) (.*)/', $line, 
+$matches); # Here be Dragons
+    list($permissions, $children, $owner, $group, $size, $month, $day, $time, 
+$name) = array_slice($matches, 1);
+    # if it's not a file, directory or link, I don't really care to know about
+it :-) comment out the next line if you do
+    if (! in_array($permissions[0], array_keys($filetypes))) continue;
+    $type = $filetypes[$permissions[0]];
+    $date = date('d/m/y H:i', (strpos($time, ':') ? mktime(substr($time, 0, 2),
+substr($time, -2), 0, $month, $day) : mktime(0,0,0,$month, $day, $time) ) );
+    $files[$name] = array('type'=>$type, 'permissions'=>substr($permissions, 1
+), 'children'=>$children, 'owner'=>$owner, 'group'=>$group, 'size'=>$size, 
+'date'=>$date);
+}
+
+print_r($files);
+
+?>
+
+(I'm using a pretty simple regex pattern (non-space-stuff, whitespace,
+non-space-stuff etc), but amazingly /it still works!/ K.I.S.S.! The time part
+in the pattern is done separately to make sure only 1 space is taken out before
+the filename, which might start with spaces for all you know)
+===============================================================================
+
+I was having problems picking up the directories on a mac using cjacobsen at
+pge dot cl's (11-Jan-05) solution. Slight ammendment to the regexp works for
+me:
+
+ereg("([-dl][rwxstST-]+).* ?([0-9 ]* )?([a-zA-Z0-9]+).* ([a-zA-Z0-9]+).* ([0-9]
+*) ([a-zA-Z]+[0-9: ]*[0-9])[ ]+(([0-9]{2}:[0-9]{2})|[0-9]{4}) (.+)", $file,
+$regs)
+===============================================================================
+
+One comment regaring the method tig3r uses to determine the listing type.
+
+Windows servers can return a listing in unix format if the ftp server has been
+told to use unix formatting. The only robust solution I have is to try both
+ereg commands once and see which one successfully returns an array.
+===============================================================================
+
+Well, this works for me:
+
+<?php
+function parsed_listing($path)
+{
+    $conn = ftp_connect(FTP_HOST);
+    ftp_login($conn, FTP_USER, FTP_PASS);
+    $list = ftp_rawlist($conn, "-a ".FTP_BASE.$path);
+    ftp_close($conn);
+    $i = 0;
+    foreach ($list as $current) {
+        $split = preg_split("[ ]", $current, 9, PREG_SPLIT_NO_EMPTY);
+        if ($split[0] != "total") {
+            $parsed[$i]['isdir']        = $split[0]{0} === "d";
+            $parsed[$i]['perms']        = $split[0];
+            $parsed[$i]['number']    = $split[1];
+            $parsed[$i]['owner']        = $split[2];
+            $parsed[$i]['group']        = $split[3];
+            $parsed[$i]['size']        = $split[4];
+            $parsed[$i]['month']        = $split[5];
+            $parsed[$i]['day']        = $split[6];
+            $parsed[$i]['time/year']    = $split[7];
+            $parsed[$i]['name']        = $split[8];
+            $i++;
+        }
+    }
+    return $parsed;
+}
+?>
+===============================================================================
+
+this snip fixes the date problem with the listing and sorts out the variables:
+
+$filedata['access_permissions']
+$filedata['link_count']
+$filedata['uid']
+$filedata['gid']
+$filedata['size']
+$filedata['mod_date_month']
+$filedata['mod_date_day']
+$filedata['mod_time']
+$filedata['name']
+
+list($filedata['access_permissions'], $filedata['link_count'], $filedata
+['uid'], $filedata['gid'], $filedata['size'], $filedata['mod_date_month'],
+$filedata['mod_date_day'], $filedata['mod_time'], $filedata['name']) =
+preg_split("/[\s,]+/", $value);
+
+$filedata['type'] = $filedata['access_permissions']{0};
+
+$filedata['access_permissions'] = substr($filedata['access_permissions'],1);
+
+// now check the date to see if the last modifcation was this year or last.
+
+if ( strrpos($filedata['mod_time'], ':') != 2 ) { $filedata['mod_date'] =
+$filedata['mod_date_month'] ." " . $filedata['mod_date_day'] . " " . $filedata
+['mod_time']; $filedata['mod_time'] = "00:00"; } else { $filedata['mod_date'] =
+$filedata['mod_date_month'] ." " . $filedata['mod_date_day'] . " " . date("Y");
+}
+===============================================================================
+
+I'm not a traditional programmer, so I often take a different approach then
+most programmers. Here's how I get file information from an FTP file list. It's
+very simple (which I like). Comments are welcome:
+
+    // make your FTP connection calls here, then ...   
+    $contents = ftp_rawlist($ftp_id, ".");
+   
+    echo '<TABLE>';
+   
+    foreach ($contents as $key => $value) {
+   
+        $info = explode(" ", $value);
+        $clean = array();
+        foreach ($info as $key => $value) {
+            if (!empty($value)) { $clean[] = $value; }
+        } // end foreach loop 2
+       
+        if ( ($clean[8] != ".") AND ($clean[8] != "..") AND ($clean[8] !=
+"html") AND ($clean[8] != "logs") AND ($clean[8] != "protected") AND ($clean[8]
+!= "sys") ) {
+            echo '<TR>';
+            print "<TD WIDTH=\"40%\">$clean[8]</TD>"; // name of file
+            print "<TD WIDTH=\"20%\" ALIGN=\"CENTER\">$clean[5] $clean[6]
+$clean[7]</TD>"; // date info
+            // prep size
+            $size = $clean[4];
+            $size = $size / 1000; $size = ceil($size); if ($size <= 0) { $size
+= 1; }
+            if ($size >= 1000) { $measure = "MB"; $size = $size /  1000; } else
+{ $measure = "K"; }
+            print "<TD WIDTH=\"20%\" ALIGN=\"CENTER\">$size $measure</TD>"; //
+size
+            echo '<TD WIDTH="20%" ALIGN="CENTER" BGCOLOR="#FFFFE6" CLASS=
+"bodyBold">'; print "<A HREF=\"$PHP_SELF?Submit=DELETE&file=$clean[8]\">"; echo
+'DELETE</A></TD>'; // link to delete file
+            echo '</TR>';
+        } // end if
+       
+    } // end foreach loop 1
+   
+    echo '</TABLE>';
+===============================================================================
+
+When you try:
+
+$path = "directory pathname with spaces";
+$list = ftp_rawlist($conn_id,$path);
+
+It doesn't work
+
+but when you try:
+
+$path = "directory pathname with spaces";
+ftp_chdir($conn_id,$path);
+$list = ftp_rawlist($conn_id,".");
+
+It works
+===============================================================================
+
+Excelent expresion, but don't match SUID, SGUI and Sticky flags when 'x' is
+disabled. Fix it with [rwxstST-].
+
+<?php
+
+function itemize_dir($contents) {
+   foreach ($contents as $file) {
+       if(ereg("([-dl][rwxstST-]+).* ([0-9]*) ([a-zA-Z0-9]+).* ([a-zA-Z0-9]+).*
+([0-9]*) ([a-zA-Z]+[0-9: ]*[0-9])[ ]+(([0-9]{2}:[0-9]{2})|[0-9]{4}) (.+)", 
+$file, $regs)) {
+           $type = (int) strpos("-dl", $regs[1]{0});
+           $tmp_array['line'] = $regs[0];
+           $tmp_array['type'] = $type;
+           $tmp_array['rights'] = $regs[1];
+           $tmp_array['number'] = $regs[2];
+           $tmp_array['user'] = $regs[3];
+           $tmp_array['group'] = $regs[4];
+           $tmp_array['size'] = $regs[5];
+           $tmp_array['date'] = date("m-d",strtotime($regs[6]));
+           $tmp_array['time'] = $regs[7];
+           $tmp_array['name'] = $regs[9];
+       }
+       $dir_list[] = $tmp_array;
+   }
+   return $dir_list;
+}
+$buff = ftp_rawlist($cid, "/");
+$items = itemize_dir($buff);
+
+?>
+===============================================================================
+
+list all (including hidden files and dirs):
+<?php
+  $contents = ftp_rawlist($conn_id, "-al ".$dir_name);
+?>
+
+just as ftp command:
+LIST al
+
+"-aF " is equal to '-al', please refer to "ls --help"
+===============================================================================
+
+The previous regular expression(by Jonathan Almarez,ergye at yahoo dot com and
+guru at virusas dot lt) is very good.But i found it does not  take into account
+for directories(number>9)
+
+Change [0-9] to [0-9]*
+
+The code below not only parses:
+drwxrwxr-x     9 msik     ia           4096 Nov  5 14:19 Group3
+
+It also parses:
+drwxrwxr-x   19 msik     ia           4096 Nov  5 14:19 Group3
+3
+drwxrwxr-x   119 msik     ia           4096 Nov  5 14:19 Group3
+3
+
+0 = file
+1 = directory
+2 = simlink
+<?php
+
+function itemize_dir($contents) {
+   foreach ($contents as $file) {
+       if(ereg("([-dl][rwxst-]+).* ([0-9]*) ([a-zA-Z0-9]+).* ([a-zA-Z0-9]+).*
+([0-9]*) ([a-zA-Z]+[0-9: ]*[0-9])[ ]+(([0-9]{2}:[0-9]{2})|[0-9]{4}) (.+)", 
+$file, $regs)) {
+           $type = (int) strpos("-dl", $regs[1]{0});
+           $tmp_array['line'] = $regs[0];
+           $tmp_array['type'] = $type;
+           $tmp_array['rights'] = $regs[1];
+           $tmp_array['number'] = $regs[2];
+           $tmp_array['user'] = $regs[3];
+           $tmp_array['group'] = $regs[4];
+           $tmp_array['size'] = $regs[5];
+           $tmp_array['date'] = date("m-d",strtotime($regs[6]));
+           $tmp_array['time'] = $regs[7];
+           $tmp_array['name'] = $regs[9];
+       }
+       $dir_list[] = $tmp_array;
+   }
+   return $dir_list;
+}
+$buff = ftp_rawlist($cid, "/");
+$items = itemize_dir($buff);
+
+?>
+===============================================================================
+
+To make the latest correction to the parsing code:
+
+"ergye at yahoo dot com" dosen't take into account for files or directories
+that are older than a year where instead of showing the time, it shows the
+year.
+
+The code below not only parses:
+drwxrwxr-x   2 503      503          4096 Dec  3 12:12 CVAR
+
+It also parses:
+drwxrwxr-x   2 503      503          4096 Dec  3  2003 CVAR
+
+0 = file
+1 = directory
+2 = simlink
+<?php
+
+function itemize_dir($contents) {
+   foreach ($contents as $file) {
+       if(ereg("([-dl][rwxst-]+).* ([0-9]) ([a-zA-Z0-9]+).* ([a-zA-Z0-9]+).*
+([0-9]*) ([a-zA-Z]+[0-9: ]*[0-9])[ ]+(([0-9]{2}:[0-9]{2})|[0-9]{4}) (.+)", 
+$file, $regs)) {
+           $type = (int) strpos("-dl", $regs[1]{0});
+           $tmp_array['line'] = $regs[0];
+           $tmp_array['type'] = $type;
+           $tmp_array['rights'] = $regs[1];
+           $tmp_array['number'] = $regs[2];
+           $tmp_array['user'] = $regs[3];
+           $tmp_array['group'] = $regs[4];
+           $tmp_array['size'] = $regs[5];
+           $tmp_array['date'] = date("m-d",strtotime($regs[6]));
+           $tmp_array['time'] = $regs[7];
+           $tmp_array['name'] = $regs[9];
+       }
+       $dir_list[] = $tmp_array;
+   }
+   return $dir_list;
+}
+$buff = ftp_rawlist($cid, "/");
+$items = itemize_dir($buff);
+
+?>
+===============================================================================
+
+Note that there is no standard for the format, therefore don't be suprised when
+parsing routines for this work perfectly on some servers, and fail horribly on
+some.
+===============================================================================
+
+The previous regular expression is super, but does not take simlinks into
+account. Change [-d] to [-dl] and instead of indicating directories we should
+indicate the type of the items:
+
+0 = file
+1 = directory
+2 = simlink
+
+<?php
+
+function itemize_dir($contents) {
+    foreach ($contents as $file) {
+        if(ereg("([-dl][rwxst-]+).* ([0-9]) ([a-zA-Z0-9]+).* ([a-zA-Z0-9]+).*
+([0-9]*) ([a-zA-Z]+[0-9: ]*[0-9]) ([0-9]{2}:[0-9]{2}) (.+)", $file, $regs)) {
+            $type = (int) strpos("-dl", $regs[1]{0});
+            $tmp_array['line'] = $regs[0];
+            $tmp_array['type'] = $type;
+            $tmp_array['rights'] = $regs[1];
+            $tmp_array['number'] = $regs[2];
+            $tmp_array['user'] = $regs[3];
+            $tmp_array['group'] = $regs[4];
+            $tmp_array['size'] = $regs[5];
+            $tmp_array['date'] = date("m-d",strtotime($regs[6]));
+            $tmp_array['time'] = $regs[7];
+            $tmp_array['name'] = $regs[8];
+        }
+        $dir_list[] = $tmp_array;
+    }
+    return $dir_list;
+}
+
+$buff = ftp_rawlist($cid, "/");
+$items = itemize_dir($buff);
+
+?>
+===============================================================================
+
+Lets say only one of these scripts can accept filenames with spaces, but that
+script doesn't return all info that we may need, so i have modified a little
+bit one of my script and added some more regexp from here:
+
+<?
+
+$buff = ftp_rawlist($cid,"/");
+foreach ($buff as $file)
+{
+      if(ereg("([-d][rwxst-]+).* ([0-9]) ([a-zA-Z0-9]+).* ([a-zA-Z0-9]+).*
+([0-9]*) ([a-zA-Z]+[0-9: ]*[0-9]) ([0-9]{2}:[0-9]{2}) (.+)",$file,$regs))
+    { 
+        if(substr($regs[1],0,1)=="d") $isdir=1; else $isdir=0;
+        $tmp_array['line']=$regs[0];
+        $tmp_array['isdir']=$isdir;
+        $tmp_array['rights']=$regs[1];
+        $tmp_array['number']=$regs[2];
+        $tmp_array['user']=$regs[3];
+        $tmp_array['group']=$regs[4];
+        $tmp_array['size']=$regs[5];
+        $tmp_array['date']=date("m-d",strtotime($regs[6]));
+        $tmp_array['time']=$regs[7];
+        $tmp_array['name']=$regs[8];
+     }
+    $dir_list[]=$tmp_array;
+}
+
+?>
+
+The result is smth like that:
+
+  8 =>
+    array
+      'line' => '-rw-r--r--   1 guru     users           4 Sep  3 09:41 testas
+testas testas.txt'
+      'isdir' => 0
+      'rights' => '-rw-r--r--'
+      'number' => '1'
+      'user' => 'guru'
+      'group' => 'users'
+      'size' => '4'
+      'date' => '09-03'
+      'time' => '09:41'
+      'name' => 'testas testas testas.txt'
+  9 =>
+    array
+      'line' => 'drwxr-xr-x   3 guru     users        4096 Aug 20 08:54 upload'
+      'isdir' => 1
+      'rights' => 'drwxr-xr-x'
+      'number' => '3'
+      'user' => 'guru'
+      'group' => 'users'
+      'size' => '4096'
+      'date' => '08-20'
+      'time' => '08:54'
+      'name' => 'upload'
+
+Home this will help someone
+===============================================================================
+
+NO, NO, NO.
+
+The above examples are all wrong, the spaces given in array are not there "just
+because", its just a tabbed structure. In php we don't have structures like in
+c/cpp, but the following function will do the job.
+
+<?php
+
+function parse_rawlist( $array ) {
+
+    for ( $i = 1; $i < count($array); $i++ ) {
+
+        $current = $array[$i];
+   
+        $structure[$i]['perms']  = substr($current, 0, 10);
+        $structure[$i]['number'] = trim(substr($current, 11, 3));
+        $structure[$i]['owner']  = trim(substr($current, 15, 8));
+        $structure[$i]['group']  = trim(substr($current, 24, 8));
+        $structure[$i]['size']   = trim(substr($current, 33, 8));
+        $structure[$i]['month']  = trim(substr($current, 42, 3));
+        $structure[$i]['day']    = trim(substr($current, 46, 2));
+        $structure[$i]['time']   = substr($current, 49, 5);
+        $structure[$i]['name']   = substr($current, 55, strlen($current) - 55);
+
+    }
+
+    return $structure;
+
+}
+
+?>
+===============================================================================
+
+Hi all !
+ther is a litlle mistake in the naivesong 's message .
+Indeed , you stop to parse too early ...
+I tried and fix it like this :
+<?
+// getting the list
+  $list = ftp_rawlist ($ftp_stream, $ftp_directory);
+   $folders = array();
+   $files = array();
+   $links = array();
+   for ($i=0; $i<count($list); $i++)
+   {
+        //----convert tabs to blanks
+        //----delete multiple blanks
+// Here begin my modifications
+list ($permissions, $list[$i]) = parsenext ($list[$i]);
+     list ($number, $list[$i]) = parsenext ($list[$i]);
+     list ($owner, $list[$i]) = parsenext ($list[$i]);
+     list ($group, $list[$i]) = parsenext ($list[$i]);
+     list ($size, $list[$i]) = parsenext ($list[$i]);
+     list ($timeMonth,$list[$i]) = parsenext ($list[$i]);
+     list ($timeDay,$list[$i]) = parsenext ($list[$i]);
+     list ($timeTime,$list[$i]) = parsenext ($list[$i]);
+     $filename=$list[$i];
+// by taking $filename in last position , it works even if there is some space
+in its name
+//then we put it in the m array with the new things
+//----ok, put all this into the related array
+if ($filename != "." && $filename != "..")
+     {
+       $m = array();
+       $m["name"] = $filename;
+       $m["link"] = $filelink;
+       $m["size"] = afficherPoidsFichier($size);
+       $m["month"] = $timeMonth;
+       $m["day"] = $timeDay;
+       $m["time"] = $timeTime;
+       $m["owner"] = $owner;
+       $m["group"] = $group;
+       $m["permissions"] = $permissions;
+       if (substr($permissions, 0, 1) == "d")
+         $folders[count($folders)] = $m;
+       else if (substr($permissions, 0, 1) == "l")
+         $links[count($files)] = $m;
+       else
+         $files[count($files)] = $m;
+     }
+   }
+// you can sort $folders , $files , $links after if u want
+// afficherPoidsFichier($size) is a little function i found in this site at
+filesize() , works good !
+// Just give the good size
+function afficherPoidsFichier($size) {
+  $sizes = Array('o', 'Ko', 'Mo', 'Go');
+  $ext = $sizes[0];
+  for ($i=1; (($i < count($sizes)) && ($size >= 1024)); $i++) {
+   $size = $size / 1024;
+   $ext  = $sizes[$i];
+  }
+  return round($size, 2).' '.$ext;
+}
+?>
+===============================================================================
+
+I'm afraid I forgot the "parsenext" function in my previous note. Here it is:
+
+<?php
+
+    function parsenext ($s)
+    {
+      $k = strpos ($s, " ");
+      $m = array();
+      $m[0] = substr($s, 0, $k);
+      $m[1] = substr($s, $k+1);
+      return $m;
+    }
+
+?>
+===============================================================================
+
+This script will properly handle FTP servers where the returned date/time
+differs from the generic mm-dd-YYYY hh:mm:ss format:
+
+<?php
+
+    $list = ftp_rawlist ($ftp_stream, $ftp_directory);
+
+    $folders = array();
+    $files = array();
+    $links = array();
+    for ($i=0; $i<count($list); $i++)
+    {
+      //----convert tabs to blanks
+      $list[$i] = str_replace ("\t", " ", $list[$i]);
+      //----delete multiple blanks
+      while (($k = strpos($list[$i], "  ")) !== FALSE)
+        $list[$i] = substr($list[$i],0,$k+1).trim(substr($list[$i],$k));
+      //----split link reference from filename where available
+      if (($k = strpos($list[$i], " -> ")) !== FALSE)
+      {
+        $filelink = substr($list[$i], $k+4);
+        $list[$i] = substr($list[$i], 0, $k);
+      }
+      else
+        $filelink = "";
+      //----parse filename
+      $k = strrpos($list[$i], " ");
+      $filename = substr($list[$i], $k+1);
+      $list[$i] = substr($list[$i], 0, $k);
+      //----parse the rest of info
+      list ($permissions, $list[$i]) = parsenext ($list[$i]);
+      list ($number, $list[$i]) = parsenext ($list[$i]);
+      list ($owner, $list[$i]) = parsenext ($list[$i]);
+      list ($group, $list[$i]) = parsenext ($list[$i]);
+      list ($size, $time) = parsenext ($list[$i]);
+      //----ok, put all this into the related array
+      if ($filename != "." && $filename != "..")
+      {
+        $m = array();
+        $m["name"] = $filename;
+        $m["link"] = $filelink;
+        $m["size"] = $size;
+        $m["time"] = $time;
+        $m["owner"] = $owner;
+        $m["group"] = $group;
+        $m["permissions"] = $permissions;
+        if (substr($permissions, 0, 1) == "d")
+          $folders[count($folders)] = $m;
+        else if (substr($permissions, 0, 1) == "l")
+          $links[count($files)] = $m;
+        else
+          $files[count($files)] = $m;
+      }
+    }
+    sort ($folders);
+    sort ($files);
+    sort ($links);
+
+?>
+
+This script works fine on any raw list that complies with the following format:
+
+permissions number owner group size time name [" -> " link_to]
+
+where time may have whatever format the FTP server wants. ;-)
+
+It also returns folders, files and links in separated sorted lists (got this
+idea from the note of "postmaster at alishomepage dot com" in this help page).
+===============================================================================
+
+I fixed jmv AT jmvware DOT com's script:
+<?php
+
+$dirline=ereg_replace(" +",' ',$dirline);
+$isdir=0;
+if (ereg('^d',$dirline)) $isdir=1;
+list($permissions,$num,$owner,$group
+,$size,$month,$day,$year_time,$name)=split(' ',$dirline);
+
+//added the next lines:
+$fix=explode(' ',$dirline);
+$fixsize=count($fix);
+if($fixsize > 8)
+{
+  for($start=9;$start<$fixsize;$start++)
+  {
+   $name.=" " . $fix[$start];
+  }
+}
+?>
+===============================================================================
+
+If you write
+<?php
+rawlist ($ftp, "-a");
+?>
+The command will be "LIST -a", so the retuned list will also contain hidden
+files like ".htaccess".
+
+In this case all files and folders of the current directory are contained.
+To list another folder, you must change to it with "ftp_chdir".
+===============================================================================
+
+hope this helps someone:
+<?php
+$list = ftp_rawlist($ftp_stream,$dir);
+$dirc = array();
+foreach ($list as $file)
+{
+    list($perms,$owner,$group,$size,$mtime,$fname) =
+    preg_match('#^([bcdlsp-][rwxtTsS-]{9})\s+(?:[0-9]+)\s+'.
+               '([a-zA-Z]+)\s+([a-zA-Z]+)\s+([0-9]+)\s+'.
+               '([A-Z][a-z]+ [0-9]{1,2} [0-9]{4} [0-9]{2}:[0-9]{2}) (.*)$#',
+$file);
+    $dirc[$fname]['permissions'] = $perms;
+    $dirc[$fname]['owner']       = $owner;
+    $dirc[$fname]['group']       = $group;
+    $dirc[$fname]['size']        = $size;
+    $dirc[$fname]['modtime']     = $mtime;
+}
+?>
+===============================================================================
+
+Here we go for a 100% working code... :D
+
+<?
+
+[code]
+
+function cutspaces($str){
+    while(substr($str,0,1)==" "){$str=substr($str,1);}
+    return $str;}
+
+[code]
+
+$folders=array();
+$files=array();
+for($i=0;$i<sizeof($list);$i++){
+    list($permissions,$next)=split(" ",$list[$i],2);
+    list($num,$next)=split(" ",cutspaces($next),2);
+    list($owner,$next)=split(" ",cutspaces($next),2);
+    list($group,$next)=split(" ",cutspaces($next),2);
+    list($size,$next)=split(" ",cutspaces($next),2);
+    list($month,$next)=split(" ",cutspaces($next),2);
+    list($day,$next)=split(" ",cutspaces($next),2);
+    list($year_time,$filename)=split(" ",cutspaces($next),2);
+    if($filename!="." && $filename!=".."){
+        if(substr($permissions,0,1)=="d"){
+            $folders[]=$filename;
+        } else {
+            $files[]=$filename;}}}
+sort($folders);
+sort($files);
+
+[code]
+
+?>
+
+so this will simply "get" all the information WITHOUT being in any case
+interfered with some spaces, ... etc etc... It will even put files in a $files
+array and folders in a $folders array, and sort them, so you will be able of
+using all this later
+
+and: the "folders" will NOT contain "." and ".." ;)
+
+so you can use all this to make a beautiful FTP interface... later on you could
+for example put permissions and etc etc in other arrays to use them in your
+result... cute....
+===============================================================================
+
+Another "formula" for decoding the rawlist: the ide is that normaly a "ls"
+contains info like below:
+
+<file rights> <number> <owner> <group> <date> <time> <filename>
+
+and: the "time" contains a ":" (which is NOT contained in any of the other
+infos -if we reversely read the array)
+
+and, in the case the "time" would not exist, i have done a "protection script"
+that would try to find out using the year... Yet that may NOT always work since
+a user name or group name MAY contain an item like "1999" etc... (and i did not
+check the date format reversely -on the filename first- since a probability of
+presence is higher of a date is MUCH higher in a filename)
+
+So here we go:
+
+<?
+
+[... code ...]
+
+$fnTest=array("198","199","200","201","202");
+
+[... code ...]
+
+$j=0;
+$strrpos=strrpos($list[$i],":");
+while($strrpos==0){
+    $strrpos=strpos($list[$i],$fnTest[$j]);
+    $j++;}
+if($j){
+    $strrpos+=2+strlen($fnTest[$j]);
+}else{
+    $strrpos+=4;}
+$elmt=substr($list[$i],$strrpos);
+
+[... code ...]
+
+?>
+
+and $elmt would *normally* contain the info we want... but i'm still working on
+it!
+===============================================================================
+
+If you want to use explode, for all files in a dir, or something..
+
+Use:
+
+$rawlist[$i][$x] = ereg_replace( "([\x20]+)", "\x20", $rawlist[$i][$x]);
+
+/*
+$rawlist[$i][$x] = explode("\x20", $rawlist[$i][$x]);
+
+echo $rawlist[$i][$x][$k] . "<br>";
+*/
+
+Why?:
+The output prints a different amount of spaces.
+===============================================================================
+
+Seems it doesn't have to be so complicated:
+
+$dirline=ereg_replace(" +",' ',$dirline);
+$isdir=0;
+if (ereg('^d',$dirline)) $isdir=1;
+list($permissions,$num,$owner,$group
+,$size,$month,$day,$year_time,$name)=split(' ',$dirline);
+===============================================================================
+
+I tweaked the regexp above and used it like this in a for-loop:
+
+...
+ereg("([-d])([rwxst-]{9}).* ([0-9]*) ([a-zA-Z]+[0-9: ]* [0-9]{2}:?[0-9]{2})
+(.+)", $raw[$i], $regs)
+
+$out[] = array("is_dir" =>
+  ($regs[1] == "d") ? true : false,
+"mod" => $regs[2],
+"size" => $regs[3],
+"time" => $regs[4],
+"name" => $regs[5],
+"raw" => $regs[0]);
+...
+
+the previous version couldn't handle old dates which are in format 'M d Y'
+instead of 'M d H:i' correctly
+===============================================================================
+
+L8 ereg mask (directory?, size, name):
+
+ereg("([-d])[rwxst-]{9}.* ([0-9]*) [a-zA-Z]+ [0-9: ]*[0-9]
+(.+)",$dirline,$regs);
+
+I've tried this, and it works fine if the name of the file has not a number in
+the first letter. for example, if I have a file named "1file.exe", it shows
+"file.exe"; and if I've a file named "010102.exe" it shows ".exe" only.
+I've improved it by doing this:
+
+if(ereg("([-d])[rwxst-]{9}.* ([0-9]*) ([a-zA-Z]+[0-9: ]*[0-9]) ([0-9]{2}:[0-9]
+{2}) (.+)",$dirline,$regs))
+{
+            if($regs[1]=="d") $dirinfo[0] = 1;
+            $dirinfo[1] = $regs[2];
+            $dirinfo[2] = $regs[3];
+            $dirinfo[3] = $regs[4];
+            $dirinfo[4] = $regs[5];
+}
+$dirinfo[0] => is a directory? (1=yes)
+$dirinfo[1] => file size
+$dirinfo[2] => file date
+$dirinfo[3] => file time
+$dirinfo[4] => file name
+
+and now works with all filename formats!
+===============================================================================
+
+[[ Editors note: Seems it was fixed in PHP 4.3.0 ]]
+A note to developers using PHP on Windows servers: as of PHP 4.1.2, ftp_rawlist
+() is broken in the Windows build of PHP. It will return nothing at all, even
+if the same code works fine on UNIX. So if you're going crazy trying to figure
+out why the function isn't returning anything, stop wasting your time, you're
+not doing anything wrong. Hopefully this will get fixed in future versions,
+although it's apparently been an issue since at least 4.0.6.
+
+More info on this bug is at http://bugs.php.net/bug.php?id=16057
+===============================================================================
+
+the second parameter accepts also standard arguments of /bin/ls command like
+"-l" or "-t"
+===============================================================================
+
+An example script for rekursiv directory analysis ... interesting are the ereg
+functions for spliting the content based on the system type...
+(http://beben.lanparty.de/smint/ftp_rekdiranalys.phps)
+
+<?php
+function analysedir($dirline)
+{
+    global $systyp,$ftp_server,$stop;
+   
+    if(ereg("([-dl])[rwxst-]{9}",substr($dirline,0,10))) {
+        $systyp = "UNIX";
+    }
+   
+    if(substr($dirline,0,5) == "total") {
+        $dirinfo[0] = -1;
+    } elseif($systyp=="Windows_NT") {
+        if(ereg("[-0-9]+ *[0-9:]+[PA]?M? +<DIR> {10}(.*)",$dirline,$regs)) {
+            $dirinfo[0] = 1;
+            $dirinfo[1] = 0;
+            $dirinfo[2] = $regs[1];
+        } elseif(ereg("[-0-9]+ *[0-9:]+[PA]?M? +([0-9]+) (.*)",$dirline,$regs))
+{
+            $dirinfo[0] = 0;
+            $dirinfo[1] = $regs[1];
+            $dirinfo[2] = $regs[2];
+        }
+    } elseif($systyp=="UNIX") {
+        if(ereg("([-d])[rwxst-]{9}.* ([0-9]*) [a-zA-Z]+ [0-9: ]*[0-9] (.+)",
+$dirline,$regs)) {
+            if($regs[1]=="d")    $dirinfo[0] = 1;
+?>
+            $dirinfo[1] = $regs[2];
+            $dirinfo[2] = $regs[3];
+        }
+    }
+   
+    if(($dirinfo[2]==".")||($dirinfo[2]=="..")) $dirinfo[0]=0;
+
+    // array -> 0 = switch, directory or not
+    // array -> 1 = filesize (if dir =0)
+    // array -> 2 = filename or dirname
+       
+    return $dirinfo;
+}
+
+function rekdir($dir)
+{
+    global $conn_id,$filetyps,$exectyps,$ftp_server,$banlist,$size,$ssize;
+
+    echo "<b>$dir</b><br>";
+   
+    $dirlist = ftp_rawlist($conn_id,"");
+
+    for($i=0;$i<count($dirlist);$i++) {
+        $dirinfo = analysedir($dirlist[$i]);
+   
+        if($dirinfo[0]==1) {
+            $newdir = "$dir/$dirinfo[2]";
+           
+            if(($dirinfo[2]=="~")||(substr($dirinfo[2],0,1)==" "))
+                $chdir=ftp_chdir($conn_id,$newdir);
+            else    $chdir=ftp_chdir($conn_id,$dirinfo[2]);
+           
+            $stop = 0;
+//            for($k=0;($k<count($banlist))&&(!$stop);$k++) {
+//                if(strpos($newdir,$banlist[$k])!=0) $stop=1;
+//            }
+           
+            if(!$stop && $chdir) {
+                rekdir($newdir);
+            }
+       
+            if(!ftp_chdir($conn_id,$dir))    ftp_cdup($conn_id);
+        } elseif($dirinfo[0]==0) {
+            echo "$dirinfo[2]<br>";
+           
+            $size += $dirinfo[1];
+        }
+
+    }
+   
+}
+
+$conn_id = ftp_connect($ftp_server);
+$login_result = @ftp_login($conn_id, $user, $password);
+
+if ($login_result) {
+    $real_systyp = ftp_systype($conn_id);
+    $systyp = $real_systyp;
+    echo "scanning... $systyp<br>";
+
+    rekdir("");
+
+    ftp_quit($conn_id);
+}
+===============================================================================
+
+that comment have 4 function
+the 1st function "<b>get_files</b>" get the list of files by the full bath "/
+www/ex/"
+and return 3 arrays
+dir = the directories in this directory with the time ,date ,more ...
+linke = the links in this directory with the time ,date ,more ...
+file = the files in this directory with the time ,date ,more ...
+
+the 2nd function "chmodnum" convert from "drwxrwxrwx" to "777"
+* i found it in php.net manual
+
+the 3rd function "get_size" convert from the byte to MB or GB or TB
+
+the 4th function "get_type" return if this file or directory or link
+
+the functions
+<?php
+    function get_files($path = '')
+     {
+         if ($path == '' && !$_GET['path'])
+          {
+             $path = '/';
+          }
+         elseif ($path == '')
+          {
+             $path = $_GET['path'];
+          }
+   
+        
+        //$all_folders = ftp_nlist($this->conection, $_GET['path']);
+        $array = ftp_rawlist($this->conection, $path);
+        if (is_array($array))
+        foreach ($array as $folder)
+         {
+            $struc = array();
+            $current = preg_split("/[\s]+/",$folder,9);
+           
+            $struc['perms']    = $current[0];
+            $struc['permsn']= chmodnum($current[0]);
+            $struc['number']= $current[1];
+            $struc['owner']    = $current[2];
+            $struc['group']    = $current[3];
+            $struc['size']    = get_size($current[4]);
+            $struc['month']    = $current[5];
+            $struc['day']    = $current[6];
+            $struc['time']    = $current[7];
+            $struc['name']    = str_replace('//','',$current[8]);
+            //$struc['raw']    = $folder;
+           
+            if ($struc['name'] != '.' && $struc['name'] != '..' && get_type(
+$struc['perms']) == "folder")
+             {
+                $folders[] = $struc;
+             }
+            elseif ($struc['name'] != '.' && $struc['name'] != '..' && get_type
+($struc['perms']) == "link")
+             {
+                $links[] = $struc;
+             }
+            elseif ($struc['name'] != '.' && $struc['name'] != '..')
+             {
+                $files[] = $struc;
+             }
+         }
+        return array($folders,$links,$files);
+     }
+
+    function chmodnum($mode) {
+       $realmode = "";
+       $legal =  array("","w","r","x","-");
+       $attarray = preg_split("//",$mode);
+       for($i=0;$i<count($attarray);$i++){
+           if($key = array_search($attarray[$i],$legal)){
+               $realmode .= $legal[$key];
+           }
+       }
+       $mode = str_pad($realmode,9,'-');
+       $trans = array('-'=>'0','r'=>'4','w'=>'2','x'=>'1');
+       $mode = strtr($mode,$trans);
+       $newmode = '';
+       $newmode .= $mode[0]+$mode[1]+$mode[2];
+       $newmode .= $mode[3]+$mode[4]+$mode[5];
+       $newmode .= $mode[6]+$mode[7]+$mode[8];
+       return $newmode;
+    }
+    function get_size($size)
+     {
+         if ($size < 1024)
+          {
+              return round($size,2).' Byte';
+          }
+         elseif ($size < (1024*1024))
+          {
+              return round(($size/1024),2).' MB';
+          }
+         elseif ($size < (1024*1024*1024))
+          {
+              return round((($size/1024)/1024),2).' GB';
+          }
+         elseif ($size < (1024*1024*1024*1024))
+          {
+              return round(((($size/1024)/1024)/1024),2).' TB';
+          }
+     }
+
+    function get_type($perms)
+     {
+        if (substr($perms, 0, 1) == "d")
+         {
+            return 'folder';
+         }
+        elseif (substr($perms, 0, 1) == "l")
+         {
+            return 'link';
+         }
+        else
+         {
+            return 'file';
+         }
+     }
+?>
+===============================================================================
+
+To avoid complicated parsing and sorting fetched data it's possible to use
+additional options. For example to sort files by date and display only name of
+files the following code can be used:
+
+ftp_rawlist($ftpConnection, '-1t');
+===============================================================================
+
+The following function receives a $rawList generated by ftp_rawlist and returns
+a parsed array (all in single function).
+
+<?php
+    private function parseRawList($rawList)
+    {
+      //if you want the dots (. & ..) set this variable to 0
+      $start = 2;
+      //specify the order of the contents here
+      //currently set to first directories "d"
+      //second links "l"
+      //and last the files "-"
+      //change it to your convenience but don't touch the value names!
+      $orderList = array("d", "l", "-");
+      //the name and the order of the columns
+      //change it to your convenience
+      //but don't increase/reduce the number of columns
+      $typeCol = "type";
+      $cols = array("permissions", "number", "owner", "group", "size", "month",
+"day", "time", "name");
+       
+        foreach($rawList as $key=>$value)
+        {
+            $parser = null;
+            if($key >= $start) $parser = explode(" ", preg_replace('!\s+!', ' '
+, $value));
+            if(isset($parser))
+            {
+                foreach($parser as $key=>$item)
+                {
+                    $parser[$cols[$key]] = $item;
+                    unset($parser[$key]);
+                }
+                $parsedList[] = $parser;
+            }
+        }
+        foreach($orderList as $order)
+        {
+            foreach($parsedList as $key=>$parsedItem) {
+                $type = substr(current($parsedItem), 0, 1);
+                if($type == $order) {
+                    $parsedItem[$typeCol] = $type;
+                    unset($parsedList[$key]);
+                    $parsedList[] = $parsedItem;
+                }
+            }
+        }
+        return array_values($parsedList);
+    }
+?>
+
+Enjoy!!

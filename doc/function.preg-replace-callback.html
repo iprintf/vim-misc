@@ -1,0 +1,814 @@
+
+preg_replace_callback
+
+(PHP 4 >= 4.0.5, PHP 5, PHP 7)
+
+preg_replace_callback — 执行一个正则表达式搜索并且使用一个回调进行替换
+
+说明
+
+mixed preg_replace_callback ( mixed $pattern , callable $callback , mixed
+$subject [, int $limit = -1 [, int &$count ]] )
+
+这个函数的行为除了可以指定一个 callback 替代 replacement 进行替换字符串的计算，
+其他方面等同于 preg_replace()。
+
+参数
+
+pattern
+
+    要搜索的模式，可以使字符串或一个字符串数组。
+
+callback
+
+    一个回调函数，在每次需要替换时调用，调用时函数得到的参数是从subject 中匹配
+    到的结果。回调函数返回真正参与替换的字符串。这是该回调函数的签名：
+
+    string handler ( array $matches )
+
+    你可能经常会需要callback函数而仅用于preg_replace_callback()一个地方的调用。
+    在这种情况下，你可以使用匿名函数来定义一个匿名函数作为preg_replace_callback
+    ()调用时的回调。这样做你可以保留所有调用信息在同一个位置并且不会因为一个不
+    在任何其他地方使用的回调函数名称而污染函数名称空间。
+
+    Example #1 preg_replace_callback() 和匿名函数
+
+    <?php
+    /* 一个unix样式的命令行过滤器，用于将段落开始部分的大写字母转换为小写。 */
+    $fp = fopen("php://stdin", "r") or die("can't read stdin");
+    while (!feof($fp)) {
+        $line = fgets($fp);
+        $line = preg_replace_callback(
+            '|<p>\s*\w|',
+            function ($matches) {
+                return strtolower($matches[0]);
+            },
+            $line
+        );
+        echo $line;
+    }
+    fclose($fp);
+    ?>
+
+subject
+
+    要搜索替换的目标字符串或字符串数组。
+
+limit
+
+    对于每个模式用于每个 subject 字符串的最大可替换次数。默认是-1（无限制）。
+
+count
+
+    如果指定，这个变量将被填充为替换执行的次数。
+
+返回值
+
+如果subject是一个数组， preg_replace_callback()返回一个数组，其他情况返回字符串
+。错误发生时返回 NULL。
+
+如果查找到了匹配，返回替换后的目标字符串（或字符串数组），其他情况subject 将会
+无变化返回。
+
+更新日志
+
+版本         说明
+5.1.0 增加了参数count。
+
+范例
+
+Example #2 preg_replace_callback()示例
+
+<?php
+// 将文本中的年份增加一年.
+$text = "April fools day is 04/01/2002\n";
+$text.= "Last christmas was 12/24/2001\n";
+// 回调函数
+function next_year($matches)
+{
+  // 通常: $matches[0]是完成的匹配
+  // $matches[1]是第一个捕获子组的匹配
+  // 以此类推
+  return $matches[1].($matches[2]+1);
+}
+echo preg_replace_callback(
+            "|(\d{2}/\d{2}/)(\d{4})|",
+            "next_year",
+            $text);
+
+?>
+
+以上例程会输出：
+
+April fools day is 04/01/2003
+Last christmas was 12/24/2002
+
+Example #3 preg_replace_callback()使用递归构造处理BB码的封装
+
+<?php
+$input = "plain [indent] deep [indent] deeper [/indent] deep [/indent] plain";
+
+function parseTagsRecursive($input)
+{
+     /* 译注: 对此正则表达式分段分析
+     * 首尾两个#是正则分隔符
+     * \[indent] 匹配一个原文的[indent]
+     * ((?:[^[]|\[(?!/?indent])|(?R))+)分析:
+     *   (?:[^[]|\[(?!/?indent])分析:
+     *  首先它是一个非捕获子组
+     *   两个可选路径, 一个是非[字符, 另一个是[字符但后面紧跟着不是/indent或
+indent.
+     *   (?R) 正则表达式递归
+     *     \[/indent] 匹配结束的[/indent]
+     * /
+    $regex = '#\[indent]((?:[^[]|\[(?!/?indent])|(?R))+)\[/indent]#';
+
+    if (is_array($input)) {
+        $input = '<div style="margin-left: 10px">'.$input[1].'</div>';
+    }
+
+    return preg_replace_callback($regex, 'parseTagsRecursive', $input);
+}
+
+$output = parseTagsRecursive($input);
+
+echo $output;
+?>
+
+参见
+
+  • PCRE 模式
+  • preg_replace() - 执行一个正则表达式的搜索和替换
+  • preg_last_error() - 返回最后一个PCRE正则执行产生的错误代码
+  • 匿名函数
+  • callback 类型的信息
+
+
+User Contributed Notes 27 notes
+
+===============================================================================
+
+The easiest way to pass more than one parameters to the callback function is
+with the 'use' keyword.
+
+[This is better than using global, because it works even when we are already
+inside a function.]
+
+In this example, the callback function is an anonymous function, which takes
+one argument, $match, supplied by preg_replace_callback().  The extra
+"use ($ten)" puts the $ten variable into scope for the function.
+
+<?php
+$string = "Some numbers: one: 1; two: 2; three: 3 end";
+$ten = 10;
+$newstring = preg_replace_callback(
+    '/(\\d+)/',
+    function($match) use ($ten) { return (($match[0] + $ten)); },
+    $string
+    );
+echo $newstring;
+#prints "Some numbers: one: 11; two: 12; three: 13 end";
+?>
+===============================================================================
+
+If you want to call non-static function inside your class, you can do something
+like this.
+
+For PHP 5.2 use second argument like array($this, 'replace'):
+<?php
+class test_preg_callback{
+
+  private function process($text){
+    $reg = "/\{([0-9a-zA-Z\- ]+)\:([0-9a-zA-Z\- ]+):?\}/";
+    return preg_replace_callback($reg, array($this, 'replace'), $text);
+  }
+ 
+  private function replace($matches){
+    if (method_exists($this, $matches[1])){
+      return @$this->$matches[1]($matches[2]);    
+    }
+  } 
+}
+?>
+
+For PHP 5.3 use second argument like "self::replace":
+<?php
+class test_preg_callback{
+
+  private function process($text){
+    $reg = "/\{([0-9a-zA-Z\- ]+)\:([0-9a-zA-Z\- ]+):?\}/";
+    return preg_replace_callback($reg, "self::replace", $text);
+  }
+ 
+  private function replace($matches){
+    if (method_exists($this, $matches[1])){
+      return @$this->$matches[1]($matches[2]);    
+    }
+  } 
+}
+?>
+===============================================================================
+
+<?php
+// Nice little function that convert a string to uppercase by keeping the
+HTMLentities intact.
+public static function strtoupper_entities($str) {
+
+    $patternMajEntities = '/(\&([A-Z])(ACUTE|CEDIL|CARON|CIRC|GRAVE|ORN|RING|
+SLASH|TH|TILDE|UML)\;)+/';
+    $str = preg_replace_callback ($patternMajEntities,
+        function ($matches) {
+            return "&" . $matches[2] . strtolower($matches[3]) . ";";
+        }, strtoupper($str));
+   
+    return $str;
+}
+===============================================================================
+
+This small class allows PHP users to read JSON files with include statements in
+them. For instance the include {{{ "relative/to/including.json" }}} is replaced
+by the content of the json file located at "relative/to/including.json".
+
+<?php
+    /**
+     * Handles JSON files with includes
+     * Purpose: handle bigger JSON files by featuring "includes"
+     *
+     * @author Florian Arndt
+     */
+    class JWI {
+        /**
+         * Parses a JSON file and returns its contents
+         * @param String $filename
+         */
+        static function read($filename) {
+            if(!file_exists($filename))
+                throw new Exception('<b>JWI Error: JSON file <tt>'.$filename.'
+</tt> not found!</b>');
+            $content = join('', file($filename));
+            $dir = dirname($filename);
+            /**
+             * replace
+             *   include statements
+             * with
+             *   content of the file to include
+             * recursively
+             */
+            $content = preg_replace_callback(
+                '/{{{\s*"\s*(.+)\s*"\s*}}}/', // >include file< - pattern
+                create_function(
+                    '$matches', // callback parameter
+                    sprintf(
+                        '$fn = "%s/".$matches[1];'.
+                        'return JWI::read($fn);',
+                        realpath(dirname($filename))
+                    )
+                ),
+                $content
+            );
+            return $content;
+        }
+    }
+===============================================================================
+
+From PHP 5.3 you can use an anonymous function to pass local variables into the
+callback.
+
+<?php
+
+public function replace_variables( $subject, $otherVars ) {
+    $linkPatterns = array(
+        '/(<a .*)href=(")([^"]*)"([^>]*)>/U',
+        "/(<a .*)href=(')([^']*)'([^>]*)>/U"
+    );
+
+    $callback = function( $matches ) use ( $otherVars ) {
+        $this->replace_callback($matches, $otherVars);
+    };
+
+    return preg_replace_callback($this->patterns, $callback, $subject);
+}
+
+public function replace_callback($matches, $otherVars) {
+    return $matches[1] . $otherVars['myVar'];
+}
+?>
+===============================================================================
+
+Actually, this only works from php 5.4, see the changelog on http://php.net/
+manual/en/functions.anonymous.php
+===============================================================================
+
+The first example is bad, because it creates function for every line it
+processes. When the file has many lines, you could easily run out of memory.
+The code should be changed so, that create_function() is used outside of loop.
+===============================================================================
+
+Be aware that as of php5.4 you MUST NOT pass variables by reference, as in  '[,
+int &$count ]' - if you do it will result in a fatal error.
+I think the writer is trying to say that the function accepts the parameter by
+reference, but that is not how it reads. -Manual needs updating/clarifying ?
+===============================================================================
+
+When you use preg_replace_callback in a class and have the callback function as
+a private method of that class, you need to set the callback function name like
+className::CallBack.
+self::CallBack does not work and returns an error:
+"Cannot call method self::CallBack() or method does not exist"!
+
+<?php
+class myClass{
+    public function parsetext($text){
+        // parses text and sets literals A - C to lower case
+        // this works
+        return preg_replace_callback('|([a-c])|i', 'myClass::preg_tolower', 
+$text);
+    }
+    public function parsefail($text){
+        // parses text and sets literals A - C to lower case
+        // this fails
+        return preg_replace_callback('|([a-c])|i', 'self::preg_tolower', $text
+);
+    }
+   
+    private static function preg_tolower($matches){
+        return strtolower($matches[1]);
+    }
+}
+
+$parser = new myClass;
+echo $parser->parsetext('ABCDEFGH');
+// echoes abcDEFGH
+
+echo $parser->parsefail('ABCDEFGH');
+// throws the error
+?>
+===============================================================================
+
+also note that when you are using this functionality in a class and you need
+variables in that class, you can use a non static function as callback. array
+($this, functionName) should be enough to call an function of the class.
+
+Either use create_function if you require the code only once,
+use a static class function if no need for accessing variables in that class.
+or use the array metioned earlier in my post for having access to class
+variables or other functions!
+===============================================================================
+
+The pcre.backtrack_limit option (added in PHP 5.2) can trigger a NULL return,
+with no errors. The default pcre.backtrack_limit value is 100000. If you have a
+match that exceeds about half this limit it triggers a NULL response.
+e.g. My limit was at 100000 but 500500 triggered a NULL response. I'm not
+running unicode but I *guess* PCRE runs in utf-16.
+===============================================================================
+
+Created this to fetch the link and name of an anchor tag. I use this when
+cleaning an HTML email to text. Using regex for HTML is not recommended but for
+this purpose I see no issue with it. This is not designed to work for nested
+anchors.
+
+A note to keep in mind:
+I was primarily concerned with valid HTML so if attributes do no use ' or " to
+contain the values then this will need to be tweaked.
+If you can edit this to work better, please let me know.
+<?php
+/**
+* Replaces anchor tags with text
+* - Will search string and replace all anchor tags with text (case insensitive)
+*
+* How it works:
+* - Searches string for an anchor tag, checks to make sure it matches the
+criteria
+*         Anchor search criteria:
+*             - 1 - <a (must have the start of the anchor tag )
+*             - 2 - Can have any number of spaces or other attributes before
+and after the href attribute
+*             - 3 - Must close the anchor tag
+*
+* - Once the check has passed it will then replace the anchor tag with the
+string replacement
+* - The string replacement can be customized
+*
+* Know issue:
+* - This will not work for anchors that do not use a ' or " to contain the
+attributes.
+*         (i.e.- <a href=http: //php.net>PHP.net</a> will not be replaced)
+*/
+function replaceAnchorsWithText($data) {
+    /**
+     * Had to modify $regex so it could post to the site... so I broke it into
+6 parts.
+     */
+    $regex  = '/(<a\s*'; // Start of anchor tag
+    $regex .= '(.*?)\s*'; // Any attributes or spaces that may or may not exist
+    $regex .= 'href=[\'"]+?\s*(?P<link>\S+)\s*[\'"]+?'; // Grab the link
+    $regex .= '\s*(.*?)\s*>\s*'; // Any attributes or spaces that may or may
+not exist before closing tag
+    $regex .= '(?P<name>\S+)'; // Grab the name
+    $regex .= '\s*<\/a>)/i'; // Any number of spaces between the closing anchor
+tag (case insensitive)
+   
+    if (is_array($data)) {
+        // This is what will replace the link (modify to you liking)
+        $data = "{$data['name']}({$data['link']})";
+    }
+    return preg_replace_callback($regex, 'replaceAnchorsWithText', $data);
+}
+
+$input  = 'Test 1: <a href="http: //php.net1">PHP.NET1</a>.<br />';
+$input .= 'Test 2: <A name="test" HREF=\'HTTP: //PHP.NET2\' target="_blank">
+PHP.NET2</A>.<BR />';
+$input .= 'Test 3: <a hRef=http: //php.net3>php.net3</a><br />';
+$input .= 'This last line had nothing to do with any of this';
+
+echo replaceAnchorsWithText($input).'<hr/>';
+?>
+Will output:
+Test 1: PHP.NET1(http: //php.net1).
+Test 2: PHP.NET2(HTTP: //PHP.NET2).
+Test 3: php.net3 (is still an anchor)
+This last line had nothing to do with any of this
+===============================================================================
+
+The good version of the class PhpHex2Str
+<?php
+class PhpHex2Str
+{
+    private $strings;
+
+    private static function x_hex2str($hex) {
+        $hex = substr($hex[0], 1);
+        $str = '';
+        for($i=0;$i < strlen($hex);$i+=2) {
+            $str.=chr(hexdec(substr($hex,$i,2)));
+        }
+        return $str;
+    }
+
+    public function decode($strings = null) {
+        $this->strings = (string) $strings;
+        return preg_replace_callback('#\%[a-zA-Z0-9]{2}#', 
+'PhpHex2Str::x_hex2str', $this->strings);
+    }
+}
+
+// Exemple
+$obj = new PhpHex2Str;
+
+$strings = $obj->decode($strings);
+var_dump($strings);
+?>
+===============================================================================
+
+Decode Hexa to Strings =)
+<?php
+class PhpHex2Str
+{
+    private $strings;
+
+    private function x_hex2str($hex) {
+        $hex = substr($hex[0], 1);
+        $str = '';
+        for($i=0;$i < strlen($hex);$i+=2) {
+            $str.=chr(hexdec(substr($hex,$i,2)));
+        }
+        return $str;
+    }
+
+    public function decode($strings = null) {
+        $this->strings = (string) $strings;
+        return preg_replace_callback('#\%[a-zA-Z0-9]{2}#', 'x_hex2str', $this->
+strings);
+    }
+}
+
+// Example
+$strings = 'a %20 b%0A h %27 h %23';
+
+$obj = new PhpHex2Str;
+$strings = $obj->decode($strings);
+var_dump($strings);
+?>
+===============================================================================
+
+A simple function to replace a list of complete words or terms in a string (for
+PHP 5.3 or above because of the closure):
+
+<?php
+function replace_words($list, $line, $callback) {
+    return preg_replace_callback(
+        '/(^|[^\\w\\-])(' . implode('|', array_map('preg_quote', $list)) . ')($
+|[^\\w\\-])/mi',
+        function($v) use ($callback) { return $v[1] . $callback($v[2]) . $v[3];
+},
+        $line
+    );
+}
+?>
+
+Example of usage:
+<?php
+$list = array('php', 'apache web server');
+$str = "php and the apache web server work fine together. php-gtk, for example,
+won't match. apache web servers shouldn't too.";
+
+echo replace_words($list, $str, function($v) {
+    return "<strong>{$v}</strong>";
+});
+?>
+===============================================================================
+
+This function does not support named subpatterns, so you can't do
+
+<?php
+
+preg_replace_callback('/(?<char>[a-z])/', 'callback', 'word');
+
+function callback($matches) {
+    var_dump($matches);
+}
+
+?>
+
+and expect to get $matches['char'] in your function.
+===============================================================================
+
+To access a local variable within a callback, use currying (delayed argument
+binding). For example
+<?php
+function curry($func, $arity) {
+    return create_function('', "
+        \$args = func_get_args();
+        if(count(\$args) >= $arity)
+            return call_user_func_array('$func', \$args);
+        \$args = var_export(\$args, 1);
+        return create_function('','
+            \$a = func_get_args();
+            \$z = ' . \$args . ';
+            \$a = array_merge(\$z,\$a);
+            return call_user_func_array(\'$func\', \$a);
+        ');
+    ");
+}
+
+function on_match($transformation, $matches)
+{
+    return $transformation[strtolower($matches[1])];
+}
+
+$transform = array('a' => 'Well,', 'd'=>'whatever', 'b'=>' ');
+
+$callback = curry(on_match, 2);
+echo preg_replace_callback('/([a-z])/i', $callback($transform), 'Abcd');
+
+echo "\n";
+?>
+
+outputs:
+
+"Well, whatever"
+
+The magic lies in this curry function I found here: http://www.sitepoint.com/
+forums/showthread.php?threadid=336758
+===============================================================================
+
+To spend more than one parameter can do the following (note the "e" parameter
+in preg_replace function)
+<?
+$array = array(
+1=>'ONE',
+2=>'TWO',
+3=>'Three'
+);
+
+function search(&$array, $str, $foo, $bar){
+    return ( empty($array[$str]) ? '['.$foo.'-'.$bar.']' : $array[$str] );
+}
+
+function keys(&$array, $str,$foo,$bar){
+    return preg_replace('/\[(.*?)\]/e',"search(\$array,$1,\$foo,\$bar)",$str);
+}
+
+$str = "One [1] Two [2] Three [3], Other parameter [22]";
+
+echo keys($array, $str,'Foo','Bar');
+?>
+Nice
+===============================================================================
+
+For the callback I advise only to use a permanent or anonymous function.
+
+Depending on the usage you may encounter memory issues when using
+create_function for the callback possibly due to attempts at being compatible
+with PHP 5.2 or prior. Some servers  refuse to update their PHP  for whatever
+reason.
+
+Please peruse the create_function documentation for more details regarding its
+memory usage.
+
+Regards.
+===============================================================================
+
+preg_replace_callback returns NULL when pcre.backtrack_limit is reached; this
+sometimes occurs faster then you might expect. No error is raised either; so
+don't forget to check for NULL yourself
+===============================================================================
+
+Text lines numeration:
+<?PHP
+// Multieline text:
+    $Text = "
+Some
+Multieline
+text
+for
+numeration";
+
+// For count:
+    $GLOBALS["LineNUMBER"] = 1;
+
+// Replace linestart on number:
+    PRINT preg_replace_callback("/^/m",function ()
+        {
+            return $GLOBALS["LineNUMBER"]++."  ";
+        },
+        $Text);
+
+?>
+
+1
+2 Some
+3 Multieline
+4 text
+5 for
+6 numeration
+===============================================================================
+
+Note that, as of PHP 5.3, it seems that named subpatterns are now included in
+the matches array by their named key as well as their numerical key.
+
+To build off of Chris' previous example, as of PHP 5.3, you *can* do
+
+<?php
+
+preg_replace_callback('/(?<char>[a-z])/', 'callback', 'word');
+
+function callback($matches) {
+    var_dump($matches);
+}
+
+?>
+
+and expect to get $matches['char'] in your function. * BUT ONLY AS OF PHP 5.3 *
+
+Please be mindful of this if you intend to support PHP 5.2.
+===============================================================================
+
+I needed a simple code to tidy up a string. It simply had to upper-case letters
+after dot. Simple code to do so:
+
+<?php
+$string = preg_replace_callback(
+'|(?:\.)(?:\s*)(\w{1})|Ui',
+create_function('$matches', 'return ". ".strtoupper($matches[1]);'), ucfirst(
+$string)
+);
+?>
+
+<?php
+$string = 'lorem ipsum dolor sit amet, consectetur adipiscing elit. sed
+ullamcorper diam eu lorem varius nec porta elit iaculis.';
+
+echo preg_replace_callback(
+'|(?:\.)(?:\s*)(\w{1})|Ui',
+create_function('$matches', 'return ". ".strtoupper($matches[1]);'), ucfirst(
+$string)
+);
+?>
+
+Will output: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed
+ullamcorper diam eu lorem varius nec porta elit iaculis.
+
+<?php
+$string = 'lorem ipsum dolor sit amet, consectetur adipiscing elit.           
+     sed ullamcorper diam eu lorem varius nec porta elit iaculis.';
+
+echo preg_replace_callback(
+'|(?:\.)(?:\s*)(\w{1})|Ui',
+create_function('$matches', 'return ". ".strtoupper($matches[1]);'), ucfirst(
+$string)
+);
+?>
+
+Will output: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed
+ullamcorper diam eu lorem varius nec porta elit iaculis.
+
+Nothing fancy, but useful :)
+===============================================================================
+
+I noticed that 'e' modifier use addslashed on result
+
+<?
+function wyczysc_strongi($string) {
+    if(mb_strlen($string,'UTF-8')>60) {
+        return $string;
+    } else {
+        return '<strong>'.$string.'</strong>';
+    }
+}
+
+$tresc = "<strong>fajna dupa's</strong>";
+
+$tresc = preg_replace("/<strong>(.*?)<\/strong>/ie",'wyczysc_strongi("$1")
+',$tresc);
+
+echo $tresc will give: <strong>fajna dupa\'s</strong>
+?>
+
+solution: $tresc = stripslashes($tresc);
+after callback
+===============================================================================
+
+If you're looking to show only the first digit and last four digits of a credit
+card number (4xxxxxxxxxxxx2331) use something like this:
+preg_replace_callback('/((.)(.*))?(.{4})/', create_function('$x', 'return $x
+[2].str_repeat("x", strlen($x[3])).$x[4];'), '$CCNUMBER')
+===============================================================================
+
+it is much better on preformance and better practice to use the
+preg_replace_callback function instead of preg_replace with the e modifier.
+
+function a($text){return($text);}
+
+// 2.76 seconds to run 50000 times
+preg_replace("/\{(.*?)\}/e","a('\\1','\\2','\\3',\$b)",$a);
+
+// 0.97 seconds to run 50000 times
+preg_replace_callback("/\{(.*?)\}/s","a",$a);
+===============================================================================
+
+Don't use this function to fetch BBCode, as explained. If you have some text
+that runs over 5000 chars (average), it will run out of its limit and makes you
+download the PHP page.
+
+According to this, you should instead use something more advanced yet complex.
+You will need a function called "str_replace_once()" (search for it), one
+called "countWord()", the famous "after()", "before()", "between()".
+
+str_replace_once does same as str_replace, but only replace first occurence. As
+for countWord, I guess you know how to count the number of a word occurence. As
+for after, before and between, this is a function that you may find easily
+somewhere on the site by a user. Else, you can do it.
+
+The following function is able to do all blocks, supposing [code] and [/code],
+you might wish things between parents dont get parsed, including [code] if
+inside of another [code].
+
+<?php
+function prepareCode($code, $op, $end)
+{
+    $ix = 0;
+    $iy = 0;
+    $nbr_Op = countWord($op, $code);
+    while($ix < $nbr_Op)
+    {
+        if(in_string($op, before($end, $code), false))
+        {
+            // The following piece of code replace the default [tag] by [tag:#]
+            $code = str_replace_once($op, substr($op, 0, -1).':'.$ix.']', $code
+);
+            $iy++;
+        }
+        elseif(in_string($end, before($op, $code), false))
+        {
+            $iy = $iy-1;
+            $code = str_replace_once($end, substr($end, 0, -1).':'.($ix-1).']',
+$code);
+            $ix = $ix-2;
+        }
+        $ix++;
+    }
+    while(in_string($end, $code))
+    {
+        $code = str_replace_once($end, substr($end, 0, -1).':'.($iy-1).']', 
+$code);
+        $iy=$iy-1;
+    }
+
+    $code = preg_replace('#\\'.substr($end, 0, 1).':-[0-9]\]#i', '', $code);
+    if(in_string(substr($op, 0, -1).':0]', $code) && !in_string(substr($end, 0,
+-1).':0]', $code))
+    {
+        $code .= substr($end, 0, -1).":0]";
+    }
+    return $code;
+}
+?>
+
+$code returns the whole text semi-formated. You only need to use it as :
+$code = prepareCode($code="Your text", $op="[tag]" , $end="[/tag]");
+Then just replace the parent tags :
+str_replace("[tag:0]", "<tag>", $code);
+str_replace("[/tag:0]", "</tag>", $code);
+So at the end something like :
+[

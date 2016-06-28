@@ -1,0 +1,415 @@
+
+pg_fetch_assoc
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+pg_fetch_assoc — 提取一行作为关联数组
+
+说明
+
+array pg_fetch_assoc ( resource $result [, int $row ] )
+
+pg_fetch_assoc() 和调用 pg_fetch_array() 加上第三个可选参数 PGSQL_ASSOC 是等价
+的。它只返回一个关联数组。如果需要数字索引，用 pg_fetch_row()。
+
+pg_fetch_assoc() 是 pg_fetch_row() 的扩展版本。除了将数据存储在数字索引（字段编
+号）之外，默认还将数组存储在关联索引（字段名）中。
+
+row 是要被提取的行（记录）编号。第一行为 0。
+
+pg_fetch_assoc() 并不明显比 pg_fetch_row() 慢，而且还显著更便于使用。
+
+Example #1 pg_fetch_assoc() 例子
+
+<?php
+$conn = pg_pconnect("dbname=publisher");
+if (!$conn) {
+    echo "An error occured.\n";
+    exit;
+}
+
+$result = pg_query($conn, "SELECT id, author, email FROM authors");
+if (!$result) {
+    echo "An error occured.\n";
+    exit;
+}
+while ($row = pg_fetch_assoc($result)) {
+    echo $row['id'];
+    echo $row['author'];
+    echo $row['email'];
+}
+?>
+
+参见 pg_fetch_row()，pg_fetch_array()，pg_fetch_object() 和 pg_fetch_result()。
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+Note that all pg_fetch_* function ignoring the original type of the data and
+always return strings. (for numbers too)
+===============================================================================
+
+<html>
+<head>
+<script>
+function waarde(){
+    var text = document.getElementById("optVakken").value;
+    document.getElementById("txthidden").value = text;
+    document.forms["hiddenform"].submit();
+}
+</script>
+<?php
+// keuzemenu met alle leerkrachten
+function leerkrachten($aName){
+    include("includes/connect.php");
+   
+}
+// keuzemenu met alle vakken
+function vakken($aID){
+    include("includes/connect.php");
+    $SelectVakkenQuery = "SELECT * FROM vakken";
+    $SelectVakkenResult = $mysqli->query($SelectVakkenQuery);
+    $Choice = "<select id='$aID' onchange=waarde()><option>Kies een vak</
+option>";
+   
+        while($rij2 = $SelectVakkenResult->fetch_assoc()){
+        $VakID = $rij2['vakid'];
+        $Vaknaam = $rij2['voluit'];
+        $Choice .= "<option value='$VakID'>$Vaknaam</option>";
+    }
+    $Choice .= "</select>";
+    return $Choice;
+}
+?>
+<title>Remediëringsoefening</title>
+</head>
+<body>
+<?php
+include("includes/connect.php");
+// aanmaken van keuzemenus
+
+// eerste keuzemenu
+echo vakken("optVakken")."<br><br>";
+
+// tweede keuzemenu
+if(!isset($_POST['txthidden'])){
+$SelectLeerkrachtenQuery = "SELECT * FROM leerkrachten";
+$SelectLeerkrachtResult = $mysqli->query($SelectLeerkrachtenQuery);
+   
+$Choice = "<select>";
+while($rij=$SelectLeerkrachtResult->fetch_assoc()){
+    $Voornaam = $rij['voornaam'];
+    $Naam = $rij['naam'];
+    $LKID = $rij['leerkrachtid'];
+    $Volledig = $Voornaam . " " . $Naam;
+    $Choice .= "<option value='$LKID'>$Volledig</option>";
+}
+$Choice .= "</select><br><br>";
+echo $Choice;
+}else{
+    $vakid = $_POST['txthidden'];
+    $SelectLeerkrachtenQuery = "SELECT * FROM leerkrachten JOIN
+leerkrachtpervak ON leerkrachten.leerkrachtid = leerkrachtpervak.leerkrachtid
+WHERE vakid = '$vakid'";
+    $SelectLeerkrachtResult = $mysqli->query($SelectLeerkrachtenQuery);
+    $Choice = "<select>";
+    while($row3=$SelectLeerkrachtResult->fetch_assoc()){
+        $Voornaam = $row3['voornaam'];
+        $Naam = $row3['naam'];
+        $Volledig = $Voornaam . " " . $Naam;
+        $Choice .= "<option>$Volledig</option>";
+    }
+    $Choice .= "</select><br><br>";
+    echo $Choice;
+}
+// onzichtbaar textbox voor JS
+echo "<form method='post' id='hiddenform'><input type='hidden' name='txthidden'
+id='txthidden'></form>";
+$mysqli->close();
+?>
+</body>
+</html>
+===============================================================================
+
+Here is much powerful pg_parse_array() variant, based on FSM: for any dimension
+Postgres arrays (its string representation must be well-formed), with quotation
+rules checks, complexity O(N), where N is a length of string representation of
+Postgres array:
+
+<?php
+
+define('STATE_BEGIN', 1);
+define('STATE_INARRAY',2);
+define('STATE_OUTARRAY', 3);
+define('STATE_INSLASH', 4);
+define('STATE_INQUOTES', 5);
+
+function pg_parse_array($value) {
+        $resultArray = $indexArray = array(); $level = $index = 0;
+        $ptr = &$resultArray;
+        for($i = 0; $i < strlen($value); $i++){
+            switch($level){
+                case 1:
+                    if($index > 0){
+                        $ptr = & $ptr[sizeof($ptr)];
+                    }
+                    $indexArray[++$index] = & $ptr;
+                    break;
+                case -1:
+                    $ptr = & $indexArray[--$index];
+                    break;
+            }
+            $level = processFSM($value{$i}, $ptr);
+        }
+        return $resultArray;
+    }
+   
+    function processFSM($chr, &$result){
+        static $state = STATE_BEGIN, $index = 0;
+        $level = 0;
+        switch(true){
+            case $chr == '{' && in_array($state, array(STATE_BEGIN,
+STATE_INARRAY,STATE_OUTARRAY), true):
+                $state = STATE_INARRAY;
+                $index = 0;
+                $level = +1;
+                break;
+            case $chr == '}' && in_array($state, array(STATE_INARRAY,
+STATE_OUTARRAY), true):
+                $state = STATE_OUTARRAY;
+                $level = -1;
+                break;
+            case $chr == '\\' && $state !== STATE_BEGIN:
+                $state = $state === STATE_INSLASH ? STATE_INQUOTES : 
+STATE_INSLASH;
+                break;
+           
+            case $chr == '"' && !in_array($state, array(STATE_BEGIN,
+STATE_INSLASH), true):
+                $state = $state === STATE_INQUOTES ? STATE_INARRAY : 
+STATE_INQUOTES;
+                break;
+           
+            case $chr == ',' && in_array($state, array(STATE_INARRAY,
+STATE_OUTARRAY), true):
+                $index = sizeof($result);
+                break;
+           
+            case $state !== STATE_BEGIN:
+                $state = $state === STATE_INSLASH ? STATE_INQUOTES : $state;
+                isset($result[$index]) or $result[$index] = '';
+                $result[$index] .= $chr;
+                break;
+        }
+        return $level;
+    }
+
+?>
+===============================================================================
+
+If you are moving between different versions of PHP, this might be handy:
+
+if (!function_exists('pg_fetch_assoc')) {
+    function pg_fetch_assoc ($result)
+    {
+      return @pg_fetch_array($result, NULL, PGSQL_ASSOC);
+    }
+}
+===============================================================================
+
+An important thing to note (as of PHP 4.3.2):
+
+If you are used to using the "extended" comparision operators (=== and !==) to
+try to make your code easier to follow visually, this function will return NULL
+if the provided resource handle is invalid (as opposed to false). ie,
+
+$rs = @pg_query('SELECT * FROM fake_table');
+while (false !== ($row = @pg_fetch_assoc($rs)))
+{
+    print_r($row);
+}
+
+Obviously you should check to see if $rs === false before you start the while
+loop, but this example is used to illustrate a potential infinite loop problem
+if $rs IS false.
+===============================================================================
+
+Be aware that if one of your result fields is an array, it will be output as a
+string using the general format of '{value1,value2, ... }' in accordance with
+postgres's behavior with SQL arrays.
+http://www.postgresql.org/docs/8.4/static/arrays.html#ARRAYS-IO
+
+So, here is a function to convert simple (one-dimensional) SQL arrays to PHP
+arrays:
+
+<?php
+function pg_parse_array($field)
+/*
+* Converts a simple SQL array field to its PHP equivalent.  e.g:
+*
+*    {null}              --> Array(null);
+*    {"null"}            --> Array("null");
+*    {foo,bar}           --> Array("foo", "bar");
+*    {"foo,bar"}         --> Array("foo,bar");
+*    {"Hello \"World\""} --> Array('Hello "World"');
+*      
+*/ 
+{
+  // NULL fields are always NULL
+  if (!is_string($field)) return $field;
+
+  // Check for curly braces which may indicate an SQL array field
+  if ($field[0] != '{' or substr($field, -1) != '}') return $field;
+  $field = trim(substr($field, 1, -1));
+
+  $array = Array();
+ 
+  // Break up the string into the following:
+  //  - quoted text that MAY have special chars escaped by a backslash
+  //  - unquoted text that may NOT have special chars
+  $search = '/(")?+((?(1)(?:\\\\.|[^"])*|[^,]+))(?(1)\\1)/';
+  preg_match_all($search, $field, $matches, PREG_SET_ORDER);
+ 
+  foreach($matches as $value)
+  {
+    if ($value[1])
+    {
+      // Quoted element, with backslash used to escape chars
+      $array[] = preg_replace('#\\\\(.)#', '$1', $value[2]);
+    }
+    else
+    {
+      // Unquoted element
+      $value[2] = trim($value[2]);
+      if (strtolower($value[2]) == 'null') $array[] = null; // NULL
+      else $array[] = $value[2];
+    } 
+  }
+  return $array;
+}
+
+// Some tests to demonstrate this function
+var_export(pg_parse_array('{null}'); // Output is Array(null);
+var_export(pg_parse_array('{foo,bar}'); // Output is Array('foo', 'bar');
+var_export(pg_parse_array('{"null"}'); // Output is Array('null');
+
+?>
+===============================================================================
+
+Beware!  If your query returns multiple columns with the same names, only the
+right-most one will be contained in the result array.  This can cause problems
+if you are using a combination of joins:
+
+For example:
+<?php
+// Let's say that 'pkey' is the primary-key colum for tables a and b (primary
+keys are never null)
+$res = pg_query("Select a.pkey, b.* FROM a LEFT JOIN b using (pkey)");
+$data = pg_fetch_assoc($res);
+var_dump($data['pkey']) // Is actually b.pkey, may be NULL!
+?>
+
+Both tables contain a column named 'pkey'.  Now table 'b' is on the optional
+side of a LEFT JOIN, so b.pkey (implicitly included via 'b.*') may be NULL.
+
+The problem arises when you use pg_fetch_assoc(), there are two columns named
+'pkey' but the result array can only contain one value per key -- in this case
+it will pick the one from table B instead of the one from table A, and since B
+is on the optional side of the left-join, $data['pkey'] may be NULL.  So if
+you're expecting to retrieve the column from table A, you need to use a
+different pg_fetch() or rewrite your query to avoid ambiguity.
+===============================================================================
+
+bytea columns are returned escaped.
+you need to call pg-unescape-bytea() on them to get the original binary back.
+===============================================================================
+
+regarding the optional int parameter
+
+requesting a row number that is not present in the result set is an error.
+don't do it.
+
+check with pg_num_rows() beforehand, or  just use the default behavior which
+returns the rows in order and false after returning the last row it returns
+false immediately if no rows were returned.
+===============================================================================
+
+Is worth to know that when you query on multiple tables only the first row with
+each name is returned.
+
+That is, if you are joining to tables with a column called 'name' you will
+receive only one field called name in the array and it will correspond to the
+one on the first table.
+
+Is advisable to allways allias your columns in that stuation.
+===============================================================================
+
+Here is another way to iterate a resultset and display all columns in very
+little code... might be faster than a foreach
+
+<?php
+
+print '<table>';
+while($row=pg_fetch_assoc($rs2)) print '<tr><td>'.join('</td><td>',$row2).'</
+td></tr>';
+print '</table>';
+
+?>
+===============================================================================
+
+If you request a row that does not exist, it just fails, rather than simply
+returning false.
+===============================================================================
+
+Note:
+
+PostgreSQL boolean values set to TRUE are returned as the string "t"
+
+PostgreSQL boolean values set to FALSE are returned as the string "f"
+===============================================================================
+
+$dbconn3 = pg_connect("host=127.0.0.1 port=5432 dbname=blah user=blah password=
+blah");
+$result = pg_query($dbconn3, "SELECT * FROM Packages");
+
+echo "<HTML><HEAD><TITLE>PostgreSQL Test Page</TITLE></HEAD><BODY>";
+echo "<TABLE>";
+
+$pkg = pg_fetch_assoc($result);
+foreach ($pkg as $value) {
+    echo "<TR><TD>$value";
+    echo "</TR></TD>";
+}
+
+echo "</TABLE><P>";
+echo "This package's full filename is: {$pkg['name']}-{$pkg['version']}{$pkg
+['extension']}";
+echo "</BODY></HTML>";
+
+For generating tables, this works, and personally I prefer foreach() to while
+loops because there's no danger of accidentally causing an infinite
+loop...foreach only works for as long as it has something to work with, and
+then stops.  I thought the echo down the bottom might come in handy, too...took
+me a bit to find that out.
+===============================================================================
+
+At a glance, the syntax listed at the top of this page doesn't match the
+example.  The PGSQL_ASSOC flag isn't necessary.
+===============================================================================
+
+In a bit of follow-up to Luke's note about SQL booleans (this was a painful
+thing to learn the hard way), a relatively easy workaround is to typecase the
+boolean columns to integer inside the query, e.g:
+
+<?php
+// Assuming 'foo' is a table column of type boolean
+$res = pg_query("Select foo as foo1, foo::integer as foo2 from bar");
+
+$data = pg_fetch_assoc($res);
+if ($data['foo1']) echo 'foo1 = TRUE'; // Doesn't work as expected (string 't'
+and string 'f' both evaluate as TRUE)
+if ($data['foo2']) echo 'foo2 = TRUE'; // Works as expected (string '0'
+evaluates as FALSE)
+?>

@@ -1,0 +1,1250 @@
+
+mssql_query
+
+(PHP 4, PHP 5, PECL odbtp >= 1.1.1)
+
+mssql_query — Send MS SQL query
+
+Warning
+
+This function was REMOVED in PHP 7.0.0.
+
+Alternatives to this function include:
+
+  • PDO::query()
+  • sqlsrv_query()
+  • odbc_exec()
+
+说明
+
+mixed mssql_query ( string $query [, resource $link_identifier [, int
+$batch_size = 0 ]] )
+
+mssql_query() sends a query to the currently active database on the server
+that's associated with the specified link identifier.
+
+参数
+
+query
+
+    An SQL query.
+
+link_identifier
+
+    A MS SQL link identifier, returned by mssql_connect() or mssql_pconnect().
+
+    If the link identifier isn't specified, the last opened link is assumed. If
+    no link is open, the function tries to establish a link as if mssql_connect
+    () was called, and use it.
+
+batch_size
+
+    The number of records to batch in the buffer.
+
+返回值
+
+Returns a MS SQL result resource on success, TRUE if no rows were returned, or
+FALSE on error.
+
+范例
+
+Example #1 mssql_query() example
+
+<?php
+// Connect to MSSQL
+$link = mssql_connect('KALLESPC\SQLEXPRESS', 'sa', 'phpfi');
+
+if (!$link || !mssql_select_db('php', $link)) {
+    die('Unable to connect or select database!');
+}
+
+// Do a simple query, select the version of 
+// MSSQL and print it.
+$version = mssql_query('SELECT @@VERSION');
+$row = mssql_fetch_array($version);
+
+echo $row[0];
+
+// Clean up
+mssql_free_result($version);
+?>
+
+注释
+
+    Note:
+
+    If the query returns multiple results then it is necessary to fetch all
+    results by mssql_next_result() or free the results by mssql_free_result()
+    before executing next query.
+
+参见
+
+  • mssql_select_db() - Select MS SQL database
+  • mssql_connect() - 打开MS SQL server链接
+
+
+User Contributed Notes 61 notes
+
+===============================================================================
+
+Note that although the documentations states that mssql_query will return "TRUE
+if no rows were returned", it will still return an empty resource identifier
+for SELECT statements that do not return any rows. This empty resource
+identifier will get dynamically typed as TRUE in a boolean context. Only for
+queries that do not actually return rows (eg. insert, update, or delete) will
+mssql_query return an actual boolean TRUE value.
+
+We should use mssql_num_rows($resource) rather than $resource===TRUE for
+checking whether rows were returned.
+===============================================================================
+
+If text fields from mssql SELECT queries are truncated (at 4096 characters),
+even after using ,
+<?php
+ini_set ( 'mssql.textlimit' , '65536' );
+ini_set ( 'mssql.textsize' , '65536' );
+?>
+
+make sure that the ini_set function is used before the connection to the
+database is established.
+===============================================================================
+
+Here are some things you might need to know:
+1. Install mssql support for Debian (Lenny/Squeeze):
+apt-get install php5-sybase
+
+2. When you got this error message:
+"Unicode data in a Unicode-only collation or ntext data cannot be sent to
+clients using DB-Library (such as ISQL) or ODBC version 3.7 or earlier."
+
+In /etc/freetds/freetds.conf add these two lines (last two):
+[global]
+;tds version = 4.2
+tds version = 8.0
+client charset = UTF-8
+
+You can edit "charset" in php.ini too (but you don't need if you did it
+previously in freetds.conf):
+; Specify client character set..
+; If empty or not set the client charset from freetds.comf is used
+; This is only used when compiled with FreeTDS
+mssql.charset = "UTF-8"
+
+3. Use nchar/nvarchar/ntext column types if you need unicode support.
+===============================================================================
+
+Regarding the problems mentioned on here with the format that datetime columns
+are returned in. Running on debian lenny and used apt-get install php5-sybase
+to get access to these functions. After which datetime fields were returned as
+a string something like 'Feb 16 2010 09:14:10:010AM' which was not recognised
+when passed to e.g. new DateTime(). Also smalldatetime fields caused php to
+crash.
+
+To fix I did this:
+
+vi /etc/php5/apache2/php.ini
+After this line:
+;mssql.datetimeconvert = On
+Add this line:
+mssql.datetimeconvert = Off
+
+Now both datetime and smalldatetime come back as something like '2010-02-16
+09:14:00'.
+===============================================================================
+
+I had this problem upgrading to sqlsrv from mssql. In short, SCOPE_IDENTITY
+doesn't seem to work with sqlsrv correctly when using parameters. This isn't in
+fact the case, it just works differently.
+
+To recap the problem:
+
+Table 'test' definitely has an identity column id. However you can not do
+(apologies for pseudo-code):
+
+<?php
+doquery("INSERT INTO test (col1, col2) VALUES (?,?)", $parameters);
+$lastId=doquery("SELECT SCOPE_IDENTITY()");
+?>
+
+because, under sqlsrv, these two queries are in different scopes, so there is
+nothing to return... However, this also doesn't work as expected:
+
+<?php
+$query = "INSERT INTO test (col1, col2) VALUES (?,?); SELECT SCOPE_IDENTITY()";
+$arrParams[]="1";
+$arrParams[]="2";
+$resource=sqlsrv_query($conn, $query, $arrParams);
+$arrRow = sqlsrv_fetch_array($resource, SQLSRV_FETCH_ASSOC);
+echo $arrRow[0];
+?>
+
+Here you might expect to see the last insert id, but you see nothing. This is
+because the resource is currently pointing to the 'true' from the first query
+(the insert query) and so the insert id is 'hidden' in another row of the
+resource.
+
+Solution.... set up as before, but then:
+
+<?php
+$resource=sqlsrv_query($conn, $query, $arrParams);
+sqlsrv_next_result($resource);
+sqlsrv_fetch($resource);
+echo sqlsrv_get_field($resource, 0);
+?>
+
+This will give you what you want! This will work similarly with something like
+"INSERT INTO test (col1, col2) VALUES (?,?); SELECT * from test WHERE ID =
+SCOPE_IDENTITY()" and again you have to move through the resource to get at the
+data you want.
+
+I hope this helps someone, since it's just wasted a good two hours of my time!
+Also, sorry for any errors in the code - I'm afraid I've written it off the top
+of my head, but hopefully you get the idea...
+===============================================================================
+
+You need to escape ' with '' in mssql, however while doing a large dataset
+migration I ran into an issue with \0 (NULL) in the strings breaking the query.
+I ended up writting the below small little function, I'm sure it could be done
+faster/better but it has served me well.
+
+<?php
+function sqlEscape($sql) {
+
+        /* De MagicQuotes */
+        $fix_str        = stripslashes($sql);
+    $fix_str    = str_replace("'","''",$sql);
+    $fix_str     = str_replace("\0","[NULL]",$fix_str);
+
+    return $fix_str;
+
+} // sqlEscape
+?>
+===============================================================================
+
+>>> So, switch your data type to text if you wish to have lengths more than 256
+characters
+
+or use
+
+$sql = "SELECT CONVERT(TEXT, FieldName) FROM Table"
+===============================================================================
+
+To avoid SQL Injection, if you want to have multiple named parameters without
+writing stored procedures you can use built in stored procedure sp_executesql
+and mssql_query:
+
+<?php
+//Returns records with Id#46 or first name starting with 'Mary'
+
+$server = '127.0.0.1';
+$link = mssql_connect($server, 'sql_user', 'sql_user_pass');
+
+//Select DB
+$dbn = 'dbName';
+mssql_select_db($dbn);
+
+//input variables
+$name='Mary%';
+$id=46;
+
+//necesssary for stored procedure
+$params="@name varchar(50),@id int";
+$paramslist="@name='$name%',@id='$id'";
+
+$sql = "select FirstName,LastName,EmpId from employees where FirstName like 
+@name or EmpId = @id  " ;
+
+$dbsql = "EXEC sp_executesql
+          N'$sql',
+          N'$params',
+          $paramslist";
+
+//important to have the "N'" !
+
+$result=mssql_query($dbsql,$link);
+?>
+
+for more info on sp_executesql go here:
+http://msdn.microsoft.com/en-us/library/ms188001.aspx
+
+works on MSSQL 2000,2005,2008
+===============================================================================
+
+Solution for the following Error:
+
+Warning: mssql_query() [function.mssql-query]: message: Unicode data in a
+Unicode-only collation or ntext data cannot be sent to clients using DB-Library
+(such as ISQL) or ODBC version 3.7 or earlier.
+
+This is because you are using column types of like ntext instead of text. 
+There are 2 solutions.
+
+1.  Change all ntext column types to text or
+2.  Your query must look like: SELECT CAST(field1 AS TEXT) AS field1 FROM table
+===============================================================================
+
+This one took me several days to figure out so I thought I'd post the solution
+to save others the hassle.
+
+When using mssql_query with freetds inside a php class, you *MUST* include the
+"link_identifier" in the mssql_query() call otherwise all your queries will
+fail. This differs from MySQL where omitting the link identifier works without
+problem.
+
+Here's an example class to illustrate the problem/solution
+
+<?php
+    class MSSQLDB
+    {
+        var $db_connection;
+       
+        // Constructor
+        function __construct($inFreeTDSServerName, $inUser, $inPassword, 
+$inDatabaseName)
+        {
+            $this->db_connection    = mssql_connect($inFreeTDSServerName, 
+$inUser,$inPassword)
+                        or die('Could not connect to '.$inFreeTDSServerName.'
+server');
+                       
+            mssql_select_db($inDatabaseName)
+                        or die('Could not select to '.$inDatabaseName.'
+database');
+        }
+       
+        // Generic query function
+        function query_database($inQuery)
+        {
+            // Always include the link identifier (in this case $this->
+db_connection) in mssql_query
+            $query_result     = mssql_query($query, $this->db_connection)
+                                                or die('Query failed: '.$query
+);
+           
+            if (strpos($inQuery, 'insert') === false)
+            {
+                // fetch the results as an array
+                $result            = array();
+                while ($row = mssql_fetch_object($query_result))
+                {
+                    $result[]    = $row;
+                }
+               
+                // dispose of the query
+                mssql_free_result($query_result);
+           
+                // return result
+                return $result;
+            }
+            else
+            {
+                // dispose of the query
+                mssql_free_result($query_result);
+               
+                // get the last insert id
+                $query            = 'select SCOPE_IDENTITY() AS last_insert_id'
+;
+                $query_result     = mssql_query($query)
+                                            or die('Query failed: '.$query);
+                                           
+                $query_result    = mssql_fetch_object($query_result);
+               
+                mssql_free_result($query_result);
+               
+                return $query_result->last_insert_id;
+            }
+        }
+    }
+?>
+
+And to use the class with the following freetds.conf record
+
+[SomeDatabaseServer]
+    host = somedbserver.com
+    port = 1433
+    tds version = 8.0
+
+<?php
+    $db                = new MSSQLDB('SomeDatabaseServer', 'user', 'password', 
+'database');
+    $query            = "select * from table";
+    return $db->query_database($query);
+?>
+===============================================================================
+
+This's note about mssql and truncating binary output from database (mostly
+image ...), i spent about 2 days tuning this stuff and fortunately i made the
+hit ...
+    so if you're experiencing truncates of your binary data read from mssql
+database (it looks like incomplete, broken or even no images) check mssql
+section of your php.ini file and set values of mssql.textlimit and
+mssql.textsize variables to their maximum (2147483647) or at least bigger size
+than the default is ... so i hope it helps a bit, have a good time
+===============================================================================
+
+Escaping the apostrophe with a blind preg_replace or str_replace may cause
+exponential growth of apostrophes -- especially if magic quotes are enabled or
+passed values may already be escaped.
+
+While not foolproof, this does address the problem:
+
+if (preg_match("/\'/", preg_replace("/\'\'/", "", $str))) {
+  $str = preg_replace("/\'/", "''", $str);
+}
+===============================================================================
+
+In some cases when mssql_query() returns rows containing fields of type
+SMALLDATETIME or TIMESTAMP when the data is not NULL, PHP seems to enter some
+kind of error state where PHP no longer outputs anything to the browser. Not
+even data echoed before the query! DATETIME fields seem to work without this
+problem though.
+
+When this happens, PHP doesn't give any errors even with error_reporting(-1),
+and no errors appear in Apache logfiles either.
+
+There seems to be a workaround by explicitly calling flush() at the end of the
+skript.
+
+In my case the problem occurred only when using some basic comparison operators
+for integer or string fields in a WHERE clause (eg. "WHERE id = 1000").
+
+I discovered this behaviour on Ubuntu 11.10 (Linux 3.0.0-13-generic-pae),
+Apache 2.2.20, PHP 5.3.6-13ubuntu3.3 with Suhosin-Patch as Apache module,
+php5-mssql package using freetds
+===============================================================================
+
+Unicode data in a Unicode-only collation or ntext data cannot be sent to
+clients using DB-Library
+
+I found that changing the version in /etc/freetds.conf from 4.2 to 8.0 fixes
+this problem without having to make any changes to the SELECT statement
+===============================================================================
+
+Hopes this saves somebody the hassle I had to go through...
+Was struggling with an M$sql database which was poorly designed (no
+Identity-colums), so I had to find a way to get the last id inserted...
+Also struggled with the chars a while ;-)
+       
+$sql = "SELECT cast(AD_GUID as varchar(36)) FROM test_adres;";
+//execute the SQL query and return records to find insertID
+$result = mssql_query($sql) or die("MS-Query Error in select-query");
+$max = (mssql_num_rows($result)-1);
+mssql_data_seek($result, $max);
+$row = mssql_fetch_row($result);
+$insert_id = $row[0];
+
+Hope this will help somebody in the future...
+===============================================================================
+
+If you'd like to store binary data, such as an image, in MSSQL, it's common to
+have problems with addslashes and co.
+
+This is because the MSSQL parser makes a clear distinction between binary an
+character constants. You can therefore not easilly insert binary data with
+"column = '$data'" syntax like in MySQL and others.
+
+The MSSQL documentation states that binary constants should be represented by
+their unquoted hexadecimal byte-string. That is.. to set the binary column
+"col" to contain the bytes 0x12, 0x65 and 0x35 you shold do "col = 0x126535" in
+you query.
+
+I've successfully stored and retrieved jpeg images in a column with the "image"
+datatype. Here's how:
+
+// storing a file
+$datastring = file_get_contents("img.jpg");
+$data = unpack("H*hex", $datastring);
+mssql_query("insert into images (name, data)
+         values ('img.jpg', 0x".$data['hex'].")");
+
+// retrieving
+$result = mssql_query("select data from images where name = 'img.jpg'");
+$row = mssql_fetch_assoc($result);
+header("Content-type: image/jpeg;");
+echo $row['data'];
+
+As you can see there is nothing to do with the image on they way out, just
+blurb out the buffer your recieve as with any other field type.
+===============================================================================
+
+The scenario with adding SELECT SCOPE_IDENTITY after INSERT works. But in my a
+little bit complicated schema I got false when I called sqlsrv_fetch(.)
+
+I modified reading SCOPE_IDENTITY as: "Read the last integer value obtained".
+
+I suppose this is because I have several triggers that makes also insert after
+main insert call and sql server returns number of affected rows in Sql
+Management Studio). In php it returns only false when fetch called. So I must
+jump over all this 'false' rows.
+
+<?php
+$resource = sqlsrv_query($con, 'INSERT....; SELECT SCOPE_IDENTITY()');
+
+$scope_identity =null;
+while ( sqlsrv_next_result($resource) )
+{
+        $fr = sqlsrv_fetch($resource);
+        if ($fr===false)
+       {                   
+          continue;         
+        }        
+                       
+        $colval = sqlsrv_get_field($resource, 0, SQLSRV_PHPTYPE_INT);
+        if (is_int($colval))
+       {
+          $scope_identity=$colval;
+        }       
+             
+}
+?>
+===============================================================================
+
+Hi All,
+I was trying to insert PDF in MSSQL image datatype and had a worst time
+figuring out how to add PDF without encoding it with base64_encode. Encoding/
+decoding works best but it was conflicting with other existing PDFs in database
+as they weren't encoded.
+The solution is to create hex string and the Trick is *NOT* to use quotes in
+query.
+
+<?php
+$FileName = $_FILES['pdffile']['tmp_name'];
+$dataString = file_get_contents($FileName );
+$arrData = unpack("H*hex", $dataString);
+$hexdata = "0x".$arrData['hex'];
+?>
+
+Query:
+$sql = "insert into docs(pdfname, pdfdoc) values('$pdfname', $hexdata)
+
+Hope this helps to someone.... Cheerzz
+===============================================================================
+
+Unicode data in a Unicode-only collation or ntext data cannot be sent to
+clients using DB-Library
+
+solution:
+try: select field from table, avoid "select * from table" php will scream at
+you. strangely after executing select field from table you'll be able to
+execute select * from table.
+
+i'm using apache2, win XP, sqlexpress05
+===============================================================================
+
+I was tripped up by the fact that mssql_query() returns values for 'datetime'
+columns in an unusual format.   In order to get your values returned in the
+usual 'YYYY-MM-DD HH:MM:SS' format, you can use the CONVERT function in your
+query like so:
+
+SELECT CONVERT(varchar, INVOICE_DATE, 121) AS INVOICE_DATE ...
+
+where 'INVOICE_DATE' is the name of the 'datetime' column.  The available
+datetime conversion formats are listed here:
+
+http://msdn2.microsoft.com/en-us/library/aa226054(SQL.80).aspx
+===============================================================================
+
+After much fighting with my php5 installation and FreeTDS I figured out why my
+SELECT of an ntext field was truncating to a value.
+
+This can be changed in the FreeTDS config file. Look for "text size"... this
+should be commented out. Uncomment it and set the value to something, this will
+let your ntext through.
+
+Hope this helps
+===============================================================================
+
+If you want to update a "text" field > 1,000 odd characters you must use
+WRITETEXT or UPDATETEXT.. how you ask:
+
+function mssql_updatetext($db_name, $table_name, $field_name, $where, $text) {
+    // assume mssql db link already created etc
+    $str_pos=0;
+    $buffer_len = 1024;
+    mssql_query("EXEC sp_dboption '{$db_name}', 'select into/bulkcopy',
+'true'");
+    while ($str_pos < strlen($text)) {
+        $buffer = str_replace("'", "''", substr($text, $str_pos, $buffer_len));
+// escape buffer
+        mssql_query("DECLARE @ptrval binary(16)
+
+                     SELECT  @ptrval = TEXTPTR($field)
+                     FROM    [$table]
+                     WHERE   $where
+
+                     UPDATETEXT [{$table}].$field @ptrval $str_pos NULL
+$buffer");
+        $str_pos += $buffer_len;
+    }
+    mssql_query("EXEC sp_dboption '$db_name', 'select into/bulkcopy',
+'false'");
+   
+    return true;
+}
+
+// test it using "pubs" > pub_info.pr_info
+mssql_updatetext(
+    $db_name='pubs',
+    $table_name='pub_info',
+    $field_name='pr_info',
+    $where='pub_id = 9999',
+    $text=str_repeat("This is a long bit of text \r\n", 1000)
+);
+===============================================================================
+
+DATE FORMATS
+Format #     Query (current date: 12/30/2006)     Sample
+1     select convert(varchar, getdate(), 1)     12/30/06
+2     select convert(varchar, getdate(), 2)     06.12.30
+3     select convert(varchar, getdate(), 3)     30/12/06
+4     select convert(varchar, getdate(), 4)     30.12.06
+5     select convert(varchar, getdate(), 5)     30-12-06
+6     select convert(varchar, getdate(), 6)     30 Dec 06
+7     select convert(varchar, getdate(), 7)     Dec 30, 06
+10     select convert(varchar, getdate(), 10)     12-30-06
+11     select convert(varchar, getdate(), 11)     06/12/30
+101     select convert(varchar, getdate(), 101)     12/30/2006
+102     select convert(varchar, getdate(), 102)     2006.12.30
+103     select convert(varchar, getdate(), 103)     30/12/2006
+104     select convert(varchar, getdate(), 104)     30.12.2006
+105     select convert(varchar, getdate(), 105)     30-12-2006
+106     select convert(varchar, getdate(), 106)     30 Dec 2006
+107     select convert(varchar, getdate(), 107)     Dec 30, 2006
+110     select convert(varchar, getdate(), 110)     12-30-2006
+111     select convert(varchar, getdate(), 111)     2006/12/30
+       
+TIME FORMATS
+8 or 108     select convert(varchar, getdate(), 8)     00:38:54
+9 or 109     select convert(varchar, getdate(), 9)     Dec 30 2006
+12:38:54:840AM
+14 or 114     select convert(varchar, getdate(), 14)     00:38:54:840
+===============================================================================
+
+DATE FORMATS
+Format #     Query (current date: 12/30/2006)     Sample
+1     select convert(varchar, getdate(), 1)     12/30/06
+2     select convert(varchar, getdate(), 2)     06.12.30
+3     select convert(varchar, getdate(), 3)     30/12/06
+4     select convert(varchar, getdate(), 4)     30.12.06
+5     select convert(varchar, getdate(), 5)     30-12-06
+6     select convert(varchar, getdate(), 6)     30 Dec 06
+7     select convert(varchar, getdate(), 7)     Dec 30, 06
+10     select convert(varchar, getdate(), 10)     12-30-06
+11     select convert(varchar, getdate(), 11)     06/12/30
+101     select convert(varchar, getdate(), 101)     12/30/2006
+102     select convert(varchar, getdate(), 102)     2006.12.30
+103     select convert(varchar, getdate(), 103)     30/12/2006
+104     select convert(varchar, getdate(), 104)     30.12.2006
+105     select convert(varchar, getdate(), 105)     30-12-2006
+106     select convert(varchar, getdate(), 106)     30 Dec 2006
+107     select convert(varchar, getdate(), 107)     Dec 30, 2006
+110     select convert(varchar, getdate(), 110)     12-30-2006
+111     select convert(varchar, getdate(), 111)     2006/12/30
+       
+TIME FORMATS
+8 or 108     select convert(varchar, getdate(), 8)     00:38:54
+9 or 109     select convert(varchar, getdate(), 9)     Dec 30 2006
+12:38:54:840AM
+14 or 114     select convert(varchar, getdate(), 14)     00:38:54:840
+===============================================================================
+
+if you have a query that returns results in mssql, but run from php using
+mssql_query doesn't, check if you have any nvarchar fields and convert them to
+text using:
+convert(text,nvarchar_field).
+===============================================================================
+
+It is annoying that MSSQL does not return proper error numbers.
+
+For example: run a simple "INSERT INTO ..." query that will cause an error and
+see it.
+
+All I get is:
+
+Code:       HY000
+Message: (below)
+
+SQLSTATE[HY000]: General error: 10007 INSERT statement conflicted with COLUMN
+FOREIGN KEY constraint 'FK...'. The conflict occurred in database 'DB...',
+table 'TBL...', column 'COL...'. [10007] (severity 5) [INSERT INTO ... ]
+
+'HY000' does not help me at all and same thing is returned for other errors as
+well. (I am not sure, but if 10007 is the number I am looking for, I do NOT
+want to parse the error messages. Then why do we have the notion of "err_code
+and err_message"?)
+
+I think, running the following just after the 'failed' query may help:
+
+$err = your_query_and_fetch_row_func ('select @@error');
+
+Cheers!
+Murat
+
+P.S. Firebird rocks! ;)
+===============================================================================
+
+When using this function on Linux with the FreeTDS dblib driver, some system
+stored procedures can return NULL values. This is because Microsoft SQL Server
+also uses a Windows-specific variant type in addition to the standard SQL
+types... like VB & OLE variants. For example:
+
+<?php
+
+// this works fine on Windows (using ntwdblib.dll)
+$r = mssql_query(
+'SELECT SERVERPROPERTY(\'productversion\')'
+);
+
+// but, you might want to do this instead (for Linux portability)
+$r = mssql_query(
+'SELECT CAST(SERVERPROPERTY(\'productversion\') AS VARCHAR)'
+);
+
+?>
+===============================================================================
+
+Another note for the archives:
+
+If for some reason you aren't on a windows platform (using FreeTDS etc), or on
+a older windows platform and are having a hard time with unicode errors with
+ntext and images there are two things to do:
+
+1) make sure you odbc drivers are up to date
+:: or ::
+2) make sure to convert any ntext or image fields in your select. If you need
+an image from a select then you are stuck with upgrading your odbc drivers if
+you are getting unicode errors.
+
+Use mssql_field_type to get your field types however you want.
+
+SELECT [Name], [UserID], [SomeValue], convert(TEXT, [Description]) FROM [MyDB.
+[dbo].[MyTable];
+===============================================================================
+
+If you are having problems with truncated text fields from mssql queries (pe.
+at 4096 characters), try some of the following:
+
+in php.ini:
+- mssql.textlimit = 65536
+- mssql.textsize = 65536
+
+in your php code, before your queries:
+- mssql_query ( 'SET TEXTSIZE 65536' , $myConn );
+- ini_set ( 'mssql.textlimit' , '65536' );
+- ini_set ( 'mssql.textsize' , '65536' );
+===============================================================================
+
+if anyone has faced a problem with displaying images from mssql image field it
+could be that they have an ole header put by sql.
+here is an example. hope it helps:
+
+<?php
+$db=mssql_connect("server","user","pass");
+$d=mssql_select_db("NorthWind", $db);
+$sql = "SELECT Picture FROM Categories WHERE CategoryId=2";
+$res = mssql_query($sql);
+$row = mssql_fetch_array($res);
+$data = $row['Picture'];
+header("Content-Type: image/bmp");
+//remove the ole header
+$data = substr($data,78);
+//print the pic in the browser
+echo $data;
+mssql_close();
+?>
+===============================================================================
+
+Regarding the note of jesse at lostangel dot net, written on 17-Sep-2002 03:33
+implementing the mysql_insert_id function for MSSQL I have a remark:
+
+The example hasn't worked on my database server (SQL Server 2000 Standard
+Edition with SP3a, english) so i just left of the exec statement.
+Instead I used:
+
+$result = mssql_query("INSERT INTO STUFF(gaga,otherGaga) VALUES
+('hello','apple'); SELECT @@IDENTITY as insertId;");
+
+list ($gagaId) = mssql_fetch_row($result);
+===============================================================================
+
+MSSQL will not let you use TEXT data in the where clause, TEXT data is BLOG
+data, its max size is 2,147,483,647 bytes (each character occupies one byte).
+The varchar and char can have max of 8000 characters, so you can use text data
+in a where clause if you convert as follows convert(varchar(8000),SOMETEXTDATA)
+
+select * from tHistory where myNotes=convert(varchar(8000),SOMETEXTDATA)
+===============================================================================
+
+Just explaining how to get date in YYYY-MM-DD format much easily, when you use
+convert function in SQL you usually give the format as one of the arguments.
+for example <br>
+select convert(varchar(20),getdate(),20)<br>
+select convert(varchar(20),getdate(),120)<br>
+will both return dates in yyyy-mm-dd hh:mi:ss(24h) format. you can also use
+<br>
+select convert(varchar(20),getdate(),21)<br>
+select convert(varchar(20),getdate(),121)<br>
+in yyyy-mm-dd hh:mi:ss.mmm(24h) formats.<br>
+So now when you have the date as string from either of the four convert
+functions you can either take the left part of the string or use a substring
+function to get the date in YYYY-MM-DD format.<br>
+following are few examples.<br>
+select left(convert(varchar(20),getdate(),20),10)<br>
+select left(convert(varchar(20),getdate(),120),10)<br>
+select left(convert(varchar(20),getdate(),21),10)<br>
+select left(convert(varchar(20),getdate(),121),10)<br>
+select substring(convert(varchar(20),getdate(),20),1,10)<br>
+select substring(convert(varchar(20),getdate(),20),1,10)<br>
+select substring(convert(varchar(20),getdate(),120),1,10)<br>
+select substring(convert(varchar(20),getdate(),21),1,10)<br>
+select substring(convert(varchar(20),getdate(),121),1,10)<br>
+===============================================================================
+
+It would appear that MSSQL will not let you use fields of the TEXT data type in
+WHERE clauses.
+
+I tried running a simple query to get account data for a particular user based
+on email address, but the command was not returning any data.  I finally
+realized that this was because the emailaddress column was of the data type
+TEXT.  When I changed the WHERE clause in the query to test against a name,
+which was of type VARCHAR, the query worked perfectly.
+
+I overcame this problem by converting the TEXT field to VARCHAR in the WHERE
+clause, as noted below:
+
+<?php
+### Field 'emailaddress' is of data type TEXT in the SQL database
+
+# This would not work!
+$sql = "SELECT * FROM accounts WHERE emailaddress = 'test@test.com'";
+
+# Converting the data type inline solved the problem
+$sql = "SELECT * FROM accounts WHERE CONVERT( VARCHAR, emailaddress ) =
+'test@test.com'";
+?>
+
+This seems to have solved my problem, although I am still unsure of the limits
+(if any) to this solution.
+===============================================================================
+
+Another way how to use dates in queries:
+
+$createdate="2005-01-30";
+
+$query = "
+DECLARE @newdate datetime;
+SELECT @newdate=convert(varchar(100), '$createdate', 102);
+INSERT INTO TABLE(NUMBER, DATE) VALUES ('$num', @newdate);"
+
+and fire the query....
+===============================================================================
+
+On certain server setups simply replacing a single quote with two single quotes
+will result in:
+you\''d
+
+I use the following function for single quote escaping quote for MSsql:
+
+function escapeSingleQuotes($string){
+    //escapse single quotes
+    $singQuotePattern = "'";
+    $singQuoteReplace = "''";
+    return(stripslashes(eregi_replace($singQuotePattern, $singQuoteReplace,
+$string)));
+}
+===============================================================================
+
+On certain server setups simple replacing a single quote with two single quotes
+will result in:
+you\''d
+
+I use the following function for single quote escaping quote for MSsql:
+
+function escapeSingleQuotes($string){
+    //escapse single quotes
+    $singQuotePattern = "'";
+    $singQuoteReplace = "''";
+    return(stripslashes(eregi_replace($singQuotePattern, $singQuoteReplace,
+$string)));
+}
+===============================================================================
+
+If you're having problems trying to get data stored in a varchar column with
+more than 255 chars use CONVERT to change the data type to TEXT like this:
+
+$query=mssql_query("SELECT table.id, CONVERT(TEXT, table.comment) AS comment
+FROM table");
+
+Don't forget to set name for the column (AS comment) or you won't be able to
+retrieve the data ...
+===============================================================================
+
+Using PHP 4.3.9 and MSSQL Library 7.0, when I try to SELECT text from a column
+(field) defined as VARCHAR 8000 I get only the first 255 characters of the text
+- it's trucated for no apparent reason.
+
+To get round this I changed the column type from VARCHAR 8000 to TEXT, but then
+the output was trucated to 4096 characters.
+
+To fix this I changed two values in PHP.INI:
+
+mssql.textlimit = 16384
+mssql.textsize = 16384
+
+Now my text is trucated to 16384 characters, which is big enough for me - but
+you can apparently use a value as large as 2147483647.
+===============================================================================
+
+Using Aplication Role with PHP
+
+Introduction
+
+Aplication Role is a Microsoft SQL Server 2000 feature that allow to make
+control what "source" use your data. It means that you can allow select, inset
+or update operation from your PHP code and deny it from and ODBC source,
+Microsoft Access or any kind of application that want to use your data.
+
+Scenario:
+
+Imagina you have a DAtabase named MYDB. This DB has three table. TABLEA, TABLEB
+and TABLEC. Imagine that your user named 'nemesis' can access to TABLEA from
+anywhere but you want that from table B and C access from your PHP code.
+
+Follow this steps
+
+[From your MSSQL Administrator]
+
+1 -. From your Database MYDB create a new role (Standard Role). Insert this
+user inside this role.
+2 -. Edit permisions and deny any operation at TABLEB and TABLEC.
+3 -. Create a new Role (Aplication Role). For intance  it named 'myaccess' with
+a password 'anypassword'.
+4 -. Edit permisions and allow any operation you wish at TABLEB and TABLEC
+
+[From your source] (I don't include any control errors to simplify source)
+
+$s = mssql_connect('MYSERVER','nemesis','nemesispassword');
+$b = mssql_select_db('MYDB',$s);
+
+//This one activate application role. Any user permision are
+//ignored. User permision are override with application role
+// permisions.
+
+$query = "EXEC sp_setapprole 'myaccess', 'anypassword'";
+$b = mssql_query($query);
+$result = mssql_query('SELECT * FROM TABLEB,$s);
+[...]
+
+Note: If you kill "$query = ..." you will find out that SELECT fails. If you
+insert that line $quey will be succeed. Now, nemesis only can take data from
+TABLEB and TABLEC through your PHP code. If he/She try to use that data through
+ODBC driver then he can not do it.
+
+NOte: Application role drops when you make a mssql_close.
+===============================================================================
+
+In response to post from jesse at lostangel dot net from 18-Sep-2002:
+
+INSERT ...
+SELECT @@IDENTITY
+may NOT work as desired!
+While running multiple queries at the same time, you will get the last identity
+value generated, somewhere in your database.
+
+If you need to know the identity value generated by your INSERT statement, use
+SCOPE_IDENTITY().
+===============================================================================
+
+You can run a stored proceedure AND get back a result set from mssql_query(). 
+I figured this little trick out when I realized I couldn't use the mssql_init()
+function group for my stored procedure stuff as I needed datetime variables to
+be passed, and they are not supported.  However, you can "encapsulate" a
+snippet of stored procedure within a normal query that can be executed via
+mssql_query() and have a result value returned.  For example, here's a query
+which passes a store's local date and time to a stored procedure that converts
+it to the GMT values that is used internally by the rest of the database
+structure:
+$temptime=time();
+$storeid = 68;
+$deptid = 70;
+$StartDate = strftime("%b %d %Y %H:%M:%S",$temptime);
+$spquery="
+BEGIN
+DECLARE @date datetime,
+    @GMreturn datetime
+SELECT @date='$StartDate'
+execute TZ_toGMT '$storeid','$deptid',@date,@GMreturn OUTPUT
+SELECT @GMreturn
+END";
+
+Now, when $spquery is passed to mssql_query(), it will return with a value for
+@GMreturn, which can be parsed out with mssql_fetch_array() as with any other
+query.
+===============================================================================
+
+If you try to INSERT a large string to a MSSQLServer 2000 table attribute of
+type nvarchar/varchar/text/nchar/char, but it is limited to the first 256
+characters do the following:
+
+1. Open Tools->SQL Query Analyzer
+2. In SQL Query Analyzer
+    i.   Go to Tools->Options
+    ii.  Select the "Results" tab
+    iii. Change "Maximum characters per column" to something else
+===============================================================================
+
+Kelsey made a note that the only character that MSSQL needs "escaping" is the
+single quote ', and it done by using two single quotes ''.  You will want to
+make sure that, when using strings, you contain the strings in single quotes,
+since you can't escape double quotes.
+
+In addition, you won't find a mssql_escape_string() function (though there are
+for other DB's, i.e. mysql_escape_string()), but using:
+
+$escapedString = str_replace("'","''",$stringToEscape);
+
+Will accomplish the same thing.
+===============================================================================
+
+If you are experiencing TRUNCATING issues trying to return more than 4096 bytes
+on a VARCHAR field try converting it to text:
+
+CONVERT(TEXT, Yourfield)
+
+EX:
+$sql->db_select("SELECT cc_main.cc_entry_id, CONVERT(TEXT, cc_main.comment)
+FROM cc_main");
+===============================================================================
+
+Had a similar problem to Jesse
+
+What I experienced with Microsoft SQLserver 2000 and PHP 4.1.2 was that if you
+execute a query consisting of multiple queries separated by a semicolon with
+mssql_query is that the queries themselves are executed but the connection is
+dropped immediately after that. It seems that the phpdriver doesn't count on
+this.
+The EXEC solution (or maybe sp_executesql) works fine in these cases because to
+the db-library it is one statement.
+===============================================================================
+
+Just tried to give a string:
+
+Welcome at Mike's   to the SQL Server:
+
+He misinterpreted the \' as the end of the String.
+MySQL will resolve  \' and not think that the String has ended.
+
+You should replace the \' before constructing the MSSQL Query string.
+===============================================================================
+
+While trying to return a @@IDENTITY after an INSERT statement, the only way I
+could get a valid return result was to encapsulate the query within an EXEC
+like so:
+
+    $result = mssql_query("
+        exec(\"
+        INSERT INTO Files
+            (ownerId, name, sizeKB, path)
+            VALUES ('$contactId', '$userfile_name', '$filesize', '$path')
+        SELECT @@IDENTITY as fileId\")
+        ");
+    list($fileId) = mssql_fetch_row($result);
+
+This returned the appropriate @@IDENTITY in a valid result set.  Not sure if
+mssql supports multiple inline commands or not.  But that assumption would back
+the useage of the EXEC command in order to execute these properly.
+===============================================================================
+
+As with all _query() functions, if there is no database connection and
+mssql_connect() fails, the return value will be NULL (not false).
+===============================================================================
+
+Using the latest version of freetds with support for tds ver 7.0.  I could not
+get more than 256 characters on varchar until I set the environment variable
+TDSVER=70. 
+
+Then it correctly returns all of the field.
+===============================================================================
+
+The mssql_execute etc. commands for stored procs do not seem to support a
+DATETIME type.
+This means using mssql_query.
+Now problems occur when you want to use parameters that have Input values and
+Output values.  SQL Server refuses to acknowledge the following...
+
+declare @ret int, @i int
+select @i = 25
+exec @ret = testsp @Param1 = @i output
+select @ret, @i
+
+It doesn't like 2 select statements, even when the first is changed to "set".
+
+To get round this, put the whole query into an exec command.
+e.g.
+mssql_query("exec('declare @ret int, @i int
+select @i = 25
+exec @ret = testsp @Param1 = @i output
+select @ret, @i')"
+
+This seems to work fine.
+===============================================================================
+
+We are using --with-sybase=/opt/sybase-11.9.2/
+
+We had a problem at first getting mssql results w/ a text field to return
+anything more than 4096 bytes.
+The mssql.textlimit and mssql.textsize parameters in php.ini had no effect on
+this.
+Turns out you can control this from the mssql end w/ one simple query
+mssql_query("set textsize 65536");
+
+Of course, 65536 is just an example, use whatever value you need to get back as
+a max.
+
+We tested it and the setting stayed through the whole connection, no need to
+run that query before EVERY one of your real queries.  However, it didn't seem
+to retain across sessions.. (sorry, can't simply run the query once and forget
+about it)
+
+Hope this helps others who are banging their head on a wall like we were.
+===============================================================================
+
+It would seem that this returns a resource even if the query is a SELECT which
+returns 0 rows.
+===============================================================================
+
+I have a mssql database with an ntext data type and was having problems as the
+cast solution data was still being truncated by php, i combined a couple of
+methods from here and elsewhere on the internet.
+
+If you have are retrieving vast amounts of text from a SQL Server database into
+your website.
+
+use SQl statements using cast e.g.
+SELECT CAST(details as TEXT) from table
+
+and in the php.ini file change these values in the [mssql] section, from 4096
+to whatever size and limit, remember to remove the ; from the front of the
+ammended line
+
+; Valid range 0 - 2147483647.  Default = 4096.
+mssql.textlimit = 2147483647
+
+; Valid range 0 - 2147483647.  Default = 4096.
+mssql.textsize = 2147483647
+===============================================================================
+
+-- Phew -- I answered this myself...
+
+The problem had NOTHING to do with mssql, or mysql for that matter.
+
+For some reason when an image is held in a blob, and you want to display this
+within a browser, I found I had to do the following.
+
+I had to create a mini-php page, that looks essentially like the following
+psuedo code...
+
+<?php # mini.php
+
+$id = $_GET['id'];
+$q = "select image from table where id = $id";
+$image = mssql_query($q);
+
+header("content-type image/jpeg");
+echo($image);
+?>
+
+and then include this snippet within the core display page like this:
+
+<html>
+blah blah..
+<img src='mini.php&id=<?php print $targetid; ?>'>
+</html>
+
+and BANG! it worked...
+===============================================================================
+
+If you are having problems with truncated text fields from ODBC queries (pe. at
+4096 characters), try some of the following:
+
+in php.ini:
+- odbc.defaultlrl = 65536
+
+in your php code, before your queries:
+- ini_set ( 'odbc.defaultlrl' , '65536' );
+===============================================================================
+
+To get column of type datetime as varchar in format: "YYYY-MM-DD" you should
+use:
+
+$query = "SELECT   
+   CAST(DATEPART(YYYY,row_date) AS CHAR(4)) + '-'
+     + RIGHT(CAST(100+DATEPART(MM,row_date) AS CHAR(3)),2) + '-'
+     + RIGHT(CAST(100+DATEPART(DD,row_date) AS CHAR(3)),2) + '' AS row_date,
+            FROM TABLENAME WHERE id = '$id'";
+
+(Where "row_date" is of type datetime)
+===============================================================================
+
+Although mssql_query does not support datetime paramaters with stored
+procedures, there is a simple way of getting around it.
+
+Bind the parameter as a string i.e. SQLVARCHAR or SQLCHAR
+
+mssql_bind($stmt, "@JoinDate", value, SQLVARCHAR, false,null,19);
+
+and then use the sql server function CONVERT() in your stored procedure to
+convert the parameter to a datetime variable before using it.
+
+SELECT @JD = convert(datetime,@JoinDate,103)
+===============================================================================
+
+Just in case anyone is having problems with mssql_query calling a procedure,
+where the procedure has multiple SELECTs, INSERTs and/or UPDATEs and some do
+not return any kind of a result, but some do.
+When trying to run mssql_query in that case an error: "Warning:
+mssql_fetch_array(): 1 is not a Sybase result index in ..." would result, or if
+one uses something like "SELECT @@IDENTITY" to return something for those
+statements an error: "Expected dbnextrow() to return NO_MORE_ROWS." would
+result.
+A simple fix for the error(s) is to use "SET NOCOUNT ON" statement before any
+statements that do not return anything and then "SET NOCOUNT OFF" before any
+statements that do.
+
+--Aleks
+===============================================================================
+
+watch out for mssql.timeout configuration value - if you dealing with scripts
+that take long time to run (backup managment, dts jobs), it might just stop
+running query in the middle without giving any php or sql error.
+===============================================================================
+
+hello all!
+
+here's a tip for those of you that, just like me, had some problems on how to
+get values from a call to a Stored Procedure that returns Multiple Recordsets.
+
+<?php
+conn = mssql_connect($server, $user, $pass, $db);
+$sql ="EXEC WhateverSProcYouWant some_arguments";
+$data = mssql_query( $sql, $conn);       
+$result = array();   
+
+do {
+    while ($row = mssql_fetch_object($data)){
+        $result[] = $row;   
+    }
+}while ( mssql_next_result($data) );
+
+mssql_close($conn);
+?>
+
+this will create 2 loops:
+1 - which loops through all returned recordsets. mssql_next_result will step
+through each recordsets
+2 - this inner-loop will return all rows, as objects, from current recordset
+and add each object to the $result array.
+
+and that's it!
+
+HTH, has i haven't found any info/docs related to multiple recordsets

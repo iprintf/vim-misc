@@ -1,0 +1,194 @@
+
+msg_send
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+msg_send — Send a message to a message queue
+
+说明
+
+bool msg_send ( resource $queue , int $msgtype , mixed $message [, bool
+$serialize = true [, bool $blocking = true [, int &$errorcode ]]] )
+
+msg_send() sends a message of type msgtype (which MUST be greater than 0) to
+the message queue specified by queue.
+
+参数
+
+queue
+
+msgtype
+
+message
+
+serialize
+
+    The optional serialize controls how the message is sent. serialize defaults
+    to TRUE which means that the message is serialized using the same mechanism
+    as the session module before being sent to the queue. This allows complex
+    arrays and objects to be sent to other PHP scripts, or if you are using the
+    WDDX serializer, to any WDDX compatible client.
+
+blocking
+
+    If the message is too large to fit in the queue, your script will wait
+    until another process reads messages from the queue and frees enough space
+    for your message to be sent. This is called blocking; you can prevent
+    blocking by setting the optional blocking parameter to FALSE, in which case
+    msg_send() will immediately return FALSE if the message is too big for the
+    queue, and set the optional errorcode to MSG_EAGAIN, indicating that you
+    should try to send your message again a little later on.
+
+errorcode
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+Upon successful completion the message queue data structure is updated as
+follows: msg_lspid is set to the process-ID of the calling process, msg_qnum is
+incremented by 1 and msg_stime is set to the current time.
+
+参见
+
+  • msg_remove_queue() - Destroy a message queue
+  • msg_receive() - Receive a message from a message queue
+  • msg_stat_queue() - Returns information from the message queue data
+    structure
+  • msg_set_queue() - Set information in the message queue data structure
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+I created example how to comunnicate with programe written in C throught
+messages queues. First run C program (it will create queue) then PHP script.
+
+C code compile with: gcc -std=c99 -o test_queue test_queue.c
+
+test_queue.c:
+/**
+* Example how to use System V Messages Queues with PHP and C program.
+* This is simple server which create message queue and receive message from it.
+* Based on Beej's Guide to Unix IPC
+* Autor: Jan Drazil, <qeekin at gmail dot com>
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+
+/* Buffer struct for receiving messages */
+struct php_buf {
+    long mtype;
+    char msg[200];
+};
+
+int main(void)
+{
+    struct php_buf buf;
+    int msqid;
+    key_t key;
+
+    /* Generate key (/var/www/index.php must be accessible file) */
+    if((key = ftok("/var/www/index.php", 'G')) == -1) {
+        perror("ftok");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Create message queue */
+    if((msqid = msgget(key, 0666 | IPC_CREAT)) == -1) {
+        perror("msgget");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Ready to get string from PHP!\n");
+
+    /* Receive message */
+    if(msgrcv(msqid, &buf, sizeof(buf.msg)-1, 0, 0) == -1) {
+        perror("msgrcv");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Eliminate segmentation fault */
+    buf.msg[199] = '\0';
+
+    printf("Recieved from PHP: %s\n", buf.msg);
+
+    /* Destroy message queue */
+    if(msgctl(msqid, IPC_RMID, NULL) == -1) {
+        perror("msgctl");
+        exit(EXIT_FAILURE);
+    }
+
+    return EXIT_SUCCESS;
+}
+
+test_queue.php:
+<?php
+/**
+* Example how to use System V Messages Queues with PHP and C program.
+* This is simple server which create message queue and receive message from it.
+* Based on Beej's Guide to Unix IPC
+* Autor: Jan Drazil, <qeekin at gmail dot com>
+*/
+
+/* Generate key, param fot ftok must be same as in test_msg.c */
+if(($key = ftok("/var/www/index.php", "G")) == -1)
+    die("ftok");
+
+if(!msg_queue_exists($key))
+    die("message queue doesn't exists");
+
+/* Connect to message queue */
+if(($msqid = msg_get_queue($key)) === FALSE)
+    die("msg_get_queue");
+
+echo "Sending text to msg queue.\n";
+
+/* Send message to C program */
+if(!msg_send($msqid, 12, "Hello from PHP!\0", false))
+    die("msg_send");
+
+echo "Done"
+?>
+===============================================================================
+
+When sending non-complex (serialize = false) messages to a program in C, you
+need to add the null character to the string (\0). Otherwise the previous
+message will be partially visible if it is longer than the current message.
+Took some kind help from comp.lang.php for me to figure that out. While it
+seems so obvious now, I thought I'd share it here.
+===============================================================================
+
+$msgtype used in msg_send function can be any positive integer.
+===============================================================================
+
+I think it is kinda lame why I cannot find out (easily) explicitly which types
+of messages are allowed and which ones are not.  Maybe we can start our own
+little list.  I know that strings work, and arrays do not.
+===============================================================================
+
+Sample sending webpage, see msg_receive for matching service
+
+<?php
+    $MSGKEY = 519051;
+
+    $msg_id = msg_get_queue ($MSGKEY, 0600);
+
+    if (!msg_send ($msg_id, 1, 'Hi', true, true, $msg_err))
+        echo "Msg not sent because $msg_err\n";
+?>
+===============================================================================
+
+After about an hour of debugging I've discovered the meaning of the
+undocumented "PHP Warning: msg_send(): msgsnd failed: Invalid argument"
+($errorcode = 13).
+
+This occurred when the size of $message was larger than msg_qbytes (see
+msg_stat_queue() for how to determine and change msg_qbytes).

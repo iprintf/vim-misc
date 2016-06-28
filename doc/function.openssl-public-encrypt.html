@@ -1,0 +1,534 @@
+
+openssl_public_encrypt
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+openssl_public_encrypt — Encrypts data with public key
+
+说明
+
+bool openssl_public_encrypt ( string $data , string &$crypted , mixed $key [, 
+int $padding = OPENSSL_PKCS1_PADDING ] )
+
+openssl_public_encrypt() encrypts data with public key and stores the result
+into crypted. Encrypted data can be decrypted via openssl_private_decrypt().
+
+This function can be used e.g. to encrypt message which can be then read only
+by owner of the private key. It can be also used to store secure data in
+database.
+
+参数
+
+data
+
+crypted
+
+    This will hold the result of the encryption.
+
+key
+
+    The public key.
+
+padding
+
+    padding can be one of OPENSSL_PKCS1_PADDING, OPENSSL_SSLV23_PADDING,
+    OPENSSL_PKCS1_OAEP_PADDING, OPENSSL_NO_PADDING.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+参见
+
+  • openssl_private_encrypt() - Encrypts data with private key
+  • openssl_private_decrypt() - Decrypts data with private key
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+chsnyder writes that the data is limited to 936 bits in his implementation.
+
+Actually, it has nothing to do with RSA being CPU intensive, RAM or anything of
+the sort.
+
+Basically when you encrypt something using an RSA key (whether public or
+private), the encrypted value must be smaller than the key (due to the maths
+used to do the actual encryption). So if you have a 1024-bit key, in theory you
+could encrypt any 1023-bit value (or a 1024-bit value smaller than the key)
+with that key.
+
+However, the PKCS#1 standard, which OpenSSL uses, specifies a padding scheme
+(so you can encrypt smaller quantities without losing security), and that
+padding scheme takes a minimum of 11 bytes (it will be longer if the value
+you're encrypting is smaller). So the highest number of bits you can encrypt
+with a 1024-bit key is 936 bits because of this (unless you disable the padding
+by adding the OPENSSL_NO_PADDING flag, in which case you can go up to 1023-1024
+bits). With a 2048-bit key it's 1960 bits instead.
+
+But as chsnyder correctly wrote, the normal application of a public key
+encryption algorithm is to store a key or a hash of the data you want to
+respectively encrypt or sign. A hash is typically 128-256 bits (the PHP sha1()
+function returns a 160 bit hash). And an AES key is 128 to 256 bits. So either
+of those will comfortably fit inside a single RSA encryption.
+===============================================================================
+
+Easy way:
+
+<?php
+
+$publicKey = "file://path/to/public/key-crt.pem";
+$plaintext = "String to encrypt";
+
+openssl_public_encrypt($plaintext, $encrypted, $publicKey);
+
+echo $encrypted;   //encrypted string
+
+?>
+===============================================================================
+
+Very important to recognize the maximum size $data string constraint and its
+relation to SSL bit size as pointed out by others.  Before I addressed the
+maximum size limit through blocking the data, I was receiving these types of
+errors from openssl_error_string():
+- error:0906D06C:PEM routines:PEM_read_bio:no start line  OR
+- error:0E06D06C:configuration file routines:NCONF_get_string:no value
+Using a key (sha512, OPENSSL_KEYTYPE_RSA) with 2048 bits, I had a maximum
+message size of 245 bytes and 4096 bits yielded a max size of 502 bytes.  So if
+you change your key size later, in particular if you reduce the size of it, be
+aware it affects your maximum encryption length.
+===============================================================================
+
+The confusion most have seems to be on "mixed $key"
+
+The $key is explained in, and mostly the same as the parameter of http://
+www.php.net/manual/en/function.openssl-pkey-get-public.php
+
+It can take the resource $key returned from openssl_pkey_get_public() OR find
+the value is text and passes the text to openssl_pkey_get_public() to get a
+valid resource.
+
+To better break down rstinnett's example:
+(and where the flaw is)
+
+<?php
+function EncryptData($source)
+{
+  $fp=fopen("/etc/httpd/conf/ssl.crt/server.crt","r");
+  $pub_key_string=fread($fp,8192);
+  fclose($fp);
+  openssl_get_publickey($pub_key);
+
+  openssl_public_encrypt($source,$crypttext,$pub_key_string);
+  /*this simply passes the string contents of pub_key_string back to be
+decoded*/
+  return(base64_encode($crypttext));
+}
+?>
+
+is more efficient:
+
+<?php
+function EncryptData($source)
+{
+  $fp=fopen("/etc/httpd/conf/ssl.crt/server.crt","r");
+  $pub_key_string=fread($fp,8192);
+  fclose($fp);
+  $key_resource = openssl_get_publickey($pub_key);
+
+  openssl_public_encrypt($source,$crypttext, $key_resource );
+  /*uses the already existing key resource*/
+  return(base64_encode($crypttext));
+}
+?>
+
+shorter:
+
+<?php
+function EncryptData($source)
+{
+  $fp=fopen("/etc/httpd/conf/ssl.crt/server.crt","r");
+  $pub_key=fread($fp,8192);
+  fclose($fp);
+
+  openssl_public_encrypt($source,$crypttext, $pub_key );
+
+  return(base64_encode($crypttext));
+}
+?>
+===============================================================================
+
+The encrypted data can be stored in MySQL without use of base64. It must be
+properly escaped with mysql_real_escape_string(), and then saved to BLOB
+column. (In fact - this function must be used every time when you insert binary
+data in MySQL).
+===============================================================================
+
+I figured it out.  This function is not intended for general encryption and
+decryption.  For that, you want openssl_seal() and openssl_open().
+===============================================================================
+
+This example worked for me:
+
+RedHat 7.2 / php 4.2.2 / Apache 1.3.7
+
+// STEP 1: Encryption with Public Key (you will need Private Key to decrypt -
+see step2).
+
+$string="Some Important Data";
+$fp=fopen ("cert.pem","r");
+$pub_key=fread ($fp,8192);
+fclose($fp);
+$PK="";
+$PK=openssl_get_publickey($pub_key);
+if (!$PK) {
+    echo "Cannot get public key";
+}
+$finaltext="";
+openssl_public_encrypt($string,$finaltext,$PK);
+if (!empty($finaltext)) {
+    openssl_free_key($PK);
+    echo "Encryption OK!";
+}else{
+    echo "Cannot Encrypt";
+}
+
+// STEP 2: Decription (Using Private Key)
+
+$fp=fopen ("pk.pem","r");
+$priv_key2=fread ($fp,8192);
+fclose($fp);
+$PK2=openssl_get_privatekey($priv_key2);
+$Crypted=openssl_private_decrypt($Data,$Decrypted,$PK2);
+if (!$Crypted) {
+    $MSG.="<p class='error'>Cannot Decrypt ($CCID).</p>";
+}else{
+    echo "Decrypted Data: " . $Decrypted;
+}
+===============================================================================
+
+We can't guarantee that RSA will still be trusted for security in 2016, but
+this is the current best practice for RSA. The rest of the world is moving on
+to ECDH and EdDSA (e.g. Ed25519).
+
+That said, make sure you are using OPENSSL_PKCS1_OAEP_PADDING or else you're
+vulnerable to a chosen-ciphertext attack (Google: "Daniel Bleichenbacher 1998
+RSA padding oracle" and you'll find plenty of material on it.)
+
+The only fix is to use OAEP (preferably with MGF1-SHA256, but this function
+doesn't let you specify that detail and defaults to MGF1+SHA1).
+
+Phpseclib offers RSAES-OAEP + MGF1-SHA256 for encryption and RSASS-PSS +
+MGF1-SHA256 for signatures.
+
+http://phpseclib.sourceforge.net/rsa/examples.html#encrypt,enc1
+
+If you don't want to hassle with these details yourself,  check out https://
+github.com/paragonie/EasyRSA
+===============================================================================
+
+If you need a message key, obtain it from the openssl_random_pseudo_bytes()
+function.
+
+DO NOT just hash the current time-- an attacker will guess any such key very
+easily (he'll just hash a bunch of likely time values and try them until he
+finds the right one.  The attacker can generate and test many millions of
+candidate hashes every minute using an ordinary PC).
+===============================================================================
+
+openssl_private_encrypt() has a low limit for the length of the data it can
+encrypt due to the nature of the algorithm.
+
+To encrypt the larger data you can use openssl_encrypt() with a random password
+(like sha1(microtime(true))), and encrypt the password with
+openssl_public_encrypt().
+This way the data can be encrypted with a public key and decrypted with the
+private one.
+===============================================================================
+
+T. Horsten explained the size limits on raw encryption. Here are two functions
+to encrypt/decrypt larger data when you can't use the envelope functions:
+
+function ssl_encrypt($source,$type,$key){
+//Assumes 1024 bit key and encrypts in chunks.
+
+$maxlength=117;
+$output='';
+while($source){
+  $input= substr($source,0,$maxlength);
+  $source=substr($source,$maxlength);
+  if($type=='private'){
+    $ok= openssl_private_encrypt($input,$encrypted,$key);
+  }else{
+    $ok= openssl_public_encrypt($input,$encrypted,$key);
+  }
+       
+  $output.=$encrypted;
+}
+return $output;
+}
+
+function ssl_decrypt($source,$type,$key){
+// The raw PHP decryption functions appear to work
+// on 128 Byte chunks. So this decrypts long text
+// encrypted with ssl_encrypt().
+
+$maxlength=128;
+$output='';
+while($source){
+  $input= substr($source,0,$maxlength);
+  $source=substr($source,$maxlength);
+  if($type=='private'){
+    $ok= openssl_private_decrypt($input,$out,$key);
+  }else{
+    $ok= openssl_public_decrypt($input,$out,$key);
+  }
+       
+  $output.=$out;
+}
+return $output;
+
+}
+===============================================================================
+
+In comment below, Jeff says the input to this function is limited to "about 50
+characters". On my PHP5 build, the limit is 117 characters (936 bits, strange
+number).
+
+That's because public key encryption is CPU intensive, and meant to be used on
+short values. The idea is to use this function to encrypt a secret key that is
+in turn used to encrypt data using a more efficient algorithm, such as RC4 or
+TripleDES. The recipient uses their private key to decrypt the secret, and can
+then decrypt the data.
+
+The openssl_seal() and openssl_open() functions do this internally, and are
+very well documented. You should probably use them instead.
+===============================================================================
+
+openssl_public_encrypt and openssl_private_encrypt can't encrypt large data .
+so I write a class . this class can encrypt large data and decrypt.
+
+look url : http://pigo.pigo.idv.tw/opensslcrypt.phps
+===============================================================================
+
+To store the encrypted data in a MySQL database, you first have to encode the
+data so it can safely be written. You can use a blob type for this, but it can
+make SELECTs really nasty. The easiest way I have found to do this is with
+base64_encode and base64_decode. The following example using code from a
+previous example and split into encrypt and decrypt functions.
+
+function EncryptData($source)
+{
+  $fp=fopen("/etc/httpd/conf/ssl.crt/server.crt","r");
+  $pub_key=fread($fp,8192);
+  fclose($fp);
+  openssl_get_publickey($pub_key);
+  /*
+   * NOTE:  Here you use the $pub_key value (converted, I guess)
+   */
+  openssl_public_encrypt($source,$crypttext,$pub_key);
+  return(base64_encode($crypttext));
+}
+
+function DecryptData($source)
+{
+  #print("number : $number");
+  $fp=fopen("/etc/httpd/conf/ssl.key/server.key","r");
+  $priv_key=fread($fp,8192);
+  fclose($fp);
+  // $passphrase is required if your key is encoded (suggested)
+  $res = openssl_get_privatekey($priv_key,$passphrase);
+  /*
+   * NOTE:  Here you use the returned resource value
+   */
+  $decoded_source = base64_decode($source);
+  openssl_private_decrypt($decoded_source,$newsource,$res);
+  return($newsource);
+}
+
+Just use the return values to store the encrypted data or display the decrypted
+data.
+===============================================================================
+
+It looks like there is a limit on the size of the string to be encrypted: about
+50 characters.
+
+This is due to the fact that the implementation allocates an output buffer of
+size EVP_PKEY_size(pkey), which is totally arbitrary and unrelated to the size
+of the input.  Also, it's not using a cipher envelope approach.  It's just
+RSAing the input string.
+===============================================================================
+
+Encrypt using public key, decrypt using private key.
+
+Use this to store stuff in your database: Unless someone
+has your private key, the database contents are useless.
+
+Also, use this for sending to a specific individual:  Get
+their public key, encrypt the message, only they can use
+their private key to decode it.
+
+<?php
+echo "Source: $source";
+$fp=fopen ("/path/to/certificate.crt","r");
+$pub_key=fread($fp,8192);
+fclose($fp);
+openssl_get_publickey($pub_key);
+/*
+* NOTE:  Here you use the $pub_key value (converted, I guess)
+*/
+openssl_public_encrypt($source,$crypttext,$pub_key);
+echo "String crypted: $crypttext";
+
+$fp=fopen("/path/to/private.key","r");
+$priv_key=fread($fp,8192);
+fclose($fp);
+// $passphrase is required if your key is encoded (suggested)
+$res = openssl_get_privatekey($priv_key,$passphrase);
+/*
+* NOTE:  Here you use the returned resource value
+*/
+openssl_private_decrypt($crypttext,$newsource,$res);
+echo "String decrypt : $newsource";
+?>
+===============================================================================
+
+length of the data < length of the private key ..so i divided the message while
+taking it,put a ":::".then again encrpt it. look at the pgm to get an idea
+about this..
+
+<?php
+    class cry
+    {
+            # generate a 1024 bit rsa private key, ask for a passphrase to
+encrypt it and save to file
+            //openssl genrsa -des3 -out /path/to/privatekey 1024
+
+            # generate the public key for the private key and save to file
+            //openssl rsa -in /path/to/privatekey -pubout -out /path/to/
+publickey
+            //programatically using php-openssll
+
+            //This will call while registration
+            function gen_cert($userid)
+            {
+                $dn = array("countryName" => 'XX', "stateOrProvinceName" => 
+'State', "localityName" => 'SomewhereCity', "organizationName" =>'MySelf', 
+"organizationalUnitName" => 'Whatever', "commonName" => 'mySelf', 
+"emailAddress" => 'user@example.com');
+                //Passphrase can be taken during registration
+                //Here its initialized to 1234 for sample               
+                $privkeypass = 'root';
+                $numberofdays = 365;
+                //RSA encryption and 1024 bits length
+                $privkey = openssl_pkey_new(array('private_key_bits' => 1024,
+'private_key_type' => OPENSSL_KEYTYPE_RSA));
+                $csr = openssl_csr_new($dn, $privkey);
+                $sscert = openssl_csr_sign($csr, null, $privkey, $numberofdays
+);
+                openssl_x509_export($sscert, $publickey);
+                openssl_pkey_export($privkey, $privatekey, $privkeypass);
+                openssl_csr_export($csr, $csrStr);
+                //Generated keys are stored into files
+                $fp=fopen("../PKI/private/$userid.key","w");
+                fwrite($fp,$privatekey);
+                fclose($fp);
+                $fp=fopen("../PKI/public/$userid.crt","w");
+                fwrite($fp,$publickey);
+                fclose($fp);       
+            }
+            //Encryption with public key
+            function encrypt($source,$rc)
+            {
+                //path holds the certificate path present in the system       
+       
+                $path="../PKI/public/server.crt";
+                $fp=fopen($path,"r");
+                $pub_key=fread($fp,8192);
+                fclose($fp);
+                openssl_get_publickey($pub_key);
+            //$source='';
+                //$source="sumanth ahoiadodakjaksdsa;ldadkkllksdalkalsdl;asld;
+ls sumanthasddddddddddddddddddddddddddddddddfsdfsffdfsdfsumanth";
+                $j=0;
+                $x=strlen($source)/10;
+                $y=floor($x);
+                for($i=0;$i<$y;$i++)
+                {
+                $crypttext='';
+               
+                openssl_public_encrypt(substr($source,$j,10),$crypttext,
+$pub_key);$j=$j+10;
+                $crt.=$crypttext;
+                $crt.=":::";
+                }
+                if((strlen($source)%10)>0)
+                {
+                openssl_public_encrypt(substr($source,$j),$crypttext,$pub_key);
+                $crt.=$crypttext;
+                }   
+                return($crt);
+               
+            }
+            //Decryption with private key
+            function decrypt($crypttext,$userid)
+            {
+                $passphrase="root";
+                $path="../PKI/private/server.key";
+                $fpp1=fopen($path,"r");
+                $priv_key=fread($fpp1,8192);
+                fclose($fpp1);
+                $res1= openssl_get_privatekey($priv_key,$passphrase);
+                $tt=explode(":::",$crypttext);
+                $cnt=count($tt);
+                $i=0;
+                while($i<$cnt)
+                {
+                openssl_private_decrypt($tt[$i],$str1,$res1);
+                $str.=$str1;
+                $i++;
+                }
+                return $str;     
+        }
+            function sign($source,$rc)
+            {
+                $has=sha1($source);
+                $source.="::";
+                $source.=$has;
+                $path="../PKI/public/$rc.crt";
+                $fp=fopen($path,"r");
+                $pub_key=fread($fp,8192);
+                fclose($fp);
+                openssl_get_publickey($pub_key);
+                openssl_public_encrypt($source,$mese,$pub_key);
+                return $mese;
+           
+            }
+            function verify($crypttext,$userid)
+            {
+                $passphrase="root";
+                $path="../PKI/private/$userid.key";
+                $fpp1=fopen($path,"r");
+                $priv_key=fread($fpp1,8192);
+                fclose($fpp1);
+                $res1= openssl_get_privatekey($priv_key,$passphrase);
+                openssl_private_decrypt($crypttext,$has1,$res1);
+                list($c1,$c2)=split("::",$has1);
+                $has=sha1($c1);
+                if($has==$c2)
+                {
+                    $message=$c1;
+                    return $message;
+                }                
+            }
+
+    }
+?>
+===============================================================================
+
+function description is wrong, you have to switch crypttext and text if you
+want it to work
+this is correct:
+bool openssl_public_encrypt ( string crypted, string data, mixed key [, int
+padding])

@@ -1,0 +1,465 @@
+
+mysqli_stmt::prepare
+
+mysqli_stmt_prepare
+
+(PHP 5, PHP 7)
+
+mysqli_stmt::prepare -- mysqli_stmt_prepare — Prepare an SQL statement for
+execution
+
+说明
+
+面向对象风格
+
+mixed mysqli_stmt::prepare ( string $query )
+
+过程化风格
+
+bool mysqli_stmt_prepare ( mysqli_stmt $stmt , string $query )
+
+Prepares the SQL query pointed to by the null-terminated string query.
+
+The parameter markers must be bound to application variables using 
+mysqli_stmt_bind_param() and/or mysqli_stmt_bind_result() before executing the
+statement or fetching rows.
+
+    Note:
+
+    In the case where you pass a statement to mysqli_stmt_prepare() that is
+    longer than max_allowed_packet of the server, the returned error codes are
+    different depending on whether you are using MySQL Native Driver (mysqlnd)
+    or MySQL Client Library (libmysqlclient). The behavior is as follows:
+
+      □ mysqlnd on Linux returns an error code of 1153. The error message means
+        "got a packet bigger than max_allowed_packet bytes".
+
+      □ mysqlnd on Windows returns an error code 2006. This error message means
+        "server has gone away".
+
+      □ libmysqlclient on all platforms returns an error code 2006. This error
+        message means "server has gone away".
+
+参数
+
+stmt
+
+    仅以过程化样式：由 mysqli_stmt_init() 返回的 statement 标识。
+
+query
+
+    The query, as a string. It must consist of a single SQL statement.
+
+    You can include one or more parameter markers in the SQL statement by
+    embedding question mark (?) characters at the appropriate positions.
+
+        Note:
+
+        You should not add a terminating semicolon or \g to the statement.
+
+        Note:
+
+        The markers are legal only in certain places in SQL statements. For
+        example, they are allowed in the VALUES() list of an INSERT statement
+        (to specify column values for a row), or in a comparison with a column
+        in a WHERE clause to specify a comparison value.
+
+        However, they are not allowed for identifiers (such as table or column
+        names), in the select list that names the columns to be returned by a
+        SELECT statement), or to specify both operands of a binary operator
+        such as the = equal sign. The latter restriction is necessary because
+        it would be impossible to determine the parameter type. In general,
+        parameters are legal only in Data Manipulation Language (DML)
+        statements, and not in Data Definition Language (DDL) statements.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$city = "Amersfoort";
+
+/* create a prepared statement */
+$stmt =  $mysqli->stmt_init();
+if ($stmt->prepare("SELECT District FROM City WHERE Name=?")) {
+
+    /* bind parameters for markers */
+    $stmt->bind_param("s", $city);
+
+    /* execute query */
+    $stmt->execute();
+
+    /* bind result variables */
+    $stmt->bind_result($district);
+
+    /* fetch value */
+    $stmt->fetch();
+
+    printf("%s is in district %s\n", $city, $district);
+
+    /* close statement */
+    $stmt->close();
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+Example #2 过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$city = "Amersfoort";
+
+/* create a prepared statement */
+$stmt = mysqli_stmt_init($link);
+if (mysqli_stmt_prepare($stmt, 'SELECT District FROM City WHERE Name=?')) {
+
+    /* bind parameters for markers */
+    mysqli_stmt_bind_param($stmt, "s", $city);
+
+    /* execute query */
+    mysqli_stmt_execute($stmt);
+
+    /* bind result variables */
+    mysqli_stmt_bind_result($stmt, $district);
+
+    /* fetch value */
+    mysqli_stmt_fetch($stmt);
+
+    printf("%s is in district %s\n", $city, $district);
+
+    /* close statement */
+    mysqli_stmt_close($stmt);
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Amersfoort is in district Utrecht
+
+参见
+
+  • mysqli_stmt_init() - 初始化一条语句并返回一个用于mysqli_stmt_prepare(调用)
+    的对象
+  • mysqli_stmt_execute() - Executes a prepared Query
+  • mysqli_stmt_fetch() - Fetch results from a prepared statement into the
+    bound variables
+  • mysqli_stmt_bind_param() - Binds variables to a prepared statement as
+    parameters
+  • mysqli_stmt_bind_result() - Binds variables to a prepared statement for
+    result storage
+  • mysqli_stmt_get_result() - Gets a result set from a prepared statement
+  • mysqli_stmt_close() - Closes a prepared statement
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+Note that if you're using a question mark as a placeholder for a string value,
+you don't surround it with quotation marks in the MySQL query.
+
+For example, do this:
+
+mysqli_stmt_prepare($stmt, "SELECT * FROM foo WHERE foo.Date > ?");
+
+Do not do this:
+
+mysqli_stmt_prepare($stmt, "SELECT * FROM foo WHERE foo.Date > '?'");
+
+If you put quotation marks around a question mark in the query, then PHP
+doesn't recognize the question mark as a placeholder, and then when you try to
+use mysqli_stmt_bind_param(), it gives an error to the effect that you have the
+wrong number of parameters.
+
+The lack of quotation marks around a string placeholder is implicit in the
+official example on this page, but it's not explicitly stated in the docs, and
+I had trouble figuring it out, so figured it was worth posting.
+===============================================================================
+
+Turns out you can't directly use a prepared statement for a query that has a
+placeholder in an IN() clause.
+
+There are ways around that (such as constructing a string that consists of n
+question marks separated by commas, then using that set of placeholders in the
+IN() clause), but you can't just say IN (?).
+
+This is a MySQL restriction rather than a PHP restriction, but it's not really
+documented in the MySQL docs either, so I figured it was worth mentioning here.
+
+(Btw, turns out someone else had previously posted the info that I put in my
+previous comment, about not using quotation marks. Sorry for the repeat; not
+sure how I missed the earlier comment.)
+===============================================================================
+
+The `prepare` , `bind_param`, `bind_result`, `fetch` result, `close` stmt cycle
+can be tedious at times. Here is an object that does all the mysqli mumbo jumbo
+for you when all you want is a select leaving you to the bare essential
+`preparedSelect` on a prepared stmt. The method returns the result set as a 2D
+associative array with the `select`ed columns as keys. I havent done sufficient
+error-checking and it also may have some bugs. Help debug and improve on it.
+
+I used the bible.sql db from http://www.biblesql.net/sites/biblesql.net/files/
+bible.mysql.gz.
+
+Baraka tele!
+
+============================
+
+<?php
+
+class DB
+{
+    public $connection;
+   
+    #establish db connection
+    public function __construct($host="localhost", $user="user", $pass="", $db=
+"bible")
+    {
+        $this->connection = new mysqli($host, $user, $pass, $db);
+                 
+        if(mysqli_connect_errno())
+        {
+            echo("Database connect Error : "
+            . mysqli_connect_error($mysqli));
+        }   
+    }
+   
+    #store mysqli object
+    public function connect()
+    {
+        return $this->connection;
+    }
+
+    #run a prepared query
+    public function runPreparedQuery($query, $params_r)
+    {
+        $stmt = $this->connection->prepare($query);
+        $this->bindParameters($stmt, $params_r);
+
+        if ($stmt->execute()) {
+            return $stmt;
+        } else {
+            echo("Error in $statement: "
+                      . mysqli_error($this->connection));
+            return 0;
+        }
+       
+    }
+
+# To run a select statement with bound parameters and bound results.
+# Returns an associative array two dimensional array which u can easily 
+# manipulate with array functions.
+
+    public function preparedSelect($query, $bind_params_r)
+    {
+        $select = $this->runPreparedQuery($query, $bind_params_r);
+        $fields_r = $this->fetchFields($select);
+       
+        foreach ($fields_r as $field) {
+            $bind_result_r[] = &${$field};
+        }
+       
+        $this->bindResult($select, $bind_result_r);
+       
+        $result_r = array();
+        $i = 0;
+        while ($select->fetch()) {
+            foreach ($fields_r as $field) {
+                $result_r[$i][$field] = $$field;
+            }
+            $i++;
+        }
+        $select->close();
+        return $result_r;   
+    }
+   
+   
+    #takes in array of bind parameters and binds them to result of
+    #executed prepared stmt
+   
+    private function bindParameters(&$obj, &$bind_params_r)
+    {
+        call_user_func_array(array($obj, "bind_param"), $bind_params_r);
+    }
+   
+    private function bindResult(&$obj, &$bind_result_r)
+    {
+        call_user_func_array(array($obj, "bind_result"), $bind_result_r);
+    }
+   
+    #returns a list of the selected field names
+   
+    private function fetchFields($selectStmt)
+    {
+        $metadata = $selectStmt->result_metadata();
+        $fields_r = array();
+        while ($field = $metadata->fetch_field()) {
+            $fields_r[] = $field->name;
+        }
+
+        return $fields_r;
+    }
+}
+#end of class
+
+#An example of the DB class in use
+
+$DB = new DB("localhost", "root", "", "bible");
+$var = 5;
+$query = "SELECT abbr, name from books where id > ?" ;
+$bound_params_r = array("i", $var);
+
+$result_r = $DB->preparedSelect($query, $bound_params_r);
+
+#loop thru result array and display result
+
+foreach ($result_r as $result) {
+    echo $result['abbr'] . " : " . $result['name'] . "<br/>" ;
+}
+
+?>
+===============================================================================
+
+To see sql errors from your prepare:
+
+$stmt = mysqli_stmt_init($link);
+
+mysqli_stmt_prepare ( $stmt ,"INSERT INTO foo
+            (id, textval,whatever) values (?,?,?) or  die( print_r
+(mysqli_stmt_error($stmt)));
+===============================================================================
+
+If you wrap the placeholders with quotation marks you will experience warnings
+like "Number of variables doesn't match number of parameters in prepared
+statement" (at least with INSERT Statements).
+===============================================================================
+
+A particularly helpful adaptation of this function and the call_user_func_array
+function:
+
+// $params is sent as array($val=>'i', $val=>'d', etc...)
+
+function db_stmt_bind_params($stmt, $params)
+{
+    $funcArg[] = $stmt;
+    foreach($params as $val=>$type)
+    {
+        $funcArg['type'] .= $type;
+        $funcArg[] = $val;
+    }
+    return call_user_func_array('mysqli_stmt_bind_param', $funcArgs);
+}
+
+Thanks to 'sned' for the code.
+===============================================================================
+
+i've got some bad news for you guys if you haven't found out already.
+the trick with mysqli_next_result() only prevents having the connection dropped
+after a stored procedure call.
+apparently you can bind parameters for a prepared stored procedure call, but
+you'll get messed up records from mysqli_stmt_fetch() after
+mysqli_stmt_bind_result(), at least when the stored procedure itself contains a
+prepared statement.
+a way to avoid data corruption could be specifying the CLIENT_MULTI_STATEMENTS
+flag in mysqli_real_connect(), if it wasn't disabled entirely (for security
+reasons, as they say). another option is to use mysqli_multi_query(), but then
+you can't bind at all.
+===============================================================================
+
+In reference to what lachlan76 said before, stored procedures CAN be executed
+through prepared statements as long as you tell the DB to move to the next
+result before executing again.
+
+Example (Five calls to a stored procedure):
+
+<?php
+for ($i=0;$i<5;$i++) {
+  $statement = $mysqli->stmt_init();
+  $statement->prepare("CALL some_procedure( ? )");
+
+  // Bind, execute, and bind.
+  $statement->bind_param("i", 1);
+  $statement->execute();
+  $statement->bind_result($results);
+
+  while($statement->fetch()) {
+    // Do what you want with your results.
+  }
+
+  $statement->close();
+
+  // Now move the mysqli connection to a new result.
+  while($mysqli->next_result()) { }
+}
+?>
+
+If you include the last statement, this code should execute without the nasty
+"Commands out of sync" error.
+===============================================================================
+
+Do not try to use a stored procedure through a prepared statement.
+
+Example:
+
+<?php
+$statement = $mysqli->stmt_init();
+$statement->prepare("CALL some_procedure()");
+?>
+
+If you attempt to do this, it will fail by dropping the connection during the
+next query.  Use mysqli_multi_query instead.
+
+Example:
+
+<?php
+$mysqli->multi_query("CALL some_procedure()");
+do
+{
+  $result = $mysqli->store_result();
+
+   // Do your processing work here 
+ 
+  $result->free();
+} while($mysqli->next_result());
+?>
+
+This means that you cannot bind parameters or results, however.
+===============================================================================
+
+If you select LOBs use the following order of execution or you risk mysqli
+allocating more memory that actually used
+
+1)prepare()
+2)execute()
+3)store_result()
+4)bind_result()
+
+If you skip 3) or exchange 3) and 4) then mysqli will allocate memory for the
+maximal length of the column which is 255 for tinyblob, 64k for blob(still ok),
+16MByte for MEDIUMBLOB - quite a lot and 4G for LONGBLOB (good if you have so
+much memory). Queries which use this order a bit slower when there is a LOB but
+this is the price of not having memory exhaustion in seconds.

@@ -1,0 +1,178 @@
+
+DOMXPath::registerNamespace
+
+(PHP 5, PHP 7)
+
+DOMXPath::registerNamespace — Registers the namespace with the DOMXPath object
+
+说明
+
+public bool DOMXPath::registerNamespace ( string $prefix , string $namespaceURI
+)
+
+Registers the namespaceURI and prefix with the DOMXPath object.
+
+参数
+
+prefix
+
+    The prefix.
+
+namespaceURI
+
+    The URI of the namespace.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+It is mentioned in a few places on the web, but it wasn't mentioned here. You
+need to use this function to set up a prefix for the default namespace of a
+document.
+
+For instance, if you are trying to parse a Microsoft Spreadsheet XML file,
+which has the default namespace of
+"urn:schemas-microsoft-com:office:spreadsheet":
+
+$doc = DOMDocument::load("my_spreadsheet.xml);
+$xpath = new DOMXPath($doc);
+$xpath->registerNamespace("m",
+        "urn:schemas-microsoft-com:office:spreadsheet");
+$query = '/m:Workbook/m:Worksheet[1]/m:Table';
+$result = $xpath->query($query, $doc);
+
+You can use anything in place of the 'm', but you have to specify something!
+Just asking for "/Workbook/Worksheet/Table" doesn't work.
+===============================================================================
+
+The following code can work for XML default namespace.
+<?php
+$xml = <<<EOT
+<?xml version="1.0" encoding="UTF-8"?>
+<entry xmlns="http://www.w3.org/2005/Atom" xmlns:other="http://other.w3.org/
+other" >
+        <id>uYG7-sPwjFg</id>
+        <published>2009-05-17T18:29:31.000Z</published>
+</entry>
+EOT;
+
+$doc = new DOMDocument;
+$doc->loadXML($xml);
+$xpath =  DOMXPath($doc);
+
+$xpath->registerNamespace('atom', "http://www.w3.org/2005/Atom");
+
+$xpath_str = '//atom:entry/atom:published/text()';
+
+$entries = $xpath->evaluate($xpath_str);
+
+print $entries->item(0)->nodeValue ."\n";
+
+?>
+===============================================================================
+
+The documentation is not really detailed.
+Probably someone is also interested in the possibility of unregistering the
+namespace.
+
+Worths to note that the original libxml function "xmlXPathRegisterNs()"
+
+* Does NOT accept NULL or empty string for the argument "$prefix".
+
+   and
+
+* Unregisters the namespace if the "$namespaceURI" argument is NULL.
+
+Here the documentation:
+http://xmlsoft.org/html/libxml-xpathInternals.html#xmlXPathRegisterNs
+===============================================================================
+
+This is called prefix mapping and it is necessary to use xpath to handle
+documents which have default namespaces. //root/item will search for items with
+no namespace, not items with the namespace described as the default in the
+xmlns declaration.  This problem is maddening as it just looks on the surface
+like xpath isn't working.
+===============================================================================
+
+A general way to register the root default namespace:
+
+<?php
+$xml = new DomDocument();
+$xml->load('data.xml');
+$xpath = new DOMXPath($xml);
+$rootNamespace = $xml->lookupNamespaceUri($xml->namespaceURI);
+$xpath->registerNamespace('x', $rootNamespace);
+?>
+
+And then just query:
+
+<?php $elementList = $xpath->query('//x:items/x:name'); ?>
+===============================================================================
+
+Ok, here's a function that extends XPath syntax with the following special
+characters:
+
+~ inserts default namespace prefix if defined
+
+# shorthand for text()
+
+% shorthand for comment()
+
+$ shorthand for node()
+
+?* shorthand for processing-instruction()
+
+?foo shorthand for processing-instruction("foo")
+
+? shorthand for processing-instruction("")
+
+^ escapes following character (with literal or SGML entity as needed)
+
+All of the above except ^ are ignored within quoted strings
+
+<?php
+function extendXPath($str, $defns = NULL) {
+   $quote = false;
+   $map = array(
+      '~' => isset($defns) ? "$defns:" : '',
+      '#' => 'text()',
+      '%' => 'comment()',
+      '$' => 'node()'
+   );
+   $out = '';
+  
+   for ($i = 0, $len = strlen($str); $i < $len; $i++) {
+      $c = $str[$i];
+      if (!$quote && array_key_exists($c, $map)) {
+         $out .= $map[$c];
+      } else switch ($c) {
+         case '^':
+            $out .= htmlspecialchars($str[++$i], ENT_QUOTES);
+            break;
+         case '?':
+            if ($quote) {
+               $out .= $c;
+            } elseif ($str[$i + 1] == '*') {
+               $out .= 'processing-instruction()';
+               $i++;
+            } else {
+               preg_match('/^\w+/', substr($str, $i + 1), $matches);
+               $out .= 'processing-instruction("'.$matches[0].'")';
+               $i += strlen($matches[0]);
+            };
+            break;
+         case '"':
+            $quote = !$quote;
+         default:
+            $out .= $c;
+      };
+   };
+  
+   return $out;
+}
+?>

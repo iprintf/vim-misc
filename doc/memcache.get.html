@@ -1,0 +1,213 @@
+
+Memcache::get
+
+(PECL memcache >= 0.2.0)
+
+Memcache::get — 从服务端检回一个元素
+
+说明
+
+string Memcache::get ( string $key [, int &$flags ] )
+array Memcache::get ( array $keys [, array &$flags ] )
+
+如果服务端之前有以key作为key存储的元素，Memcache::get()方法此时返回之前存储的值
+。
+
+你可以给Memcache::get()方法传递一个数组（多个key）来获取一个数组的元素值，返回
+的数组仅仅包含从服务端查找到的key-value对。
+
+参数
+
+key
+
+    要获取值的key或key数组。
+
+flags
+
+    如果给定这个参数（以引用方式传递），该参数会被写入一些key对应的信息。这些标
+    记和Memcache::set()方法中的同名参数意义相同。用int值的低位保留了pecl/
+    memcache的内部用法（比如：用来说明压缩和序列化状态）。（译注：最后一位表明
+    是否序列化，倒数第二位表明是否经过压缩，比如：如果此值为1表示经过序列化，但
+    未经过压缩，2表明压缩而未序列化，3表明压缩并且序列化，0表明未经过压缩和序列
+    化，具体算法可查找linux文件权限算法相关资料）
+
+返回值
+
+返回key对应的存储元素的字符串值或者在失败或key未找到的时候返回FALSE。
+
+范例
+
+Example #1 Memcache::get() 示例
+
+<?php
+
+/* procedural API */
+$memcache_obj = memcache_connect('memcache_host', 11211);
+$var = memcache_get($memcache_obj, 'some_key');
+
+/* OO API */
+$memcache_obj = new Memcache;
+$memcache_obj->connect('memcache_host', 11211);
+$var = $memcache_obj->get('some_key');
+
+/* 
+你同样可以使用数组key作为参数，如果某个元素没有在服务端发现，结果数组中将不会包
+含这些key。
+*/
+
+/* procedural API */
+$memcache_obj = memcache_connect('memcache_host', 11211);
+$var = memcache_get($memcache_obj, Array('some_key', 'another_key'));
+
+/* OO API */
+$memcache_obj = new Memcache;
+$memcache_obj->connect('memcache_host', 11211);
+$var = $memcache_obj->get(Array('some_key', 'second_key'));
+
+?>
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+$flags stays untouched if $key was not found on the server, it's helpfull to
+determine if bool(false) was stored:
+
+<?php
+
+$memcache = new Memcache();
+
+$memcache->set('test', false); //
+$flags = false;
+var_dump($memcache->get('test', $flags)); // bool(false)
+var_dump($flags); // int(256) - changed to int
+
+$memcache->delete('test');
+
+$flags = false;
+var_dump($memcache->get('test', $flags)); // bool(false)
+var_dump($flags); // bool(false) - untouched
+
+?>
+===============================================================================
+
+Beware, if there's a backslash present in the key name then the results are
+unpredictable and random.
+
+I was generating keys like this:
+
+$mc_key = get_called_class(). $_COOKIE['crumb'];
+
+This works fine when get_called_class() returns CLASSNAME.
+
+But then I began using namespaces, and get_class_class() of course returned
+NAMESPACE\CLASSNAME
+
+Well that backslash sends Memcache into quite the tizzy.
+No errors, mind you, just insanity.
+===============================================================================
+
+Note that if you include spaces in your keys when saving Data and use array of
+keys to get the Data, The returned array will replace spaces with underscores
+in the keys.
+
+<?php
+
+$memcache = new Memcache;
+$memcache->connect('localhost');
+$memcache->set('my-key', 'value1', 0, 300);
+$memcache->set('key with space', 'value 2', 0, 300);
+
+print_r($memcache->get(array('my-key', 'key with space'))); // Array ( [my-key]
+=> value1 [key_with_space] => value 2 )
+
+?>
+
+Memcache replaces spaces with underscores when saving, it does so when doing a
+get too, but when you do a get with single key (string) you don't notice this
+as it merely returns the value. But when you do a get for array of keys, you
+would expect the same keys in the returned array but it replaces spaces by
+underscores in them.
+===============================================================================
+
+Avoid reading too many values from memcahce. Each get() consumes some memory.
+You should cache the values instead, once they are read. Illustration of bad
+practice:
+
+<?php   // reading from memcache leaks
+
+    $m = new Memcache();
+    $m -> connect( "localhost", "11211" );
+    $m -> add("foo", "bar");
+
+    for(;;) {  // this "endless" loop will finish because it eats up all the
+memory
+        $res = $m -> get("foo");
+        print memory_get_usage()."\n";  // this writes bigger and bigger
+numbers
+    }
+===============================================================================
+
+If deserialization fails for some reason, that is when memcache server returned
+flag 1 set, but the value was not a correctly serialized PHP data,
+then Memcache::get acts in a following way:
+
+If it was called with a single key to retrieve, then a warning is raised, but
+since it was not actually a bug of a server, the warning says something
+confusing like "Memcached Server Error: null" and the function returns bool
+(false).
+
+If it was called by passing an array (even with a single element in it), then
+the warning is not raised and the resulting array contains a value bool(false).
+
+Since there are some buffer overrun bugs present in Memcached Server, which
+from time to time cause overwriting of [part of] data and therefore rendering
+it impossible to deserialize, make sure to check if the result of Memcache::get
+contains only string, or deserialized structure. If the result is bool,dobule
+or long, then something went wrong.
+===============================================================================
+
+Be aware that when using the multi-key version, Memcache::get returns bool
+false if no servers are configured for the pool (and possibly if other errors
+occur as well while attempting to fetch). Also, Memcache class throws annoying
+warnings on every get/set/delete-type calls if you have no servers added to the
+pool.
+
+The following snippet var_dump's bool false, not an empty array like you might
+expect.
+
+<?php
+$cache = new Memcache;
+
+// no $cache->addServer calls (for example,
+due to temporarily disabling use of cache)
+
+// use @ symbol to ignore warning
+
+var_dump(
+    @$cache->get(array('one', 'two'))
+);
+?>
+===============================================================================
+
+Signature is not correct.
+
+<?php
+$memcache = new Memcache();
+$memcache->connect('localhost', 11211);
+class Test { public $property = "testvalue"; }
+$test = new Test();
+$memcache->set("asdf", $test);
+var_dump($memcache->get("asdf"));
+/* will return the object, not the string:
+    class Test#3 (1) {
+      public $property =>
+      string(9) "testvalue"
+    }
+*/
+?>
+===============================================================================
+
+For me it was the case that if such key doesn't exist, null is returned not
+false.

@@ -1,0 +1,528 @@
+
+set_time_limit
+
+(PHP 4, PHP 5, PHP 7)
+
+set_time_limit — 设置脚本最大执行时间
+
+说明
+
+void set_time_limit ( int $seconds )
+
+设置允许脚本运行的时间，单位为秒。如果超过了此设置，脚本返回一个致命的错误。默
+认值为30秒，或者是在php.ini的max_execution_time被定义的值，如果此值存在。
+
+当此函数被调用时，set_time_limit()会从零开始重新启动超时计数器。换句话说，如果
+超时默认是30秒，在脚本运行了了25秒时调用 set_time_limit(20)，那么，脚本在超时之
+前可运行总时间为45秒。
+
+参数
+
+seconds
+
+    最大的执行时间，单位为秒。如果设置为0（零），没有时间方面的限制。
+
+返回值
+
+没有返回值。
+
+注释
+
+Warning
+
+当php运行于安全模式时，此功能不能生效。除了关闭安全模式或改变php.ini中的时间限
+制，没有别的办法。
+
+    Note:
+
+    set_time_limit()函数和配置指令max_execution_time只影响脚本本身执行的时间。
+    任何发生在诸如使用system()的系统调用，流操作，数据库操作等的脚本执行的最大
+    时间不包括其中，当该脚本已运行。在测量时间是实值的Windows中，情况就不是如此
+    了。
+
+参见
+
+  • max_execution_time
+  • max_input_time
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+while setting the set_time_limit(), the duration of sleep() will be ignored in
+the execution time. The following illustrates:
+
+<?php
+
+set_time_limit(20);
+
+while ($i<=10)
+{
+        echo "i=$i ";
+        sleep(100);
+        $i++;
+}
+
+?>
+
+Output:
+i=0 i=1 i=2 i=3 i=4 i=5 i=6 i=7 i=8 i=9 i=10
+===============================================================================
+
+I was having trouble with script timeouts in applications where the user
+prompted long running background actions. I wrote this cURL/CLI background
+script that solved the problem when making requests from HTTP.
+
+<?php
+
+/* BACKGROUND CLI 1.0
+  
+   eric pecoraro _at_ shepard dot com - 2005-06-02
+   Use at your own risk. No warranties expressed or implied.
+
+   Include this file at the top of any script to run it in the background
+   with no time limitations ... e.g., include('background_cli.php');
+  
+   The script that calls this file should not return output to the browser.
+*/
+#  REQUIREMENTS - cURL and CLI
+   if ( !function_exists('curl_setopt') OR !function_exists('curl_setopt')  ) {
+      echo 'Requires cURL and CLI installations.' ; exit ;
+   }
+  
+#  BUILD PATHS
+   $script = array_pop(explode('/',$SCRIPT_NAME)) ;
+   $script_dir = substr($SCRIPT_NAME,0,strlen($SCRIPT_NAME)-strlen($script)) ;
+   $scriptURL = 'http://'. $HTTP_HOST . $script_dir . "$script" ;
+   $curlURL = 'http://'. $HTTP_HOST . $script_dir . "$script?runscript=curl" ;
+
+#  Indicate that script is being called by CLI
+   if ( php_sapi_name() == 'cli' ) {
+      $CLI = true ;
+   }
+
+#  Action if script is being called by cURL_prompt()
+   if ( $runscript == 'curl' ) {
+      $cmd = "/usr/local/bin/php ".$PATH_TRANSLATED ; // server location of
+script to run
+      exec($cmd) ;
+      exit;
+   }
+
+#  USER INTERFACE
+   // User answer after submission.
+   if ( $post ) {
+      cURL_prompt($curlURL) ;
+      echo '<div style="margin:25px;"><title>Background CLI</title>';
+      echo 'O.K. If all goes well, <b>'.$script.'</b> is working hard in the
+background with no ' ;
+      echo 'timeout limitations. <br><br><form action='.$scriptURL.' method=
+GET>' ;
+      echo '<input type=submit value=" RESET BACKGROUND CLI "></form></div>' ;
+      exit ;
+   }
+   // Start screen.
+   if ( !$CLI AND !$runscript ) {
+      echo '<title>Background CLI</title><div style="margin:25px;">' ;
+      echo '<form action='.$scriptURL.' method=POST>' ;
+      echo 'Click to run <b>'.$script.'</b> from the PHP CLI command line, in
+the background.<br><br>' ;
+      echo '<input type=hidden value=1 name=post>' ;
+      echo '<input type=submit value=" RUN IN BACKGROUND "></form></div>' ;
+      exit ;
+   }
+
+#  cURL URL PROMPT FUNCTION
+   function cURL_prompt($url_path) {
+      ob_start(); // start output buffer
+      $c=curl_init($url_path);
+      curl_setopt($c, CURLOPT_TIMEOUT, 2); // drop connection after 2 seconds
+      curl_exec($c);
+      curl_close($c);
+      ob_end_clean(); // discard output buffer
+   }
+?>
+===============================================================================
+
+Both set_time_limit(...) and  ini_set('max_execution_time',...); won't count
+the time cost of sleep,file_get_contents,shell_exec,mysql_query etc, so i build
+this function my_background_exec(), to run static method/function in background
+/detached process and time is out kill it:
+
+my_exec.php:
+<?php
+function my_background_exec($function_name, $params, $str_requires, $timeout=
+600)
+         {$map=array('"'=>'\"', '$'=>'\$', '`'=>'\`', '\\'=>'\\\\', '!'=>'\!');
+          $str_requires=strtr($str_requires, $map);
+          $path_run=dirname($_SERVER['SCRIPT_FILENAME']);
+          $my_target_exec="/usr/bin/php -r \"chdir('{$path_run}');{
+$str_requires} \\\$params=json_decode(file_get_contents('php://stdin'),true);
+call_user_func_array('{$function_name}', \\\$params);\"";
+          $my_target_exec=strtr(strtr($my_target_exec, $map), $map);
+          $my_background_exec="(/usr/bin/php -r \"chdir('{$path_run}');{
+$str_requires} my_timeout_exec(\\\"{$my_target_exec}\\\", file_get_contents
+('php://stdin'), {$timeout});\" <&3 &) 3<&0";//php by default use "sh", and
+"sh" don't support "<&0"
+          my_timeout_exec($my_background_exec, json_encode($params), 2);
+         }
+
+function my_timeout_exec($cmd, $stdin='', $timeout)
+         {$start=time();
+          $stdout='';
+          $stderr='';
+          //file_put_contents('debug.txt', time().':cmd:'.$cmd."\n",
+FILE_APPEND);
+          //file_put_contents('debug.txt', time().':stdin:'.$stdin."\n",
+FILE_APPEND);
+
+          $process=proc_open($cmd, [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w'
+]], $pipes);
+          if (!is_resource($process))
+             {return array('return'=>'1', 'stdout'=>$stdout, 'stderr'=>$stderr
+);
+             }
+          $status=proc_get_status($process);
+          posix_setpgid($status['pid'], $status['pid']);    //seperate pgid
+(process group id) from parent's pgid
+
+          stream_set_blocking($pipes[0], 0);
+          stream_set_blocking($pipes[1], 0);
+          stream_set_blocking($pipes[2], 0);
+          fwrite($pipes[0], $stdin);
+          fclose($pipes[0]);
+
+          while (1)
+                {$stdout.=stream_get_contents($pipes[1]);
+                 $stderr.=stream_get_contents($pipes[2]);
+
+                 if (time()-$start>$timeout)
+                    {//proc_terminate($process, 9);    //only terminate
+subprocess, won't terminate sub-subprocess
+                     posix_kill(-$status['pid'], 9);    //sends SIGKILL to all
+processes inside group(negative means GPID, all subprocesses share the top
+process group, except nested my_timeout_exec)
+                     //file_put_contents('debug.txt', time().":kill group
+{$status['pid']}\n", FILE_APPEND);
+                     return array('return'=>'1', 'stdout'=>$stdout, 'stderr'=>
+$stderr);
+                    }
+
+                 $status=proc_get_status($process);
+                 //file_put_contents('debug.txt', time().':status:'.var_export
+($status, true)."\n";
+                 if (!$status['running'])
+                    {fclose($pipes[1]);
+                     fclose($pipes[2]);
+                     proc_close($process);
+                     return $status['exitcode'];
+                    }
+
+                 usleep(100000);
+                }
+         }
+?>
+
+a_class.php:
+<?php
+class A
+{
+    static function jack($a, $b)
+           {sleep(4);
+            file_put_contents('debug.txt', time().":A::jack:".$a.' '.$b."\n", 
+FILE_APPEND);
+            sleep(15);
+           }
+}
+?>
+
+test.php:
+<?php
+require 'my_exec.php';
+
+my_background_exec('A::jack', array('hello', 'jack'), 'require "my_exec.php";
+require "a_class.php";', 8);
+?>
+===============================================================================
+
+To get the currently used time, use getrusage()
+===============================================================================
+
+You may also need to look at Apache's timeout setting (Win32 version for me), I
+changed max execution time value in php.ini, and still got stopped by Apache's
+timeout value in the httpd.conf file.
+===============================================================================
+
+In IIS, there is another global timeout setting which will override any PHP
+settings.  You can alter this timeout by following the following instructions:
+
+http://www.iisadmin.co.uk/?p=7
+===============================================================================
+
+You can do set_time_limit(0); so that the script will run forever - however
+this is not recommended and your web server might catch you out with an imposed
+HTTP timeout (usually around 5 minutes).
+
+You should check your web server's guides for more information about HTTP
+timeouts.
+
+Jonathon
+===============================================================================
+
+Documentation states:
+When called, set_time_limit() restarts the timeout counter from zero. In other
+words, if the timeout is the default 30 seconds, and 25 seconds into script
+execution a call such as set_time_limit(20) is made, the script will run for a
+total of 45 seconds before timing out.
+
+If I have a long running script and i want a exact  time limit, I set this as
+near as possible to the first line.
+===============================================================================
+
+set_tme_limit resets the execution time count.
+
+test code1:
+<?php
+echo '<html><body>';
+set_time_limit(1);
+$i = 0;
+while(++$i < 100000001){
+        if($i % 100000 == 0){
+                echo $i / 100000, "<br/>\n";
+        }
+}
+echo "done.<br/>\n";
+
+// will not echo 'done.'.
+?>
+
+test code2:
+<?php
+echo '<html><body>';
+set_time_limit(1);
+$i = 0;
+while(++$i < 100000001){
+        if($i % 100000 == 0){
+                set_time_limit(1);
+                echo $i / 100000, "<br/>\n";
+        }
+}
+echo "done.<br/>\n";
+
+// will echo 'done.'
+?>
+===============================================================================
+
+When you are working with IIS, PHP timeout is valid only when it's lower than
+script timeout defined by IIS.
+
+IIS 5 has a default timeout of 300 seconds. If you need a higher timeout, you
+also have to change IIS properties. Otherwise, your server will stop your PHP
+script before it reaches its own timeout.
+===============================================================================
+
+this work to fine html streaming AND time pass limit
+
+<?php
+header('Content-type: text/plain');
+echo date("H:m:s"), "\n";
+set_time_limit(30);
+for ($i = 0; $i < 1000; $i++)
+{
+
+    echo date("H:m:s"),"\n";
+    for ($r = 0; $r < 100000; $r++){
+    $X.=  tan(M_LNPI+log(ceil(  date("s")*M_PI*M_LNPI+100)));
+    }
+    ob_flush();  
+    flush();
+
+}
+echo "work! $x";
+?>
+===============================================================================
+
+A nice workaround to have a real max_execution_time (needs posix and pcntl):
+
+<?php
+$pid=pcntl_fork();
+
+if ($pid) {
+  //long time process
+  $a=0;
+  while (true) {
+    echo "a=$a\n\n";
+    ob_flush();
+    flush();
+    $a++;
+    shell_exec('sleep 10&');
+  }
+} else {
+  //time-limit checker
+  sleep(5);
+  posix_kill(posix_getppid(),SIGKILL);
+}
+?>
+===============================================================================
+
+To find out the currently set time limit, use
+
+<?php
+ini_get('max_execution_time');
+?>
+
+If set_time_limit has been previously called in the script, the result will be
+the value which was passed to set_time_limit (and not, as the function name
+"ini_get" appears to suggest, the value from the php.ini file).
+===============================================================================
+
+If you set the number of seconds to a very large number (not many ppl do that,
+but just in case) then php exits with a fatal error like :
+
+Fatal error: Maximum execution time of 1 second exceeded in /path/to/your/
+script/why.php
+
+[EDIT by danbrown AT php DOT net: This is due to the limit of 32-bit signed
+integers.]
+===============================================================================
+
+if you are running a script that needs to execute for unknown time, or
+forever.. you may use
+set_time_limit(0);
+.....
+...
+..
+.
+and at the end of the script use flush() function to tell phpto send out what
+it has generated.
+===============================================================================
+
+One thing that I wish I had found sooner is, if you're using php-cli and really
+need to limit the executation time, and if you're in *nix, you can use
+"timeout" which is part of coreutils.
+For example:
+
+timeout 5 /usr/bin/php -q /path/to/script
+
+and it will kill it if it takes longer than 5 seconds.
+I had a few quick php scripts I wrote for use with cacti for example.
+===============================================================================
+
+If you are streaming large data from database, it is counted towards the max
+exec time.
+===============================================================================
+
+Timeouts after five minutes in IIS on Windows are caused by an inherited CGI
+Timeout value of 300 seconds.  This is not a PHP problem.  The fix is to add
+custom values for the files or directories that need longer to run.
+
+In IIS 5.0 or 7.0 (beta as of this note), you can change this value on a fairly
+granular level using IIS Manager, under (roughly) YOURSITE -> Properties ->
+Home Directory -> Configuration (button) -> Options, but in IIS 6.0, this
+functionality is turned off (!), so you have to get into the Metabase.
+
+Find the site number in Metabase Explorer (e.g., 12345678), then from CMD
+prompt:
+
+[get to the scripts dir]
+cd C:\Inetpub\AdminScripts
+
+[this for each subdirectory from off the site root]
+cscript adsutil.vbs CREATE W3SVC/12345678/root/"MY SUBDIRECTORY"
+IIsWebDirectory
+
+[this for the file in question]
+cscript adsutil.vbs CREATE W3SVC/12345678/root/"MY SUBDIRECTORY"/
+ILikeToTimeOut.php IIsWebFile
+
+[this to set the timeout]
+cscript adsutil.vbs set W3SVC/12345678/root/"MY SUBDIRECTORY"/
+ILikeToTimeOut.php/CGITimeout "7200"
+
+Note:  "7200" is 2 hours in seconds, but can be whatever.
+
+I derived the solution above from this fine article:
+http://www.iis-resources.com/modules/AMS/article.php?
+storyid=509&page=3
+===============================================================================
+
+Regarding what 'nytshadow' said, it's important to realize that
+max-execution-time and the set_time_limit functions measure the time that the
+CPU is working on the script.  If the script blocks, IE: for input, select,
+sleep, etc., then the time between blocking and returning is NOT measured. 
+This is the same when running scripts from the command line interface.  So if
+you've got a log parser written in PHP that tails a file, that program WILL
+fail eventually.  It just depends how long it takes to read in enough input to
+process for 30 seconds.
+
+If you're writing a command line script that should run infinitely, setting
+max-execution-time to 0 (never stop) is HIGHLY recommended.
+===============================================================================
+
+Unfortunately, a script which gets into an infinite loop can produce an
+alarming amount of output in only a few seconds. I was attempting to debug a
+script, and I added
+
+<?php
+set_time_limit(2);
+?>
+
+to the beginning of the script. Unfortunately, even two seconds of run time
+produced enough output to overload the memory available to my browser.
+
+So, I wrote a short routine which would limit the execution time, and also
+limit the amount of output returned. I added this to the beginning of my script
+and it worked perfectly:
+
+<?php
+set_time_limit(2);
+
+ob_start();     // buffer output
+
+function shutdown () {
+    // print only first 2000 characters of output
+    $out = ob_get_clean();
+    print substr($out, 0, 2000);
+}
+
+register_shutdown_function('shutdown');
+?>
+===============================================================================
+
+If you use Apache you can change maximum execution time by .htaccess with this
+line
+
+php_value max_execution_time 200
+===============================================================================
+
+If you're using PHP_CLI SAPI and getting error "Maximum execution time of N
+seconds exceeded" where N is an integer value, try to call set_time_limit(0)
+every M seconds or every iteration. For example:
+
+<?php
+
+require_once('db.php');
+
+$stmt = $db->query($sql);
+
+while ($row = $stmt->fetchRow()) {
+    set_time_limit(0);
+    // your code here
+}
+
+?>
+===============================================================================
+
+If you got something like:
+
+msg: set_time_limit() [function.set-time-limit]: Cannot set time limit in safe
+mode
+
+try this:
+
+<?php
+        if( !ini_get('safe_mode') ){
+            set_time_limit(25);
+        }
+?>

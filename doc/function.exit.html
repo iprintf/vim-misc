@@ -1,0 +1,429 @@
+
+exit
+
+(PHP 4, PHP 5, PHP 7)
+
+exit — 输出一个消息并且退出当前脚本
+
+说明
+
+void exit ([ string $status ] )
+void exit ( int $status )
+
+中止脚本的执行。尽管调用了 exit()， Shutdown函数以及 object destructors 总是会
+被执行。
+
+参数
+
+status
+
+    如果 status 是一个字符串，在退出之前该函数会打印 status 。
+
+    如果 status 是一个 integer，该值会作为退出状态码，并且不会被打印输出。退出
+    状态码应该在范围0至254，不应使用被PHP保留的退出状态码255。状态码0用于成功中
+    止程序。
+
+        Note: PHP >= 4.2.0 当 status 是一个 integer，不会打印输出。
+
+返回值
+
+没有返回值。
+
+范例
+
+Example #1 exit() 例子
+
+<?php
+
+$filename = '/path/to/data-file';
+$file = fopen($filename, 'r')
+    or exit("unable to open file ($filename)");
+
+?>
+
+Example #2 exit() 状态码例子
+
+<?php
+
+//exit program normally
+exit;
+exit();
+exit(0);
+
+//exit with an error code
+exit(1);
+exit(0376); //octal
+
+?>
+
+Example #3 无论如何，Shutdown函数与析构函数都会被执行
+
+<?php
+class Foo
+{
+    public function __destruct()
+    {
+        echo 'Destruct: ' . __METHOD__ . '()' . PHP_EOL;
+    }
+}
+
+function shutdown()
+{
+    echo 'Shutdown: ' . __FUNCTION__ . '()' . PHP_EOL;
+}
+
+$foo = new Foo();
+register_shutdown_function('shutdown');
+
+exit();
+echo 'This will not be output.';
+?>
+
+以上例程会输出：
+
+ Shutdown: shutdown()
+ Destruct: Foo::__destruct()
+
+
+注释
+
+    Note: 因为是一个语言构造器而不是一个函数，不能被可变函数调用。
+
+    Note:
+
+    该语法结构等同于 die()。
+
+参见
+
+  • register_shutdown_function() - Register a function for execution on
+    shutdown
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+Don't use the  exit() function in the auto prepend file with fastcgi (linux/bsd
+os).
+It has the effect of leaving opened files with for result at least a nice  "Too
+many open files  ..." error.
+===============================================================================
+
+If you want to avoid calling exit() in FastCGI as per the comments below, but
+really, positively want to exit cleanly from nested function call or include,
+consider doing it the Python way:
+
+define an exception named `SystemExit', throw it instead of calling exit() and
+catch it in index.php with an empty handler to finish script execution cleanly.
+
+<?php
+
+// file: index.php
+class SystemExit extends Exception {}
+try {
+   /* code code */
+}
+catch (SystemExit $e) { /* do nothing */ }
+// end of file: index.php
+
+// some deeply nested function or .php file   
+
+if (SOME_EXIT_CONDITION)
+   throw new SystemExit(); // instead of exit()
+
+?>
+===============================================================================
+
+To rich dot lovely at klikzltd dot co dot uk:
+
+Using a "@" before header() to suppress its error, and relying on the "headers
+already sent" error seems to me a very bad idea while building any serious
+website.
+
+This is *not* a clean way to prevent a file from being called directly. At
+least this is not a secure method, as you rely on the presence of an exception
+sent by the parser at runtime.
+
+I recommend using a more common way as defining a constant or assigning a
+variable with any value, and checking for its presence in the included script,
+like:
+
+in index.php:
+<?php
+define ('INDEX', true);
+?>
+
+in your included file:
+<?php
+if (!defined('INDEX')) {
+   die('You cannot call this script directly !');
+}
+?>
+
+BR.
+
+Ninj
+===============================================================================
+
+jbezorg at gmail proposed the following:
+
+<?php
+
+if($_SERVER['SCRIPT_FILENAME'] == __FILE__ )
+  header('Location: /');
+
+?>
+
+After sending the `Location:' header PHP _will_ continue parsing, and all code
+below the header() call will still be executed.  So instead use:
+
+<?php
+
+if($_SERVER['SCRIPT_FILENAME'] == __FILE__)
+{
+  header('Location: /');
+  exit;
+}
+
+?>
+===============================================================================
+
+Calling to exit() will flush all buffers started by ob_start() to default
+output.
+===============================================================================
+
+When using php-fpm, fastcgi_finish_request() should be used instead of
+register_shutdown_function() and exit()
+
+For example, under nginx and php-fpm 5.3+, this will make browsers wait 10
+seconds to show output:
+
+<?php
+    echo "You have to wait 10 seconds to see this.<br>";
+    register_shutdown_function('shutdown');
+    exit;
+    function shutdown(){
+        sleep(10);
+        echo "Because exit() doesn't terminate php-fpm calls immediately.<br>";
+    }
+?>
+
+This doesn't:
+
+<?php
+    echo "You can see this from the browser immediately.<br>";
+    fastcgi_finish_request();
+    sleep(10);
+    echo "You can't see this form the browser.";
+?>
+===============================================================================
+
+If you are using templates with numerous includes then exit() will end you
+script and your template will not complete (no </table>, </body>, </html>
+etc...).  Rather than having complex nested conditional logic within your
+content, just create a "footer.php" file that closes all of your HTML and if
+you want to exit out of a script just include() the footer before you exit().
+
+for example:
+
+include ('header.php');
+blah blah blah
+if (!$mysql_connect) {
+echo "unable to connect";
+include ('footer.php');
+exit;
+}
+blah blah blah
+include ('footer.php');
+===============================================================================
+
+In addition to "void a t informance d o t info", here's a one-liner that
+requires no constant:
+
+<?php basename($_SERVER['PHP_SELF']) == basename(__FILE__) && die('Thou shall
+not pass!'); ?>
+
+Placing it at the beginning of a PHP file will prevent direct access to the
+script.
+
+To redirect to / instead of dying:
+
+<?php
+if (basename($_SERVER['PHP_SELF']) == basename(__FILE__)) {
+    if (ob_get_contents()) ob_clean(); // ob_get_contents() even works without
+active output buffering
+    header('Location: /');
+    die;
+}
+?>
+
+Doing the same in a one-liner:
+
+<?php basename($_SERVER['PHP_SELF']) == basename(__FILE__) && (!ob_get_contents
+() || ob_clean()) && header('Location: /') && die; ?>
+
+A note to security: Even though $_SERVER['PHP_SELF'] comes from the user, it's
+safe to assume its validity, as the "manipulation" takes place _before_ the
+actual file execution, meaning that the string _must_ have been valid enough to
+execute the file. Also, basename() is binary safe, so you can safely rely on
+this function.
+===============================================================================
+
+Note, that using exit() will explicitly cause Roxen webserver to die, if PHP is
+used as Roxen SAPI module. There is no known workaround for that, except not to
+use exit(). CGI versions of PHP are not affected.
+===============================================================================
+
+return may be preferable to exit in certain situations, especially when dealing
+with the PHP binary and the shell.
+
+I have a script which is the recipient of a mail alias, i.e. mail sent to that
+alias is piped to the script instead of being delivered to a mailbox. Using
+exit in this script resulted in the sender of the email getting a delivery
+failure notice. This was not the desired behavior, I wanted to silently discard
+messages which did not satisfy the script's requirements.
+
+After several hours of trying to figure out what integer value I should pass to
+exit() to satisfy sendmail, I tried using return instead of exit. Worked like a
+charm. Sendmail didn't like exit but it was perfectly happy with return. So, if
+you're running into trouble with exit and other system binaries, try using
+return instead.
+===============================================================================
+
+In PHP 4.3.1 (and possibly 4.3.0), running scripts from the command line works
+a lot better.  This is probably because 4.3.x has a whole new CLI mode.
+
+Specifically, exit status is now returned (to the shell) as you would expect. 
+This is a godsend for writing embedded email processing scripts, as much email
+infrastructure (fetchmail, qmail, mutt, etc.) is dependant upon correctly
+returned status codes, and the inability to return a status code (as in PHP
+4.2.x) is an insurmountable obstacle.
+
+$_SERVER["argv"] is also always available in 4.3.x, I think, whereas in 4.2.x
+php.ini could prevent it from being available.
+
+(On the downside, I had to ./configure --without-mysql in order to get 4.3.1 to
+compile on RedHat 8.0.  Otherwise there was what looked like a fatal compile
+warning (that I might also have been able to ignore somehow).
+
+The "fatal warning" FYI:
+ext/mysql/libmysql/my_tempnam.o: In function `my_tempnam':
+ext/mysql/libmysql/my_tempnam.c:103: the use of `tempnam' is dangerous, better
+use `mkstemp'
+
+Changing the code from tempnam to mkstemp would probably not be overly
+complicated, but it is non-trivial.)
+===============================================================================
+
+<?php
+
+class Foo
+{
+    public function __construct()
+    {
+        register_shutdown_function([$this, 'shutdown']);
+    }
+
+    public function __destruct()
+    {
+        echo 'Destruct: ' . __METHOD__ . '()' . PHP_EOL;
+    }
+
+    function shutdown()
+    {
+        echo 'Shutdown: ' . __FUNCTION__ . '()' . PHP_EOL;
+    }
+}
+
+$foo = new Foo();
+exit();
+
+// output is
+//Shutdown: shutdown()
+//Destruct: Foo::__destruct()
+===============================================================================
+
+A side-note for the use of exit with finally: if you exit somewhere in a try
+block, the finally won't be executed. Could not sound obvious: for instance in
+Java you never issue an exit, at least a return in your controller; in PHP
+instead you could find yourself exiting from a controller method (e.g. in case
+you issue a redirect).
+
+Here follows the POC:
+
+<?php
+echo "testing finally wit exit\n";
+
+try {
+    echo "In try, exiting\n";
+
+    exit;
+} catch(Exception $e) {
+    echo "catched\n";
+} finally {
+    echo "in finally\n";
+}
+
+echo "In the end\n";
+?>
+
+This will print:
+
+testing finally wit exit
+In try, exiting
+===============================================================================
+
+It should be noted that if building a site that runs on FastCGI, calling exit
+will generate an error in the server's log file. This can quickly fill up.
+
+Also, using exit will diminish the performance benefit gained on FastCGI
+setups. Instead, consider using code like this:
+
+<?php
+
+if( /* error case */ )
+    echo "Invalid request";
+else {
+    /* The rest of your application */
+}
+?>
+
+I've also seen developers get around this issue with FastCGI by wrapping their
+code in a switch statement and using breaks:
+
+index.php:
+<?php
+
+switch(true) {
+    case true:
+        require('application.php');
+}
+
+?>
+
+application.php:
+<?php
+
+if($x > $y) {
+    echo "Sorry, that didn't work.";
+    break;
+}
+
+// ...
+
+?>
+
+It does carry some overhead, but compared to the alternative, it does the job
+well.
+===============================================================================
+
+If you are retroactively going through included files to prevent them from
+being accessed, you can use the following.
+
+<?php
+if($_SERVER['SCRIPT_FILENAME'] == __FILE__ )
+    header('location: /'); // or exit();
+
+// rest of code
+
+?>

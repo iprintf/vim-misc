@@ -1,0 +1,193 @@
+
+mysqli::next_result
+
+mysqli_next_result
+
+(PHP 5, PHP 7)
+
+mysqli::next_result -- mysqli_next_result — Prepare next result from
+multi_query
+
+说明
+
+面向对象风格
+
+bool mysqli::next_result ( void )
+
+过程化风格
+
+bool mysqli_next_result ( mysqli $link )
+
+Prepares next result set from a previous call to mysqli_multi_query() which can
+be retrieved by mysqli_store_result() or mysqli_use_result().
+
+参数
+
+link
+
+    仅以过程化样式：由mysqli_connect() 或 mysqli_init() 返回的链接标识。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+See mysqli_multi_query().
+
+参见
+
+  • mysqli_multi_query() - Performs a query on the database
+  • mysqli_more_results() - Check if there are any more query results from a
+    multi query
+  • mysqli_store_result() - Transfers a result set from the last query
+  • mysqli_use_result() - Initiate a result set retrieval
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+Stored procedures few rowset example:
+
+some_file.php
+<?php
+function proc() {
+  global $global;
+  $db_connect_list = array('site');
+  SQLinit($db_connect_list);
+  if(isset($global['error'])){return;}
+  SQL('CALL `procedure`();');
+  while($row=mysqli_fetch_assoc($global['result'])){
+    // do some
+  }
+  SQLnext();
+  while($row=mysqli_fetch_assoc($global['result'])){
+    // do some
+  }
+  SQLnext();
+  while($row=mysqli_fetch_assoc($global['result'])){
+    // do some
+  }
+  SQLclose($db_connect_list);
+}
+?>
+
+config.php
+<?php
+  $global['sys']['db']['site'] = array('host'=>'localhost', 'user'=>'site', 
+'pass'=>'');
+?>
+
+engine.php
+<?php
+function SQLinit($array_list){
+  global $global;
+  foreach($array_list as $set){
+    if(!$global['sys']['db'][$set]['connect'] = mysqli_connect(
+        $global['sys']['db'][$set]['host'],
+        $global['sys']['db'][$set]['user'],
+        $global['sys']['db'][$set]['pass'])){
+      $global['error']['code'] = 500;
+      $global['error']['text'] = 'Database not avaliable';
+      $w=fopen('error.log','a+');
+      fwrite($w,'time: '.date('Y M d H:i:s')."\r\n");
+      fwrite($w,'errno: '.mysqli_connect_errno()."\r\n");
+      fwrite($w,'error: '.mysqli_connect_error()."\r\n");
+      fclose($w);
+      return;
+    }
+    if(!isset($global['sys']['default_connect']))
+      $global['sys']['default_connect'] = $global['sys']['db'][$set]['connect'
+];
+    SQL('SET NAMES \'utf8\' COLLATE \'utf8_unicode_ci\';', $global['sys']['db']
+[$set]['connect']);
+    SQL('SET CHARACTER SET \'utf8\';', $global['sys']['db'][$set]['connect']);
+    SQL('SET character_set_connection = \'utf8\';', $global['sys']['db'][$set][
+'connect']);
+  }
+}
+function mTime(){
+  list($usec, $sec) = explode(" ", microtime());
+  return ((float)$usec+(float)$sec);
+}
+function SQL($sql, $connect = -1){
+  global $global;
+  if($connect === -1)$connect = $global['sys']['default_connect'];
+  if(isset($global['error']['sql']))return;
+  while ($connect->next_result()) $connect->store_result();
+  $begin=mTime();
+  $global['result']=mysqli_query($connect, $sql);
+  $end=mTime();
+  $global['sys']['time_sql']+=$end-$begin;
+  $error=mysqli_error($connect);
+  if($error!=''){
+    $global['error']['code'] = 502;
+    $global['error']['text'] = 'SQL error';
+    $global['error']['sql'] = true;
+    $w=fopen('error.log','a+');
+    fwrite($w,'time: '.date('Y M d H:i:s')."\r\n");
+    fwrite($w,'errno: '.mysqli_errno($connect)."\r\n");
+    fwrite($w,'error: '.$error."\r\n");
+    fwrite($w,'sql: '.$sql."\r\n");
+    fclose($w);
+  }else{
+    $w=fopen('sql.log','a+');
+    fwrite($w,'time: '.date('Y M d H:i:s')."\r\n");
+    fwrite($w,'sql: '.$sql."\r\n");
+    fclose($w);
+  }
+}
+
+function SQLnext($connect = -1){
+  global $global;
+  if($connect === -1)$connect = $global['sys']['default_connect'];
+  if(isset($global['error']['sql']))return;
+  $connect->next_result();
+  $global['result'] = $connect->store_result();
+}
+
+function SQLclose($array_list){
+  global $global;
+  foreach($array_list as $set){
+    mysqli_close($global['sys']['db'][$set]['connect']);
+  }
+}
+?>
+===============================================================================
+
+this function returns FALSE when you have an error in your syntax in one of
+your queries, so be carefull with this type of construction when tracking
+errors:
+
+<?php
+
+//error in the second sub query 
+$result = $db->multi_query("select * from news; seleeeeeeect id from news;
+update news set title='new title' where id= 12 ");
+
+//code inside object class
+$this->_db = new Mysqli($host, $user, $password, $database, $port, $socket);
+       
+do {
+    $result = $this->_db->store_result();
+    $this->_resultMulti[] = $result;
+    $this->_errnoMulti[] = $this->_db->errno;
+
+    if(is_object($result)) {
+        $result->free_result();
+    }
+               
+} while($this->_db->next_result());
+
+?>
+
+in this construction all you have in the $this->_errnoMulti is :
+
+array(1) {
+  [0]=>
+  int(0)
+}
+
+which means that there are no errors if you are not checking how many queries
+are executed!

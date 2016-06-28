@@ -1,0 +1,586 @@
+
+dir
+
+(PHP 4, PHP 5, PHP 7)
+
+dir — 返回一个 Directory 类实例
+
+说明
+
+Directory dir ( string $directory [, resource $context ] )
+
+以面向对象的方式访问目录。打开 directory 参数指定的目录。
+
+参数
+
+directory
+
+    被打开的目录
+
+context
+
+        Note: 在 PHP 5.0.0 中增加了对上下文（Context）的支持。有关上下文（
+        Context）的说明参见 Streams。
+
+返回值
+
+成功的话，返回一个 Directory 类实例, 参数错误的情况下返回 NULL ，其它错误情况返
+回 FALSE 。
+
+范例
+
+Example #1 dir() 示例
+
+请特别注意下面示例中 Directory::read() 函数返回值的判断方式。我们严格测试（值相
+等，并且类型相同，请参考比较运算符）返回值等于 FALSE ，因为有些情况下，目录名可
+能"等于" FALSE ，导致跳出循环。
+
+<?php
+$d = dir("/etc/php5");
+echo "Handle: " . $d->handle . "\n";
+echo "Path: " . $d->path . "\n";
+while (false !== ($entry = $d->read())) {
+   echo $entry."\n";
+}
+$d->close();
+?>
+
+以上例程的输出类似于：
+
+Handle: Resource id #2
+Path: /etc/php5
+.
+..
+apache
+cgi
+cli
+
+注释
+
+    Note:
+
+    目录条目返回的顺序依赖于系统。
+
+
+User Contributed Notes 17 notes
+
+===============================================================================
+
+Regarding samuel's comment about the dir() function not supporting Unicode
+properly, it's all in the encoding. The function does NOT internally change
+Unicode characters into question marks (?), as I was first led to believe. If
+you simply try to output them in UTF-8, they'll show up just right.
+===============================================================================
+
+This one's pretty nice.  After getting frustrated for hunting down .jpg files
+in my massive music collection (PHP would run out of memory), I thought there
+should be a preg_ls function.
+
+function preg_ls ($path=".", $rec=false, $pat="/.*/") {
+    // it's going to be used repeatedly, ensure we compile it for speed.
+    $pat=preg_replace("|(/.*/[^S]*)|s", "\\1S", $pat);
+    //Remove trailing slashes from path
+    while (substr($path,-1,1)=="/") $path=substr($path,0,-1);
+    //also, make sure that $path is a directory and repair any screwups
+    if (!is_dir($path)) $path=dirname($path);
+    //assert either truth or falsehoold of $rec, allow no scalars to mean truth
+    if ($rec!==true) $rec=false;
+    //get a directory handle
+    $d=dir($path);
+    //initialise the output array
+    $ret=Array();
+    //loop, reading until there's no more to read
+    while (false!==($e=$d->read())) {
+        //Ignore parent- and self-links
+        if (($e==".")||($e=="..")) continue;
+        //If we're working recursively and it's a directory, grab and merge
+        if ($rec && is_dir($path."/".$e)) {
+            $ret=array_merge($ret,preg_ls($path."/".$e,$rec,$pat));
+            continue;
+        }
+        //If it don't match, exclude it
+        if (!preg_match($pat,$e)) continue;
+        //In all other cases, add it to the output array
+        $ret[]=$path."/".$e;
+    }
+    //finally, return the array
+    return $ret;
+}
+
+Not bad for a mere 18 lines, don't you think?
+
+Example use:
+
+foreach (preg_ls("/etc/X11", true, "/.*\.conf/i") as $file) echo $file."\n";
+
+Output:
+
+/etc/X11/xkb/README.config
+/etc/X11/xorg.conf-vesa
+/etc/X11/xorg.conf~
+/etc/X11/gui.conf
+/etc/X11/xorg.conf
+/etc/X11/xorg.conf-fbdev
+===============================================================================
+
+Here my solution how to do effective recursiv directory listing.
+
+Have fun.
+
+<?php
+
+/**
+* example of use:
+*/
+$d = new RecDir("/etc/",false);
+echo "Path: " . $d->getRootPath() . "\n";
+while (false !== ($entry = $d->read())) {
+   echo $entry."\n";
+}
+$d->close();
+
+class RecDir
+{
+   protected $currentPath;
+   protected $slash;
+   protected $rootPath;
+   protected $recursiveTree;  
+
+   function __construct($rootPath,$win=false)
+   {
+      switch($win)
+      {
+         case true:
+            $this->slash = '\\';
+            break;
+         default:
+            $this->slash = '/';
+      }
+      $this->rootPath = $rootPath;
+      $this->currentPath = $rootPath;
+      $this->recursiveTree = array(dir($this->rootPath));
+      $this->rewind();
+   }
+
+   function __destruct()
+   {
+      $this->close();
+   }
+
+   public function close()
+   {
+      while(true === ($d = array_pop($this->recursiveTree)))
+      {
+         $d->close();
+      }
+   }
+
+   public function closeChildren()
+   {
+      while(count($this->recursiveTree)>1 && false !== ($d = array_pop($this->
+recursiveTree)))
+      {
+         $d->close();
+         return true;
+      }
+      return false;
+   }
+
+   public function getRootPath()
+   {
+      if(isset($this->rootPath))
+      {
+         return $this->rootPath;
+      }
+      return false;
+   }
+
+   public function getCurrentPath()
+   {
+      if(isset($this->currentPath))
+      {
+         return $this->currentPath;
+      }
+      return false;
+   }
+  
+   public function read()
+   {
+      while(count($this->recursiveTree)>0)
+      {
+         $d = end($this->recursiveTree);
+         if((false !== ($entry = $d->read())))
+         {
+            if($entry!='.' && $entry!='..')
+            {
+               $path = $d->path.$entry;
+              
+               if(is_file($path))
+               {
+                  return $path;
+               }
+               elseif(is_dir($path.$this->slash))
+               {
+                  $this->currentPath = $path.$this->slash;
+                  if($child = @dir($path.$this->slash))
+                  {
+                     $this->recursiveTree[] = $child;
+                  }
+               }
+            }
+         }
+         else
+         {
+            array_pop($this->recursiveTree)->close();
+         }
+      }
+      return false;
+   }
+
+   public function rewind()
+   {
+      $this->closeChildren();
+      $this->rewindCurrent();
+   }
+
+   public function rewindCurrent()
+   {
+      return end($this->recursiveTree)->rewind();
+   }
+}
+?>
+===============================================================================
+
+<?PHP     
+/*Simple, good looking recursive function for printing directories.
+Just copy/paste and it is ready to go!*/
+
+function printCurrentDirRecursively($originDirectory, $printDistance=0){
+   
+    // just a little html-styling
+    if($printDistance==0)echo '<div style="color:#35a; font-family:Verdana;
+font-size:11px;">';
+    $leftWhiteSpace = "";
+    for ($i=0; $i < $printDistance; $i++)  $leftWhiteSpace = $leftWhiteSpace."&
+nbsp;";
+   
+   
+    $CurrentWorkingDirectory = dir($originDirectory);
+    while($entry=$CurrentWorkingDirectory->read()){
+        if($entry != "." && $entry != ".."){
+            if(is_dir($originDirectory."\\".$entry)){
+                echo $leftWhiteSpace."<b>".$entry."</b><br>\n";
+                printCurrentDirRecursively($originDirectory."\\".$entry, 
+$printDistance+2);
+             }
+            else{
+                echo $leftWhiteSpace.$entry."<br>\n";
+            }
+        }
+    }
+    $CurrentWorkingDirectory->close();
+   
+    if($printDistance==0)echo "</div>";
+}
+
+//TEST IT!
+printCurrentDirRecursively(getcwd());
+
+?>
+===============================================================================
+
+function directoryList($start,$win32=false){
+    if($win32){
+        $slash="\\";
+    }else{
+        $slash="/";
+    }
+    $basename = pathinfo($start);
+    $basename = $basename['basename'];
+    $ls=array();
+    $dir = dir($start);
+    while($item = $dir->read()){
+        if(is_dir($start.$slash.$item)&& $item!="." && $item!=".."){
+            $ls[$basename][]=directoryList($start.$slash.$item,$win32);
+        }else{
+            if($item!="."&&$item!=".."){
+                $ls[$basename][]=$item;
+            }
+        }
+    }
+    return $ls;
+}
+
+$path = pathinfo(__FILE__);
+$ls = directoryList($path['dirname'], true);
+===============================================================================
+
+to get a dir of http://www.example.com/directory
+
+<?php
+function remotedir($dir)
+{
+  $dir = str_replace(" ", "%20", html_entity_decode($dir));
+  if (($rh = fopen($dir, 'rb')) === FALSE) { return false; }
+  $i = 0;
+  while (!feof($rh)) {
+     $archivos = fgetss($rh);
+     $directorio[$i++] = trim( substr($archivos,1,strpos($archivos," ",1)) );
+  }
+  fclose($rh);
+  return $directorio;
+}
+?>
+===============================================================================
+
+The dir Class, from what I can tell, on a Windows box is not a  live image of
+the directory.  When the class is instantiated it takes a snapshot of the
+directory and then the iterator works off that.
+
+I may be wrong, but when I run two processes that look to see if a directory
+exists, and then deletes the dir when some processing takes place.  Deletes
+from one process do not effect the iteration of the second.
+
+To get around this I check that the file exists before doing my processing:
+
+$d = dir($dataDir);
+while (false !== ($entry = $d->read()))
+if ($entry != '..' && $entry != '.' && file_exists("$dataDir\\$entry"))
+{
+    // do stuff
+}
+$d->close();
+
+I run this as a batch process and can activate it multiple times to process the
+directory listing in parallel.
+
+-CF
+===============================================================================
+
+With SPL, you could recursively list all of the folders inside the current
+directory like this:
+
+<?php
+$it = new RecursiveDirectoryIterator('./');
+
+// RecursiveIteratorIterator accepts the following modes:
+//     LEAVES_ONLY = 0  (default)
+//     SELF_FIRST  = 1
+//     CHILD_FIRST = 2
+foreach (new RecursiveIteratorIterator($it, 2) as $path) {
+
+    if ($path->isDir()) {
+
+        echo "$path\n";
+
+    }
+
+}
+?>
+===============================================================================
+
+Note that the dir object will use the default encoding for non-unicode programs
+on Windows with PHP 5.x.
+
+So, if you have a file named with characters unsupported by the current default
+encoding, the dir->read() method will return a wrong entry.
+
+<?php
+/*
+** This script is on the same directory than a file named with
+** unsupported characters for the current default encoding.
+*/
+$d = dir("./");
+while(false !== ($e = $d->read()))
+    echo $e . '<br/>';
+?>
+
+This will print a "?" for every unsupported characters, and not the right file
+name. So take care if you check with is_file/is_dir right after enumerating.
+===============================================================================
+
+<?php
+// best small recurcive dir()
+// $entry[0]!='.'  <=== specifically to protect FTP files with a  dot '.' as
+first  carractère
+// return :
+// download\file\text\test.txt;
+// download\video\anime\test.mp4;
+// download\video\film\test2.mkv;
+
+echo rdir('download'); // start dir in \\download
+
+function rdir($path='',$k='') {   
+    $d = dir($path);
+        while (false !== ($entry = $d->read())) {
+            if($entry[0]!='.') {
+                if(is_dir($path . '\\' . $entry)) {
+                    $k = rdir($k,$path . '\\' . $entry);
+                }
+                else {
+                    $k .= $path . '\\' . $entry . "; \n" ;
+                }
+               
+            }
+        }
+    $d->close();   
+    return $k;   
+}
+
+?>
+===============================================================================
+
+<?php
+
+  $i = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('.'));
+
+?>
+
+works for me..
+===============================================================================
+
+IMHO, thats take most effect with smaller number of errors;)
+
+     function get_leaf_dirs($dir)
+      {
+         $array = array();
+         $d = @dir($dir);
+         if($d)
+         {
+               while (false !== ($entry = $d->read()))
+               {
+                   if($entry!='.' && $entry!='..')
+                   {
+                       $entry = $dir.'/'.$entry;
+                       if(is_dir($entry))
+                       {
+                           $subdirs = get_leaf_dirs($entry);
+                           if ($subdirs)
+                             $array = array_merge($array, $subdirs);
+                           else
+                             $array[] = $entry;
+                       }
+                   }
+               }
+               $d->close();
+         }
+         return $array;
+      }
+===============================================================================
+
+i've modified the script below to get the leaf folders of any directory
+(folders with no subfolders).
+
+note: this does not return the folder passed in as a parameter, even if it has
+no subfolders.
+
+<?php
+function get_leaf_dirs($dir) {
+   $array = array();
+   $d = dir($dir);
+   while (false !== ($entry = $d->read())) {
+       if($entry!='.' && $entry!='..') {
+           $entry = $dir.'/'.$entry;
+           if(is_dir($entry)) {
+               $subdirs = get_leaf_dirs($entry);
+               if ($subdirs)
+                  $array = array_merge($array, $subdirs);
+               else
+                  $array[] = $entry;
+           }
+       }
+   }
+   $d->close();
+   return $array;
+}
+?>
+===============================================================================
+
+Regarding jaqb's post about a correction to the read_dir function, I have one
+small fix too if people wish to also list the directories inside this directory
+and read them into the same array.
+
+<?
+function read_dir($dir) {
+   $array = array();
+   $d = dir($dir);
+   while (false !== ($entry = $d->read())) {
+       if($entry!='.' && $entry!='..') {
+           $entry = $dir.'/'.$entry;
+           if(is_dir($entry)) {
+               $array[] = $entry;
+               $array = array_merge($array, read_dir($entry));
+           } else {
+               $array[] = $entry;
+           }
+       }
+   }
+   $d->close();
+   return $array;
+}
+?>
+===============================================================================
+
+That's the way, I'm storing recursive dirs to an array.
+
+<?php
+public static function getTreeFolders($sRootPath = UPLOAD_PATH_PROJECT, $iDepth
+= 0) {
+      $iDepth++;
+      $aDirs = array();
+      $oDir = dir($sRootPath);
+      while(($sDir = $oDir->read()) !== false) {
+        if($sDir != '.' && $sDir != '..' && is_dir($sRootPath.$sDir)) {
+          $aDirs[$iDepth]['sName'][] = $sDir;
+          $aDirs[$iDepth]['aSub'][]  = self::getTreeFolders($sRootPath.$sDir.'/
+',$iDepth);
+        }
+      }
+      $oDir->close();
+      return empty($aDirs) ? false : $aDirs;
+}
+?>
+===============================================================================
+
+When creating custom solutions, use predefined PHP constants to shorten your
+code and improve performances:
+http://www.php.net/manual/en/reserved.constants.php
+
+For example, DIRECTORY_SEPARATOR may replace a function in which you check
+PHP_OS to set if the directory separator is "/" or "\\".
+
+Cheers.
+===============================================================================
+
+Saw the leaf dirs bit...  quick mod:
+
+function preg_ls ($path=".", $rec=false, $pat="/.*/") {
+    $pat=preg_replace ("|(/.*/[^S]*)|s", "\\1S", $pat);
+    while (substr ($path,-1,1) =="/") $path=substr ($path,0,-1);
+    if (!is_dir ($path) ) $path=dirname ($path);
+    if ($rec!==true) $rec=false;
+    $d=dir ($path);
+    $ret=Array ();
+    while (false!== ($e=$d->read () ) ) {
+        if ( ($e==".") || ($e=="..") ) continue;
+        if ($rec && is_dir ($path."/".$e) ) {
+            $ret=array_merge ($ret,preg_ls($path."/".$e,$rec,$pat));
+            continue;
+        }
+        if (!preg_match ($pat,$e) ) continue;
+        $ret[]=$path."/".$e;
+    }
+    return (empty ($ret) && preg_match ($pat,basename($path))) ? Array ($path."
+/") : $ret;
+}
+
+example:
+
+foreach (preg_ls ("/usr/share/fluxbox", true, "/[LT]e[sa]/i") as $file) echo
+$file."\n";
+
+output:
+
+/usr/share/fluxbox/styles/Leaf/
+/usr/share/fluxbox/styles/Clean
+/usr/share/fluxbox/styles/Testing/

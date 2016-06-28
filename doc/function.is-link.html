@@ -1,0 +1,282 @@
+
+is_link
+
+(PHP 4, PHP 5, PHP 7)
+
+is_link — 判断给定文件名是否为一个符号连接
+
+说明
+
+bool is_link ( string $filename )
+
+判断给定文件名是否为一个符号连接。
+
+参数
+
+filename
+
+    文件的路径。
+
+返回值
+
+如果文件存在并且是一个符号连接则返回 TRUE，否则返回 FALSE。
+
+范例
+
+Example #1 创建并确认一个文件是否为符号连接
+
+<?php
+$link = 'uploads';
+
+if (is_link($link)) {
+    echo(readlink($link));
+} else {
+    symlink('uploads.php', $link);
+}
+?>
+
+错误／异常
+
+失败时抛出E_WARNING警告。
+
+注释
+
+    Note: 此函数的结果会被缓存。参见 clearstatcache() 以获得更多细节。
+
+Tip
+
+自 PHP 5.0.0 起, 此函数也用于某些 URL 包装器。请参见支持的协议和封装协议以获得
+支持 stat() 系列函数功能的包装器列表。
+
+参见
+
+  • is_dir() - 判断给定文件名是否是一个目录
+  • is_file() - 判断给定文件名是否为一个正常的文件
+  • readlink() - 返回符号连接指向的目标
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+To find out whether a file is hardlinked to another filename, check the number
+of links of the stat() output. If it is >1 there is another filename for that
+file.
+
+To find out whether two filenames are pointing to the same file, check the
+inode number of those 2 filenames. If it is equal, the 2 filenames are
+hardlinked together.
+===============================================================================
+
+A workaround for Windows LNK files:
+
+<?php
+
+function _is_link($filename)
+{
+    if(is_link($filename))
+        return true;
+
+    $ext = substr(strrchr($filename, '.'), 1);
+    if(strtolower($ext) == 'lnk')
+    {
+        return (_readlink($filename) ? true : false);
+    }
+
+    return false;
+}
+
+function _readlink($file)
+{
+    if(file_exists($file))
+    {
+        if(is_link($file))
+        {
+            return readlink($file);
+        }
+
+        // Get file content
+        $handle = fopen($file, "rb");
+        $buffer = array();
+
+        while(!feof($handle))
+        {
+            $buffer[] = fread($handle, 1);
+        }
+
+        fclose($handle);
+
+        // Test magic value and GUID
+        if(count($buffer) < 20)
+            return false;
+        if($buffer[0] != 'L')
+            return false;
+        if((ord($buffer[4]) != 0x01) ||
+           (ord($buffer[5]) != 0x14) ||
+           (ord($buffer[6]) != 0x02) ||
+           (ord($buffer[7]) != 0x00) ||
+           (ord($buffer[8]) != 0x00) ||
+           (ord($buffer[9]) != 0x00) ||
+           (ord($buffer[10]) != 0x00) ||
+           (ord($buffer[11]) != 0x00) ||
+           (ord($buffer[12]) != 0xC0) ||
+           (ord($buffer[13]) != 0x00) ||
+           (ord($buffer[14]) != 0x00) ||
+           (ord($buffer[15]) != 0x00) ||
+           (ord($buffer[16]) != 0x00) ||
+           (ord($buffer[17]) != 0x00) ||
+           (ord($buffer[18]) != 0x00) ||
+           (ord($buffer[19]) != 0x46))
+        {
+            return false;
+        }
+
+        $i = 20;
+        if(count($buffer) < ($i + 4))
+            return false;
+
+        $flags = ord($buffer[$i]);
+        $flags = $flags | (ord($buffer[++$i]) << 8);
+        $flags = $flags | (ord($buffer[++$i]) << 16);
+        $flags = $flags | (ord($buffer[++$i]) << 24);
+
+        $hasShellItemIdList = ($flags & 0x00000001) ? true : false;
+        $pointsToFileOrDir = ($flags & 0x00000002) ? true : false;
+
+        if(!$pointsToFileOrDir)
+            return false;
+
+        if($hasShellItemIdList)
+        {
+            $i = 76;
+            if(count($buffer) < ($i + 2))
+                return false;
+
+            $a = ord($buffer[$i]);
+            $a = $a | (ord($buffer[++$i]) << 8);
+           
+        }
+
+        $i = 78 + 4 + $a;
+        if(count($buffer) < ($i + 4))
+            return false;
+
+        $b = ord($buffer[$i]);
+        $b = $b | (ord($buffer[++$i]) << 8);
+        $b = $b | (ord($buffer[++$i]) << 16);
+        $b = $b | (ord($buffer[++$i]) << 24);
+
+        $i = 78 + $a + $b;
+        if(count($buffer) < ($i + 4))
+            return false;
+
+        $c = ord($buffer[$i]);
+        $c = $c | (ord($buffer[++$i]) << 8);
+        $c = $c | (ord($buffer[++$i]) << 16);
+        $c = $c | (ord($buffer[++$i]) << 24);
+
+        $i = 78 + $a + $b + $c;
+        if(count($buffer) < ($i +1))
+            return false;
+
+        $linkedTarget = "";
+        for(;$i < count($buffer); ++$i)
+        {
+            if(!ord($buffer[$i]))
+                break;
+
+            $linkedTarget .= $buffer[$i];
+        }
+
+        if(empty($linkedTarget))
+            return false;
+
+       
+        return $linkedTarget;
+    }
+
+    return false;
+}
+
+if(_is_link('test.lnk'))
+{
+    echo _readlink('test.lnk');
+}
+?>
+===============================================================================
+
+On windows, take care that is_link returns false for Junctions.
+Ways of telling apart a directory from a junction include doing both a stat()
+and and lstat() call and checking if there is any difference in the results
+===============================================================================
+
+For me (Debian Sarge VPS) is_link returns true even for directories if you
+don't add a trailing slash to the filename.
+<?php
+if ($dir{strlen($dir)-1} == '/') $dir = substr($dir, 0, -1);
+is_link($dir);
+?>
+This works for me. It can't detect a symlink somewhere in a complete path,
+though (i.e. is_link(/www/somedir/file.php) will return false, just as is_link
+(/www/) would)
+===============================================================================
+
+On Mac OSX, to see if a file is a FInder alias:
+
+<?PHP
+if( getFinderAlias( $someFile , $target ) ) {
+echo $target;
+}
+else {
+echo "File is not an alias";
+}
+
+function getFinderAlias( $filename , &$target ) {
+$getAliasTarget = <<< HEREDOC
+    -- BEGIN APPLESCRIPT --
+    set checkFileStr to "{$filename}"
+    set checkFile to checkFileStr as POSIX file
+    try
+        tell application "Finder"
+            if original item of file checkFile exists then
+                set targetFile to (original item of file checkFile) as alias
+                set posTargetFile to POSIX path of targetFile as text
+                get posTargetFile
+            end if
+        end tell
+    end try
+    -- END APPLESCRIPT --
+HEREDOC;
+$runText = "osascript << EOS\n{$getAliasTarget}\nEOS\n";
+$target = trim( shell_exec( $runText ) );
+return ( $target == "" ? false : true );
+}
+?>
+===============================================================================
+
+On my SuSE 7.2 is_link does not work on directories, but to find out, if a dir
+is a link, I use now this:
+
+$linkdir = $path.$linkdirname;
+if (realpath($linkdir) != realpath($path)."/".$linkdirname):
+//$linkdir is a symbolic linked dir!
+...
+
+and this works fine :-)
+
+Andreas Dick
+===============================================================================
+
+@radon8472 at hotmail dot com
+The windows .lnk-things are real files, the explorer only treats them like
+links. Try to open one with Win+R->"notepad X:\Path\Visiblefilename.lnk You
+will see much 0-Bytes, but the linked path is displayed right on the screen. It
+should be possible to do the same by php.
+===============================================================================
+
+This function returns "false" for windows *.lnk files (tested under windows
+XP).
+
+filetype also returns "file" an not "link" like expected.
+
+I didn`t find a solution for this.

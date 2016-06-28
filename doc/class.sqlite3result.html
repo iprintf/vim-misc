@@ -1,0 +1,117 @@
+
+SQLite3Result 类
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+简介
+
+处理 SQLite 3 扩展返回结果集的类。
+
+类摘要
+
+SQLite3Result {
+/* 方法 */
+public string columnName ( int $column_number )
+public int columnType ( int $column_number )
+public array fetchArray ([ int $mode = SQLITE3_BOTH ] )
+public bool finalize ( void )
+public int numColumns ( void )
+public bool reset ( void )
+}
+
+Table of Contents
+
+  • SQLite3Result::columnName — Returns the name of the nth column
+  • SQLite3Result::columnType — Returns the type of the nth column
+  • SQLite3Result::fetchArray — Fetches a result row as an associative or
+    numerically indexed array or both
+  • SQLite3Result::finalize — Closes the result set
+  • SQLite3Result::numColumns — Returns the number of columns in the result set
+  • SQLite3Result::reset — Resets the result set back to the first row
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+Since SQLite3Result::numRows is unavailable, use:
+
+<?php
+if ($res->numColumns() && $res->columnType(0) != SQLITE3_NULL) {
+    // have rows
+} else {
+    // zero rows
+}
+?>
+
+Because when there are zero rows:
+* SQLite3Result::fetchArray will return '1'
+* SQLite3Result::numColumns will return '1'
+* Column type for column '0' will be SQLITE3_NULL
+===============================================================================
+
+Here's a snippet that might help you to write a fetchObject function that is
+also missing:
+
+<?php
+
+function fetchObject($sqlite3result, $objectType = NULL) {
+    $array = $sqlite3result->fetchArray();
+
+    if(is_null($objectType)) {
+        $object = new stdClass();
+    } else {
+        // does not call this class' constructor
+        $object = unserialize(sprintf('O:%d:"%s":0:{}', strlen($objectType), 
+$objectType));
+    }
+   
+    $reflector = new ReflectionObject($object);
+    for($i = 0; $i < $sqlite3result->numColumns(); $i++) {
+        $name = $sqlite3result->columnName($i);
+        $value = $array[$name];
+       
+        try {
+            $attribute = $reflector->getProperty($name);
+           
+            $attribute->setAccessible(TRUE);
+            $attribute->setValue($object, $value);
+        } catch (ReflectionException $e) {
+            $object->$name = $value;
+        }
+    }
+   
+    return $object;
+}
+
+?>
+
+Heavily inspired of Bergmann's Object Freezer :
+https://github.com/sebastianbergmann/php-object-freezer/blob/master/Object/
+Freezer.php
+===============================================================================
+
+I use the following code to get num_rows:
+
+<?php
+...
+$nrows = 0;
+$result->reset();
+while ($result->fetchArray())
+    $nrows++;
+$result->reset();
+return $nrows;
+...
+?>
+===============================================================================
+
+According to http://www.php.net/manual/en/sqlite3result.columntype.php, and
+also per my experience, columnType() doesn't return anything other than
+SQLITE3_NULL. Consequently, the test suggested in the comment that tries to
+identify whether a column is NULL is incorrect.
+
+The right thing to do appears to be to test if ($result->fetchArray())[0] ==
+null.
+===============================================================================
+
+fetchArray() will return bool(false) in case of 0 rows.

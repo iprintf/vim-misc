@@ -1,0 +1,526 @@
+
+XSLTProcessor::registerPHPFunctions
+
+(PHP 5 >= 5.0.4, PHP 7)
+
+XSLTProcessor::registerPHPFunctions — Enables the ability to use PHP functions
+as XSLT functions
+
+说明
+
+void XSLTProcessor::registerPHPFunctions ([ mixed $restrict ] )
+
+This method enables the ability to use PHP functions as XSLT functions within
+XSL stylesheets.
+
+参数
+
+restrict
+
+    Use this parameter to only allow certain functions to be called from XSLT.
+
+    This parameter can be either a string (a function name) or an array of
+    functions.
+
+返回值
+
+没有返回值。
+
+范例
+
+Example #1 Simple PHP Function call from a stylesheet
+
+<?php
+$xml = <<<EOB
+<allusers>
+ <user>
+  <uid>bob</uid>
+ </user>
+ <user>
+  <uid>joe</uid>
+ </user>
+</allusers>
+EOB;
+$xsl = <<<EOB
+<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet version="1.0" 
+     xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+     xmlns:php="http://php.net/xsl">
+<xsl:output method="html" encoding="utf-8" indent="yes"/>
+ <xsl:template match="allusers">
+  <html><body>
+    <h2>Users</h2>
+    <table>
+    <xsl:for-each select="user">
+      <tr><td>
+        <xsl:value-of
+             select="php:function('ucfirst',string(uid))"/>
+      </td></tr>
+    </xsl:for-each>
+    </table>
+  </body></html>
+ </xsl:template>
+</xsl:stylesheet>
+EOB;
+$xmldoc = DOMDocument::loadXML($xml);
+$xsldoc = DOMDocument::loadXML($xsl);
+
+$proc = new XSLTProcessor();
+$proc->registerPHPFunctions();
+$proc->importStyleSheet($xsldoc);
+echo $proc->transformToXML($xmldoc);
+?>
+
+更新日志
+
+版本                说明
+5.1.0 The restrict parameter was added.
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+You can find mor Examples at PHP Sources php-5.*/ext/xsl/tests
+<?php
+
+$xform = <<<EOT
+<?xml version = '1.0' encoding = 'utf-8' ?>
+<xsl:stylesheet version="1.0"
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:php="http://php.net/xsl"
+    xsl:extension-element-prefixes="php"
+>
+<xsl:output method="xml" indent="yes" encoding="utf-8" />
+<xsl:namespace-alias stylesheet-prefix="php" result-prefix="xsl" />
+<xsl:template match="root">
+<html>
+<head>
+    <title>Dateformat</title>
+</head>
+<body>
+<xsl:for-each select="datenode">
+    <li>
+        <xsl:value-of select="php:functionString('convertDate', . )" />
+    </li>
+    </xsl:for-each>
+</body>
+</html>
+</xsl:template>
+</xsl:stylesheet>
+EOT;
+
+function convertDate( $i )
+{
+    setlocale( LC_TIME, 'de_DE' );
+    return utf8_encode( strftime( '%B %d %A %Y %H:%M:%S CET', $i ) );
+}
+
+$xsl = new XSLTProcessor;
+$xsl->registerPHPFunctions();
+$xsl->setParameter( 'DOCTYPE', 'PUBLIC', 'http://www.w3.org/TR/xhtml1/DTD/
+xhtml1-transitional.dtd' );
+$xsl->setParameter( 'html', 'xmlns', 'http://www.w3.org/1999/xhtml' );
+
+$xdom = new DomDocument( '1.0', 'utf-8' );
+$xdom->loadXML( $xform );
+
+$xsl->importStyleSheet( $xdom );
+unset( $xdom );
+
+$dom = new DomDocument( '1.0', 'utf-8' );
+$r = $dom->appendChild( $dom->createElement( 'root' ) );
+foreach ( range( 1, 12 ) AS $i ) {
+    $r->appendChild( $dom->createElement( 'datenode', mktime( date('G'), date(
+'i'), date('s'), $i, date('d'), date('Y') ) ) );
+}
+
+header( "Content-Type: text/html; charset=utf-8;" );
+header( "Content-Encoding: utf-8" );
+echo $xsl->transformToXML( $dom );
+
+?>
+===============================================================================
+
+=> there is no instance of your class needed, you have to take care about the
+namespace (using 5.3).
+
+<!-- xsl:
+<xsl:value-of select="php:function ('My\Name\Space\
+MyClassName::methodName',1+2)"/>
+--->
+
+<?php
+namespace My\Name\Space;
+
+   class MyClassName
+   {
+      static public function methodName($someArgument)
+      {
+         return "resultis:".$someArgument;
+      }
+   }
+?>
+
+<!-- result:
+resultis:3
+-->
+
+=> no to-string conversion of the argument needed
+=> returning numbers is also possible (maybe DOM nodes too)
+
+Keep on hackin'
+===============================================================================
+
+From a PHP function, you can pass a nodeset back to XSL using a DOMDocument. 
+For example:
+
+<?php
+
+function getNodeSet() {
+   $xml =
+       "<test>" .
+       "<a-node>This is a node</a-node>" .
+       "<a-node>This is another node</a-node>" .
+       "</test>";
+   $doc = new DOMDocument;
+   $doc->loadXml($xml);
+   return $doc;
+}
+
+?>
+
+The only problem I've found is that the root level node in your returned DOM
+document acts like the root level node of your original.   SO, it's easy to
+introduce an infinite loop like so:
+
+<xsl:template match="/">
+   <xsl:apply-templates select="php:function('getNodeSet')" />
+</xsl:template>
+
+To avoid this, I've been using a construct like:
+
+<xsl:template match="/">
+   <xsl:for-each select="php:function('getNodeSet')" />
+      <xsl:apply-templates />
+   </xsl:for-each>
+</xsl:template>
+
+which effectively discards the root node.  Presumably, it's worth creating a
+template to do the discard:
+
+<xsl:template select="*" mode="discardRoot">
+   <xsl:apply-templates select="./*" />
+</xsl:template>
+
+Which you can call like so:
+
+<xsl:apply-templates select="php:function('getNodeSet')" mode="discardRoot" />
+===============================================================================
+
+One thing to note about this function. A lot of values need to be converted to
+a XSLT string using the "string()" function in XLS before you pass them to your
+functions, and when you return them make sure that if they are strings that you
+call the "strval()" in php before doing so. This saved me hours.
+
+Hope that helps.
+
+Zac Bowling
+===============================================================================
+
+Upon testing returning of a nodeset contributed by
+
+taylorbarstow at that google mail thingy
+
+(which works excellently, TY!)
+
+I found that with using:
+
+===
+"Presumably, it's worth creating a template to do the discard:
+
+<xsl:template select="*" mode="discardRoot">
+   <xsl:apply-templates select="./*" />
+</xsl:template>
+
+Which you can call like so:
+
+<xsl:apply-templates select="php:function('getNodeSet')" mode="discardRoot" />
+"
+===
+
+I could only output the text and not any of the tags after applying templates -
+i.e. it stripped all elements around text.
+
+Instead using:
+
+===
+<xsl:template match="/">
+   <xsl:for-each select="php:function('getNodeSet')" />
+     <xsl:apply-templates />
+   </xsl:for-each>
+</xsl:template>
+
+which effectively discards the root node.
+===
+
+Worked fine and allowed me to apply-templates without problem on the returned
+nodeset.
+===============================================================================
+
+One of the peskiest things I had problems with was encoding URL parameters.  I
+mean, pretend you want to populate a link with "search+terms" instead of just
+"search terms".  I was including two seperate URLs in the XML and that was
+ludicrous.
+
+Below is a far more elegant PHP+XSLT solution.  You will also see it uses two
+*undocumented* features of registerPHPFunctions(), namely php:functionString()
+and the passing of parameters to the function.  I figured this out by trial and
+error; I really hope this note helps you as it *greatly* expands the power of
+php functions in XSLT!
+
+<?php
+/* --- XML input --- */
+<search_results>
+   <query>concert tickets</query>
+</search_results>
+
+/* --- XSL code --- */
+<!-- Display query -->
+<xsl:template match="search_results">
+   <!-- Get URL-encoded string via PHP -->
+   <xsl:variable name="safeurl" as="xs:string" select="php:functionString
+('urlencode', query)" />
+   <p>Your search for <em><xsl:value-of select="query"/></em> can be continued
+at <a href="http://www.tixtix.com/search.php?q={$safeurl}">our search engine</a
+></p>
+</xsl:template>
+
+/* --- XHTML output --- */
+<p>Your search for <em>concert tickets</em> can be continued at <a href="http:/
+/www.tixtix.com/search.php?q=space+cowboy">our search engine</a></p>
+?>
+
+Cool, huh?
+===============================================================================
+
+One thing I have told a lot of people to do if they are having
+issues with this function is to check for any 'xmlns' attributes
+that get generated and added to your xml pages by some
+types of popular software.
+
+<?php
+$file = "http://data.map***.net/m***ck.asmx/GetMessages?IMEI=$id";
+
+$docxml = file_get_contents($file);
+
+//You may have to do something like this where
+//I remove any instance of xmlns tags that get
+//returned by my ASP.NET SOAP responses.
+
+$docxml =
+str_replace("xmlns=\"http://data.map***.net/m***ck.asmx?WSDL\"",
+  "",$docxml);
+
+$xslt = new xsltProcessor;
+
+//You don't remove them then this function will blow up.
+$xslt->registerPHPFunctions();
+$xslt->importStyleSheet(DomDocument::load('../xsl/message.xsl'));
+print $xslt->transformToXML(DomDocument::loadXML($docxml));
+
+?>
+
+Also a few cool tricks with this function is that you can call
+built in PHP functions. For example:
+
+<xsl:value-of
+  select="php:function('nl2br',string(MessageContent/Message))"
+  disable-output-escaping="yes"/>
+
+That XSL value will now return your normal string but replace
+all your new line charactors in your xml with '<br />'s.
+
+Also note the 'disable-output-escaping="yes"' statement. If
+you don't call this, then the output of that bind will be ran
+thru basicly a "htmlencode()" type function.
+
+Last but not least, take a look at the 'string()' function I
+called in XSL before passing it back. That is because without
+calling that, when it runs it will try and pass the node object,
+and not its value (which is what you most likely only want).
+
+This function is very awsome and could lead to some very
+interesting code development. Skins could be loaded
+remotely. You could write an RSS viewer in PHP without much
+code. You could parse XHTML pages into another view (either
+localy or remotely). Then you can take that same XML
+content and throw it against ASP.NET, Java, or even a
+command line processing tool using that same exact XSL
+style sheet and generate the front ends for you page without
+much change. I'm very excited.
+
+Happy codding.
+===============================================================================
+
+When writing a stylesheet that uses a callback function be sure to include a
+namespace declaration for php, as follows:
+
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+xmlns:php="http://php.net/xsl" version='1.0'>
+===============================================================================
+
+I think it help  your.
+<?php
+
+function dateLang () {
+        return strftime("%A");
+}
+
+$xsl = new DomDocument();
+$xsl->load("datetime.xsl");
+$inputdom = new DomDocument();
+$inputdom->load("today.xml");
+
+$proc = new XsltProcessor();
+$proc->registerPhpFunctions();
+
+// Load the documents and process using $xslt
+$xsl = $proc->importStylesheet($xsl);
+
+/* transform and output the xml document */
+$newdom = $proc->transformToDoc($inputdom);
+
+print $newdom->saveXML();
+
+?>
+
+Here's the XSLT stylesheet, datetime.xsl, that will call that function:
+
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+xmlns:php="http://php.net/xsl">
+<xsl:template match="/">
+  <xsl:value-of select="php:function('dateLang')" />
+</xsl:template>
+</xsl:stylesheet>
+
+And here's an absolute minimal XML file, today.xml, to pass through the
+stylesheet (although articles.xml would achieve the same result):
+
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<today></today>
+===============================================================================
+
+Ritch said "If you wish to use a function from inside a class use the double
+colon (::) notation..."
+
+Also note that the class function must be declared as static.
+===============================================================================
+
+If you want to use replace() function similar to XPath 2.0[1]  and you want to
+avoid a long XSLT function similar to this one[2], you can use PHP's
+str_replace() instead:
+
+   <xsl:value-of select="php:functionString('str_replace','pattern',
+'replacement' , . )">
+
+Links:
+  [1] http://www.w3.org/TR/2004/WD-xpath-functions-20041029/#func-replace
+  [2] http://aspn.activestate.com/ASPN/Cookbook/XSLT/Recipe/65426
+
+_
+===============================================================================
+
+Unfortunately, you can't pass arrays to PHP from XLST.
+But you can pass an arbitrary number of arguments to a PHP function and then
+get them with func_get_args() as an array.
+[There's no sense writing a function that is identical to the array()
+construct, because a function's return value is converted to a string when
+passed as an argument to another function. This means deep arrays cannot be
+handled this way.]
+===============================================================================
+
+The correct way to receive DOM nodes (let it be element, document, document
+fragment etc.) returned from PHP is to use <xsl:copy-of select="php:function...
+
+I found the idea and an example here: http://bugs.php.net/bug.php?id=29409
+
+For the technical details about the reason, see http://www.w3.org/TR/xslt#
+copy-of
+===============================================================================
+
+Not true
+
+Use :: to call static functions
+Use -> to call non static functions
+
+You must define a function as static in php 5.1 to be able to call it
+statically.
+===============================================================================
+
+Ritch said "If you wish to use a function from inside a class use the double
+colon (::) notation..."   This worked in 5.0.4 but no longer works in 5.1.6.
+===============================================================================
+
+Note that if you want your output to validate against some xhtml dtd, you must
+add the following attribute to the xsl:stylesheet element of the xslt
+stylesheet :
+exclude-result-prefixes="php".
+
+Otherwise, you get an "invalid attribute xmlns:php" error.
+===============================================================================
+
+Add-on to my previous note (below) about returning nodesets to XSLT from PHP
+functions:
+
+You don't have to return a DOMDocument, DOMElement works just as well.  Plus,
+retuning a DOMElement gets around the problem of discarding the root node which
+I discuss below and which is also touched on by "Ingram".
+===============================================================================
+
+You can use the php:functionString() in the XSL, which will automatically
+convert output to a string!
+===============================================================================
+
+Let's get the terminology correct here, folks.
+
+If you are calling a function that is residing within a class, reference it by
+its INSTANCE name, NOT its class name.
+
+class.my_class.php:
+
+<?php
+class class_name {
+static function function_name($in){
+return ($out);
+}
+}
+?>
+
+calling_document.php:
+
+<?php
+require_once('class.my_class.php');
+$instance_name=new class_name();
+?>
+
+my_xslt.xsl:
+
+<xsl:value-of select="php:function ('instance_name::function_name','garbage')"
+/>
+
+BTW, in 5.1.6 double-colon (::) is the only thing that works when calling a
+function that resides within a class. However, you must declare your function
+as static. Using -> as some have suggested (e.g., php:function
+('instance_name->function_name','garbage')) doesn't work at all, no matter how
+you declare your function.
+===============================================================================
+
+If you wish to use a function from inside a class use the double colon (::)
+notation, for example;
+
+php:functionString('classname::function')
+
+The funtion is fired off as a static and as such acts like a function in the
+global namespace.

@@ -1,0 +1,1467 @@
+
+session_set_save_handler
+
+(PHP 4, PHP 5, PHP 7)
+
+session_set_save_handler — 设置用户自定义会话存储函数
+
+说明
+
+bool session_set_save_handler ( callable $open , callable $close , callable
+$read , callable $write , callable $destroy , callable $gc [, callable
+$create_sid ] )
+
+自 PHP 5.4 开始，可以使用下面的方式来注册自定义会话存储函数：
+
+bool session_set_save_handler ( SessionHandlerInterface $sessionhandler [, bool
+$register_shutdown = true ] )
+
+session_set_save_handler() 设置用户自定义会话存储函数。如果想使用 PHP 内置的会
+话存储机制之外的方式，可以使用本函数。例如，可以自定义会话存储函数来将会话数据
+存储到数据库。
+
+参数
+
+本函数有 2 种原型：
+
+sessionhandler
+
+    实现了 SessionHandlerInterface 接口的对象，例如 SessionHandler。自 PHP 5.4
+    之后可以使用。
+
+register_shutdown
+
+    将函数 session_write_close() 注册为 register_shutdown_function() 函数。
+
+或者
+
+open(string $savePath, string $sessionName)
+
+    open 回调函数类似于类的构造函数，在会话打开的时候会被调用。这是自动开始会话
+    或者通过调用 session_start() 手动开始会话之后第一个被调用的回调函数。此回调
+    函数操作成功返回 TRUE，反之返回 FALSE。
+
+close()
+
+    close 回调函数类似于类的析构函数。在 write 回调函数调用之后调用。当调用 
+    session_write_close() 函数之后，也会调用 close 回调函数。此回调函数操作成功
+    返回 TRUE，反之返回 FALSE。
+
+read(string $sessionId)
+
+    如果会话中有数据，read 回调函数必须返回将会话数据编码（序列化）后的字符串。
+    如果会话中没有数据，read 回调函数返回空字符串。
+
+    在自动开始会话或者通过调用 session_start() 函数手动开始会话之后，PHP 内部调
+    用 read 回调函数来获取会话数据。在调用 read 之前，PHP 会调用 open 回调函数
+    。
+
+    read 回调返回的序列化之后的字符串格式必须与 write 回调函数保存数据时的格式
+    完全一致。 PHP 会自动反序列化返回的字符串并填充 $_SESSION 超级全局变量。虽
+    然数据看起来和 serialize() 函数很相似，但是需要提醒的是，它们是不同的。请参
+    考： session.serialize_handler。
+
+write(string $sessionId, string $data)
+
+    在会话保存数据时会调用 write 回调函数。此回调函数接收当前会话 ID 以及
+    $_SESSION 中数据序列化之后的字符串作为参数。序列化会话数据的过程由 PHP 根据
+    session.serialize_handler 设定值来完成。
+
+    序列化后的数据将和会话 ID 关联在一起进行保存。当调用 read 回调函数获取数据
+    时，所返回的数据必须要和传入 write 回调函数的数据完全保持一致。
+
+    PHP 会在脚本执行完毕或调用 session_write_close() 函数之后调用此回调函数。注
+    意，在调用完此回调函数之后，PHP 内部会调用 close 回调函数。
+
+
+        Note:
+
+        PHP 会在输出流写入完毕并且关闭之后才调用 write 回调函数，所以在 write
+        回调函数中的调试信息不会输出到浏览器中。如果需要在 write 回调函数中使用
+        调试输出，建议将调试输出写入到文件。
+
+destroy($sessionId)
+
+    当调用 session_destroy() 函数，或者调用 session_regenerate_id() 函数并且设
+    置 destroy 参数为 TRUE 时，会调用此回调函数。此回调函数操作成功返回 TRUE，
+    反之返回 FALSE。
+
+gc($lifetime)
+
+    为了清理会话中的旧数据，PHP 会不时的调用垃圾收集回调函数。调用周期由
+    session.gc_probability 和 session.gc_divisor 参数控制。传入到此回调函数的
+    lifetime 参数由 session.gc_maxlifetime 设置。此回调函数操作成功返回 TRUE，
+    反之返回 FALSE。
+
+create_sid()
+
+    当需要新的会话 ID 时被调用的回调函数。回调函数被调用时无传入参数，其返回值
+    应该是一个字符串格式的、有效的会话 ID。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 自定义会话管理器：完整代码请参见 SessionHandlerInterface。
+
+下列代码适用于 PHP 5.4.0 及以上版本。这里仅列出了调用方式，完整代码请参见
+SessionHandlerInterface。
+
+这里使用了 session_set_save_handler() 函数的 OOP 原型并且使用第二个参数来注册
+shutdown 函数。当将对象注册为会话保存管理器时，建议使用这种方式。
+
+<?php
+class MySessionHandler implements SessionHandlerInterface
+{
+    // 在这里实现接口
+}
+
+$handler = new MySessionHandler();
+session_set_save_handler($handler, true);
+session_start();
+
+// 现在可以使用 $_SESSION 保存以及获取数据了
+
+Example #2 使用对象自定义会话保存管理器
+
+下列代码适用于 PHP 5.4.0 之前的版本。
+
+下例演示了基于文件的会话数据存储，和 PHP 默认的 files 存储器很相似。通过对此示
+例代码进行扩展，你可以很方便的实现使用数据库保存会话数据的功能。
+
+针对于 PHP 5.4.0 之前的版本，通过调用 register_shutdown_function() 函数来注册 
+session_write_close() 回调函数。这也是我们建议的方式。
+
+<?php
+class FileSessionHandler
+{
+    private $savePath;
+
+    function open($savePath, $sessionName)
+    {
+        $this->savePath = $savePath;
+        if (!is_dir($this->savePath)) {
+            mkdir($this->savePath, 0777);
+        }
+
+        return true;
+    }
+
+    function close()
+    {
+        return true;
+    }
+
+    function read($id)
+    {
+        return (string)@file_get_contents("$this->savePath/sess_$id");
+    }
+
+    function write($id, $data)
+    {
+        return file_put_contents("$this->savePath/sess_$id", $data) === false ?
+ false : true;
+    }
+
+    function destroy($id)
+    {
+        $file = "$this->savePath/sess_$id";
+        if (file_exists($file)) {
+            unlink($file);
+        }
+
+        return true;
+    }
+
+    function gc($maxlifetime)
+    {
+        foreach (glob("$this->savePath/sess_*") as $file) {
+            if (filemtime($file) + $maxlifetime < time() && file_exists($file))
+ {
+                unlink($file);
+            }
+        }
+
+        return true;
+    }
+}
+
+$handler = new FileSessionHandler();
+session_set_save_handler(
+    array($handler, 'open'),
+    array($handler, 'close'),
+    array($handler, 'read'),
+    array($handler, 'write'),
+    array($handler, 'destroy'),
+    array($handler, 'gc')
+    );
+
+// 下面这行代码可以防止使用对象作为会话保存管理器时可能引发的非预期行为
+register_shutdown_function('session_write_close');
+
+session_start();
+// 现在可以使用 $_SESSION 保存以及获取数据了
+
+注释
+
+Warning
+
+在脚本执行完毕之后，PHP 内部会清除对象，所以有可能不调用 write 和 close 回调函
+数。这样可能会引发非预期的行为，所以当使用对象作为会话保存管理器时，需要通过注
+册 shutdown 回调函数来规避风险。通常，你可以通过调用 register_shutdown_function
+() 函数来注册 'session_write_close' 回调函数。
+
+在 PHP 5.4.0 中，可以调用 session_register_shutdown() 函数来注册 shutdown 回调
+函数。如果你使用 session_set_save_handler() 的 OOP 原型，那么仅需设置 “register
+shutdown” 为 TRUE 即可。
+
+Warning
+
+在 PHP 5.0.5 中，在对象销毁之后才会调用 write 和 close 回调函数，所以，在这两个
+回调函数中不可以使用对象，也不可以抛出异常。如果在函数中抛出异常，PHP 既不会捕
+获它，也不会跟踪它，这样会导致程序异常终止。但是对象析构函数可以使用会话。
+
+可以在析构函数中调用 session_write_close() 函数来解决这个问题。但是注册
+shutdown 回调函数才是更加可靠的做法。
+
+Warning
+
+如果会话在脚本结束后关闭，对于某些 SAPI 而言，当前工作目录可能已经被改变。可以
+调用 session_write_close() 函数在脚本执行结束之前关闭会话。
+
+更新日志
+
+版本                                    说明
+5.5.1 加入可选参数 create_sid。
+5.4.0 加入 SessionHandlerInterface 接口以及 SessionHandler 类，以方便用户实现自
+      定义的会话保存管理器。
+
+参见
+
+  • session.save_handler 配置指示
+  • session.serialize_handler 配置指示
+  • register_shutdown_function() - Register a function for execution on
+    shutdown
+  • session_register_shutdown() - 关闭会话 PHP 5.4.0+
+
+
+User Contributed Notes 44 notes
+
+===============================================================================
+
+After spend so many time to understand how PHP session works with database and
+unsuccessful attempts to get it right, I decided to rewrite the version from
+our friend stalker.
+
+//Database
+CREATE TABLE `Session` (
+  `Session_Id` varchar(255) COLLATE utf8_unicode_ci NOT NULL,
+  `Session_Expires` datetime NOT NULL,
+  `Session_Data` text COLLATE utf8_unicode_ci,
+  PRIMARY KEY (`Session_Id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+SELECT * FROM mydatabase.Session;
+
+<?php
+//inc.session.php
+
+class SysSession implements SessionHandlerInterface
+{
+    private $link;
+   
+    public function open($savePath, $sessionName)
+    {
+        $link = mysqli_connect("server","user","pwd","mydatabase");
+        if($link){
+            $this->link = $link;
+            return true;
+        }else{
+            return false;
+        }
+    }
+    public function close()
+    {
+        mysqli_close($this->link);
+        return true;
+    }
+    public function read($id)
+    {
+        $result = mysqli_query($this->link,"SELECT Session_Data FROM Session
+WHERE Session_Id = '".$id."' AND Session_Expires > '".date('Y-m-d H:i:s')."'");
+        if($row = mysqli_fetch_assoc($result)){
+            return $row['Session_Data'];
+        }else{
+            return "";
+        }
+    }
+    public function write($id, $data)
+    {
+        $DateTime = date('Y-m-d H:i:s');
+        $NewDateTime = date('Y-m-d H:i:s',strtotime($DateTime.' + 1 hour'));
+        $result = mysqli_query($this->link,"REPLACE INTO Session SET Session_Id
+= '".$id."', Session_Expires = '".$NewDateTime."', Session_Data = '".$data."'"
+);
+        if($result){
+            return true;
+        }else{
+            return false;
+        }
+    }
+    public function destroy($id)
+    {
+        $result = mysqli_query($this->link,"DELETE FROM Session WHERE
+Session_Id ='".$id."'");
+        if($result){
+            return true;
+        }else{
+            return false;
+        }
+    }
+    public function gc($maxlifetime)
+    {
+        $result = mysqli_query($this->link,"DELETE FROM Session WHERE
+((UNIX_TIMESTAMP(Session_Expires) + ".$maxlifetime.") < ".$maxlifetime.")");
+        if($result){
+            return true;
+        }else{
+            return false;
+        }
+    }
+}
+$handler = new SysSession();
+session_set_save_handler($handler, true);
+?>
+
+<?php
+//page 1
+require_once('inc.session.php');
+
+session_start();
+
+$_SESSION['var1'] = "My Portuguese text: SOU Gaucho!";
+?>
+
+<?php
+//page 2
+require_once('inc.session.php');
+
+session_start();
+
+if(isset($_SESSION['var1']){
+echo $_SESSION['var1'];
+}
+//OUTPUT: My Portuguese text: SOU Gaucho!
+?>
+===============================================================================
+
+session_set_save_handler is used before session_start.if your session is setted
+as auto start. it will return FALSE value.so you need add session_write_close()
+before session_set_save_handler to cancel the session's auto start.it  likes
+this:
+
+<?php
+/*
+qq:290359552
+*/
+session_write_close(); //cancel the session's auto start,important
+
+function open()
+{
+   ...
+}
+....
+session_set_save_handler( ... );
+session_start();
+?>
+===============================================================================
+
+Note that for security reasons the Debian and Ubuntu distributions of php do
+not call _gc to remove old sessions, but instead run /etc/cron.d/php*, which
+check the value of session.gc_maxlifetime in php.ini and delete the session
+files in /var/lib/php*.  This is all fine, but it means if you write your own
+session handlers you'll need to explicitly call your _gc function yourself.  A
+good place to do this is in your _close function, like this:
+
+<?php
+function _close() {
+    _gc(get_cfg_var("session.gc_maxlifetime"));
+   // rest of function goes here
+}
+?>
+===============================================================================
+
+I had trouble with committing session data.
+To "commit and continue" without closing your session, put this at the top of
+your "write" method:
+
+<?php
+
+$id = session_id();
+session_write_close();
+session_id($id);
+session_start();
+
+?>
+
+Note that ANY time php generates a new session id, it is not automatically
+updated in a database. This can be helpful:
+
+<?php
+
+public function resetSessionId()
+{
+    $old = session_id();
+    session_regenerate_id();
+    $new = session_id();
+    SessionHandler::regenerate_id($old,$new);
+}
+
+public function regenerate_id($old,$new)
+{
+    $db = mysqli->connect(...);
+
+    $db->query('UPDATE sessions SET session_id = \''.$db->escape_string($new).'
+\'
+    WHERE session_id = \''.$db->escape_string($old).'\'');
+}
+?>
+===============================================================================
+
+It seems when you call 'session_name()', php loads the session id automatically
+from GET ( if the index exists ) and passes it to the 'read' callback method
+correctly, but the 'write' callback is invoked twice: first the auto-generated
+session id, then the custom session id
+
+So be aware of what queries you execute inside the callback .. I got crazy
+because I used a MySQL 'REPLACE' statement to agilize, and I spent a lot of
+hours trying to understand why 2 rows instead of 1 were being affected ( the
+first id was inserting, the second updating )
+
+I hope this helps!
+===============================================================================
+
+You can't use the session autostart feature with
+
+session.save_handler = user
+
+set in your php.ini. Use instead the auto_prepend_file directive in the php.ini
+and point it to your save_handler with an session_start() at the end.
+===============================================================================
+
+The "binary" data that is in the session data appears to surround class/object
+names, and if you pass your session data through a function to sanitize it for
+SQL injection, you may indeed run in to problems.
+
+For example, using the PDO::quote() function to prepare the data for injection
+(in my case for SQLite3), it was stopping short as soon as it encountered the
+first bit of binary data, causing my session information to be corrupted.
+
+This change *must* have happened somewhere in the 5.2 series, because I just
+started encountering this problem recently on a code base that had been tested
+& working on earlier versions of PHP 5.2.
+
+This may in fact be a bug - I have not yet checked... but beware, and perhaps
+using base64 to encode/decode your session data is a good thing to do just to
+be sure (though you are now left unable to visually inspect serialized session
+information at the storage level which is a rather big problem for on-the-fly
+debugging of sessions).
+===============================================================================
+
+after spending 8 hours to find out whats going on..
+
+just for the records, because php.net ignore the real world out there:
+
+debian 5 installs by default the php-suhosin module, which changes the behavior
+of session_set_save_handler read/write function.
+
+on calling the session write function the session data will be encrypted, and
+the returning string from the read function are decrypted and verified.
+
+the encrypted data is no more compatible with session_encode/session_decode.
+
+and breaks by default, subdomain handling and multiple host setups where
+different document roots are used.
+
+for futher information look at:
+http://www.hardened-php.net/suhosin/configuration.html
+
+session sample data (debian 4):
+test|s:3:"sdf";
+
+session sample data (debian 5, with php-suhosin):
+3GdlPEGr2kYgRFDs-pUSoKomZ4fN7r5BM5oKOCMsWNc...
+
+i thing the suhosin patch should report a warning in case of invalid session
+data, to get a clue whats going wrong.
+===============================================================================
+
+I think it is very important here to stress that the WRITE method should use
+UPDATE+INSERT (or mysql specific REPLACE).
+
+There is example code "out there" that uses just UPDATE for the write method,
+in which case, when session_regenerate_id is called, session data is lost (as
+an update would fail, as the key has changed).
+
+I've just wasted a whole day due to this (I know I should have thought it
+through / RTFM, but it is an easy trap to fall into).
+===============================================================================
+
+object- and mysql-based session-handler, requires the following table:
+
+CREATE TABLE `ws_sessions` (
+  `session_id` varchar(255) binary NOT NULL default '',
+  `session_expires` int(10) unsigned NOT NULL default '0',
+  `session_data` text,
+  PRIMARY KEY  (`session_id`)
+) TYPE=InnoDB;
+
+<?php
+class session {
+    // session-lifetime
+    var $lifeTime;
+    // mysql-handle
+    var $dbHandle;
+    function open($savePath, $sessName) {
+       // get session-lifetime
+       $this->lifeTime = get_cfg_var("session.gc_maxlifetime");
+       // open database-connection
+       $dbHandle = @mysql_connect("server","user","password");
+       $dbSel = @mysql_select_db("database",$dbHandle);
+       // return success
+       if(!$dbHandle || !$dbSel)
+           return false;
+       $this->dbHandle = $dbHandle;
+       return true;
+    }
+    function close() {
+        $this->gc(ini_get('session.gc_maxlifetime'));
+        // close database-connection
+        return @mysql_close($this->dbHandle);
+    }
+    function read($sessID) {
+        // fetch session-data
+        $res = mysql_query("SELECT session_data AS d FROM ws_sessions
+                            WHERE session_id = '$sessID'
+                            AND session_expires > ".time(),$this->dbHandle);
+        // return data or an empty string at failure
+        if($row = mysql_fetch_assoc($res))
+            return $row['d'];
+        return "";
+    }
+    function write($sessID,$sessData) {
+        // new session-expire-time
+        $newExp = time() + $this->lifeTime;
+        // is a session with this id in the database?
+        $res = mysql_query("SELECT * FROM ws_sessions
+                            WHERE session_id = '$sessID'",$this->dbHandle);
+        // if yes,
+        if(mysql_num_rows($res)) {
+            // ...update session-data
+            mysql_query("UPDATE ws_sessions
+                         SET session_expires = '$newExp',
+                         session_data = '$sessData'
+                         WHERE session_id = '$sessID'",$this->dbHandle);
+            // if something happened, return true
+            if(mysql_affected_rows($this->dbHandle))
+                return true;
+        }
+        // if no session-data was found,
+        else {
+            // create a new row
+            mysql_query("INSERT INTO ws_sessions (
+                         session_id,
+                         session_expires,
+                         session_data)
+                         VALUES(
+                         '$sessID',
+                         '$newExp',
+                         '$sessData')",$this->dbHandle);
+            // if row was created, return true
+            if(mysql_affected_rows($this->dbHandle))
+                return true;
+        }
+        // an unknown error occured
+        return false;
+    }
+    function destroy($sessID) {
+        // delete session-data
+        mysql_query("DELETE FROM ws_sessions WHERE session_id = '$sessID'",
+$this->dbHandle);
+        // if session was deleted, return true,
+        if(mysql_affected_rows($this->dbHandle))
+            return true;
+        // ...else return false
+        return false;
+    }
+    function gc($sessMaxLifeTime) {
+        // delete old sessions
+        mysql_query("DELETE FROM ws_sessions WHERE session_expires < ".time(),
+$this->dbHandle);
+        // return affected rows
+        return mysql_affected_rows($this->dbHandle);
+    }
+}
+$session = new session();
+session_set_save_handler(array(&$session,"open"),
+                         array(&$session,"close"),
+                         array(&$session,"read"),
+                         array(&$session,"write"),
+                         array(&$session,"destroy"),
+                         array(&$session,"gc"));
+session_start();
+// etc...
+?>
+===============================================================================
+
+For some people it might be important to know, that if the standard session
+handler has been overwritten with session_set_save_handler, no locking is
+working anymore (between session_read and session_write). The following might
+happen:
+
+script "A" start         .
+read session data        .
+.                        script "B" start
+.                        read session data
+running (30secs)         add session data
+.                        write sesion data
+.                        script "B" stop
+write session data       .
+script "A" stop          .
+
+If a script "A" runs for a long time (say 30secs) the same user might start
+another script "B", which also uses a session. Script "B" will start and read
+session data, even though script "A" is still running. Because script "B" is
+much faster it will finish its work and write back its session data before
+script "A" has ended. Now script "A" ends and overwrites all of script "B"'s
+session data. If you DON'T use session_set_save_handler, this cannot happend,
+because in this case, PHP will not start script "B" until script "A" ends.
+===============================================================================
+
+I write a class that unites whole handler functionality. It's not even needed
+to save instances of this class in variables. Just add a row:
+<?php
+new SessionSaveHandler();
+?>
+and the handler will rule the sessions ;-)
+<?php
+
+class SessionSaveHandler {
+    protected $savePath;
+    protected $sessionName;
+
+    public function __construct() {
+        session_set_save_handler(
+            array($this, "open"),
+            array($this, "close"),
+            array($this, "read"),
+            array($this, "write"),
+            array($this, "destroy"),
+            array($this, "gc")
+        );
+    }
+
+    public function open($savePath, $sessionName) {
+        $this->savePath = $savePath;
+        $this->sessionName = $sessionName;
+        return true;
+    }
+
+    public function close() {
+        // your code if any
+        return true;
+    }
+
+    public function read($id) {
+        // your code
+    }
+
+    public function write($id, $data) {
+        // your code
+    }
+
+    public function destroy($id) {
+        // your code
+    }
+
+    public function gc($maxlifetime) {
+        // your code
+    }
+}
+
+new SessionSaveHandler();
+
+?>
+===============================================================================
+
+If you have a custom handler registered ini_get('session.save_handler') will
+return 'user' instead of 'file'
+===============================================================================
+
+Persisting PHP sessions into mongodb (allows NLB without affinity)
+https://gist.github.com/dimzon/62eeb9b8561bcb9f0c6d
+===============================================================================
+
+Note that as well as destructing objects before calling write() and close(), it
+seems PHP also destroys classes.  That is, you can't even call a static method
+of an external class in the write() and close() handlers - PHP will issue a
+Fatal error stating "Class xxxx not found"
+===============================================================================
+
+I'm not using objects for the save handlers I'm using functions but still get
+weird behaviour with session writing not being called.
+
+This fixes the problem though:
+register_shutdown_function('session_write_close');
+===============================================================================
+
+I was getting Fatal error: Exception thrown without a stack frame and it took
+days to figure out the reason. I am using memcache to store sessions and in my
+custom class I use Memcache class in write method.
+
+I put the code in the write method inside try-catch block and it solved my
+problem.
+===============================================================================
+
+You can call the session_write in db object destructor to be shore that you
+still have a connection to mysql and the session is write.
+===============================================================================
+
+When storing sessions in a DB, it's usually beneficial to use an existing
+custom DB object, but this creates problems with the latest version of PHP
+5.3.1. This used to work fine on PHP 5.2.x (Linux and Windows).
+
+The problem now is that session_write_close() is not automatically called when
+execution ends, but rather after all the objects have been destructed,
+including the DB object!
+
+There are two ways around this, either manually calling session_write_close()
+at the end of your script(s), or not using the DB object.
+
+I'm sure this is the intended behavior from the beginning.
+===============================================================================
+
+I pulled a really stupid move. If you are trying to debug your garbage
+collector, make sure you call the following >>> BEFORE <<< "session_start":
+
+<?php
+ini_set('session.gc_probability', 100);
+ini_set('session.gc_divisor', 100);
+?>
+
+I was sure it was a bug in PHP, but turned out (like 99% of the time) to be me
+own fault.
+===============================================================================
+
+if you simply append the information from session variables every time you'll
+have many multiples for variables each time they are changed. a simple way to
+do this is explode the data twice to seperate the variable name from the other
+relevant information and foreach() check against the stored set. here is a
+little bit of a mess i wrote to do it.
+assuming stored session variables in both database and passed through function:
+
+<?php
+$buffer = array();
+$buffer = explode('|',$sessiondata);
+$buf1 = array();
+$buf2 = array();
+$finalbuff = '';
+foreach($buffer as $i){
+    $i = explode(';',$i);
+    foreach($i as $b){
+        array_push($buf1,$b);
+    }
+}
+$buffer = explode('|',$result['data']);
+foreach($buffer as $i){ $i = explode(';',$i); foreach($i as $b){ array_push(
+$buf2,$b);}}
+$z = 0;
+$x = 0;
+while($buf2[$z]){
+    while($buf1[$x]){
+        if($buf2[$z] == $buf1[$x]){
+            $buf2[($z+1)] = $buf1[($x+1)];
+        }
+        $x+=2;
+    }
+    $z+=2;
+}
+foreach($buf2 as $i){ $finalbuff .= $i; }
+?>
+
+$sessiondata is the variable passed through the function and $result['data'] is
+the data stored in an sql database.
+===============================================================================
+
+Regarding the SAPIs: The warning mentioned in function's description (that the
+Current working directory is changed with some SAPIs) is very important.
+
+It means that if your callback 'write' function needs to write to a file in
+current directory, it will not find it. You have to use absolute path and not
+rely upon the current working directory.
+
+I thought this warning applies only to some strange environments like Windows,
+but it happens exactly on Linux + Apache 2.2 + PHP 5.
+===============================================================================
+
+When writing your own session handler, particularly database session handlers,
+play close attention to garbage cleanup and how it could affect server load.
+
+To pick a round number example:
+
+If you have 1000 requests per minute on session enabled pages, everyone needs a
+session started but the session garbage cleanup does not need to run every
+request. Doing so would cause unrequired queries on the database server.
+
+In this example, setting your probability/divisor to 1/1000 would be sufficient
+to clean up old sessions at a minimum once a minute. If you don't need that
+kind of granularity, increase the gc divisor.
+
+Finding the tradeoff between clearing up old sessions and server load is the
+important aspect here.
+===============================================================================
+
+When using a custom session handler, if the first callback function (sessOpen
+in my case) finds no session id, one is set by the time the second argument
+(sessRead in my case) is called.
+===============================================================================
+
+Note that if session.auto_start is set to On in the php.ini, your
+session_set_save_handler will return false as the session has already been
+initialized.
+
+If you are finding that your code works OK on one machine but doesn't work on
+another, check to see if session.auto_start is set to On
+===============================================================================
+
+the behavior, return values, and exact time of calling for these functions is
+pretty poorly documented here.  i thought folks might like to know that:
+
+1) calling session_start() triggers PHP to first call your open function and
+then call your read function before resuming with the code immediately
+following your session_start() call.
+
+2) calling session_id('some_value') within your open function WILL NOT SET THE
+SESSION COOKIE (at least not on my setup - PHP 4.4.1).  Assuming you defined
+some function to validate a session id called my_func(), you might want to do
+something like this in your open function:
+
+<?php
+  function _open($save_path, $session_name) {
+    // check for session id
+    $sess_id = session_id();
+    if (empty($sess_id) || !myfunc($sess_id)) {
+      //session_id is INVALID - generating new
+      $new_id = md5(uniqid("some random seed here"));
+      session_id($new_id);
+      setcookie(session_name(),
+                    $new_id,
+                    0,
+                    "/",
+                    ".mydomain.com");
+      }
+
+    return true;
+  } // _open()
+?>
+===============================================================================
+
+If a session is closed the save-handlers seem to be resetted (in PHP 4.1.2 they
+are), so you need to run session_set_save_handler() again after e.g. running
+session_write_close() and restarting the session with session_start();
+===============================================================================
+
+When using mySQL for your session handling functions, don't forget to call
+mysql_select_db() to change the database if you are using a separate database
+for your session data. Call mysql_select_db() INSIDE every handler function
+that accesses the database, since if you write session data after accessing
+another database, it will not change the database to your session database, and
+therefore, not write the session data.
+===============================================================================
+
+Just a few words to explain some troubles while using session_set_save_handler
+(). It appears that internally PHP calls session management functions in this
+order: open(), read(), write(), close(). Close() function is called even if you
+does not make a call to sesison_start(), perhaps for some reasons like
+cleaning.
+   If you try to redefine these functions and call sessions_set_save_handler()
+but something doesn't work, (in my case the ssion data hasn't been written)
+it's a good idea to debug them in the order they are called. They doesn't
+produce error output to browser but you can use print or echo.
+   Shortly, if your write() function doesn't work as expected take a look for
+errors in previous functions - open() and read().
+   I hope that this will help to save someone few hours debugging.
+===============================================================================
+
+A quick note for people having problems storing binary session data. Using
+prepared statements solves all your quote-related issues! Start reading here
+http://php.net/manual/en/mysqli-stmt.prepare.php for more information!
+===============================================================================
+
+It is important to understand that PHP's default file-based session handling
+LOCKS the session file, inherently allowing ONLY ONE thread handling any given
+session at a time.
+When you implement a DB-backed session storage and you do not do any locking,
+you may run into situations where more than one thread is serving the same
+session, and you may LOSE DATA because the second thread will overwrite any
+session changes done by the first thread.
+You should therefore think about locking the session somehow if you want to
+have the exact same behavior as with the default file-based implementation. For
+example, with InnoDB you could do a SELECT ... FOR UPDATE, or you can use the
+GET_LOCK() function.
+===============================================================================
+
+It is useful to use MEMORY storage engine in MySQL while handling sessions.
+http://dev.mysql.com/doc/refman/5.0/en/memory-storage-engine.html
+===============================================================================
+
+With regards to the read handler, the docs say:
+
+  "Read function must return string value always to make save
+  handler work as expected. Return empty string if there is no
+  data to read."
+
+I can't emphasize this enough. I just spent half a day trying to figure out why
+my sessions weren't storing any information. I was blithely returning the
+results of a query on the database from the read handler. Since there was no
+match for the new ID, the result was NULL. Since it wasn't a string, sessions
+were essentially disabled. So, the safe thing might be something like this:
+
+<?php
+function sessRead($id)
+{
+    // Look up data
+    $results = getStuff($id);
+   
+    // Make sure it's a string
+    settype($results, 'string');
+    return $results;
+}
+?>
+
+Of course, you can do whatever you want with it. But, no matter what, make sure
+you return a string.
+
+HTH,
+Michael
+===============================================================================
+
+Below is a session id value validator I just wrote. It is especially important
+to validate session id cookie values when using a custom file based validator,
+otherwise hackers could potentially trick it into overwriting non-session
+files.
+
+/**
+* Validates the value (the session id) of a session cookie.
+* Useful for detecting potential hack attempts.
+* It is up to the caller to delete the cookie if necessary.
+* See also: http://lxr.php.net/xref/PHP_TRUNK/ext/session/session.c#
+php_session_valid_key
+*
+* @param string $value
+* @param boolean $debug
+* @return boolean
+*/
+function session_validate($cookie_value, $debug = false) {
+    // session.hash_function allows you to specify the hash algorithm used to
+generate the session IDs. '0' means MD5 (128 bits) and '1' means SHA-1 (160
+bits). Since PHP 5.3.0 it is also possible to specify any of the algorithms
+provided by the hash extension (if it is available), like sha512 or whirlpool.
+A complete list of supported algorithms can be obtained with the hash_algos()
+function.
+    // session.hash_bits_per_character allows you to define how many bits are
+stored in each character when converting the binary hash data to something
+readable. The possible values are '4' (0-9, a-f), '5' (0-9, a-v), and '6' (0-9,
+a-z, A-Z, "-", ",").
+    if (!(isset($cookie_value) && is_string($cookie_value) && strlen
+($cookie_value))) {
+        return false;
+    }
+    $bits = null;
+    if (1) {
+        $hash_function = ini_get('session.hash_function');
+        $hash_function_to_bits = array(
+            0    => 128,
+            1    => 160,
+        );
+        $bits = @$hash_function_to_bits[$hash_function];
+    }
+    $bits_per_char = ini_get('session.hash_bits_per_character');
+    $bits_per_char_to_charclass = array(
+        4    => '0-9a-f',
+        5    => '0-9a-v',
+        6    => '0-9a-zA-Z\-,',    // this is also the default
+    );
+    $charclass = array_key_exists($bits_per_char, $bits_per_char_to_charclass)
+? $bits_per_char_to_charclass[$bits_per_char] : $bits_per_char_to_charclass[6];
+    $charlength = $bits ? (integer)ceil($bits / $bits_per_char) : '1,128'; //
+the last value is a somewhat arbitrary default
+    $re = '/^[' . $charclass . ']{' . $charlength . '}$/';
+    $result = preg_match($re, $cookie_value);
+    $debug && error_log(__FUNCTION__ . ' regexp: ' . $re . "\tresult: " .intval
+($result));
+    return $result;
+}
+===============================================================================
+
+Session authentication is not meant to be part of the session handlers.
+
+These handlers only read and write the session data itself, and will not allow
+you to call the vital function session_regenerate_id().
+
+To add extra authentication routines, call them after session_start returns
+control.  DO NOT put them in your 'open' or 'read' handlers.
+
+Enjoy,
+-- Miqro
+===============================================================================
+
+I have solved problem with session handler, which needs some other objects (for
+example DB access object), with register_shutdown_function. Just calling
+
+<?php
+
+register_shutdown_function('session_write_close');
+
+?>
+
+solved my problem. Shutdown functions are called before object destructors.
+
+If you use class for session handling (my prefered way), you can call
+register_shutdown_function in constructor and you must not mess your code in
+another place.
+
+Example:
+
+<?php
+
+class SessionHandler {
+
+    protected $_db;
+
+    public function __construct(PDO $db) {
+        $this->_db = $db;
+        register_shutdown_function('session_write_close');
+    }
+   
+    function open($save_path, $session_name) {
+    }
+   
+    function close() {
+    }
+   
+    function read($id) {
+    }
+
+    function write($id, $sess_data) {
+    }
+
+    function destroy($id) {
+    }
+
+    function gc($maxlifetime) {
+    }
+}
+
+?>
+===============================================================================
+
+Many people are using session_set_save_handler to store the session in a
+session database, which ofcourse is both valid and smart since it (could)
+increas security.
+
+What many people forgets, is that session ids can easily be edited by a user as
+he see fit (by editing a session_cookie for example*)
+
+* If you like to play around to test your site, check Add n edit Cookies
+extension for firefox.
+
+This might not be a big deal when saving them in a file, since the worst thing
+that may happen is that the user losts his session and a new one is generated.
+But when saving to an DB it is*. One should never trust that the server itself
+add slashes and escapes other vital characters.
+
+* A google search for "SQL Injection" gives 716 000 hits.
+
+Example code, none working:
+<?PHP
+
+    function read ($session_id)
+    {
+        $sql        = mysql_query("SELECT * FROM mysessions WHERE session_id=
+$session_id");
+        $data= mysql_fetch_array($sql);
+
+        }
+    }
+
+?>
+
+Is obviously flawed. Since setting our session ID to "; drop mysessions; "
+would create serious problems.
+
+A more suitable approch would be, something in the lines of:
+
+Example code, none working:
+<?PHP
+
+    function read ($session_id)
+    {
+
+   // ( Code by php.net )
+   if (get_magic_quotes_gpc()) {
+       $session_id = stripslashes($session_id);
+   }
+   // Quote if not integer
+   if (!is_numeric($session_id)) {
+       $session_id = mysql_real_escape_string($session_id);
+   }
+
+        $sql        = mysql_query("SELECT * FROM mysessions WHERE session_id=
+$session_id");
+        $fieldarray = mysql_fetch_array($sql);
+
+        }
+    }
+
+?>
+
+I quick checked different sample codes and tutorials and none of them actually
+escaped session ids.
+
+That's my two cents for too night,
+Niklas
+===============================================================================
+
+php doesn't make any checks about PHPSESSID cookie format, it is then important
+to verify cookie format before making any sql request.
+
+if your read session request is :
+SELECT DataValue FROM sessions WHERE SessionID='$aKey'
+
+this generic cookie could succeed to access others session: PHPSESSID=1' OR
+SessionID LIKE '%>>
+
+for safety, you can make this verification before sql request:
+if (! preg_match('/^([0-9a-f]{32})$/i',$aKey)) return NULL;
+
+hope this can be helpful
+===============================================================================
+
+Ok, after much hairpulling, I've figured out a successful way to store objects
+in a session using a postgresql savehandler.
+
+<?php
+function write ($id, $sess_data)
+{
+  global $sql;  // my global db connection object
+  $sess_data = @pg_escape_bytea(serialize($sess_id)); //works with any type
+  $sql->Query("delete from sessions where sessionid = '$id'"); // delete old
+session record
+  $sql->Query("insert into sessions (sessionid,datavalue) values ('$id', '
+$sess_data')");  //insert into session table
+  return true;
+}
+
+function read ($id)
+{
+  global $sql;
+  $result=$sql->Query("select * from sessions where sessionid = '$id'");
+  if ($sql->rows==1) {
+    $row=$sql->Fetch(0);
+    $rval = unserialize(@pg_unescape_bytea($sql->data[2]));
+    return $rval;
+  } else {
+    return "";
+  }
+}
+?>
+
+Make the datavalue column (the one used to store the actual session data) in
+the sessions table type bytea.
+
+The problem apparently lies in the PHP serialize for objects, where there is a
+CR/LF inserted between the object id and the property array.  The CR/LF isn't
+escaped, and causes a fit for postgresql.
+
+Any data type in PHP can be serialized, so there's no need to distinguish
+between types.
+
+The object is fully restored, with methods.
+===============================================================================
+
+Some PHP code for memcached session handler.
+
+<?php
+class SessionHadler
+{
+    private static $lifetime = 0;
+
+    public static function open()
+    {
+        self::$lifetime = ini_get('session.gc_maxlifetime');
+       
+        return true;
+    }
+   
+    public static function read($id)
+    {
+        return memcached::get("sessions/{$id}");
+    }
+   
+    public static function write($id, $data)
+    {
+        return memcached::set("sessions/{$id}", $data, self::$lifetime);
+    }
+   
+    public static function destroy($id)
+    {
+        return memcached::delete("sessions/{$id}");
+    }
+   
+    private function __construct(){}
+    public static function gc(){ return true; }
+    public static function close(){    return true; }
+    public function __destruct()
+    {
+        session_write_close();
+    }
+}
+?>
+===============================================================================
+
+Ever since we upgraded to PHP 5.3 we have had issues with session storage using
+files.
+
+Regularly when session garbage collection was triggered, permissions errors
+would be thrown.
+
+This is due to the fact that garbage collection is triggered by visitors to a
+website based on the session.gc_probability and session.gc_divisor settings
+which factor the chance of garbage collection running.
+
+As these processes are owned by Apache but the directory in which the files
+reside is owned and readable only by root, the Apache processes clearly cannot
+list the files in the session directory to work out what to delete.
+
+Changing the ownership and permissions on the directory is a no-no for security
+reasons, which leaves you with the option of turning off PHP based garbage
+collection and writing your own, or moving away from using files.
+
+For some reason, when we turned off garbage (session.gc_probability = 0) the
+garbage collection still ran anyway, so we decided to move away from files.
+
+The initial approach which most people on php.net seem to take is to write a
+custom session handler class in PHP using MySQL, which is not a bad approach as
+you can use a memory based MySQL table to gain performance.  However it
+requires you to write code, and also to modify your website to put in the
+session handler override code.  If you have lots of website to change this is
+out of the question.
+
+The simplest solution we found, which in the end took about 2 minutes in total,
+and immediately worked for all websites on the server, was to use sqlite.
+
+Some PHP installations already have SQLite installed and when you run php -i on
+the command line it shows sqlite as a "Registered save handler".
+
+If sqlite is not installed as a registered save handler, you need to install
+it. On CentOS/RHEL this was simply a case of the following command: yum install
+php-sqlite.  Once done, check the registered save handlers again with the php
+-i command.
+
+Once sqlite shows as a registered save handler, you simply have to edit your
+php.ini file to change the following two settings:
+
+OLD VALUES:
+session.save_handler = files
+session.save_path = /var/lib/php/session
+
+NEW VALUES:
+session.save_handler = sqlite
+session.save_path = /path/to/directory/containing/sqllite/database/
+phpsession.sdb
+
+The path above and the name of the database are entirely configurable by you.
+
+PHP will create the database itself, but the directory must exist and be
+accessible.
+
+Once you have made these changes, simply bounce Apache with apachectl graceful
+or apachectl restart
+
+Note that any users on your server will have their sessions reset.
+===============================================================================
+
+If your using database session handler and your database is in UTF8, but you
+happen to have a script running in IS0-8859 that tries to put symbols such as £
+signs into the database - then the session will corrupt and data will go
+missing.
+
+You can either - make sure you never put special characters into the session,
+or - more helpful, do this in your 'write' function
+
+<?php
+
+public static function write( $key, $val )
+        {
+            $val = utf8_encode( $val );
+           
+            $val = preg_replace( '!s:(\d+):"(.*?)";!se', "'s:'.strlen('$2').':\
+"$2\";'", $val );
+
+               //......
+
+?>
+
+probably an overhead on this, but less overhead than loosing data.
+
+You could also use WDDX for storing sessions I suppose
+===============================================================================
+
+With regards to db session handling:
+
+Remember if you use the REPLACE INTO method to have your session key as the
+primary key otherwise you will end up with duplicate records in your table.
+
+http://dev.mysql.com/doc/refman/5.0/en/replace.html
+===============================================================================
+
+blow example and ta summary of these comments.
+and using the simple native functions of mysql.
+
+<?php
+class Session
+{
+
+    /**
+     * a database connection resource
+     * @var resource
+     */
+    private $_sess_db;
+
+    /**
+     * Open the session
+     * @return bool
+     */
+    public function open() {
+
+        if ($this->_sess_db = mysql_connect(SESSION_DB_HOST,
+                                            SESSION_DB_USER,
+                                            SESSION_DB_PASS)) {
+            return mysql_select_db(SESSION_DB_DATABASE, $this->_sess_db);
+        }
+        return false;
+
+    }
+
+    /**
+     * Close the session
+     * @return bool
+     */
+    public function close() {
+
+        return mysql_close($this->_sess_db);
+
+    }
+
+    /**
+     * Close the session
+     * @return bool
+     */
+    public function close() {
+
+        return mysql_close($this->_sess_db);
+
+    }
+
+    /**
+     * Read the session
+     * @param int session id
+     * @return string string of the sessoin
+     */
+    public function read($id) {
+
+        $id = mysql_real_escape_string($id);
+        $sql = sprintf("SELECT `data` FROM `sessions` " .
+                       "WHERE id = '%s'", $id);
+        if ($result = mysql_query($sql, $this->_sess_db)) {
+            if (mysql_num_rows($result)) {
+                $record = mysql_fetch_assoc($result);
+                return $record['data'];
+            }
+        }
+        return '';
+
+    }
+
+    /**
+     * Write the session
+     * @param int session id
+     * @param string data of the session
+     */
+    public function write($id, $data) {
+
+        $sql = sprintf("REPLACE INTO `sessions` VALUES('%s', '%s', '%s')",
+                       mysql_real_escape_string($id),
+                       mysql_real_escape_string($data),
+                       mysql_real_escape_string(time()));
+        return mysql_query($sql, $this->_sess_db);
+
+    }
+
+    /**
+     * Destoroy the session
+     * @param int session id
+     * @return bool
+     */
+    public function destroy($id) {
+
+        $sql = sprintf("DELETE FROM `sessions` WHERE `id` = '%s'", $id);
+        return mysql_query($sql, $this->_sess_db);
+
+}
+
+    /**
+     * Garbage Collector
+     * @param int life time (sec.)
+     * @return bool
+     * @see session.gc_divisor      100
+     * @see session.gc_maxlifetime 1440
+     * @see session.gc_probability    1
+     * @usage execution rate 1/100
+     *        (session.gc_probability/session.gc_divisor)
+     */
+    public function gc($max) {
+
+        $sql = sprintf("DELETE FROM `sessions` WHERE `timestamp` < '%s'",
+                       mysql_real_escape_string(time() - $max));
+        return mysql_query($sql, $this->_sess_db);
+
+    }
+
+}
+
+//ini_set('session.gc_probability', 50);
+ini_set('session.save_handler', 'user');
+
+$session = new Session();
+session_set_save_handler(array($session, 'open'),
+                         array($session, 'close'),
+                         array($session, 'read'),
+                         array($session, 'write'),
+                         array($session, 'destroy'),
+                         array($session, 'gc'));
+
+// below sample main
+
+session_start();
+session_regenerate_id(true);
+
+if (isset($_SESSION['counter'])) {
+    $_SESSION['counter']++;
+} else {
+    $_SESSION['counter'] = 1;
+}
+
+?>

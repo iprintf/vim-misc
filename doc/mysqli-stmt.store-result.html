@@ -1,0 +1,302 @@
+
+mysqli_stmt::store_result
+
+mysqli_stmt_store_result
+
+(PHP 5, PHP 7)
+
+mysqli_stmt::store_result -- mysqli_stmt_store_result — Transfers a result set
+from a prepared statement
+
+说明
+
+面向对象风格
+
+bool mysqli_stmt::store_result ( void )
+
+过程化风格
+
+bool mysqli_stmt_store_result ( mysqli_stmt $stmt )
+
+You must call mysqli_stmt_store_result() for every query that successfully
+produces a result set (SELECT, SHOW, DESCRIBE, EXPLAIN), if and only if you
+want to buffer the complete result set by the client, so that the subsequent 
+mysqli_stmt_fetch() call returns buffered data.
+
+    Note:
+
+    It is unnecessary to call mysqli_stmt_store_result() for other queries, but
+    if you do, it will not harm or cause any notable performance in all cases.
+    You can detect whether the query produced a result set by checking if 
+    mysqli_stmt_result_metadata() returns NULL.
+
+参数
+
+stmt
+
+    仅以过程化样式：由 mysqli_stmt_init() 返回的 statement 标识。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 面向对象风格
+
+<?php
+/* Open a connection */
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query = "SELECT Name, CountryCode FROM City ORDER BY Name LIMIT 20";
+if ($stmt = $mysqli->prepare($query)) {
+
+    /* execute query */
+    $stmt->execute();
+
+    /* store result */
+    $stmt->store_result();
+
+    printf("Number of rows: %d.\n", $stmt->num_rows);
+
+    /* free result */
+    $stmt->free_result();
+
+    /* close statement */
+    $stmt->close();
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+Example #2 过程化风格
+
+<?php
+/* Open a connection */
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query = "SELECT Name, CountryCode FROM City ORDER BY Name LIMIT 20";
+if ($stmt = mysqli_prepare($link, $query)) {
+
+    /* execute query */
+    mysqli_stmt_execute($stmt);
+
+    /* store result */
+    mysqli_stmt_store_result($stmt);
+
+    printf("Number of rows: %d.\n", mysqli_stmt_num_rows($stmt));
+
+    /* free result */
+    mysqli_stmt_free_result($stmt);
+
+    /* close statement */
+    mysqli_stmt_close($stmt);
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Number of rows: 20.
+
+参见
+
+  • mysqli_prepare() - Prepare an SQL statement for execution
+  • mysqli_stmt_result_metadata() - Returns result set metadata from a prepared
+    statement
+  • mysqli_stmt_fetch() - Fetch results from a prepared statement into the
+    bound variables
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Lost some hours to find out how to save multirows result of mysqli_stmt to
+array, when get_result prohibited.
+Idea, which works is using store_result
+            $stmt=$this->mysqli->prepare("SELECT surname, name, user_id,
+last_m_own, last_m_str, role FROM users WHERE referer_id=(?)");
+                $stmt->bind_param('i',$referer_id);
+                $stmt->execute();
+                $stmt->store_result();
+                $stmt->bind_result($ans['surname'], $ans['name'], $ans
+['user_id'], $ans['last_m_own'], $ans['last_m_str'], $ans['role']);
+                $j=$stmt->num_rows;
+                for ($i=0;$i<$j;$i++){
+                    $stmt->data_seek($i);
+                    $stmt->fetch();
+                    foreach ($ans as $key=>$value){
+                        $result[$i][$key]=$value;
+                    }
+                }
+Hope will helpful for such newbies as me
+===============================================================================
+
+When using prepare to prepare a statement to retrieve LOBs the method order
+matters.
+Also, method 'store_result()' must be called and be called in correct order.
+Failure to observe this causes PHP/MySQLi to crash or return an erroneous
+value.
+The proper procedure order is: prepare -> execute -> store_result -> bind ->
+fetch
+The following applies to a Windows SBS server running IIS/6.0 + PHP 5.2.1
+MySQL server version 5.0.26-community-nt, client version 5.0.51a
+
+<?php
+$database = "test" ;
+$table = "test" ;
+$column = "flongblob" ;
+$mysqli = new mysqli("localhost", "root", "<secret_password>", $database);
+// Proper procedure order: prepare -> execute -> store_result -> bind -> fetch
+$stmt = $mysqli->prepare("SELECT `$column` FROM `$table`") ;
+$stmt->execute();
+$stmt->store_result();
+// Fetch a record. Bind the result to a variable called 'value' and fetch.
+$stmt->bind_result($value) ;
+$res = $stmt->fetch() ;
+if($res)
+{
+  // strlen($value) should have LOB length, not 1 or zero.
+  echo "$column data length is " . strlen($value) . " bytes.\n" ;
+}
+else
+{
+  echo ((false !== $res) ? "End of data" : $stmt->error) . "\n" ;
+  break ;
+}
+// Fetch another record.
+$res = $stmt->fetch() ;
+if($res)
+{
+  // strlen($value) should have LOB length, not 1 or zero.
+  echo "$column data length is " . strlen($value) . " bytes.\n" ;
+}
+else
+{
+  echo ((false !== $res) ? "End of data" : $stmt->error) . "\n" ;
+  break ;
+}
+$stmt->close() ;
+$mysqli->close() ;
+exit ;
+?>
+
+The above example should output:
+  flongblob data length is 932353 bytes.
+  flongblob data length is 867300 bytes.
+
+If wrong procedure order MySQLi crashes or outputs:
+  flongblob data length is 0 bytes.
+  flongblob data length is 867300 bytes.
+===============================================================================
+
+The wording above, in the initial description of the function, can be confusing
+(quoted below). 
+
+"You must call mysqli_stmt_store_result() for every query that successfully
+produces a result set (SELECT, SHOW, DESCRIBE, EXPLAIN), and only if you want
+to buffer the complete result set by the client, so that the subsequent
+mysqli_stmt_fetch() call returns buffered data. "
+
+I had initially understood the part saying "and only if you want to buffer..."
+to mean that it was only necessary to call this function if you wanted to
+buffer the result set.  This, however, is not the case, and the
+misunderstanding caused me quite a bit of grief. 
+
+So, to clarify for anyone suffering from the same misunderstanding, you ALWAYS
+must call this function for every query that produces a result set (as listed
+in the parentheses of the quote above), as far as I can tell.
+===============================================================================
+
+Actually, mysqli_stmt_result_metadata() returns FALSE, not NULL, when the query
+/statement doesn't produce a result set. You would have to check the if the
+$mysqliObject->error is an empty string to see whether the FALSE return means
+that the query does not produce a result set or that an error occured.
+===============================================================================
+
+In response to the note below me for the claim that mysqli_fetch_fields is not
+compatible with prepared statements.
+
+This is untrue, it is but you have to do a little extra work. I would recommend
+you use a wrapper function of some sort to take care of the dirty business for
+you but the basic idea is the same.
+
+Let's assume you have a prepared statement like so. I am going to use the
+procedural way for simplicity but the same idea can be done using the object
+oriented way:
+
+<?php
+
+// Connect Blah Blah Blah.
+
+$connectionLink = mysqli_connect( .... );
+
+// Query Blab Blah Blah.
+
+$query = "Select `Id` From `Table` Where `Id` = ?";
+
+// Prepare Query.
+
+$prepareObject = mysqli_prepare( $connectionLink , $query );
+
+// Bind Query.
+
+mysqli_stmt_bind_param( $prepareObject , 'i' , 1 );
+
+// Execute Query.
+
+mysqli_stmt_execute( $prepareObject );
+
+?>
+
+Now all the above is fine and dandy to anyone familiar with using prepared
+statements, but if I want to use mysqli_fetch_fields or any other function that
+fetches meta information about a result set but does not work on prepared
+statements?
+
+Enter the special function mysqli_stmt_result_metadata. It can be used as
+follows, assume the following code segment immediatley follows that of the
+above code segment.
+
+<?php
+
+$metaData = mysqli_stmt_result_metadata( $prepareObject );
+
+// I Can Now Call mysqli_fetch_fields using the variable
+// $metaData as an argument.
+
+$fieldInfo = mysqli_fetch_fields( $metaData );
+
+// Or Even This.
+
+$fieldInfo = mysqli_num_fields( $metaData );
+
+?>
+
+Take a look at the Manual entry for mysqli_stmt_result_metatdata function for
+full details on how to expose it with prepared statements.
+
+Good Luck,
+===============================================================================
+
+fetch_fields() does not seem to be compatible with prepared statements like
+those used here. Makes things difficult if you're using a wildcard. I guess
+that's better for security in some obscure way.
+
+-Alex Boese

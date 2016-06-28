@@ -1,0 +1,210 @@
+
+shm_put_var
+
+(PHP 4, PHP 5, PHP 7)
+
+shm_put_var — Inserts or updates a variable in shared memory
+
+说明
+
+bool shm_put_var ( resource $shm_identifier , int $variable_key , mixed
+$variable )
+
+shm_put_var() inserts or updates the variable with the given variable_key.
+
+Warnings (E_WARNING level) will be issued if shm_identifier is not a valid SysV
+shared memory index or if there was not enough shared memory remaining to
+complete your request.
+
+参数
+
+shm_identifier
+
+    A shared memory resource handle as returned by shm_attach()
+
+variable_key
+
+    The variable key.
+
+variable
+
+    The variable. All variable types that serialize() supports may be used:
+    generally this means all types except for resources and some internal
+    objects that cannot be serialized.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+参见
+
+  • shm_get_var() - Returns a variable from shared memory
+  • shm_has_var() - Check whether a specific entry exists
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+Will it ever support resource identifiers like pfsockopen() pointers?
+
+The main problem is that when we run PHP as a Apache Module we never know in
+which process the next request will bind to, making impossible to have true
+persistent socket connections unless we can store the pointer to it or directly
+open the socket inode with fopen() like functions and retrieve the same
+resource pointer again.
+
+I thought I could use shm, but it seems that shm doesn't allow o store resource
+pointers... sad... :(
+===============================================================================
+
+sadly troy is right
+
+the following script will return:
+
+resource(5) of type (stream)
+int(0)
+
+<?php
+
+define("FOPEN_RESOURCE", 1);
+define("FOPEN_FILEPATH", "/path/to/file");
+
+$fopen_resource = fopen(FOPEN_FILEPATH, "w");
+
+var_dump($fopen_resource);
+
+$shm_id = shm_attach(1);
+if ($shm_id === false)
+{
+    echo "Fail to attach shared memory.\n";
+}
+
+if (!shm_put_var($shm_id, FOPEN_RESOURCE, $fopen_resource))
+{
+    echo "Failed to put var 1 in shared memory $shm_id.\n";
+}
+
+$sm_fopen_resource = shm_get_var($shm_id, FOPEN_RESOURCE);
+if ($sm_fopen_resource === false)
+{
+    echo "Failed to retreive fopen_resource from Shared memory\r\n";
+}
+
+var_dump($sm_fopen_resource);
+
+if($shm_id) shm_remove($shm_id);
+if($fopen_resource) fclose($fopen_resource);
+
+?>
+===============================================================================
+
+seems to me shm_put_var() doesn't work well with an integer key 0. I changed to
+1 and it works like a charm.
+===============================================================================
+
+Yes, it is possible to maintain a real level of resource persistence using
+shared memory. All vars in PHP are stored in common hashtables as zvals,
+including resource identifiers. There are hashtables available that outlive the
+request as long as the entire PHP process isn't shut down. All you need is to
+store the identifiers in such a hashtable and a way to keep track of them and
+you can receive the original resource.
+
+I don't know why PHP doesn't provide a way of setting/getting persistent
+resources, but it is likely do to the many types of SAPI's available for it and
+the fact that not all of them *can* facilitate this, including CGI which still
+if far from obsolete.
+
+Another problem is that having such access in userspace is bound to create
+issues where multiple php processes are trying to access the same resource.
+Looking at it from this angel you can see that there's really no safe way to
+safely use such getter/setters without a better synchronism scheme in PHP.
+===============================================================================
+
+Quote: "Will it ever support resource identifiers like pfsockopen() pointers
+...  we run PHP as a Apache Module ... no way to have true persistent sockets"
+
+Sorry, but that doesn't make sense to me... the socket is still persistent, if
+you wish to resume it, simply call pfsockopen() with the same host and port -
+and you will get the same socket.  There is no need to pass the actual resource
+variable.
+
+If there is something amazingly special and unique about each socket, you can
+do the following - and this should apply to any persistent resource:
+
+To differentiate between or obtain a specific resource - simply serialize/store
+an index of each resource's unique ID, along with the particulars that make
+that resource unique.
+
+You can get a unique resource identifier as an integer value like so:
+
+<?php
+   $rid = str_replace("Resource id #", "", print_r($fp, true));
+   // $rid = 2
+?>
+
+As pfsockopen() uses the hostname and port as a unique key to resume a
+persistent connection, you can add a DNS wildcard, or a number of manual
+entries in /etc/hosts (or windows equiv.) as follows:
+
+resource-0.host.com  192.168.100.1
+resource-1.host.com  192.168.100.1
+resource-2.host.com  192.168.100.1
+resource-3.host.com  192.168.100.1
+
+Then, after consulting your serialized list of resources, you can connect to a
+specific resource by using it's resource id.
+
+eg:  $pf = pfsockopen("resource-$rid.host.com", $port, $timeout);
+
+The new resource will be identical to the original in every way.
+
+For file based stream resources you could do something similar with symlinks,
+or use the next method...
+
+For URL based or other resources with "paths" (I don't know if there *are*
+persistent functions that involve such things) you could differentiate between
+them with using extraneous information in the path.  eg:
+
+  http://host.com/resource-4/../script.php
+  http://resource4@host.com/script.php
+  /tmp/././././file.txt
+
+In the first example, the extraneous "resource-4" would be ignored by the
+webserver.
+
+In the second, the superfluous username would be ignored by the webserver. 
+(Something similar for mysql_pconnect could be done with multiple usernames).
+
+And in the the third example, four sequential occurrences of the "do nothing"
+string "./" would indicate resource #4.
+
+If this isn't enough, then you can use the fact that PHP shared memory
+resources are themselves interoperable with those created by their .c
+counterparts.   That allows you to write a thin .c application to handle the
+dirty work.
+
+Or you could attempt to reconnect to your own webserver, using persistent
+streams and the methods outlined above, to achieve the end result.   I can't
+think of an example of where something so extreme would be necessary, but I'm
+sure it's not outside the realm of possibility.
+
+I personally use an 117 MB binary database, which is stored in shared memory,
+both from the command line (using a complied .c application), and from the web
+(via PHP, and ftok()/shmop_open()/shmop_read()).
+===============================================================================
+
+shm_put_var has no protection against race conditions. If two scripts insert
+the same key at the same time php might segfault.
+===============================================================================
+
+This isn't entirely accurate. Not all variable types are supported, you can't
+put a resource variable into shared memory.
+
+When you try to take it out, it will be a zero.
+===============================================================================
+
+Use as few variable_keys as you can. With large arrays of data, rather make the
+array multi-dimensional and store under one variable_key than use variable_key
+as your index. The benefit is especially noticeable when repeated fetching from
+the end of the array is necessary and updates are less frequent.

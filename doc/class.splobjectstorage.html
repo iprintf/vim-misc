@@ -1,0 +1,442 @@
+
+The SplObjectStorage class
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+简介
+
+The SplObjectStorage class provides a map from objects to data or, by ignoring
+data, an object set. This dual purpose can be useful in many cases involving
+the need to uniquely identify objects.
+
+类摘要
+
+SplObjectStorage implements Countable , Iterator , Serializable , ArrayAccess {
+/* 方法 */
+public void addAll ( SplObjectStorage $storage )
+public void attach ( object $object [, mixed $data = NULL ] )
+public bool contains ( object $object )
+public int count ( void )
+public object current ( void )
+public void detach ( object $object )
+public string getHash ( object $object )
+public mixed getInfo ( void )
+public int key ( void )
+public void next ( void )
+public bool offsetExists ( object $object )
+public mixed offsetGet ( object $object )
+public void offsetSet ( object $object [, mixed $data = NULL ] )
+public void offsetUnset ( object $object )
+public void removeAll ( SplObjectStorage $storage )
+public void removeAllExcept ( SplObjectStorage $storage )
+public void rewind ( void )
+public string serialize ( void )
+public void setInfo ( mixed $data )
+public void unserialize ( string $serialized )
+public bool valid ( void )
+}
+
+范例
+
+Example #1 SplObjectStorage as a set
+
+<?php
+// As an object set
+$s = new SplObjectStorage();
+
+$o1 = new StdClass;
+$o2 = new StdClass;
+$o3 = new StdClass;
+
+$s->attach($o1);
+$s->attach($o2);
+
+var_dump($s->contains($o1));
+var_dump($s->contains($o2));
+var_dump($s->contains($o3));
+
+$s->detach($o2);
+
+var_dump($s->contains($o1));
+var_dump($s->contains($o2));
+var_dump($s->contains($o3));
+?>
+
+以上例程会输出：
+
+bool(true)
+bool(true)
+bool(false)
+bool(true)
+bool(false)
+bool(false)
+
+Example #2 SplObjectStorage as a map
+
+<?php
+// As a map from objects to data
+$s = new SplObjectStorage();
+
+$o1 = new StdClass;
+$o2 = new StdClass;
+$o3 = new StdClass;
+
+$s[$o1] = "data for object 1";
+$s[$o2] = array(1,2,3);
+
+if (isset($s[$o2])) {
+    var_dump($s[$o2]);
+}
+?>
+
+以上例程会输出：
+
+array(3) {
+  [0]=>
+  int(1)
+  [1]=>
+  int(2)
+  [2]=>
+  int(3)
+}
+
+Table of Contents
+
+  • SplObjectStorage::addAll — Adds all objects from another storage
+  • SplObjectStorage::attach — Adds an object in the storage
+  • SplObjectStorage::contains — Checks if the storage contains a specific
+    object
+  • SplObjectStorage::count — Returns the number of objects in the storage
+  • SplObjectStorage::current — Returns the current storage entry
+  • SplObjectStorage::detach — Removes an object from the storage
+  • SplObjectStorage::getHash — Calculate a unique identifier for the contained
+    objects
+  • SplObjectStorage::getInfo — Returns the data associated with the current
+    iterator entry
+  • SplObjectStorage::key — Returns the index at which the iterator currently
+    is
+  • SplObjectStorage::next — Move to the next entry
+  • SplObjectStorage::offsetExists — Checks whether an object exists in the
+    storage
+  • SplObjectStorage::offsetGet — Returns the data associated with an object
+  • SplObjectStorage::offsetSet — Associates data to an object in the storage
+  • SplObjectStorage::offsetUnset — Removes an object from the storage
+  • SplObjectStorage::removeAll — Removes objects contained in another storage
+    from the current storage
+  • SplObjectStorage::removeAllExcept — Removes all objects except for those
+    contained in another storage from the current storage
+  • SplObjectStorage::rewind — Rewind the iterator to the first storage element
+  • SplObjectStorage::serialize — Serializes the storage
+  • SplObjectStorage::setInfo — Sets the data associated with the current
+    iterator entry
+  • SplObjectStorage::unserialize — Unserializes a storage from its string
+    representation
+  • SplObjectStorage::valid — Returns if the current iterator entry is valid
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Note some inconsistent/surprising behavior in SplObjectStorage to preserve
+backwards compatibility. You can't properly use foreach with key/value syntax.
+
+<?php
+$spl = new SplObjectStorage ();
+$keyForA = new StdClass();
+$keyForB = new StdClass();
+$spl[$keyForA] = 'value a';
+$spl[$keyForB] = 'value b';
+foreach ($spl as $key => $value)
+{
+    // $key is NOT an object, $value is!
+    // Must use standard array access to get strings.
+    echo $spl[$value] . "\n"; // prints "value a", then "value b"
+}
+// it may be clearer to use this form of foreach:
+foreach ($spl as $key)
+{
+    // $key is an object.
+    // Use standard array access to get values.
+    echo $spl[$key] . "\n"; // prints "value a", then "value b"
+}
+?>
+
+See https://bugs.php.net/bug.php?id=49967
+===============================================================================
+
+Please note that SplObjectStorage has a Bug introduced with 5.4.0, breaking
+object lookup in cloned instances of derived classes that overwrite getHash().
+
+This is a confirmed Bug: https://bugs.php.net/bug.php?id=67582
+
+Example:
+<?php
+class MyObjectStorage extends SplObjectStorage {
+    // Overwrite getHash() with just some (working) test-method
+    public function getHash($object) { return get_class($object); }
+}
+
+class TestObject {}
+
+$list = new MyObjectStorage(); // No issues if using "new SplObjectStorage()"
+$list->attach(new TestObject());
+
+foreach($list as $x) var_dump($list->offsetExists($x)); // TRUE
+
+$list2 = clone $list;
+foreach($list2 as $x) var_dump($list2->offsetExists($x)); // FALSE
+?>
+===============================================================================
+
+For anyone having issues with SplObjectStorages containing corrupt member
+variables after garbage collection (FatalErrorException after serializing): we
+used following fix to great effect
+<?php
+
+class FixedSplObjectStorage extends SplObjectStorage
+{
+
+    public function serialize()
+    {
+        $goodPortion = 'N;;m:a:0:{}';
+        $startKey = 'N;;m:a:';
+
+        $serialized = parent::serialize();
+
+        $startPos = strpos($serialized, $startKey);
+
+        if ($startPos !== false) {
+            $serialized = substr_replace($serialized, $goodPortion, $startPos,
+-1);
+
+        }
+
+        return $serialized;
+
+    }
+}
+
+?>
+===============================================================================
+
+I needed to merge SplObjectStorages.
+<?php
+// As an object set
+$SplObjectStorage_1 = new SplObjectStorage();
+
+$object1 = new StdClass;
+$object1->attr = 'obj 1';
+$object2 = new StdClass;
+$object2->attr = 'obj 2';
+$object3 = new StdClass;
+$object3->attr = 'obj 3';
+
+$SplObjectStorage_1->attach($object1);
+$SplObjectStorage_1->attach($object2);
+$SplObjectStorage_1->attach($object3);
+
+// Another one object set
+$SplObjectStorage_2 = new SplObjectStorage();
+
+$object4 = new StdClass;
+$object4->attr = 'obj 4';
+$object5 = new StdClass;
+$object5->attr = 'obj 5';
+$object6 = new StdClass;
+$object6->attr = 'obj 6';
+
+$SplObjectStorage_2->attach($object4);
+$SplObjectStorage_2->attach($object5);
+$SplObjectStorage_2->attach($object6);
+
+/**
+* Merge SplObjectStorage
+*
+* @param how many SplObjectStorage params as you want
+* @return SplObjectStorage
+*/
+function mergeSplObjectStorage() {
+   
+    $buffer   = new SplObjectStorage();
+
+    if( func_num_args() > 0  ) {
+        $args = func_get_args();
+        foreach ($args as $objectStorage) {
+            foreach($objectStorage as $object) {
+                if(is_object( $object ) ) {
+                    $buffer->attach($object);
+                }
+            }
+        }
+    }
+    else{
+        return FALSE;
+    }
+    return $buffer;
+}
+
+$merge = mergeSplObjectStorage($SplObjectStorage_1, $SplObjectStorage_2);
+
+?>
+<?php
+echo $merge->count();
+?>
+Will output :
+6
+
+<?php
+$merge->rewind();
+while($merge->valid()) {
+    $object = $merge->current();
+    var_dump($object);
+    $merge->next();
+}
+?>
+Will ouput :
+object(stdClass)#2 (1) {
+  ["attr"]=>
+  string(5) "obj 1"
+}
+object(stdClass)#3 (1) {
+  ["attr"]=>
+  string(5) "obj 2"
+}
+object(stdClass)#4 (1) {
+  ["attr"]=>
+  string(5) "obj 3"
+}
+object(stdClass)#6 (1) {
+  ["attr"]=>
+  string(5) "obj 4"
+}
+object(stdClass)#7 (1) {
+  ["attr"]=>
+  string(5) "obj 5"
+}
+object(stdClass)#8 (1) {
+  ["attr"]=>
+  string(5) "obj 6"
+}
+
+My two cents.
+===============================================================================
+
+Do not use SplObjectStorage::detach when forach'ing over items in the storage
+as this skips the second (and only second) element.
+
+Example:
+
+<?php
+
+class A {
+    public $i;
+    public function __construct($i) {
+        $this->i = $i;
+    }
+}
+
+$container = new \SplObjectStorage();
+
+$container->attach(new A(1));
+$container->attach(new A(2));
+$container->attach(new A(3));
+$container->attach(new A(4));
+$container->attach(new A(5));
+
+foreach ($container as $item) {
+    echo $item->i . "\n";
+    $container->detach($item);
+}
+echo "== Left in storage ==\n";
+foreach ($container as $item) {
+    echo $item->i . "\n";
+}
+/* Outputs:
+1
+3
+4
+5
+== Left in storage ==
+2
+*/
+?>
+===============================================================================
+
+I rewrote some scripts and changed object storage with arrays to
+SplObjectStorage. At some point I needed support of array_rand() but I did not
+find a function to return a random attached object of an SplObjectStorage
+object.
+
+So here is my solution for random access to SplObjectStorage:
+
+<?php
+$o1 = new StdClass;
+$o2 = new StdClass;
+$s = new SplObjectStorage;
+$s->attach($o1);
+$s->attach($o2);
+
+$random = rand(0,$s->count()-1);
+$s->rewind();
+for($i=0;$i<$random;$i++) {
+  $s->next();
+}
+var_dump($s->current());
+?>
+===============================================================================
+
+I have two things to note about SplObjectStorage:
+
+#1: A reference to the object itself is stored (not just a hash to compare
+against the object) and it must be removed before the object is destroyed and
+the destructor is executed.
+
+#2: SplObjectStorage::rewind() MUST be called to initiate the iterator and
+before SplObjectStorage::current() will return an object (and I think the only
+way to retrieve an object?) rather than automatically starting at the first
+element as I expected it to, like an array for example. This assumption is
+based on SplObjectStorage::current() returning NULL until
+SplObjectStorage::rewind() is called once the objects are contained. As a note,
+always use REWIND before iterating through or fetching objects.
+
+<?php
+
+class foo {
+    public function __destruct() {
+        print("--- DESTRUCTOR FIRED!!<br />\r\n");
+    }
+}
+
+# Create object and storage
+$bar = new foo();
+$s = new SplObjectStorage();
+
+# Rewind early just as a test
+$s->rewind();
+
+# attach the object
+$s->attach($bar, array('test'));
+
+# Unset the object; destructor does NOT fire
+unset($bar);
+print("Object has been unset<br />\r\n");
+
+# First demonstrate that REWIND must be called to initialize the iterator
+$obj = $s->current();
+var_dump($obj);
+print("- Note the NULL (from \$s->current())<br />\r\n");
+
+# Initialize, and then detach the current (and only) object
+$s->rewind();
+$s->detach( $s->current() );
+
+# The destructor should NOW execute
+
+?>
+
+Output:
+
+Object has been unset
+NULL - Note the NULL (from $s->current())
+--- DESTRUCTOR FIRED!!

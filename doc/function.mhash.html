@@ -1,0 +1,353 @@
+
+mhash
+
+(PHP 4, PHP 5, PHP 7)
+
+mhash — Computes hash
+
+说明
+
+string mhash ( int $hash , string $data [, string $key ] )
+
+mhash() applies a hash function specified by hash to the data.
+
+参数
+
+hash
+
+    The hash ID. One of the MHASH_hashname constants.
+
+data
+
+    The user input, as a string.
+
+key
+
+    If specified, the function will return the resulting HMAC instead. HMAC is
+    keyed hashing for message authentication, or simply a message digest that
+    depends on the specified key. Not all algorithms supported in mhash can be
+    used in HMAC mode.
+
+返回值
+
+Returns the resulting hash (also called digest) or HMAC as a string, or FALSE
+on error.
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Here is how to compute a NTLM hash:
+
+<?php
+function ntlm_hash($txt)
+{
+        $txt = iconv('UTF-8', 'UTF-16LE', $txt);
+        $md4 = bin2hex(mhash(MHASH_MD4, $txt));
+
+        return strtoupper($md4);
+}
+
+echo ntlm_hash('ClearTextPasswd');
+echo "\n";
+===============================================================================
+
+The MHash function here lists one disclaimer at the top when providing a key to
+the mhash function : "Not all algorithms supported in mhash can be used in HMAC
+mode."  So, what algorithms blow up and what do fine when it comes to doing
+keyed, HMAC hashing?  The destructive ones are: Adler32, CRC32, CRC32B, and
+GOST.  These are the first four, predefined constants listed with the MHash
+Application Package: http://www.php.net/manual/en/mhash.constants.php . 
+Providing one of these algorithms with an HMAC key (of string-length greater
+than one) creates the following error message: "Warning: mhash()
+[function.mhash]: mhash initialization failed in [(folder-location)] on line
+181".  If you really want to use these algorithms in creating your HMAC hashes,
+the function Hash_hmac() from the HASH-Message Digest Framework package is
+capable of doing that perfectly.
+
+Again, that is if the string length is greater than one.  Why string length
+greater than one?  Well, if the key value is blank, it is ignored as a
+parameter altogether.  So, if you feed the mhash function an algorithm that is
+not compatible with HMAC hashing and an HMAC key that's blank (""), it will
+work the same as if it had received no HMAC key at all.  This is different from
+the way the Hash_hmac() function of the HASH-MDF works.  In the case of the
+Hash_hmac() function, feeding a blank HMAC key will use that blank key in
+generating the HMAC hash.  Even with functions that can do HMAC hashing, like
+MD5 or SHA1, if the MHash() is given a blank HMAC key, it will ignore the key
+and just return the results of standard, non-HMAC hashing.  It's probably not
+wise to use a blank HMAC key anyway, but it's good to know that the hashing
+algorithm changes altogether if the provided HMAC key is blank.
+
+Some sample code to demonstrate :
+
+<?php
+
+            // Author: holdoffhunger@gmail.com
+   
+        // Preset Data
+        // ---------------------------------------------------
+
+    $string_to_hash = "The hash_hmac() function better to use for these
+purposes.";
+    $blank_hmac_key = "";
+   
+        // MHash - Hashing With and Without HMAC Parameter
+        // ---------------------------------------------------
+
+    $mhash_result_with_hmac_parameter = bin2hex(mhash(MHASH_CRC32, 
+$string_to_hash, $blank_hmac_key));
+    $mhash_result_without_hmac_parameter = bin2hex(mhash(MHASH_CRC32, 
+$string_to_hash));
+   
+        // MHash - Hashing With and Without HMAC Parameter
+        // ---------------------------------------------------
+
+    $hash_result_with_hmac_parameter = hash_hmac("crc32", $string_to_hash, 
+$blank_hmac_key);
+    $hash_result_without_hmac_parameter = hash("crc32", $string_to_hash);
+
+        // Print Results
+        // ---------------------------------------------------
+
+    print("MHASH (CRC32 Algorithm) With Blank HMAC Key: 
+$mhash_result_with_hmac_parameter .<br>");
+    print("MHASH (CRC32 Algorithm) Without HMAC Processing: 
+$mhash_result_without_hmac_parameter .<br><br>");
+
+    print("HASH (CRC32 Algorithm) With Blank HMAC Key: 
+$hash_result_with_hmac_parameter .<br>");
+    print("HASH (CRC32 Algorithm) Without HMAC Processing: 
+$hash_result_without_hmac_parameter .");
+
+?>
+
+    Results :
+    ...................................
+
+MHASH (CRC32 Algorithm) With Blank HMAC Key: f665c094 .
+MHASH (CRC32 Algorithm) Without HMAC Processing: f665c094 .
+
+HASH (CRC32 Algorithm) With Blank HMAC Key: 3041f4f8 .
+HASH (CRC32 Algorithm) Without HMAC Processing: f665c094 .
+===============================================================================
+
+Both cryptography packages, the MHash and the HASH Message Digest Framework,
+have the same algorithms, and yet, they both sometimes to produce wildly
+different results from each other when applying the same algorithm to the same
+piece of data.  The SHA-x algorithms, as designed by the NSA, all seem to have
+concrete standards for producing their hash values, so they have similar
+results.  Even the two MD5 implementations produce identical results, and the
+same goes for Gost, RipeMD, CRC32, Whirlpool, Snefru256 (known as 'Snefru256'
+in MHash and simply 'Snefru' in HASH-MDF), and Tiger (the three-round versions
+in HASH-MDF to simply 'Tigerx' in MHash).
+
+However, the algorithms CRC32B and Adler32 each produce different results when
+called from either MHash or HASH-MDF, possibly because they are hashing
+algorithms designed to be checksums rather than something that can produce a
+string as a unique identifier for a particular piece of information.  For that
+reason, if you ever publish the hash results with the data you're putting out
+publicly, it's probably wise to indicate whether it's the MHash or HASH-MDF
+implementation of the algorithm.  Otherwise, the hash value won't provide much
+use as a unique identifier for the particular piece of data or for the file.
+
+Some example code to better explain what I mean :
+
+<?php
+
+            // Author: holdoffhunger@gmail.com
+   
+        // SHA-1 Hashing
+        // ---------------------------------------------------
+
+    $mhash_sha1_results = bin2hex(mhash(MHASH_SHA1, "secret"));
+    $hash_mdf_sha1_results = hash("sha1", "secret", FALSE);
+
+    print("MHash SHA-1: $mhash_sha1_results .<br>");
+    print("HASH-MDF SHA-1: $hash_mdf_sha1_results .<br><br>");
+   
+        // Whirlpool Hashing
+        // ---------------------------------------------------
+
+    $mhash_whirlpool_results = bin2hex(mhash(MHASH_WHIRLPOOL, "secret"));
+    $hash_mdf_whirlpool_results = hash("whirlpool", "secret", FALSE);
+
+    print("MHash Whirlpool: $mhash_whirlpool_results .<br>");
+    print("HASH-MDF Whirlpool: $hash_mdf_whirlpool_results .<br><br>");
+   
+        // CRC32B Hashing
+        // ---------------------------------------------------
+
+    $mhash_crc32b_results = bin2hex(mhash(MHASH_CRC32B, "secret"));
+    $hash_mdf_crc32b_results = hash("crc32b", "secret", FALSE);
+
+    print("MHash CRC32B: $mhash_crc32b_results .<br>");
+    print("HASH-MDF CRC32B: $hash_mdf_crc32b_results .<br><br>");
+   
+        // Adler32 Hashing
+        // ---------------------------------------------------
+
+    $mhash_adler32_results = bin2hex(mhash(MHASH_ADLER32, "secret"));
+    $hash_mdf_adler32_results = hash("adler32", "secret", FALSE);
+
+    print("MHash Adler32: $mhash_adler32_results .<br>");
+    print("HASH-MDF Adler32: $hash_mdf_adler32_results .<br><br>");
+
+?>
+
+    Expected Results :
+    ........................
+
+MHash SHA-1: e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4 .
+HASH-MDF SHA-1: e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4 .
+
+MHash Whirlpool: e061b87a674ae3880e159ab55ed35d
+6c5e8a6aefac6ab08304a50588018d
+377b28639bb15fdeedf006d57e45f7
+b4298e6dfefceaf7c92c826a708fe6d
+1156eb3 .
+
+HASH-MDF Whirlpool: e061b87a674ae3880e159ab55ed35d
+6c5e8a6aefac6ab08304a50588018d
+377b28639bb15fdeedf006d57e45f7
+b4298e6dfefceaf7c92c826a708fe6d
+1156eb3 .
+
+MHash CRC32B: e5e8a25c .
+HASH-MDF CRC32B: 5ca2e8e5 .
+
+MHash Adler32: 8702d108 .
+HASH-MDF Adler32: 08d10287 .
+===============================================================================
+
+mhash support now appears in the Pear PHP_Compat package, for support without
+building PHP with mhash.
+===============================================================================
+
+---Quote---
+pack("H*", md5($str)) == mhash(MHASH_MD5, $str)
+pack("H*", sha1($str)) == mhash(MHASH_SHA1, $str)
+---/Quote---
+
+That's an awfully inefficient way of doing things. You can just put ", true"
+after md5 or sha1 to get binary output instead of having it convert it to hex
+then back.
+
+Easier way:
+md5($str, true) == mhash(MHASH_MD5, $str)
+sha1($str, true) == mhash(MHASH_SHA1, $str)
+===============================================================================
+
+Just in case you did not observe, the function of Lance is independent of hash
+fuction used to get HMAC , so if one use sha1() function from php instead md5()
+will get sha1 HMAC.
+Just try .
+Thanks again Lance
+===============================================================================
+
+This confused me a bit when I first read the documetation for mhash. The
+functions that accept a hash accept them as an INTEGER not a STRING. In this
+case, MHASH_MD5 = 1. It is a constant, not a string.
+
+Just thought I'd point that out, so if anyone is confused they can read that.
+That's the use of mhash_get_hash_name(). You input the constant (which is an
+integer) and it returns the hash name.
+===============================================================================
+
+Thanks a lot to Lance for showing how to create mhash without installing the
+perl extension for mhash.
+
+I have been asking my webhosting administrator to recompile Perl with mhash
+extension, but do not want to do it. As a result, our company can't get credit
+card authorization because they require fingerprint which uses the function
+mhash. Now, it's working fine.
+
+Thanks a lot, Lance.....
+
+Fernan
+===============================================================================
+
+in responce to lance's post:
+
+the function comes back with a hex representation of the hmac, if you wish to
+convert to what mhash returns natively (binary) use:  pack("H*", hmac
+(variables...));
+===============================================================================
+
+Don't forget php has two built in hashing algorithms:
+
+md5(), and sha1()
+
+So if you are using: mhash(MHASH_MD5, $str) or mhash(MHASH_SHA1, $str) you
+could use md5($str) or sha1($str).
+
+** But remember that md5() and sha1() produce HEX output while mhash() produces
+a BIN output.  So:
+
+md5($str) == bin2hex(mhash(MHASH_MD5, $str))
+sha1($str) == bin2hex(mhash(MHASH_SHA1, $str))
+
+AND
+
+pack("H*", md5($str)) == mhash(MHASH_MD5, $str)
+pack("H*", sha1($str)) == mhash(MHASH_SHA1, $str)
+
+(Just remember to pack() or bin2hex() your output to get the output you need)
+
+-Lance
+===============================================================================
+
+Want to Create a md5 HMAC, but don't have hmash installed?
+
+Use this:
+
+function hmac ($key, $data)
+{
+    // RFC 2104 HMAC implementation for php.
+    // Creates an md5 HMAC.
+    // Eliminates the need to install mhash to compute a HMAC
+    // Hacked by Lance Rushing
+
+    $b = 64; // byte length for md5
+    if (strlen($key) > $b) {
+        $key = pack("H*",md5($key));
+    }
+    $key  = str_pad($key, $b, chr(0x00));
+    $ipad = str_pad('', $b, chr(0x36));
+    $opad = str_pad('', $b, chr(0x5c));
+    $k_ipad = $key ^ $ipad ;
+    $k_opad = $key ^ $opad;
+
+    return md5($k_opad  . pack("H*",md5($k_ipad . $data)));
+}
+
+-----
+To test:
+Run this on a server _with_ mhash installed:
+
+$key = 'Jefe';
+$data = "what do ya want for nothing?";
+echo hmac($key, $data);
+echo "&lt;br&gt;\n";
+echo bin2hex (mhash(MHASH_MD5, $data, $key));
+
+should produce:
+
+750c783e6ab0b503eaa86e310a5db738
+750c783e6ab0b503eaa86e310a5db738
+
+Happy hashing.
+===============================================================================
+
+Netscape messaging / directory server 4+ uses SHA-1
+to store password in the ldap database (slapd).
+The password is first SHA-1 hashed then base64 encoded:
+
+$pwd = "secret";
+$hash = "{SHA}".base64_encode( mHash(MHASH_SHA1, $pwd));
+echo "Hash: ". $hash ;
+===============================================================================
+
+Many digest algorithms (especially MD5) are less secure if you are hashing data
+that is smaller than the algorithm's output.  I recommend either hashing a
+secret key/salt with the original data to increase it's security.

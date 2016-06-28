@@ -1,0 +1,616 @@
+
+mcrypt_encrypt
+
+(PHP 4 >= 4.0.2, PHP 5, PHP 7)
+
+mcrypt_encrypt — 使用给定参数加密明文
+
+说明
+
+string mcrypt_encrypt ( string $cipher , string $key , string $data , string
+$mode [, string $iv ] )
+
+加密数据并返回密文。
+
+参数
+
+cipher
+
+    MCRYPT_ciphername 常量中的一个，或者是字符串值的算法名称。
+
+key
+
+    加密密钥。如果密钥长度不是该算法所能够支持的有效长度，则函数将会发出警告并
+    返回 FALSE
+
+data
+
+    使用给定的 cipher 和 mode 加密的数据。如果数据长度不是 n*分组大小，则在其后
+    使用 '\0' 补齐。
+
+    返回的密文长度可能比 data 更大。
+
+mode
+
+    MCRYPT_MODE_modename 常量中的一个，或以下字符串中的一个："ecb"，"cbc"，
+    "cfb"，"ofb"，"nofb" 和 "stream"。
+
+iv
+
+    Used for the initialization in CBC, CFB, OFB modes, and in some algorithms
+    in STREAM mode. If the provided IV size is not supported by the chaining
+    mode or no IV was provided, but the chaining mode requires one, the
+    function will emit a warning and return FALSE.
+
+返回值
+
+以字符串方式返回密文，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+      不再接受无效长度的 key and iv 参数。如果参数长度无效，则 mcrypt_decrypt()
+5.6.0 函数会产生警告并且返回 FALSE。之前版本中，对于长度不足的密钥和初始向量会
+      在其后补齐 '\0' 使其达到有效长度。
+
+范例
+
+Example #1 mcrypt_encrypt() 例程
+
+<?php
+    # --- 加密 ---
+
+    # 密钥应该是随机的二进制数据，
+    # 开始使用 scrypt, bcrypt 或 PBKDF2 将一个字符串转换成一个密钥
+    # 密钥是 16 进制字符串格式
+    $key = pack('H*', 
+"bcb04b7e103a0cd8b54763051cef08bc55abe029fdebae5e1d417e2ffb2a00a3");
+    
+    # 显示 AES-128, 192, 256 对应的密钥长度：
+    #16，24，32 字节。
+    $key_size =  strlen($key);
+    echo "Key size: " . $key_size . "\n";
+    
+    $plaintext = "This string was AES-256 / CBC / ZeroBytePadding encrypted.";
+
+    # 为 CBC 模式创建随机的初始向量
+    $iv_size = mcrypt_get_iv_size(MCRYPT_RIJNDAEL_128, MCRYPT_MODE_CBC);
+    $iv = mcrypt_create_iv($iv_size, MCRYPT_RAND);
+    
+
+    # 创建和 AES 兼容的密文（Rijndael 分组大小 = 128）
+    # 仅适用于编码后的输入不是以 00h 结尾的
+    # （因为默认是使用 0 来补齐数据）
+    $ciphertext = mcrypt_encrypt(MCRYPT_RIJNDAEL_128, $key,
+                                 $plaintext, MCRYPT_MODE_CBC, $iv);
+
+    # 将初始向量附加在密文之后，以供解密时使用
+    $ciphertext = $iv . $ciphertext;
+    
+    # 对密文进行 base64 编码
+    $ciphertext_base64 = base64_encode($ciphertext);
+
+    echo  $ciphertext_base64 . "\n";
+
+    # === 警告 ===
+
+    # 密文并未进行完整性和可信度保护，
+    # 所以可能遭受 Padding Oracle 攻击。
+    
+    # --- 解密 ---
+    
+    $ciphertext_dec = base64_decode($ciphertext_base64);
+    
+    # 初始向量大小，可以通过 mcrypt_get_iv_size() 来获得
+    $iv_dec = substr($ciphertext_dec, 0, $iv_size);
+    
+    # 获取除初始向量外的密文
+    $ciphertext_dec = substr($ciphertext_dec, $iv_size);
+
+    # 可能需要从明文末尾移除 0
+    $plaintext_dec = mcrypt_decrypt(MCRYPT_RIJNDAEL_128, $key,
+                                    $ciphertext_dec, MCRYPT_MODE_CBC, $iv_dec);
+    
+    echo  $plaintext_dec . "\n";
+?>
+
+以上例程会输出：
+
+Key size: 32
+ENJW8mS2KaJoNB5E5CoSAAu0xARgsR1bdzFWpEn+poYw45q+73az5kYi4j+0haevext1dGrcW8Qi59txfCBV8BBj3bzRP3dFCp3CPQSJ8eU=
+This string was AES-256 / CBC / ZeroBytePadding encrypted.
+
+参见
+
+  • mcrypt_decrypt() - 使用给定参数解密密文
+  • mcrypt_module_open() - 打开算法和模式对应的模块
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+If you're writing code to encrypt/encrypt data in 2015, you should use
+openssl_encrypt() and openssl_decrypt(). The underlying library (libmcrypt) has
+been abandoned since 2007, and performs far worse than OpenSSL (which leverages
+AES-NI on modern processors and is cache-timing safe).
+
+Also, MCRYPT_RIJNDAEL_256 is not AES-256, it's a different variant of the
+Rijndael block cipher. If you want AES-256 in mcrypt, you have to use
+MCRYPT_RIJNDAEL_128 with a 32-byte key. OpenSSL makes it more obvious which
+mode you are using (i.e. 'aes-128-cbc' vs 'aes-256-ctr').
+
+OpenSSL also uses PKCS7 padding with CBC mode rather than mcrypt's NULL byte
+padding. Thus, mcrypt is more likely to make your code vulnerable to padding
+oracle attacks than OpenSSL.
+
+Finally, if you are not authenticating your ciphertexts (Encrypt Then MAC),
+you're doing it wrong.
+
+Further reading:
+
+https://paragonie.com/blog/2015/05/
+using-encryption-and-authentication-correctly
+
+https://paragonie.com/blog/2015/05/
+if-you-re-typing-word-mcrypt-into-your-code-you-re-doing-it-wrong
+===============================================================================
+
+Solving 3DES incompatibilities with .NET's TripleDESCryptoServiceProvider
+
+mcrypt's 3DES only accepts 192 bit keys, but Microsoft's .NET and many other
+tools accept both 128 and 192 bit keys.
+If your key is too short, mcrypt will 'helpfully' pad null characters onto the
+end, but .NET refuses to use a key where the last third is all null (this is a
+Bad Key). This prevents you from emulating mcrypt's "short key" behaviour in
+.NET.
+
+How to reconcile this? A little DES theory is in order
+3DES runs the DES algorithm three times, using each third of your 192 bit key
+as the 64 bit DES key
+
+Encrypt Key1 -> Decrypt Key2 -> Encrypt Key3
+
+and both .NET and PHP's mcrypt do this the same way.
+The problem arises in short key mode on .NET, since 128 bits is only two 64 bit
+DES keys
+The algorithm that they use then is:
+
+Encrypt Key1 -> Decrypt Key2 -> Encrypt Key1
+
+mcrypt does not have this mode of operation natively.
+but before you go and start running DES three times yourself, here's a Quick
+Fix
+<?php
+$my_key = "12345678abcdefgh"; // a 128 bit (16 byte) key
+$my_key .= substr($my_key,0,8); // append the first 8 bytes onto the end
+$secret = mcrypt_encrypt(MCRYPT_3DES, $my_key, $data, MCRYPT_MODE_CBC, $iv);  /
+/CBC is the default mode in .NET
+?>
+
+And, like magic, it works.
+
+There's one more caveat: Data padding
+mcrypt always pads data will the null character
+but .NET has two padding modes: "Zeros" and "PKCS7"
+Zeros is identical to the mcrypt scheme, but PKCS7 is the default.
+PKCS7 isn't much more complex, though:
+instead of nulls, it appends the total number of padding bytes (which means,
+for 3DES, it can be a value from 0x01 to 0x07)
+if your plaintext is "ABC", it will be padded into:
+0x41 0x42 0x43 0x05 0x05 0x05 0x05 0x05
+
+You can remove these from a decrypted string in PHP by counting the number of
+times that last character appears, and if it matches it's ordinal value,
+truncating the string by that many characters:
+<?php
+    $block = mcrypt_get_block_size('tripledes', 'cbc');
+    $packing = ord($text{strlen($text) - 1});
+    if($packing and ($packing < $block)){
+      for($P = strlen($text) - 1; $P >= strlen($text) - $packing; $P--){
+    if(ord($text{$P}) != $packing){
+      $packing = 0;
+    }
+      }
+    }
+    $text = substr($text,0,strlen($text) - $packing);
+?>
+
+And to pad a string that you intend to decrypt with .NET, just add the chr()
+value of the number of padding bytes:
+<?php
+    $block = mcrypt_get_block_size('tripledes', 'cbc');
+    $len = strlen($dat);
+    $padding = $block - ($len % $block);
+    $dat .= str_repeat(chr($padding),$padding);
+?>
+
+That's all there is to it.
+Knowing this, you can encrypt, decrypt, and duplicate exactly any .NET 3DES
+behaviour in PHP.
+===============================================================================
+
+In the other notes there are some misconceptions about crypto and the IV,
+especially for CBC mode.
+
+The most important point: Encryption DOES NOT provide any proof of data
+integrity or authentication WHATSOEVER. If you need to be sure that the data is
+secret and not tampered with, you need to encrypt THEN use a keyed HMAC.
+
+For CBC mode, the IV DOES NOT need to be secret. It can be sent along with the
+plaintext. It needs to be UNIQUE and RANDOM. So that every message is encrypted
+with a different IV.
+
+The best way to generate an IV is to use mcrypt_create_iv().
+
+Keys must be binary, not ASCII. To create a key from a password:
+
+<?php
+$password = "MyPassword!1!";
+$aes256Key = hash("SHA256", $password, true); //we want a 32 byte binary blob
+?>
+===============================================================================
+
+Note that the IV must be the same for mcrypt_encrypt and mcrypt_decrypt,
+otherwise you will have corrupted data after decryption.
+===============================================================================
+
+I should mention that ECB mode ignores the IV, so it is misleading to show an
+example using both MCRYPT_MODE_ECB and an IV (the example in the manual shows
+the same thing).  Also, it's important to know that ECB is useful for random
+data, but structured data should use a stronger mode like MCRYPT_MODE_CBC
+
+Also, rtrim($decryptedtext, "\0") would be a better option to remove NULL
+padding than my lazy trim()...
+===============================================================================
+
+It is always better to use a standard encryption cipher's rather than to "roll
+your own", firstly the standard cipher has been tested by world class
+crypto-analysis's where as unless your a world class crypto-analysis (and if
+you are why are you even thinking of rolling your own?!?) you won't have the
+skills needed to even test it (for example if you just XOR each character with
+a key, it may look secure (the text will be different) but if you count the
+number of times a character is repeated you see whatever the letter "E"
+encrypts to occurs more often then the encrypted "Z" (assuming English language
+plain text)
+
+Secondly, you may think that the hidden nature of your cipher makes it more
+secure, but the fact is that your cipher is likely *only* secure because it's
+secret, if someone what able to break-in to your site and steal your code (but
+not your key) they maybe able break you encrypted data, if someone broke in and
+found you where using Blowfish (for example) it wouldn't help them.
+===============================================================================
+
+I was trying (and succeeded) to encrypt and decrypt in JAVA, pass it to php,
+and do it again,without corrupting data when I noticed something interesting.
+So, my code goes like this:
+$data = 'one';
+$key = '1234567890123456';
+
+function encrypt($data, $key){
+    return base64_encode(
+    mcrypt_encrypt(
+        MCRYPT_RIJNDAEL_128,
+        $key,
+        $data,
+        MCRYPT_MODE_CBC,
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+    )
+);
+}
+function decrypt($data, $key){
+    $decode = base64_decode($data);
+    return mcrypt_decrypt(
+                    MCRYPT_RIJNDAEL_128,
+                    $key,
+                    $decode,
+                    MCRYPT_MODE_CBC,
+                    "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+            );
+   
+   
+}
+$encrypted = encrypt($data, $key);
+$decrypted= decrypt($encrypted, $key);
+
+//In the beginning, I thought something's wrong, because I did '===' comparison
+between $decrypted and $data. It didn't work (but later started working, again,
+dont know why...) So, I dumped both:
+var_dump($data);
+var_dump($decrypted);
+//Results:
+string(16) "one"
+string(16) "one"
+//Clearly, the length of both is 3, not 16. Just wanted to let you know what
+could happen, and I really don't know if this is a bug...
+Thanks,
+S.
+===============================================================================
+
+I've noticed some people using a-z, A-Z and 0-9 for keys and stating things
+like "16 characters is a 128-bit key". This isn't true. Using only these
+characters, you will get at most 6 bits of entropy per chartacter:
+
+log2(26 + 26 + 10) = 5.954196310386876
+
+So you're actually only getting 95 bits of entropy in 16 characters, which is
+0.0000000117% of the keyspace you would get if you were using the full range.
+
+In order to get the full entropy from a key using just a-z, A-Z and 0-9 you
+should multiply your key length by 1.3333 to account for the 2 bits of lost
+entropy per byte.
+===============================================================================
+
+The encryption has no authenticity check. It can be achieved with three
+methods, described in http://en.wikipedia.org/wiki/Authenticated_encryption#
+Approaches_to_Authenticated_Encryption
+Encrypt-then-MAC (EtM), Encrypt-and-MAC (E&M), MAC-then-Encrypt (MtE).
+
+The following is a suggestion for MtE:
+
+<?php
+        public static function getMacAlgoBlockSize($algorithm = 'sha1')
+        {
+            switch($algorithm)
+            {
+                case 'sha1':
+                {
+                    return 160;
+                }
+                default:
+                {
+                    return false;
+                    break;
+                }
+            }
+        }
+
+        public static function decrypt($message, $key, $mac_algorithm = 'sha1',
+                                           $enc_algorithm = MCRYPT_RIJNDAEL_256
+, $enc_mode = MCRYPT_MODE_CBC)
+        {
+            $message= base64_decode($message);
+            $iv_size = mcrypt_get_iv_size($enc_algorithm, $enc_mode);
+
+            $iv_dec = substr($message, 0, $iv_size);
+            $message= substr($message, $iv_size);
+
+            $message= mcrypt_decrypt($enc_algorithm, $key, $message, $enc_mode,
+$iv_dec);
+
+            $mac_block_size = ceil(static::getMacAlgoBlockSize($mac_algorithm)/
+8);
+            $mac_dec = substr($message, 0, $mac_block_size);
+            $message= substr($message, $mac_block_size);
+
+            $mac = hash_hmac($mac_algorithm, $message, $key, true);
+
+            if($mac_dec == $mac)
+            {
+                return $password;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        public static function encrypt($message, $key, $mac_algorithm = 'sha1',
+                                           $enc_algorithm = MCRYPT_RIJNDAEL_256
+, $enc_mode = MCRYPT_MODE_CBC)
+        {
+
+            $mac = hash_hmac($mac_algorithm, $message, $key, true);
+            $mac = substr($mac, 0, ceil(static::getMacAlgoBlockSize(
+$mac_algorithm)/8));
+            $message= $mac . $message;
+
+            $iv_size = mcrypt_get_iv_size($enc_algorithm, $enc_mode);
+            $iv = mcrypt_create_iv($iv_size, MCRYPT_RAND);
+
+            $ciphertext = mcrypt_encrypt($enc_algorithm, $key,
+                                         $message, $enc_mode, $iv);
+
+            return base64_encode($iv . $ciphertext);
+        }
+?>
+===============================================================================
+
+I always use this method to prevent a lot of errors
+
+function encrypt( $string ) {
+  $algorithm = 'rijndael-128'; // You can use any of the available
+  $key = md5( "mypassword", true); // bynary raw 16 byte dimension.
+  $iv_length = mcrypt_get_iv_size( $algorithm, MCRYPT_MODE_CBC );
+  $iv = mcrypt_create_iv( $iv_length, MCRYPT_RAND );
+  $encrypted = mcrypt_encrypt( $algorithm, $key, $string, MCRYPT_MODE_CBC, $iv
+);
+  $result = base64_encode( $iv . $encrypted );
+  return $result;
+}
+function decrypt( $string ) {
+  $algorithm =  'rijndael-128';
+  $key = md5( "mypassword", true );
+  $iv_length = mcrypt_get_iv_size( $algorithm, MCRYPT_MODE_CBC );
+  $string = base64_decode( $string );
+  $iv = substr( $string, 0, $iv_length );
+  $encrypted = substr( $string, $iv_length );
+  $result = mcrypt_decrypt( $algoritmo, $key, $encrypted, MCRYPT_MODE_CBC, $iv
+);
+  return $result;
+}
+===============================================================================
+
+Contrary to what is implied in the mcrypt_encrypt() manual page, as well as the
+info given regarding the CBC vs CFB modes, mcrypt_encrypt() works just fine for
+encrypting binary data as well.
+
+A simple example verifies that the decrypted output is binary identical once
+cut to its original length:
+
+<?php
+
+// 448-bit key (56 bytes) - the only size that mcrypt/php uses for the Blowfish
+cipher
+// (using a smaller key works just fine, as mcrypt appends \0 to reach proper
+key-size)
+$key = 'SADFo92jzVnzSj39IUYGvi6eL8v6RvJH8Cytuiouh547vCytdyUFl76R';
+
+// Blowfish/CBC uses an 8-byte IV
+$iv = substr( md5(mt_rand(),true), 0, 8 );
+
+// do 50 encrypt/decrypt operations on some random data, and verify integrity
+with md5()
+for( $i = 0; $i < 50; $i++ )
+{
+    // create a random, binary string of random length
+    $size = mt_rand( 25000, 500000 );
+    $c = 0; $data = null;
+    while( $c++ * 16 < $size )
+        $data .= md5( mt_rand(), true );
+    $data = substr( $data, 0, $size );
+    $cksum = md5( $data );
+
+    // encrypt using Blowfish/CBC
+    $enc = mcrypt_encrypt( MCRYPT_BLOWFISH, $key, $data, MCRYPT_MODE_CBC, $iv 
+);
+
+    echo $size . ' -> ' . strlen( $enc ) . ' -> ';
+
+    // decrypt (using same IV - a must for the CBC mode)
+    $dec = mcrypt_decrypt( MCRYPT_BLOWFISH, $key, $enc, MCRYPT_MODE_CBC, $iv );
+
+    // cut the output with substr(), NOT by using rtrim() as is suggested in
+some of
+    // the mcrypt manual pages - this is binary data, not plaintext
+    echo ( md5(substr($dec, 0, $size)) == $cksum ? 'ok' : 'bad' ) . PHP_EOL;
+}
+
+?>
+===============================================================================
+
+Please note that the following part of the documentation is no longer true
+(after commit: http://git.php.net/?p=php-src.git;a=commit;h=
+a861a3a93d89a50ce58e1ab1abef1eb501f97483):
+
+> key
+> The key with which the data will be encrypted. If it's smaller than the
+required keysize, it is padded with '\0'. It is better not to use ASCII strings
+for keys.
+
+That commit changed the behaviour to be strict and if the keysize is smaller
+than the required size a warning will be issued as follows:
+
+Warning: mcrypt_encrypt(): Key of size 10 not supported by this algorithm. Only
+keys of size 16 supported in script.php on line 5
+
+and the mcrypt_encode() will return failure.
+===============================================================================
+
+Most of the user-written cipher examples here are badly broken, and there are a
+few cases where the manual says things that are outright incorrect, such as
+that it's "safe to transmit the initialization vector in plaintext" (this is
+incorrect: see Ciphers By Ritter, http://www.ciphersbyritter.com/GLOSSARY.HTM#
+IV ,  for details.)
+
+mcrypt itself is perfectly safe, but correct and therefore safe usage is
+inobvious.  It is important to use a cryptographic library correctly; a simple
+usage error, even when it produces results that can be unpacked at the other
+side, can render a strong algorithm completely useless.
+
+The initialization vector must be permuted with a recoverable noise source (an
+arbitrary md5 hash is acceptable, since it's just a fake OTP and its origin
+contents are wholly unimportant.)
+
+Passwords should be remade with a salted one-way hash (md5 is again acceptable
+even though it's been damaged, since the only thing you could recover from a
+cracked md5 hash is the source data to generate the password, which is
+useless.)
+
+It's important to use a sane block mode (OFB is unsafe for almost all
+algorithms; never use it.  Prefer CBC in all cases except where you need to
+deal with a degraded signal and cannot retransmit.)
+
+A correct usage example is actually pretty long and needs a lot of explanation,
+so I developed a safe wrapper library which doesn't constrain usage and which
+comments itself very heavily.  It's appropriate for use or for learning. 
+Please see my blog for details on Stone PHP SafeCrypt:
+
+http://blog.sc.tri-bit.com/archives/101
+===============================================================================
+
+Mcript - Dot NET - 3DES problem.
+
+This is a solution for the 3DES algorithm's problem in his interaction with
+.NET TripleDESCryptoServiceProvider (System.Security.Cryptography), CBC mode, 
+because the key is completed to 192bits and the text is padded.
+
+So, we has two problems:
+           - The key's completion  was posted by "jesse at pctest dot com".
+           - The text padding also posted by him, but the completion is a
+little different. The padding bytes are 0x01 to 0x08 because completed to 8
+bytes blocks. If your text have a whole number of 8 bytes blocks, the algorithm
+add other block with padded bytes (0x08).
+
+This is a function to encrypt a text in a equal form that the Dot NET
+algorithm:
+
+<?PHP
+function encryptNET3DES($key, $vector, $text){
+    $td = mcrypt_module_open (MCRYPT_3DES, '', MCRYPT_MODE_CBC, '');
+
+    // Complete the key
+    $key_add = 24-strlen($key);
+    $key .= substr($key,0,$key_add);
+
+    // Padding the text
+    $text_add = strlen($text)%8;
+    for($i=$text_add; $i<8; $i++){
+        $text .= chr(8-$text_add);
+    }
+
+    mcrypt_generic_init ($td, $key, $vector);
+    $encrypt64 = mcrypt_generic ($td, $text);
+    mcrypt_generic_deinit($td);
+    mcrypt_module_close($td);
+
+     // Return the encrypt text in 64 bits code
+    return $encrypt64;
+}
+?>
+===============================================================================
+
+I tried to implement the mcrypt with rijndael-128. For reference I took the
+code from example #1 and tried running that first, but on the decryption part
+came back with the error: "The IV parameter must be as long as the blocksize".
+After a while i figured out that the generated IV string will not have the same
+length every run, and is almost never the size of the result of
+mcrypt_get_iv_size. To work around that, before merging the IV and the
+encrypted text, I added null padding to match the IV size. When retrieving the
+IV, I then could use the IV size and rtrim null padding to get the matching IV
+back.
+
+The altered parts from example #1
+
+<?php
+    # --- ENCRYPTION ---
+    $iv_size = mcrypt_get_iv_size(MCRYPT_RIJNDAEL_128, MCRYPT_MODE_CBC);
+    $iv = mcrypt_create_iv($iv_size, MCRYPT_RAND);
+
+    $ciphertext = mcrypt_encrypt(MCRYPT_RIJNDAEL_128, $key,
+                                 $plaintext, MCRYPT_MODE_CBC, $iv);
+
+    # Add null padding to match the espected size
+    while(strlen($iv) < $iv_size){
+        $iv .= "\0";
+    }
+   
+    # prepend the IV for it to be available for decryption
+    $ciphertext = $iv . $ciphertext;
+?>
+
+<?php
+    # --- DECRYPTION ---
+    mcrypt_get_iv_size()
+    $iv_dec = rtrim(substr($ciphertext_dec, 0, $iv_size));
+?>

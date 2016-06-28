@@ -1,0 +1,351 @@
+
+ErrorException
+
+(PHP 5 >= 5.1.0, PHP 7)
+
+简介
+
+错误异常。
+
+类摘要
+
+ErrorException extends Exception {
+/* 属性 */
+protected int $severity ;
+/* 方法 */
+public __construct ([ string $message = "" [, int $code = 0 [, int $severity =
+1 [, string $filename = __FILE__ [, int $lineno = __LINE__ [, Exception
+$previous = NULL ]]]]]] )
+final public int getSeverity ( void )
+/* 继承的方法 */
+final public string Exception::getMessage ( void )
+final public Exception Exception::getPrevious ( void )
+final public int Exception::getCode ( void )
+final public string Exception::getFile ( void )
+final public int Exception::getLine ( void )
+final public array Exception::getTrace ( void )
+final public string Exception::getTraceAsString ( void )
+public string Exception::__toString ( void )
+final private void Exception::__clone ( void )
+}
+
+属性
+
+severity
+
+    异常级别
+
+范例
+
+Example #1 使用set_error_handler()函数将错误信息托管至ErrorException
+
+<?php
+function exception_error_handler($errno, $errstr, $errfile, $errline ) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+}
+set_error_handler("exception_error_handler");
+
+/* Trigger exception */
+strpos();
+?>
+
+以上例程的输出类似于：
+
+Fatal error: Uncaught exception 'ErrorException' with message 'Wrong parameter count for strpos()' in /home/bjori/tmp/ex.php:8
+Stack trace:
+#0 [internal function]: exception_error_handler(2, 'Wrong parameter...', '/home/bjori/php...', 8, Array)
+#1 /home/bjori/php/cleandocs/test.php(8): strpos()
+#2 {main}
+  thrown in /home/bjori/tmp/ex.php on line 8
+
+Table of Contents
+
+  • ErrorException::__construct — 异常构造函数
+  • ErrorException::getSeverity — 获取异常的严重程度
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+E_USER_WARNING, E_USER_NOTICE, and any other non-terminating error codes, are
+useless and act like E_USER_ERROR (which terminate) when you combine a custom
+ERROR_HANDLER with ErrorException and do not CATCH the error. There is NO way
+to return execution to the parent scope in the EXCEPTION_HANDLER.
+
+<?php
+   
+    error_reporting(E_ALL);
+    define('DEBUG', true);
+    define('LINEBREAK', "\r\n");
+   
+    error::initiate('./error_backtrace.log');
+   
+    try
+        trigger_error("First error", E_USER_NOTICE);
+    catch ( ErrorException $e )
+        print("Caught the error: ".$e->getMessage."<br />\r\n" );
+   
+    trigger_error("This event WILL fire", E_USER_NOTICE);
+   
+    trigger_error("This event will NOT fire", E_USER_NOTICE);
+   
+    abstract class error {
+       
+        public static $LIST = array();
+       
+        private function __construct() {}
+       
+        public static function initiate( $log = false ) {
+            set_error_handler( 'error::err_handler' );
+            set_exception_handler( 'error::exc_handler' );
+            if ( $log !== false ) {
+                if ( ! ini_get('log_errors') )
+                    ini_set('log_errors', true);
+                if ( ! ini_get('error_log') )
+                    ini_set('error_log', $log);
+            }
+        }
+       
+        public static function err_handler($errno, $errstr, $errfile, $errline,
+$errcontext) {
+            $l = error_reporting();
+            if ( $l & $errno ) {
+               
+                $exit = false;
+                switch ( $errno ) {
+                    case E_USER_ERROR:
+                        $type = 'Fatal Error';
+                        $exit = true;
+                    break;
+                    case E_USER_WARNING:
+                    case E_WARNING:
+                        $type = 'Warning';
+                    break;
+                    case E_USER_NOTICE:
+                    case E_NOTICE:
+                    case @E_STRICT:
+                        $type = 'Notice';
+                    break;
+                    case @E_RECOVERABLE_ERROR:
+                        $type = 'Catchable';
+                    break;
+                    default:
+                        $type = 'Unknown Error';
+                        $exit = true;
+                    break;
+                }
+               
+                $exception = new \ErrorException($type.': '.$errstr, 0, $errno,
+$errfile, $errline);
+               
+                if ( $exit ) {
+                    exc_handler($exception);
+                    exit();
+                }
+                else
+                    throw $exception;
+            }
+            return false;
+        }
+       
+        function exc_handler($exception) {
+            $log = $exception->getMessage() . "\n" . $exception->
+getTraceAsString() . LINEBREAK;
+            if ( ini_get('log_errors') )
+                error_log($log, 0);
+            print("Unhandled Exception" . (DEBUG ? " - $log" : ''));
+        }
+       
+    }
+?>
+===============================================================================
+
+To add to the comments made by chris AT cmbuckley DOT co DOT uk about the
+ErrorException problem with args:
+
+I noticed that the problem is in the ErrorException class itself, not the
+Exception class. When using just the exception class, it's no longer an issue.
+Besides the args problem, the only difference between Exception and
+ErrorException in the stack trace is that the args are left out of the error
+handler exception function. I'm not sure if this was on purpose or not, but it
+shouldn't hurt to show this information anyway.
+
+So instead of using this broken extended class, you can ignore it and make your
+own extended class and avoid the problem all together:
+
+<?php
+
+header('Content-Type: text/plain');
+
+class ErrorHandler extends Exception {
+    protected $severity;
+   
+    public function __construct($message, $code, $severity, $filename, $lineno)
+{
+        $this->message = $message;
+        $this->code = $code;
+        $this->severity = $severity;
+        $this->file = $filename;
+        $this->line = $lineno;
+    }
+   
+    public function getSeverity() {
+        return $this->severity;
+    }
+}
+
+function exception_error_handler($errno, $errstr, $errfile, $errline ) {
+    throw new ErrorHandler($errstr, 0, $errno, $errfile, $errline);
+}
+
+set_error_handler("exception_error_handler", E_ALL);
+
+function A() {
+    $foo->bar; // Purposely cause error
+}
+
+function B($c) {
+    A();
+}
+
+try {
+    B('foobar');
+} catch (Exception $e) {
+    var_dump($e->getTrace());
+}
+
+?>
+
+The only thing I wish I could do was remove the entry for the error handler
+function because it's quite irrelevant. Maybe that's what they were trying to
+do with the ErrorException class? Either way, you can't change it because the
+trace functions are final, and the variable is private.
+===============================================================================
+
+As noted below, it's important to realize that unless caught, any Exception
+thrown will halt the script.  So converting EVERY notice, warning, or error to
+an ErrorException will halt your script when something harmlesss like
+E_USER_NOTICE is triggered.
+
+It seems to me the best use of the ErrorException class is something like this:
+
+<?php
+function custom_error_handler($number, $string, $file, $line, $context)
+{
+    // Determine if this error is one of the enabled ones in php config
+(php.ini, .htaccess, etc)
+    $error_is_enabled = (bool)($number & ini_get('error_reporting') );
+   
+    // -- FATAL ERROR
+    // throw an Error Exception, to be handled by whatever Exception handling
+logic is available in this context
+    if( in_array($number, array(E_USER_ERROR, E_RECOVERABLE_ERROR)) && 
+$error_is_enabled ) {
+        throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+    }
+   
+    // -- NON-FATAL ERROR/WARNING/NOTICE
+    // Log the error if it's enabled, otherwise just ignore it
+    else if( $error_is_enabled ) {
+        error_log( $string, 0 );
+        return false; // Make sure this ends up in $php_errormsg, if
+appropriate
+    }
+}
+?>
+
+Setting this function as the error handler will result in ErrorExceptions only
+being thrown for E_USER_ERROR and E_RECOVERABLE_ERROR, while other enabled
+error types will simply get error_log()'ed.
+
+It's worth noting again that no matter what you do, "E_ERROR, E_PARSE,
+E_CORE_ERROR, E_CORE_WARNING, E_COMPILE_ERROR, E_COMPILE_WARNING, and most of
+E_STRICT" will never reach your custom error handler, and therefore will not be
+converted into ErrorExceptions.  Plan accordingly.
+===============================================================================
+
+<?php
+function exception_error_handler($errno, $errstr, $errfile, $errline ) {
+    throw new ErrorException($errstr, $errno, 0, $errfile, $errline);
+}
+set_error_handler("exception_error_handler");
+
+/* Trigger exception */
+strpos();
+?>
+
+Please note that property $severity of class ErrorException is set to a
+constant zero for all kinds of errors in the above example.
+
+I think it was a bug and tried to file a bug report, but it was closed as not a
+bug, so I could not say the above is wrong.
+
+Let me show an example that uses $severity not as a constant:
+<?php
+  set_error_handler(function ($errno, $errstr, $errfile, $errline) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+  });
+
+  class MyClass {
+    public function methodA() {
+      echo("methodA:\n");
+      strpos();
+    }
+
+    public function methodB() {
+      echo("methodB:\n");
+      trigger_error("warning message form methodB", E_WARNING);
+    }
+
+    public function methodC() {
+      echo("methodC:\n");
+      throw new ErrorException();
+    }
+
+    public function methodD() {
+      echo("methodD:\n");
+      throw new ErrorException('warning message from methodD', 0,
+E_WARNING);
+    }
+
+    public function run($i) {
+        if ($i === 0) {
+          $this->methodA();
+        } else if ($i === 1) {
+          $this->methodB();
+        } else if ($i === 2) {
+          $this->methodC();
+        } else {
+          $this->methodD();
+        }
+    }
+
+    public function test() {
+      for ($i = 0; $i < 4; ++$i) {
+        try {
+            $this->run($i);
+        } catch (ErrorException $e) {
+          if ($e->getSeverity() === E_ERROR) {
+            echo("E_ERROR triggered.\n");
+          } else if ($e->getSeverity() === E_WARNING) {
+            echo("E_WARNING triggered.\n");
+          }
+        }
+      }
+    }
+  }
+
+  $myClass = new MyClass();
+  $myClass->test();
+?>
+
+Please note that methodC() uses (constructor of) class ErrorException with
+default parameters.
+
+I believe it is the original intention to make $severity having default value
+of 1, which is exactly equal to E_ERROR.
+
+Using property $code or Exception::getCode() to compare with E_* values could
+not do the same thing (as in methodC()), as $code has a default value of 0, and
+class Exception has it too, users may use $code for some other purposes.

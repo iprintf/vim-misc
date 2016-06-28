@@ -1,0 +1,509 @@
+
+curl_multi_exec
+
+(PHP 5, PHP 7)
+
+curl_multi_exec — 运行当前 cURL 句柄的子连接
+
+说明
+
+int curl_multi_exec ( resource $mh , int &$still_running )
+
+处理在栈中的每一个句柄。无论该句柄需要读取或写入数据都可调用此方法。
+
+参数
+
+mh
+
+    由 curl_multi_init() 返回的 cURL 多个句柄。
+
+still_running
+
+    一个用来判断操作是否仍在执行的标识的引用。
+
+返回值
+
+一个定义于 cURL 预定义常量中的 cURL 代码。
+
+    Note:
+
+    该函数仅返回关于整个批处理栈相关的错误。即使返回 CURLM_OK 时单个传输仍可能
+    有问题。
+
+范例
+
+Example #1 curl_multi_exec() example
+
+这个范例将会创建 2 个 cURL 句柄，把它们加到批处理句柄，然后并行地运行它们。
+
+<?php
+// 创建一对cURL资源
+$ch1 = curl_init();
+$ch2 = curl_init();
+
+// 设置URL和相应的选项
+curl_setopt($ch1, CURLOPT_URL, "http://lxr.php.net/");
+curl_setopt($ch1, CURLOPT_HEADER, 0);
+curl_setopt($ch2, CURLOPT_URL, "http://www.php.net/");
+curl_setopt($ch2, CURLOPT_HEADER, 0);
+
+// 创建批处理cURL句柄
+$mh = curl_multi_init();
+
+// 增加2个句柄
+curl_multi_add_handle($mh,$ch1);
+curl_multi_add_handle($mh,$ch2);
+
+$active = null;
+// 执行批处理句柄
+do {
+    $mrc = curl_multi_exec($mh, $active);
+} while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+while ($active && $mrc == CURLM_OK) {
+    if (curl_multi_select($mh) != -1) {
+        do {
+            $mrc = curl_multi_exec($mh, $active);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+    }
+}
+
+// 关闭全部句柄
+curl_multi_remove_handle($mh, $ch1);
+curl_multi_remove_handle($mh, $ch2);
+curl_multi_close($mh);
+
+?>
+
+参见
+
+  • curl_multi_init() - 返回一个新cURL批处理句柄
+  • curl_multi_select() - 等待所有cURL批处理中的活动连接
+  • curl_exec() - 执行一个cURL会话
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Solve CPU 100% usage, a more simple and right way:
+
+<?php
+
+do {
+    curl_multi_exec($mh, $running);
+    curl_multi_select($mh);
+} while ($running > 0);
+
+?>
+===============================================================================
+
+Probably you also want to be able to download the HTML content into buffers/
+variables, for parsing the HTML or for other processing in your program.
+
+The example code on this page only outputs everything on the screen, without
+giving you the possibility to save the downloaded pages in string variables.
+Because downloading multiple pages is what I wanted to do (not a big surprise,
+huh? that's the reason for using multi-page parallel Curl) I was initially
+baffled, because this page doesn't give pointers to a guide how to do that.
+
+Fortunately, there's a way to download content with parallel Curl requests
+(just like you would do for a single download with the regular curl_exec). You
+need to use: http://php.net/manual/en/function.curl-multi-getcontent.php
+
+The function curl_multi_getcontent should definitely be mentioned in the "See
+Also" section of curl_multi_exec. Probably most people who find their way to
+the docs page of curl_multi_exec, actually want to download the multiple HTML
+pages (or other content from the multiple parallel Curl connections) into
+buffers, one page per one buffer.
+===============================================================================
+
+http://curl.haxx.se/libcurl/c/libcurl-multi.html
+
+"When you've added the handles you have for the moment (you can still add new
+ones at any time), you start the transfers by call curl_multi_perform(3).
+
+curl_multi_perform(3) is asynchronous. It will only execute as little as
+possible and then return back control to your program. It is designed to never
+block. If it returns CURLM_CALL_MULTI_PERFORM you better call it again soon, as
+that is a signal that it still has local data to send or remote data to
+receive."
+
+So it seems the loop in sample script should look this way:
+
+<?php
+$running=null;
+//execute the handles
+do {
+    while (CURLM_CALL_MULTI_PERFORM === curl_multi_exec($mh, $running));
+    if (!$running) break;
+    while (($res = curl_multi_select($mh)) === 0) {};
+    if ($res === false) {
+        echo "<h1>select error</h1>";
+        break;
+    }
+} while (true);
+?>
+
+This worked fine (PHP 5.2.5 @ FBSD 6.2) without running non-blocked loop and
+wasting CPU time.
+
+However this seems to be the only use of curl_multi_select, coz there's no
+simple way to bind it with other PHP wrappers for select syscall.
+===============================================================================
+
+I tried Daniel G Zylberberg's function and
+it was not working the way it was posted.
+I made some changes to get it work and here is what I use:
+
+function multiCurl($res, $options=""){
+
+        if(count($res)<=0) return False;
+
+        $handles = array();
+
+        if(!$options) // add default options
+            $options = array(
+                CURLOPT_HEADER=>0,
+                CURLOPT_RETURNTRANSFER=>1,
+            );
+
+        // add curl options to each handle
+        foreach($res as $k=>$row){
+            $ch{$k} = curl_init();
+            $options[CURLOPT_URL] = $row['url'];
+            $opt = curl_setopt_array($ch{$k}, $options);
+            var_dump($opt);
+            $handles[$k] = $ch{$k};
+        }
+
+        $mh = curl_multi_init();
+
+        // add handles
+        foreach($handles as $k => $handle){
+            $err = curl_multi_add_handle($mh, $handle);           
+        }
+
+        $running_handles = null;
+
+        do {
+          curl_multi_exec($mh, $running_handles);
+          curl_multi_select($mh);
+        } while ($running_handles > 0);
+      
+        foreach($res as $k=>$row){
+            $res[$k]['error'] = curl_error($handles[$k]);
+            if(!empty($res[$k]['error']))
+                $res[$k]['data']  = '';
+            else
+                $res[$k]['data']  = curl_multi_getcontent( $handles[$k] );  //
+get results
+
+            // close current handler
+            curl_multi_remove_handle($mh, $handles[$k] );
+        }
+        curl_multi_close($mh);
+        return $res; // return response
+}
+===============================================================================
+
+// Todas url gravadas em array
+$url[] = 'http://www.link1.com.br';
+$url[] = 'https://www.link2.com.br';
+$url[] = 'https://www.link3.com.br';
+
+// Setando opção padrão para todas url e adicionando a fila para processamento
+$mh = curl_multi_init();
+foreach($url as $key => $value){
+  $ch[$key] = curl_init($value);
+  curl_setopt($ch[$key], CURLOPT_NOBODY, true);
+  curl_setopt($ch[$key], CURLOPT_HEADER, true);
+  curl_setopt($ch[$key], CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch[$key], CURLOPT_SSL_VERIFYPEER, false);
+  curl_setopt($ch[$key], CURLOPT_SSL_VERIFYHOST, false);
+ 
+  curl_multi_add_handle($mh,$ch[$key]);
+}
+
+// Executando consulta
+do {
+  curl_multi_exec($mh, $running);
+  curl_multi_select($mh);
+} while ($running > 0);
+
+// Obtendo dados de todas as consultas e retirando da fila
+foreach(array_keys($ch) as $key){
+  echo curl_getinfo($ch[$key], CURLINFO_HTTP_CODE);
+  echo curl_getinfo($ch[$key], CURLINFO_EFFECTIVE_URL);
+  echo "\n";
+ 
+  curl_multi_remove_handle($mh, $ch[$key]);
+}
+
+// Finalizando
+curl_multi_close($mh);
+===============================================================================
+
+当在OS X mavericks中运行curl_multi_exec()时，
+可能会得不到想要的结果，
+因为脚本会一直执行但是却没有返回值，
+这是因为在OS X中当php在5.3.8以上版本时，
+在调用curl_multi_exec()方法之前curl_multi_select()会一直返回-1，
+所以这里改写一下脚本，
+可以在OS X中成功执行：
+
+<?php
+
+$ch1 = curl_init();
+$ch2 = curl_init();
+
+// 设置URL和相应的选项
+curl_setopt($ch1, CURLOPT_URL, "http://lxr.php.net");
+curl_setopt($ch1, CURLOPT_HEADER, 0);
+curl_setopt($ch2, CURLOPT_URL, "http://www.php.net");
+curl_setopt($ch2, CURLOPT_HEADER, 0);
+
+// 创建批处理cURL句柄
+$mh = curl_multi_init();
+
+// 增加2个句柄
+curl_multi_add_handle($mh,$ch1);
+curl_multi_add_handle($mh,$ch2);
+
+$active = null;
+
+do {
+    $mrc = curl_multi_exec($mh, $active);
+} while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+while ($active && $mrc == CURLM_OK)
+{  
+   // add this line
+   while (curl_multi_exec($mh, $active) === CURLM_CALL_MULTI_PERFORM);
+
+   if (curl_multi_select($mh) != -1)
+   {  
+       do {
+           $mrc = curl_multi_exec($mh, $active);
+           if ($mrc == CURLM_OK)
+           {  
+               while($info = curl_multi_info_read($mh))
+               {  
+                   var_dump($info);
+               }       
+           }  
+       } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+   }  
+}
+
+//close the handles
+curl_multi_remove_handle($mh, $ch1);
+curl_multi_remove_handle($mh, $ch2);
+curl_multi_close($mh);
+
+?>
+===============================================================================
+
+Here's something that had me pulling my hair out for quite a while. I was
+trying to download multiple files and save each one in a file. If you want to
+read the file again in the same script that has downloaded the url, always make
+sure to close the original filehandle that you opened for the connection BEFORE
+trying to read from the file again, even if you open a new filehandle to do so.
+If you don't do this, a file_get_contents() or fread() will cut your file and
+only return a limited size of it, 40960 characters in my case, without any
+other explanation or error. The file will exist (and be complete) on your disk,
+PHP just wont show it.
+
+I (perhaps mistakenly) thought this was a bug so I created a bug report, see it
+for examples of the code I used to recreate this misterious behavior:
+https://bugs.php.net/bug.php?id=62409
+===============================================================================
+
+> replying to viczbk.ru
+
+Just sharing my attempt at it.
+
+> while (($res = curl_multi_select($mh)) === 0) {};
+This worked on my windows computer (php 5.2.5) but when I ran the curl program
+in my new centOS server (php 5.1.6) the function never updates unless
+curl_multi_exec() is added to the loop, taking away the point of using it to
+save cycles. curl_multi_select() also allows you to set a timeout but it
+doesn't seem to help, then again, don't see why people wouldn't use it anyway.
+
+Even when curl_multi_select($mh) does work there's no way to know which of the
+sockets updated in status or if they've received partial data, completely
+finished, or just timed out. It's not reliable if you want to remove / add data
+as soon as things finish. Try calling just example.com or some other website
+with very little data. curl_multi_select($mh) can send non 0 value a couple of
+thousand times before finishing. Lazily adding a usleep(25000) or some minimal
+amount can also help not waste cycles.
+===============================================================================
+
+If you are using mulit handles and you wish to re-execute any of them (if they
+timed out or something), then you need to remove the handles from the
+mulit-handle and then re-add them in order to get them to re-execute. 
+Otherwise cURL will just give you back the same results again without actually
+retrying.
+===============================================================================
+
+This example not working on window 7 with php version 5.3.27.
+===============================================================================
+
+This function wait for the last page, can get a configuration array with curl
+options to made a post, or pass timeouts, etc.
+Retun the same array but add "error", and "data".Error is the string
+destription if something fail, data is the response.
+
+<?php
+// author: Daniel G Zylberberg
+// date 11 jul 2012
+// $res: array with structure 0=>array("url"=>"blah"),1=>array("url"=>"some
+url")
+// $options (optional): array with curl options (timeout, postfields, etc)
+// return the same array that gets, and add "data" to the current row(html
+content)
+// and "error", with the string description in the case that something fail.
+
+function multiCurl($res,$options=""){
+
+        if(count($res)<=0) return False;
+
+        $handles = array();
+
+        if(!$options) // add default options
+            $options = array(
+                CURLOPT_HEADER=>0,
+                CURLOPT_RETURNTRANSFER=>1,
+            );
+
+        // add curl options to each handle
+        foreach($res as $k=>$row){
+            $ch{$k} = curl_init();
+            $options[CURLOPT_URL] = $row['url'];
+            curl_setopt_array($ch{$k}, $options);
+            $handles[$k] = $ch{$k};
+        }
+
+        $mh = curl_multi_init();
+
+        foreach($handles as $k => $handle){
+            curl_multi_add_handle($mh,$handle);
+            //echo "<br>adding handle {$k}";
+        }
+
+        $running_handles = null;
+        //execute the handles
+        do {
+            $status_cme = curl_multi_exec($mh, $running_handles);
+        } while ($cme == CURLM_CALL_MULTI_PERFORM);
+
+        while ($running_handles && $status_cme == CURLM_OK) {
+            if (curl_multi_select($mh) != -1) {
+                do {
+                    $status_cme = curl_multi_exec($mh, $running_handles);
+                   // echo "<br>''threads'' running = {$running_handles}";
+                } while ($status == CURLM_CALL_MULTI_PERFORM);
+            }
+        }
+
+        foreach($res as $k=>$row){
+            $res[$k]['error'] = curl_error($handles[$k]);
+            if(!empty($res[$k]['error']))
+                $res[$k]['data']  = '';
+            else
+                $res[$k]['data']  = curl_multi_getcontent( $handles[$k] );  //
+get results
+
+            // close current handler
+            curl_multi_remove_handle($mh, $handles[$k] );
+        }
+        curl_multi_close($mh);
+        return $res; // return response
+}
+
+$res = array(
+        "11"=>array("url"=>"http://localhost/public_html/test/sleep.php?t=1"),
+        "13"=>array("url"=>"http://localhost/public_html/test/sleep.php?t=3"),
+        "25"=>array("url"=>"this doesn't exist"),
+
+);
+print_r( multiCurl($res));
+?>
+
+---------- sleep.php -------------------------------------
+<?php
+sleep($_GET['t']);
+echo "sleep for {$_GET['t']} seconds and show this.";
+?>
+===============================================================================
+
+when you run curl_multi_exec() on the OS X mavericks system you may not get the
+right return, the scripts may running and running but no return value.
+That's because on the OSX system with the php version 5.3.8+, when you call the
+curl_multi_exec() method before calling the curl_multi_select(), may always
+return the -1.
+So here change a little code to running  the curl_multi_exec() successful on
+OSX below.
+
+<?php
+
+$ch1 = curl_init();
+$ch2 = curl_init();
+
+// 设置URL和相应的选项
+curl_setopt($ch1, CURLOPT_URL, "http://lxr.php.net");
+curl_setopt($ch1, CURLOPT_HEADER, 0);
+curl_setopt($ch2, CURLOPT_URL, "http://www.php.net");
+curl_setopt($ch2, CURLOPT_HEADER, 0);
+
+// 创建批处理cURL句柄
+$mh = curl_multi_init();
+
+// 增加2个句柄
+curl_multi_add_handle($mh,$ch1);
+curl_multi_add_handle($mh,$ch2);
+
+$active = null;
+
+do {
+    $mrc = curl_multi_exec($mh, $active);
+} while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+while ($active && $mrc == CURLM_OK)
+{  
+   // add this line
+   while (curl_multi_exec($mh, $active) === CURLM_CALL_MULTI_PERFORM);
+
+   if (curl_multi_select($mh) != -1)
+   {  
+       do {
+           $mrc = curl_multi_exec($mh, $active);
+           if ($mrc == CURLM_OK)
+           {  
+               while($info = curl_multi_info_read($mh))
+               {  
+                   var_dump($info);
+               }       
+           }  
+       } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+   }  
+}
+
+//close the handles
+curl_multi_remove_handle($mh, $ch1);
+curl_multi_remove_handle($mh, $ch2);
+curl_multi_close($mh);
+
+?>
+===============================================================================
+
+I was testing PHP code provided by dtorop933@gmail.com in curl_multi_exec
+section of PHP Manual.
+
+The part of the code '$err = curl_error($conn[$i])' should return error message
+for each cURL session, but it does not.
+The function curl_error() works well with the curl_exec(). Is there any other
+solution for getting session error message with curl_multi_exec() or there is a
+bug in cURL library.
+
+The script was tested with Windows XP and PHP-5.2.4

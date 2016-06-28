@@ -1,0 +1,539 @@
+
+quoted_printable_decode
+
+(PHP 4, PHP 5, PHP 7)
+
+quoted_printable_decode — 将 quoted-printable 字符串转换为 8-bit 字符串
+
+说明
+
+string quoted_printable_decode ( string $str )
+
+该函数返回 quoted-printable 解码之后的 8-bit 字符串 (参考 » RFC2045 的6.7章节，
+而不是 » RFC2821 的4.5.2章节，so additional periods are not stripped from the
+beginning of line)
+
+该函数与 imap_qprint() 函数十分相似，但是该函数不需要依赖 IMAP 模块。
+
+参数
+
+str
+
+    输入的字符串。
+
+返回值
+
+返回的 8-bit 二进制字符串。
+
+参见
+
+  • quoted_printable_encode() - 将 8-bit 字符串转换成 quoted-printable 字符串
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+As soletan at toxa dot de reported, that function is very bad and does not
+provide valid enquoted printable strings. While using it I saw spam agents
+marking the emails as QP_EXCESS and sometimes the email client did not
+recognize the header at all; I really lost time :(. This is the new version (we
+use it in the Drake CMS core) that works seamlessly:
+
+<?php
+
+//L: note $encoding that is uppercase
+//L: also your PHP installation must have ctype_alpha, otherwise write it
+yourself
+function quoted_printable_encode($string, $encoding='UTF-8') {
+// use this function with headers, not with the email body as it misses word
+wrapping
+       $len = strlen($string);
+       $result = '';
+       $enc = false;
+       for($i=0;$i<$len;++$i) {
+        $c = $string[$i];
+        if (ctype_alpha($c))
+            $result.=$c;
+        else if ($c==' ') {
+            $result.='_';
+            $enc = true;
+        } else {
+            $result.=sprintf("=%02X", ord($c));
+            $enc = true;
+        }
+       }
+       //L: so spam agents won't mark your email with QP_EXCESS
+       if (!$enc) return $string;
+       return '=?'.$encoding.'?q?'.$result.'?=';
+}
+
+I hope it helps ;)
+
+?>
+===============================================================================
+
+A small update for Andrew's code below. This one leaves the original CRLF pairs
+intact (and allowing the preg_replace to work as intended):
+
+<?php
+if (!function_exists("quoted_printable_encode")) {
+  /**
+  * Process a string to fit the requirements of RFC2045 section 6.7. Note that
+  * this works, but replaces more characters than the minimum set. For
+readability
+  * the spaces and CRLF pairs aren't encoded though.
+  */
+  function quoted_printable_encode($string) {
+    return preg_replace('/[^\r\n]{73}[^=\r\n]{2}/', "$0=\r\n",
+      str_replace("%", "=", str_replace("%0D%0A", "\r\n",
+        str_replace("%20"," ",rawurlencode($string)))));
+  }
+}
+?>
+
+Regards, André
+===============================================================================
+
+If you do not have access to imap_* and do not want to use
+ $message = chunk_split( base64_encode($message) ); 
+because you want to be able to read the  source  of your mails, you might want
+to try this:
+(any suggestions very welcome!)
+
+
+function qp_enc($input = "quoted-printable encoding test string", $line_max =
+76) {
+
+    $hex = array
+('0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F');
+    $lines = preg_split("/(?:\r\n|\r|\n)/", $input);
+    $eol = "\r\n";
+    $escape = "=";
+    $output = "";
+
+    while( list(, $line) = each($lines) ) {
+        //$line = rtrim($line); // remove trailing white space -> no =20\r\n
+necessary
+        $linlen = strlen($line);
+        $newline = "";
+        for($i = 0; $i < $linlen; $i++) {
+            $c = substr($line, $i, 1);
+            $dec = ord($c);
+            if ( ($dec == 32) && ($i == ($linlen - 1)) ) { // convert space at
+eol only
+                $c = "=20";
+            } elseif ( ($dec == 61) || ($dec < 32 ) || ($dec > 126) ) { //
+always encode "\t", which is *not* required
+                $h2 = floor($dec/16); $h1 = floor($dec%16);
+                $c = $escape.$hex["$h2"].$hex["$h1"];
+            }
+            if ( (strlen($newline) + strlen($c)) >= $line_max ) { // CRLF is
+not counted
+                $output .= $newline.$escape.$eol; // soft line break; " =\r\n"
+is okay
+                $newline = "";
+            }
+            $newline .= $c;
+        } // end of for
+        $output .= $newline.$eol;
+    }
+    return trim($output);
+
+}
+
+$eight_bit = "\xA7 \xC4 \xD6 \xDC \xE4 \xF6 \xFC \xDF         =          xxx   
+         yyy       zzz          \r\n"
+            ." \xA7      \r \xC4 \n \xD6 \x09    ";
+print $eight_bit."\r\n---------------\r\n";
+$encoded = qp_enc($eight_bit);
+print $encoded;
+===============================================================================
+
+My version of quoted_printable encode, as the convert.quoted-printable-encode
+filter breaks on outlook express. This one seems to work on express/outlook/
+thunderbird/gmail.
+
+function quoted_printable_encode($txt) {
+    $tmp="";
+    $line="";
+    for ($i=0;$i<strlen($txt);$i++) {
+        if (($txt[$i]>='a' && $txt[$i]<='z') || ($txt[$i]>='A' && $txt[$i]<=
+'Z') || ($txt[$i]>='0' && $txt[$i]<='9'))
+            $line.=$txt[$i];
+        else
+            $line.="=".sprintf("%02X",ord($txt[$i]));
+        if (strlen($line)>=75) {
+            $tmp.="$line=\n";
+            $line="";
+        }
+    }
+    $tmp.="$line\n";
+    return $tmp;
+}
+===============================================================================
+
+I use a hack for this bug:
+
+$str = str_replace("=\r\n", '', quoted_printable_encode($str));
+if (strlen($str) > 73) {$str = substr($str,0,74)."=\n".substr($str,74);}
+===============================================================================
+
+<?php
+
+function quoted_printable_encode( $str, $chunkLen = 72 )
+{
+    $offset = 0;
+   
+    $str = strtr(rawurlencode($str), array('%' => '='));
+    $len = strlen($str);
+    $enc = '';
+   
+    while ( $offset < $len )
+    {
+        if ( $str{ $offset + $chunkLen - 1 } === '=' )
+        {
+            $line = substr($str, $offset, $chunkLen - 1);
+            $offset += $chunkLen - 1;
+        }
+        elseif ( $str{ $offset + $chunkLen - 2 } === '=' )
+        {
+            $line = substr($str, $offset, $chunkLen - 2);
+            $offset += $chunkLen - 2;
+        }
+        else
+        {
+            $line = substr($str, $offset, $chunkLen);
+            $offset += $chunkLen;
+        }
+       
+        if ( $offset + $chunkLen < $len )
+            $enc .= $line ."=\n";
+        else
+            $enc .= $line;
+    }
+   
+    return $enc;
+}
+
+?>
+===============================================================================
+
+In Addition to david lionhead's function:
+
+<?php
+function quoted_printable_encode($txt) {
+    /* Make sure there are no %20 or similar */
+    $txt = rawurldecode($txt);
+    $tmp="";
+    $line="";
+    for ($i=0;$i<strlen($txt);$i++) {
+        if (($txt[$i]>='a' && $txt[$i]<='z') || ($txt[$i]>='A' && $txt[$i]<='Z'
+) || ($txt[$i]>='0' && $txt[$i]<='9')) {
+            $line.=$txt[$i];
+            if (strlen($line)>=75) {
+                $tmp.="$line=\n";
+                $line="";
+            }
+        }
+        else {
+            /* Important to differentiate this case from the above */
+            if (strlen($line)>=72) {
+            $tmp.="$line=\n";
+            $line="";
+            }
+            $line.="=".sprintf("%02X",ord($txt[$i]));
+        }
+    }
+    $tmp.="$line\n";
+    return $tmp;
+}
+?>
+===============================================================================
+
+<?php
+$text = <<<EOF
+This function enables you to convert text to a quoted-printable string as well
+as to create encoded-words used in email headers (see http://www.faqs.org/rfcs/
+rfc2047.html).
+
+No line of returned text will be longer than specified. Encoded-words will not
+contain a newline character. Special characters are removed.
+EOF;
+
+define('QP_LINE_LENGTH', 75);
+define('QP_LINE_SEPARATOR', "\r\n");
+
+function quoted_printable_encode($string, $encodedWord = false)
+{
+    if(!preg_match('//u', $string)) {
+        throw new Exception('Input string is not valid UTF-8');
+    }
+   
+    static $wordStart = '=?UTF-8?Q?';
+    static $wordEnd = '?=';
+    static $endl = QP_LINE_SEPARATOR;
+   
+    $lineLength = $encodedWord
+        ? QP_LINE_LENGTH - strlen($wordStart) - strlen($wordEnd)
+        : QP_LINE_LENGTH;
+   
+    $string = $encodedWord
+        ? preg_replace('~[\r\n]+~', ' ', $string)    // we need encoded word to
+be single line
+        : preg_replace('~\r\n?~', "\n", $string);    // normalize line endings
+    $string = preg_replace('~[\x00-\x08\x0B-\x1F]+~', '', $string);    //
+remove control characters
+   
+    $output = $encodedWord ? $wordStart : '';
+    $charsLeft = $lineLength;
+   
+    $chr = isset($string{0}) ? $string{0} : null;
+    $ord = ord($chr);
+   
+    for ($i = 0; isset($chr); $i++) {
+        $nextChr = isset($string{$i + 1}) ? $string{$i + 1} : null;
+        $nextOrd = ord($nextChr);
+       
+        if (
+            $ord > 127 or    // high byte value
+            $ord === 95 or    // underscore "_"
+            $ord === 63 && $encodedWord or    // "?" in encoded word
+            $ord === 61 or    // equal sign "="
+            // space or tab in encoded word or at line end
+            $ord === 32 || $ord === 9 and $encodedWord || !isset($nextOrd) || 
+$nextOrd === 10
+        ) {
+            $chr = sprintf('=%02X', $ord);   
+        }
+       
+        if ($ord === 10) {    // line feed
+            $output .= $endl;
+            $charsLeft = $lineLength;
+        } elseif (
+            strlen($chr) < $charsLeft or
+            strlen($chr) === $charsLeft and $nextOrd === 10 || $encodedWord
+        ) {    // add character
+            $output .= $chr;
+            $charsLeft-=strlen($chr);
+        } elseif (isset($nextOrd)) {    // another line needed
+            $output .= $encodedWord
+                ? $wordEnd . $endl . "\t" . $wordStart . $chr
+                : '=' . $endl . $chr;
+            $charsLeft = $lineLength - strlen($chr);
+        }
+       
+        $chr = $nextChr;
+        $ord = $nextOrd;
+    }
+   
+    return $output . ($encodedWord ? $wordEnd : '');
+}
+
+echo quoted_printable_encode($text/*, true*/);
+===============================================================================
+
+I modified the below version of legolas558 at users dot sausafe dot net and
+added a wrapping option.
+
+<?php
+/**
+*    Codeer een String naar zogenaamde 'quoted printable'. Dit type van coderen
+wordt
+*    gebruikt om de content van 8 bit e-mail berichten als 7 bits te versturen.
+*
+*    @access public
+*    @param string    $str    De String die we coderen
+*    @param bool      $wrap   Voeg linebreaks toe na 74 tekens?
+*    @return string
+*/
+
+function quoted_printable_encode($str, $wrap=true)
+{
+    $return = '';
+    $iL = strlen($str);
+    for($i=0; $i<$iL; $i++)
+    {
+        $char = $str[$i];
+        if(ctype_print($char) && !ctype_punct($char)) $return .= $char;
+        else $return .= sprintf('=%02X', ord($char));
+    }
+    return ($wrap === true)
+        ? wordwrap($return, 74, " =\n")
+        : $return;
+}
+
+?>
+===============================================================================
+
+Be warned! The method below for encoding text does not work as requested by
+RFC1521!
+
+Consider a line consisting of 75 'A' and a single é (or similar non-ASCII
+character) ... the method below would encode and return a line of 78 octets,
+breaking with RFC 1521, 5.1 Rule #5: "The Quoted-Printable encoding REQUIRES
+that encoded lines be no more than 76 characters long."
+
+Good QP-encoding takes a bit more than this.
+===============================================================================
+
+Some  browser (netscape, for example)
+send 8-bit quoted printable text like this:
+=C5=DD=A3=D2=C1= =DA
+
+"= =" means continuos word.
+php function not detect this situations and translate in string like:
+abcde=f
+===============================================================================
+
+Another (improved) version of quoted_printable_encode(). Please note the order
+of the array elements in str_replace().
+I've just rewritten the previous function for better readability.
+
+<?php
+if (!function_exists("quoted_printable_encode")) {
+  /**
+  * Process a string to fit the requirements of RFC2045 section 6.7. Note that
+  * this works, but replaces more characters than the minimum set. For
+readability
+  * the spaces and CRLF pairs aren't encoded though.
+  */
+  function quoted_printable_encode($string) {
+        $string = str_replace(array('%20', '%0D%0A', '%'), array(' ', "\r\n", '
+='), rawurlencode($string));
+        $string = preg_replace('/[^\r\n]{73}[^=\r\n]{2}/', "$0=\r\n", $string);
+
+        return $string;
+  }
+}
+?>
+===============================================================================
+
+Taking a bunch of the earlier comments together, you can synthesize a nice
+short and reasonably efficient quoted_printable_encode function like this:
+
+Note that I put this in my standard library file, so I wrap it in a !
+function_exists in order that if there is a pre-existing PHP one it will just
+work and this will evaluate to a noop.
+
+<?php
+if ( !function_exists("quoted_printable_encode") ) {
+  /**
+  * Process a string to fit the requirements of RFC2045 section 6.7.  Note that
+  * this works, but replaces more characters than the minimum set. For
+readability
+  * the spaces aren't encoded as =20 though.
+  */
+  function quoted_printable_encode($string) {
+    return preg_replace('/[^\r\n]{73}[^=\r\n]{2}/', "$0=\r\n", str_replace("%",
+"=",str_replace("%20"," ",rawurlencode($string))));
+  }
+}
+?>
+
+Regards,
+Andrew McMillan.
+===============================================================================
+
+I do like this to encode
+
+function quoted_printable_encode($string) {
+  $string = rawurlencode($string);
+  $string = str_replace("%","=",$string);
+  RETURN $string;
+}
+
+best regards / Hoffa
+===============================================================================
+
+Please note that in the below encode function there is a bug!
+
+<?php
+if (($c==0x3d) || ($c>=0x80) || ($c<0x20))
+?>
+
+$c should be checked against less or equal to encode spaces!
+
+so the correct code is
+
+<?php
+if (($c==0x3d) || ($c>=0x80) || ($c<=0x20))
+?>
+
+Fix the code or post this note, please
+===============================================================================
+
+If you want a function to do the reverse of "quoted_printable_decode()", follow
+the link you will find the "quoted_printable_encode()" function:
+http://www.memotoo.com/softs/public/PHP/quoted printable_encode.inc.php
+
+Compatible "ENCODING=QUOTED-PRINTABLE"
+Example:
+quoted_printable_encode(ut8_encode("c'est quand l'été ?"))
+-> "c'est quand l'=C3=A9t=C3=A9 ?"
+===============================================================================
+
+As the two digit hexadecimal representation SHOULD be in uppercase you want to
+use "=%02X" (uppercase X) instead of "=%02x" as the first argument to sprintf
+().
+===============================================================================
+
+Previous comment has a bug: encoding of short test does not work because of
+incorrect usage of preg_match_all(). Have somebody read it at all? :-)
+
+Correct version (seems), with additional imap_8bit() function emulation:
+
+if (!function_exists('imap_8bit')) {
+function imap_8bit($text) {
+   return quoted_printable_encode($text);
+}
+}
+
+function quoted_printable_encode_character ( $matches ) {
+   $character = $matches[0];
+   return sprintf ( '=%02x', ord ( $character ) );
+}
+
+// based on http://www.freesoft.org/CIE/RFC/1521/6.htm
+function quoted_printable_encode ( $string ) {
+   // rule #2, #3 (leaves space and tab characters in tact)
+   $string = preg_replace_callback (
+     '/[^\x21-\x3C\x3E-\x7E\x09\x20]/',
+     'quoted_printable_encode_character',
+     $string
+   );
+   $newline = "=\r\n"; // '=' + CRLF (rule #4)
+   // make sure the splitting of lines does not interfere with escaped
+characters
+   // (chunk_split fails here)
+   $string = preg_replace ( '/(.{73}[^=]{0,3})/', '$1'.$newline, $string);
+   return $string;
+}
+===============================================================================
+
+my approach for quoted printable encode using the stream converting abilities
+
+<?php
+/**
+* @param string $str
+* @return string
+* */
+function quoted_printable_encode($str) {
+    $fp = fopen('php://temp', 'w+');
+    stream_filter_append($fp, 'convert.quoted-printable-encode');
+    fwrite($fp, $str);   
+    fseek($fp, 0);
+    $result = '';
+    while(!feof($fp))
+        $result .= fread($fp, 1024);
+    fclose($fp);
+    return $result;
+}
+?>
+===============================================================================
+
+Following up to Hoffa's function, return the result like:
+
+chunk_split($string, 76, "=\n");
+
+to conform to the RFC, which requires that lines are no longer than 76 chars.

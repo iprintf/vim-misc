@@ -1,0 +1,392 @@
+
+rawurldecode
+
+(PHP 4, PHP 5, PHP 7)
+
+rawurldecode — 对已编码的 URL 字符串进行解码
+
+说明
+
+string rawurldecode ( string $str )
+
+返回字符串，此字符串中百分号（%）后跟两位十六进制数的序列都将被替换成原义字符。
+
+参数
+
+str
+
+    要解码的 URL。
+
+返回值
+
+返回解码后的 URL 字符串。
+
+范例
+
+Example #1 rawurldecode() 示例
+
+<?php
+
+echo rawurldecode('foo%20bar%40baz'); // foo bar@baz
+
+?>
+
+注释
+
+    Note:
+
+    rawurldecode() 不会把加号（'+'）解码为空格，而 urldecode() 可以。
+
+参见
+
+  • rawurlencode() - 按照 RFC 3986 对 URL 进行编码
+  • urldecode() - 解码已编码的 URL 字符串
+  • urlencode() - 编码 URL 字符串
+  • » RFC 3986
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Hi everybody =) My name is Javier and I'm from Argentina.
+I've had a little issue with latin characters like ñ","Ñ","á","é","í", etc.
+They are not decoded with rawurlencode(), so I've made this:
+<?php
+function urlRawDecode($raw_url_encoded)
+{
+    # Hex conversion table
+    $hex_table = array(
+        0 => 0x00,
+        1 => 0x01,
+        2 => 0x02,
+        3 => 0x03,
+        4 => 0x04,
+        5 => 0x05,
+        6 => 0x06,
+        7 => 0x07,
+        8 => 0x08,
+        9 => 0x09,
+        "A"=> 0x0a,
+        "B"=> 0x0b,
+        "C"=> 0x0c,
+        "D"=> 0x0d,
+        "E"=> 0x0e,
+        "F"=> 0x0f
+    );
+       
+    # Fixin' latin character problem
+        if(preg_match_all("/\%C3\%([A-Z0-9]{2})/i", $raw_url_encoded,$res))
+        {
+            $res = array_unique($res = $res[1]);
+            $arr_unicoded = array();
+            foreach($res as $key => $value){
+                $arr_unicoded[] = chr(
+                        (0xc0 | ($hex_table[substr($value,0,1)]<<4))
+                       | (0x03 & $hex_table[substr($value,1,1)])
+                );
+                $res[$key] = "%C3%" . $value;
+            }
+
+            $raw_url_encoded = str_replace(
+                                    $res,
+                                    $arr_unicoded,
+                                    $raw_url_encoded
+                        );
+        }
+       
+        # Return decoded  raw url encoded data
+        return rawurldecode($raw_url_encoded);
+}
+
+print urlRawDecode("%C3%A1%C3%B1");
+
+// output:
+// áñ
+
+?>
+For example, you have the character "ñ" encoded like this "%C3%B1".
+This is nothing more and nothing less than 0xc3 and 0xb1,
+they are binary numbers, (HHHH LLLL, where HHHH=High and LLLL=Low).
+0xc3 = 1100 0011 (binary 8 bit word), 0xb1 = 1011 0001 (binary 8 bit word),
+To convert a raw encoded character to ascii we have to make boolean operations
+between this two operands (0xc3 and 0xb1), boolean algebra were defined by
+George 
+Boole, we need to use them here. The first one we going to use is the
+logical OR ("|" or "pipe") and logical AND ("&" or "and person").
+
+A logical OR implies the following truth table:
+a b (a OR b)
+0 0     0
+0 1     1   (a OR b or Both, a and b, must be true to get a true result)
+1 0     1
+1 1     1
+
+A logical AND implies the following truth table:
+a b (a AND b)
+0 0     0
+0 1     0  
+1 0     0
+1 1     1   (Both a AND b, must be true to get a true result)
+
+So, here we have to make a logical OR with both 0xc3 and 0xb1 HIGH nibble,
+a nibble is a half byte (4 bits), so we have to make a logical OR between
+1100 (0xc) and 1011 (0xb), we going to get this: 1111 (0xf), then we have to
+make
+a logical AND between both LOW nibble, 0011 (0x3) and 0001 (0x1), we going to
+get
+this: 0001, so, if we want to see the final result, we have to put HIGH and LOW
+nibble on his Byte position, like this: 1111 0001 (0xf1) and that is nothing
+more and nothing less than "ñ" (to check this out, try the following: print(chr
+(0xf1));).
+
+This "<<" is a logical shift left, if we have this binary number 0001 (1) and
+we make this:
+0001 << 2 we'll get 0100 (4) right bits are filled with 0's.
+
+<?php
+# Conversion example %C3%B1 to ASCII (0x71)
+print(
+    chr(
+        (0xc0|0x0b<<4) | (0x03&0x01)
+    )
+);
+
+// Output will be:
+// ñ
+
+// 1100 0000 OR 1011 0000 = 1111 0000 (0xf0)
+// 0000 0011 AND 0000 0001 = 0000 0001 (0x01)
+// 1111 0000 OR 0000 0001 = 1111 0001 (0xf1)
+
+?>
+
+PS: I'm so sorry about my english, I know, is horrible :P
+===============================================================================
+
+Be aware that rawurldecode does not warn you in any way if the output is
+nonvalid UTF-8.
+For example if the input passed to the function is just "%C5", then since C is
+1100 in binary, and UTF-8 characters starting with 110 should be followed by
+another character, the result of rawurldecode will be just a single byte (with
+value \xC5) which is not a correct UTF-8.
+Confront this with for example Javascript which will warn you about it:
+
+JAVASCRIPT:
+
+decodeURI("%C5")
+URIError: URI malformed
+
+decodeURIComponent("%C5")
+URIError: URI malformed
+
+unescape("%C5")
+"Å"
+
+PHP:
+var_dump(rawurldecode("%C5"))
+string(1) "▒"
+
+php -v
+PHP 5.3.6 (cli) (built: Oct  4 2012 10:19:07)
+Copyright (c) 1997-2011 The PHP Group
+Zend Engine v2.3.0, Copyright (c) 1998-2011 Zend Technologies
+    with Suhosin v0.9.32.1, Copyright (c) 2007-2010, by SektionEins GmbH
+===============================================================================
+
+To sum it up: the only difference of this function to the urldecode function is
+that the "+" character won't get translated.
+===============================================================================
+
+Hi everybody =) My name is Javier and I'm from Argentina.
+I've had a little issue with latin characters like ñ","Ñ","á","é","í", etc.
+They are not decoded with rawurlencode(), so I've made this:
+<?php
+function urlRawDecode($raw_url_encoded)
+{
+    # Hex conversion table
+    $hex_table = array(
+        0 => 0x00,
+        1 => 0x01,
+        2 => 0x02,
+        3 => 0x03,
+        4 => 0x04,
+        5 => 0x05,
+        6 => 0x06,
+        7 => 0x07,
+        8 => 0x08,
+        9 => 0x09,
+        "A"=> 0x0a,
+        "B"=> 0x0b,
+        "C"=> 0x0c,
+        "D"=> 0x0d,
+        "E"=> 0x0e,
+        "F"=> 0x0f
+    );
+       
+    # Fixin' latin character problem
+        if(preg_match_all("/\%C3\%([A-Z0-9]{2})/i", $raw_url_encoded,$res))
+        {
+            $res = array_unique($res = $res[1]);
+            $arr_unicoded = array();
+            foreach($res as $key => $value){
+                $arr_unicoded[] = chr(
+                        (0xc0 | ($hex_table[substr($value,0,1)]<<4))
+                       | (0x03 & $hex_table[substr($value,1,1)])
+                );
+                $res[$key] = "%C3%" . $value;
+            }
+
+            $raw_url_encoded = str_replace(
+                                    $res,
+                                    $arr_unicoded,
+                                    $raw_url_encoded
+                        );
+        }
+       
+        # Return decoded  raw url encoded data
+        return rawurldecode($raw_url_encoded);
+}
+
+print urlRawDecode("%C3%A1%C3%B1");
+
+// output:
+// áñ
+
+?>
+For example, you have the character "ñ" encoded like this "%C3%B1".
+This is nothing more and nothing less than 0xc3 and 0xb1,
+they are binary numbers, (HHHH LLLL, where HHHH=High and LLLL=Low).
+0xc3 = 1100 0011 (binary 8 bit word), 0xb1 = 1011 0001 (binary 8 bit word),
+To convert a raw encoded character to ascii we have to make boolean operations
+between this two operands (0xc3 and 0xb1), boolean algebra were defined by
+George 
+Boole, we need to use them here. The first one we going to use is the
+logical OR ("|" or "pipe") and logical AND ("&" or "and person").
+
+A logical OR implies the following truth table:
+a b (a OR b)
+0 0     0
+0 1     1   (a OR b or Both, a and b, must be true to get a true result)
+1 0     1
+1 1     1
+
+A logical AND implies the following truth table:
+a b (a AND b)
+0 0     0
+0 1     0  
+1 0     0
+1 1     1   (Both a AND b, must be true to get a true result)
+
+So, here we have to make a logical OR with both 0xc3 and 0xb1 HIGH nibble,
+a nibble is a half byte (4 bits), so we have to make a logical OR between
+1100 (0xc) and 1011 (0xb), we going to get this: 1111 (0xf), then we have to
+make
+a logical AND between both LOW nibble, 0011 (0x3) and 0001 (0x1), we going to
+get
+this: 0001, so, if we want to see the final result, we have to put HIGH and LOW
+nibble on his Byte position, like this: 1111 0001 (0xf1) and that is nothing
+more and nothing less than "ñ" (to check this out, try the following: print(chr
+(0xf1));).
+
+This "<<" is a logical shift left, if we have this binary number 0001 (1) and
+we make this:
+0001 << 2 we'll get 0100 (4) right bits are filled with 0's.
+
+<?php
+# Conversion example %C3%B1 to ASCII (0x71)
+print(
+    chr(
+        (0xc0|0x0b<<4) | (0x03&0x01)
+    )
+);
+
+// Output will be:
+// ñ
+
+// 1100 0000 OR 1011 0000 = 1111 0000 (0xf0)
+// 0000 0011 AND 0000 0001 = 0000 0001 (0x01)
+// 1111 0000 OR 0000 0001 = 1111 0001 (0xf1)
+
+?>
+
+PS: I'm so sorry about my english, I know, is horrible :P
+===============================================================================
+
+Let's say you pass some data between the client and the server in a more or
+less array-like structure.
+
+If using the [] brackets in the field names is not enough (or won't comply with
+the rest of the project for some reason), you might have to use a string with a
+number of different delimiters (rows, fields, rows inside fields and such).
+
+To make sure that the data doesn't get mistaken for delimiters, you can use the
+encodeURIComponent() JavaScript function. It pairs nicely with rawurldecode().
+
+Once the string passed to the server side finally gets exploded into an array
+(or set of such), you could use the following function to recursively
+rawurldecode the array(s):
+
+<?php
+
+function rawurldecode_array(&$arr)
+{
+    foreach (array_keys($arr) as $key)
+    {
+        if (is_array($arr[$key]))
+        {
+            rawurldecode_array($arr[$key]);
+        }
+        else
+        {
+            $arr[$key] = rawurldecode($arr[$key]);
+        }
+    }
+}
+
+$a[0] = rawurlencode("2+1:3?9");
+$a["k"] = rawurlencode("@:-/");
+$a[-3][0] = rawurlencode("+");
+$a[-3][2] = rawurlencode("=_~");
+$a[-3]["a"] = rawurlencode("this+is a%test");
+
+echo "<pre>"; print_r($a); echo "</pre>";
+
+rawurldecode_array($a);
+
+echo "<pre>"; print_r($a); echo "</pre>";
+
+?>
+
+The program will output:
+
+Array
+(
+    [0] => 2%2B1%3A3%3F9
+    [k] => %40%3A-%2F
+    [-3] => Array
+        (
+            [0] => %2B
+            [2] => %3D_%7E
+            [a] => this%2Bis%20a%25test
+        )
+
+)
+
+Array
+(
+    [0] => 2+1:3?9
+    [k] => @:-/
+    [-3] => Array
+        (
+            [0] => +
+            [2] => =_~
+            [a] => this+is a%test
+        )
+
+)
+===============================================================================
+
+Please note that the combination encodeURIComponent (Javascript) and
+rawurldecode (PHP) only works well if magic quotes are turned off in php.ini
+(magic_quotes_gpc = Off)

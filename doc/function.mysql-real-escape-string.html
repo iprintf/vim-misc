@@ -1,0 +1,157 @@
+
+mysql_real_escape_string
+
+(PHP 4 >= 4.3.0, PHP 5)
+
+mysql_real_escape_string — 转义 SQL 语句中使用的字符串中的特殊字符，并考虑到连
+接的当前字符集
+
+说明
+
+string mysql_real_escape_string ( string $unescaped_string [, resource
+$link_identifier ] )
+
+本函数将 unescaped_string 中的特殊字符转义，并计及连接的当前字符集，因此可以安
+全用于 mysql_query()。
+
+    Note: mysql_real_escape_string() 并不转义 % 和 _。
+
+Example #1 mysql_real_escape_string() 例子
+
+<?php
+$item = "Zak's and Derick's Laptop";
+$escaped_item = mysql_real_escape_string($item);
+printf ("Escaped string: %s\n", $escaped_item);
+?>
+
+以上例子将产生如下输出：
+
+Escaped string: Zak\'s and Derick\'s Laptop
+
+参见 mysql_escape_string() 和 mysql_character_set_name()。
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Just a little function which mimics the original mysql_real_escape_string but
+which doesn't need an active mysql connection. Could be implemented as a static
+function in a database class. Hope it helps someone.
+
+<?php
+function mysql_escape_mimic($inp) {
+    if(is_array($inp))
+        return array_map(__METHOD__, $inp);
+
+    if(!empty($inp) && is_string($inp)) {
+        return str_replace(array('\\', "\0", "\n", "\r", "'", '"', "\x1a"),
+array('\\\\', '\\0', '\\n', '\\r', "\\'", '\\"', '\\Z'), $inp);
+    }
+
+    return $inp;
+}
+?>
+===============================================================================
+
+For further information:
+http://dev.mysql.com/doc/refman/5.5/en/mysql-real-escape-string.html
+(replace your MySQL version in the URL)
+===============================================================================
+
+Note that mysql_real_escape_string doesn't prepend backslashes to \x00, \n, \r,
+and and \x1a as mentionned in the documentation, but actually replaces the
+character with a MySQL acceptable representation for queries (e.g. \n is
+replaced with the '\n' litteral). (\, ', and " are escaped as documented) This
+doesn't change how you should use this function, but I think it's good to know.
+===============================================================================
+
+No discussion of escaping is complete without telling everyone that you should
+basically never use external input to generate interpreted code. This goes for
+SQL statements, or anything you would call any sort of "eval" function on.
+
+So, instead of using this terribly broken function, use parametric prepared
+statements instead.
+
+Honestly, using user provided data to compose SQL statements should be
+considered professional negligence and you should be held accountable by your
+employer or client for not using parametric prepared statements.
+
+What does that mean?
+
+It means instead of building a SQL statement like this:
+
+"INSERT INTO X (A) VALUES(".$_POST["a"].")"
+
+You should use mysqli's prepare() function (http://php.net/manual/en/
+mysqli.prepare.php) to execute a statement that looks like this:
+
+"INSERT INTO X (A) VALUES(?)"
+
+NB: This doesn't mean you should never generate dynamic SQL statements. What it
+means is that you should never use user-provided data to generate those
+statements. Any user-provided data should be passed through as parameters to
+the statement after it has been prepared.
+
+So, for example, if you are building up a little framework and want to do an
+insert to a table based on the request URI, it's in your best interest to not
+take the $_SERVER['REQUEST_URI'] value (or any part of it) and directly
+concatenate that with your query. Instead,  you should parse out the portion of
+the $_SERVER['REQUEST_URI'] value that you want, and map that through some kind
+of function or associative array to a non-user provided value. If the mapping
+produces no value, you know that something is wrong with the user provided
+data.
+
+Failing to follow this has been the cause of a number of SQL-injection problems
+in the Ruby On Rails framework, even though it uses parametric prepared
+statements. This is how GitHub was hacked at one point. So, no language is
+immune to this problem. That's why this is a general best practice and not
+something specific to PHP and why you should REALLY adopt it.
+
+Also, you should still do some kind of validation of the data provided by
+users, even when using parametric prepared statements. This is because that
+user-provided data will often become part of some generated HTML, and you want
+to ensure that the user provided data isn't going to cause security problems in
+the browser.
+===============================================================================
+
+There's an interesting quirk in the example #2 about SQL injection:  AND takes
+priority over OR, so the injected query actually executes as WHERE (user=
+'aidan' AND password='') OR ''='', so instead of returning a database record
+corresponding to an arbitrary username (in this case 'aidan'), it would
+actually return ALL database records.  In no particular order.  So an attacker
+might be able to log in as any account, but not necessarily with any control
+over which account it is.
+
+Of course a potential attacker could simply modify their parameters to target
+specific users of interest:
+
+<?php
+
+// E.g. attacker's values
+$_POST['username'] = '';
+$_POST['password'] = "' OR user = 'administrator' AND '' = '";
+
+// Malformed query
+$query = "SELECT * FROM users WHERE user='$_POST[username]' AND password='
+$_POST[password]'";
+
+echo $query;
+
+// The query sent to MySQL would read:
+// SELECT * FROM users WHERE user='' AND password='' OR user='administrator'
+AND ''='';
+// which would allow anyone to gain access to the account named 'administrator'
+
+?>
+===============================================================================
+
+Don't forget that if you're using Mysqli (ie, the "improved" Mysql extension)
+then you need to use the corresponding mysqli function
+mysqli_real_escape_string().  The parameter order is also different.
+===============================================================================
+
+If you want to make sure that the ID you're using to do a query is a number,
+use sprint() of (int) or intval(), but don't use mysql_real_escape_string.
+
+There is no difference between ISO-8859-1's number 10 and UTF-8's number 10.

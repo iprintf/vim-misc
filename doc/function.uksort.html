@@ -1,0 +1,788 @@
+
+uksort
+
+(PHP 4, PHP 5, PHP 7)
+
+uksort — 使用用户自定义的比较函数对数组中的键名进行排序
+
+说明
+
+bool uksort ( array &$array , callable $cmp_function )
+
+uksort() 函数将使用用户提供的比较函数对数组中的键名进行排序。如果要排序的数组需
+要用一种不寻常的标准进行排序，那么应该使用此函数。
+
+参数
+
+array
+
+    输入的数组。
+
+cmp_function
+
+    在第一个参数小于，等于或大于第二个参数时，该比较函数必须相应地返回一个小于
+    ，等于或大于 0 的整数。
+
+    int callback ( mixed $a, mixed $b )
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 uksort() 例子
+
+<?php
+function cmp($a, $b)
+{
+    $a = preg_replace('@^(a|an|the) @', '', $a);
+    $b = preg_replace('@^(a|an|the) @', '', $b);
+    return strcasecmp($a, $b);
+}
+
+$a = array("John" => 1, "the Earth" => 2, "an apple" => 3, "a banana" => 4);
+
+uksort($a, "cmp");
+
+foreach ($a as $key => $value) {
+    echo "$key: $value\n";
+}
+?>
+
+以上例程会输出：
+
+an apple: 3
+a banana: 4
+the Earth: 2
+John: 1
+
+参见
+
+  • usort() - 使用用户自定义的比较函数对数组中的值进行排序
+  • 数组排序函数对比
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+[Editor's note: the following comment may be factually incorrect]
+
+uksort is only usable in the UK
+<?php
+if($country=="UK"){
+  uksort();
+}else{
+  echo "You have to live in UK to use uksort().";
+}
+?>
+===============================================================================
+
+(about sorting an array of objects by their properties in a class - inspired by
+webmaster at zeroweb dot org at usort function)
+I'm using classes as an abstraction for querying records in a database and use
+arrays of objects to store records that have an 1 to n relationship. E.g. a
+class "family" has family members stored as an array of objects. Each of those
+objects prepresents a record in a database related to the family (by it's
+familyId).
+
+To identify members, I'm using their memberId as the key of the array e.g.
+$family->members[$memberId].
+To sort the family members AFTER fetching them with the database query, you can
+use the functions _objSort and sortMembers which will sort the "members" array
+by key using it's properties (for space reasons I didn't include the methods
+used to open the records):
+<?php
+class familyMember
+{
+    var $memberId;
+    var $familyId;
+    var $firstName;
+    var $age;
+    var $hairColor;
+// ...
+}
+
+class family
+{
+    var $familyId;
+    var $name;
+    var $members = array(); // array of familyMember objects
+    var $sortFields = array();
+    var $sortDirections = array();
+    // ...
+    function _objSort(&$a, &$b, $i = 0)
+    {
+        $field        = $this->sortFields[$i];
+        $direction    = $this->sortDirections[$i];
+       
+        $diff = strnatcmp($this->details[$a]->$field, $this->details[$b]->
+$field) * $direction;
+        if ($diff == 0 && isset($this->sortFields[++$i]))
+        {
+            $diff = $this->_objSort($a, $b, $i);
+        }
+       
+        return $diff;
+    }
+   
+    function sortMembers($sortFields)
+    {
+        $i = 0;
+        foreach ($sortFields as $field => $direction)
+        {
+            $this->sortFields[$i] = $field;
+            $direction == "DESC" ? $this->sortDirections[$i] = -1 : $this->
+sortDirections[$i] = 1;
+            $i++;
+        }
+       
+        uksort($this->details, array($this, "_objSort"));
+       
+        $this->sortFields = array();
+        $this->sortDirections = array();
+    }
+}
+// open a family
+$familyId = 5;
+$family = new family($familyId);
+$family->open(); // this will also fetch all members
+
+// sort members by 3 fields
+$family->sortMembers(array("firstName" => "ASC", "age" => "DESC", "hairColor" 
+=> "ASC"));
+// output all family members
+foreach ($family->members as $member)
+{
+    echo $member->firstName." - ".$member->age." - ".$member->hairColor."<br />
+";
+}
+?>
+
+Note that this might not be the fastest thing on earth and it hasn't been
+tested very much yet but I hope it's useful for someone.
+===============================================================================
+
+One remark regarding array_sorter class.
+It won't work correctly with eg. dates from mysql like 20041206105350, cause
+you can't convert such number into integer. To fix it remove intval() from the
+code. If the variable is a number it will work without converting this to int
+anyways. Here is the fix.
+
+<?php
+....
+if ($a == $b)
+    return 0;
+if ($this->sasc)
+    return ($a > $b) ? 1 : -1;
+else
+    return ($a > $b) ? -1 : 1;
+...
+?>
+===============================================================================
+
+To sort dates with uksort:
+
+function datediff($a, $b) {
+   
+
+$a = date('U',$a);
+$b = date('U',$b);
+
+if ($a == $b) $r = 0;
+else $r = ($a > $b) ? 1: -1;
+
+return $r;
+}
+===============================================================================
+
+Regarding the recursive sorting function above:
+Genrally speaking, any recursion can be reimplemented using simple iteration.
+in the specific case, using recursion to compare strings has a huge performance
+impact while a simple loop would suffice and be faster and more simple.
+Recursion is only good if it simplifies your code or your understanding of the
+concept. the previous example does neither, especially as it does a lot of
+repetitive things in each iteration, such as asigning the character order
+constant, rebuilding it into an array and such
+
+For example, the string comparison could be written as such :
+function str_compare($a,$b) {
+    $order="aA  bBcC&#269;&#268;..."; // longer normally & without that html
+entities
+    $default = strlen($a) - strlen($b);
+    $minlen = strlen($a) < strlen($b) ? strlen($a) : strlen($b);
+    for ($i = 0; $i < $minlen; $i++) {
+        $pos_a=strpos($order,$a[$i]);
+        $pos_b=strpos($order,$b[$i]);
+        if ($pos_a != $pos_b)
+            return $pos_a - $pos_b;
+    }
+    return $default;
+}
+
+Which is much simpler and faster.
+Note that the above function will break for characters that are not listed in
+$order. it should be failry trivial to fix it.
+===============================================================================
+
+To use a more complicated comparison function, one can use a callback to a
+method of an object instance.
+For example the following will take an array $arr whose keys are the same as
+those of $reference, and reorder $arr so that the keys appear in the same order
+as in $reference.
+
+class kcmp {
+    var $reference ;
+    function kcmp( $reference ) {
+       $this->reference = $reference ;
+    }
+    function kcompare( $a, $b ) {
+       $keys = array_keys( $this->reference ) ;
+       $position_a = array_search( $a, $keys ) ;
+       $position_b = array_search( $b, $keys ) ;
+       return  $position_a < $position_b ? -1 : 1 ;   
+    }
+}
+
+$reference = array(
+    "k2" => "a2",
+    "k3" => "a3",
+    "k1" => "a1"
+) ;
+$arr = array(
+    "k1" => "b1",
+    "k2" => "b2",
+    "k3" => "b3"
+) ;
+print_r( $arr ) ;
+uksort( $arr, array( new kcmp( $reference ), "kcompare" ) ) ;
+print_r( $arr ) ;
+===============================================================================
+
+Case insensitive without own function:
+
+uksort($array, "strnatcasecmp");
+===============================================================================
+
+If you need to periodically sort by grades (A, A+, D-, etc.), here is a compare
+function that compares strings by the case-insensitive method, unless it finds
+a grade, in which case it correctly sorts by putting "plus" grades first,
+unmarked grades second, and "minus" grades last.
+
+<?php
+function cmp($a, $b)
+{
+   $a = preg_replace('@^(a|an|the) @', '', $a);
+   $b = preg_replace('@^(a|an|the) @', '', $b);
+
+   //special code for grades
+   if (strpos( $a, "+") !== false || strpos( $b, "+") !== false  ||
+       strpos( $a, "-") !== false || strpos( $b, "-") !== false ){
+
+        $substrA = substr($a, 0, 1);
+        $substrB = substr($b, 0, 1);       
+
+        $modifierA = (strlen($a) == 2) ? substr($a, 1, 1) : "";
+        $modifierB = (strlen($b) == 2) ? substr($b, 1, 1) : "";
+   
+        if ($substrA == $substrB){
+            //figure out plusses and minuses.
+            if ($modifierA == "+"){
+                return -1;
+            } else if ($modifierB == "+"){
+                return 1;
+            }
+       
+            if ($modifierA == "-"){
+                return 1;
+            } else if ($modifierB == '-'){
+                return -1;
+            }
+        } else {
+            return strcasecmp($a, $b);
+        }
+
+    }
+   return strcasecmp($a, $b);
+}
+
+$grades = array(
+                 "C+" => 13    ,
+                "C" => 10     ,
+                "D+" => 8     ,
+                "B+" => 7     ,
+                "C-" => 6     ,
+                "A-" => 5     ,
+                "F" => 5      ,
+                "B" => 4      ,
+                "B-" => 4     ,
+                "D" => 3      ,
+                "D-" => 3     ,
+                "A+" => 1
+    );
+
+uksort($grades, "cmp");
+?>
+
+result:  Array
+(
+    [A+] => 1
+    [A-] => 5
+    [B+] => 7
+    [B] => 4
+    [B-] => 4
+    [C+] => 13
+    [C] => 10
+    [C-] => 6
+    [D+] => 8
+    [D] => 3
+    [D-] => 3
+    [F] => 5
+)
+===============================================================================
+
+The code below allows you to sort an array_A following array_B keys order,
+original keys and values remain associated.
+
+<?
+
+//main function
+Function SortArrayAKeysLikeArrayBKeys(&$TheArrayToSort){
+   uksort($TheArrayToSort,"SortArrayAKeysLikeArrayBKeys_cmp");
+}
+
+//the custom compare function
+Function SortArrayAKeysLikeArrayBKeys_cmp($a,$b){
+  global $TheArrayOrder;
+  $PosA=KeyPosInArray($a,$TheArrayOrder);
+  $PosB=KeyPosInArray($b,$TheArrayOrder);
+  if ($PosA==$PosB){return 0;}else{return ($PosA > $PosB ? 1 : -1);}
+}
+
+//where is my key in my array
+Function KeyPosInArray($Key,$Array){
+   $i=0;
+   $Pos=99999999;
+   if($Array){
+      foreach($Array as $K => $V){
+         $i++;
+         if($K==$Key){
+            $Pos=$i;
+            break;
+         }
+      }
+   }
+   return $Pos;
+}
+
+//the array you want to sort
+$AnyArrayToSort['age']='19';
+$AnyArrayToSort['ville']='rennes';
+$AnyArrayToSort['website']='kik-it.com';
+$AnyArrayToSort['region']='bretagne';
+$AnyArrayToSort['code_postal']='35200';
+$AnyArrayToSort['Nom']='Fred';
+
+//the array with the correct keys/values order
+$TheArrayOrder['Nom']='Whatever';
+$TheArrayOrder['age']='Anything';
+$TheArrayOrder['region']='What u want';
+$TheArrayOrder['ville']='Something';
+$TheArrayOrder['code_postal']='Nothing';
+
+//before sort
+print_r($AnyArrayToSort);   
+echo "<br>";
+//we sort
+SortArrayAKeysLikeArrayBKeys($AnyArrayToSort);
+echo "<br>";
+//after sort
+print_r($AnyArrayToSort);
+?>
+
+Will print :
+
+Array ( [age] => 19 [ville] => rennes [website] => kik-it.com [region] =>
+bretagne [code_postal] => 35200 [Nom] => Fred )
+
+Array ( [Nom] => Fred [age] => 19 [region] => bretagne [ville] => rennes
+[code_postal] => 35200 [website] => kik-it.com )
+
+The keys not listed in the $TheArrayOrder will appear at the end of your sorted
+array (only if Key Pos < 99999999 ;o)
+===============================================================================
+
+sort with collation, to have umlauts correctly:
+
+uksort($retval, array(Collator::create( 'de_DE' ), 'compare'));
+===============================================================================
+
+need a case insensitive sort by key function? i did and couldn find it, so:
+
+<?php
+function insensitive_uksort($a,$b) {
+    return strtolower($a)<strtolower($b);
+}
+uksort($arr, "insensitive_uksort");
+?>
+===============================================================================
+
+The comparison function must return an integer less than, equal to, or greater
+than zero if the first argument is considered to be respectively less than,
+equal to, or greater than the second.
+--necessary info from http://www.php.net/manual/en/function.usort.php if you
+didn't see it already
+===============================================================================
+
+Here is a small and very fast object to handle sorting of multidimentional
+arrays by a key.
+<?php
+/**
+* Handles multidimentional array sorting by a key (not recursive)
+*
+* @author Oliwier Ptak <aleczapka at gmx dot net>
+*/
+class array_sorter
+{
+    var $skey = false;
+    var $sarray = false;
+    var $sasc = true;
+
+    /**
+    * Constructor
+    *
+    * @access public
+    * @param mixed $array array to sort
+    * @param string $key array key to sort by
+    * @param boolean $asc sort order (ascending or descending)
+    */
+    function array_sorter(&$array, $key, $asc=true)
+    {
+        $this->sarray = $array;
+        $this->skey = $key;
+        $this->sasc = $asc;
+    }
+
+    /**
+    * Sort method
+    *
+    * @access public
+    * @param boolean $remap if true reindex the array to rewrite indexes
+    */
+    function sortit($remap=true)
+    {
+        $array = &$this->sarray;
+        uksort($array, array($this, "_as_cmp"));
+        if ($remap)
+        {
+            $tmp = array();
+            while (list($id, $data) = each($array))
+                $tmp[] = $data;
+            return $tmp;
+        }
+        return $array;
+    }
+
+    /**
+    * Custom sort function
+    *
+    * @access private
+    * @param mixed $a an array entry
+    * @param mixed $b an array entry
+    */
+    function _as_cmp($a, $b)
+    {
+        //since uksort will pass here only indexes get real values from our
+array
+        if (!is_array($a) && !is_array($b))
+        {
+            $a = $this->sarray[$a][$this->skey];
+            $b = $this->sarray[$b][$this->skey];
+        }
+
+        //if string - use string comparision
+        if (!ctype_digit($a) && !ctype_digit($b))
+        {
+            if ($this->sasc)
+                return strcasecmp($a, $b);
+            else
+                return strcasecmp($b, $a);
+        }
+        else
+        {
+            if (intval($a) == intval($b))
+                return 0;
+
+            if ($this->sasc)
+                return (intval($a) > intval($b)) ? -1 : 1;
+            else
+                return (intval($a) > intval($b)) ? 1 : -1;
+        }
+    }
+
+}//end of class
+?>
+
+Sample $input_array:
+
+Array
+(
+    [0] => Array
+        (
+            [id] => 961
+            [uid] => 29
+            [gid] => 12
+            [parent_id] => 147
+            [created] => 20041206105350
+            [modified] => 20041206110702
+        )
+
+    [1] => Array
+        (
+            [id] => 41
+            [uid] => 29
+            [gid] => 12
+            [parent_id] => 153
+            [created] => 20041025154009
+            [modified] => 20041206105532
+        )
+
+    [2] => Array
+        (
+            [id] => 703
+            [uid] => 29
+            [gid] => 12
+            [parent_id] => 419
+            [created] => 20041025154132
+            [modified] => 20041027150259
+        )
+
+Example of usage:
+<?php
+    function multi_sort(&$array, $key, $asc=true)
+    {
+        $sorter = new array_sorter($array, $key, $asc);
+        return $sorter->sortit();
+    }
+    //sort by parent_id in descending order
+    $my_array = multi_sort($input_array, "parent_id", false);
+?>
+
+The result array will be:
+Array
+(
+
+    [0] => Array
+        (
+            [id] => 703
+            [uid] => 29
+            [gid] => 12
+            [parent_id] => 419
+            [created] => 20041025154132
+            [modified] => 20041027150259
+        )
+
+    [1] => Array
+        (
+            [id] => 41
+            [uid] => 29
+            [gid] => 12
+            [parent_id] => 153
+            [created] => 20041025154009
+            [modified] => 20041206105532
+        )
+
+    [2] => Array
+        (
+            [id] => 961
+            [uid] => 29
+            [gid] => 12
+            [parent_id] => 147
+            [created] => 20041206105350
+            [modified] => 20041206110702
+        )
+===============================================================================
+
+...
+
+function cmp($a, $b)
+{
+   if ($a == $b) {
+       return 0;
+   }
+   return ($a < $b) ? -1 : 1;
+}
+
+function uksort_tree ( &$array )
+{
+    // [PHP5] foreach ( $array as &$value )
+    foreach ( $array as $key => $value )
+    {
+       if ( is_array ( $value ) )
+       {
+            // [PHP5] uksort_tree ( $value );
+           uksort_tree ( $array[$key] );
+       }
+    }
+
+    uksort( $array, "cmp" );
+}
+
+uksort_tree( $myEntryArray );
+
+...
+===============================================================================
+
+I needed to be able to sort a string that contained numbers eg.
+
+"Slot 1 name"
+"Slot 2 name"
+"Slot 10 name"
+
+using a normal string compare the "Slot 10 name" would appear before "Slot 2
+name" so I wrote little function that will compare a string taking numbers in
+to consideration. There may be a few edge cases that need to be taken in to
+consideration.
+
+function strCmpWithNumbers( $a, $b) {
+  // Split the string in to words.
+  $a = explode(' ',$a);
+  $b = explode(' ',$b);
+  $loop = 0;
+  do {
+    // Get the first word from each item
+    $ta = Utils::gvfa($a, $loop);
+    $tb = Utils::gvfa($b, $loop);
+   
+    if (isset($ta)) {
+      if (isset($tb)) {
+        if (is_numeric($ta)) {
+          if ($ta != $tb) {
+            return $ta - $tb;
+          }
+        } else {
+          $val = strcasecmp($ta, $tb);
+          if ($val != 0) {
+            return $val;
+          }
+        }
+      } else {
+        return 1; // a is set but b isn't
+      }
+    } else {
+      return isset($b);
+    }
+    $loop +=1;
+  } while (true);
+}
+===============================================================================
+
+Sort the indices by a set order (custom order)
+
+<?php
+
+function sort_keys(&$array, $order) {
+    uksort($array, function ($a, $b) use ($order) {
+        $pos_a = array_search($a, $order);
+        $pos_b = array_search($b, $order);
+
+        if ($pos_a === false)
+            return 1;
+        if ($pos_b === false)
+            return -1;
+
+        return $pos_a - $pos_b;
+    });
+
+    return $array;
+}
+
+$order = ['a', 'c', 'z'];
+$arr = ['a'=>1, 'b'=>2, 'c'=>3, 'f'=>4, 'z'=>5];
+
+sort_keys($arr, $order);
+// => [
+//       "a" => 1,
+//       "c" => 3,
+//       "z" => 5,
+//       "b" => 2,
+//       "f" => 4
+//   ]
+===============================================================================
+
+An associative array with known keys can be easily custom sorted using a switch
+statement in the callback:
+
+NB ksort can be used beforehand to ensure expected results
+
+ksort($array);
+
+uksort($array, function ($a) {                   
+    switch($a) {
+        case 'pepperoni':
+            return 0;
+        case 'beef':
+            return 1;
+        case 'chicken':
+            return 2;
+        case 'ham':
+            return 3;
+        case 'vegetarian':
+            return 4;
+    }
+});
+===============================================================================
+
+I tried to write my own function for sorting with special Czech characters,
+which php normally compares wrong way. The function is recoursive, it compares
+the first characters of the strings and when they're the same, the function
+calls itself with parameters without the first character. My php often crashed
+by calling this function. After some time if found the problem: it crashed
+after 10th recoursive call. I think it's a bug in php, and I've made this
+workaround:
+
+function str_compare($a,$b,$level=0)
+    {
+    $maxlevel=9;
+    if($GLOBALS["STR_COMPARE"] && is_array($a))
+        {
+        $a=$a[$GLOBALS["STR_COMPARE"]];
+        $b=$b[$GLOBALS["STR_COMPARE"]];
+        }
+    $result=0;
+    if($a==$b) return 0;
+    elseif($a=="") return ($b=="") ? 0 : 1;
+    elseif ($b=="") return -1;
+    else
+        {
+        $order="aA  bBcC&#269;&#268;..."; // longer normally & without that
+html entities
+        for($i=0;$i<strlen($order);$i++) $codes[]=ord($order[$i]);
+        $char_a=$a[0];$char_b=$b[0];
+        $pos_a=array_search(ord($a),$codes); $pos_b=array_search(ord
+($b),$codes);
+        //echo"$char_a - $pos_a<br>";
+        if($pos_a===false || $pos_b===false)
+            {
+            if($char_a==$char_b)
+                {
+                if ($level<=$maxlevel) $result=str_compare (substr($a,1),substr
+($b,1),$level+1);
+                else $a<$b ? $result=-1 : $result=1;
+                }
+            else ($char_a<$char_b) ? $result=-1 : $result=1;
+            }
+        else
+            {
+            if($pos_a==$pos_b)
+                {
+                if ($level<=$maxlevel) $result=str_compare(substr($a,1), substr
+($b,1),$level+1);
+                else $a<$b ? $result=-1 : $result=1;
+                }
+            else ($pos_a<$pos_b) ? $result=-1 : $result=1;
+            }
+        return $result;
+        }
+    }

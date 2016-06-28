@@ -1,0 +1,1071 @@
+
+iconv
+
+(PHP 4 >= 4.0.5, PHP 5, PHP 7)
+
+iconv — 字符串按要求的字符编码来转换
+
+说明
+
+string iconv ( string $in_charset , string $out_charset , string $str )
+
+将字符串 str 从 in_charset 转换编码到 out_charset。
+
+参数
+
+in_charset
+
+    输入的字符集。
+
+out_charset
+
+    输出的字符集。
+
+    如果你在 out_charset 后添加了字符串 //TRANSLIT，将启用转写（transliteration
+    ）功能。这个意思是，当一个字符不能被目标字符集所表示时，它可以通过一个或多
+    个形似的字符来近似表达。如果你添加了字符串 //IGNORE，不能以目标字符集表达的
+    字符将被默默丢弃。否则，str 从第一个无效字符开始截断并导致一个 E_NOTICE。
+
+str
+
+    要转换的字符串。
+
+返回值
+
+返回转换后的字符串，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 iconv() 例子
+
+<?php
+$text = "This is the Euro symbol '€'.";
+
+echo 'Original : ', $text, PHP_EOL;
+echo 'TRANSLIT : ', iconv("UTF-8", "ISO-8859-1//TRANSLIT", $text), PHP_EOL;
+echo 'IGNORE   : ', iconv("UTF-8", "ISO-8859-1//IGNORE", $text), PHP_EOL;
+echo 'Plain    : ', iconv("UTF-8", "ISO-8859-1", $text), PHP_EOL;
+
+?>
+
+以上例程的输出类似于：
+
+Original : This is the Euro symbol '€'.
+TRANSLIT : This is the Euro symbol 'EUR'.
+IGNORE   : This is the Euro symbol ''.
+Plain    :
+Notice: iconv(): Detected an illegal character in input string in .\iconv-example.php on line 7
+This is the Euro symbol '
+
+
+User Contributed Notes 52 notes
+
+===============================================================================
+
+The "//ignore" option doesn't work with recent versions of the iconv library. 
+So if you're having trouble with that option, you aren't alone. 
+
+That means you can't currently use this function to filter invalid characters. 
+Instead it silently fails and returns an empty string (or you'll get a notice
+but only if you have E_NOTICE enabled).
+
+This has been a known bug with a known solution for at least since 2009 years
+but no one seems to be willing to fix it (PHP must pass the -c option to
+iconv).  It's still broken as of the latest release 5.4.3.
+
+https://bugs.php.net/bug.php?id=48147
+https://bugs.php.net/bug.php?id=52211
+https://bugs.php.net/bug.php?id=61484
+
+[UPDATE 15-JUN-2012]
+Here's a workaround...
+
+  ini_set('mbstring.substitute_character', "none");
+  $text= mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+
+That will strip invalid characters from UTF-8 strings (so that you can insert
+it into a database, etc.).  Instead of "none" you can also use the value 32 if
+you want it to insert spaces in place of the invalid characters.
+===============================================================================
+
+Please note that iconv('UTF-8', 'ASCII//TRANSLIT', ...) doesn't work properly
+when locale category LC_CTYPE is set to C or POSIX. You must choose another
+locale otherwise all non-ASCII characters will be replaced with question marks.
+This is at least true with glibc 2.5.
+
+Example:
+<?php
+setlocale(LC_CTYPE, 'POSIX');
+echo iconv('UTF-8', 'ASCII//TRANSLIT', "Žluťoučký kůň\n");
+// ?lu?ou?k? k??
+
+setlocale(LC_CTYPE, 'cs_CZ');
+echo iconv('UTF-8', 'ASCII//TRANSLIT', "Žluťoučký kůň\n");
+// Zlutoucky kun
+?>
+===============================================================================
+
+Interestingly, setting different target locales results in different, yet
+appropriate, transliterations. For example:
+
+<?php
+//some German
+$utf8_sentence = 'Weiß, Goldmann, Göbel, Weiss, Göthe, Goethe und Götz';
+
+//UK
+setlocale(LC_ALL, 'en_GB');
+
+//transliterate
+$trans_sentence = iconv('UTF-8', 'ASCII//TRANSLIT', $utf8_sentence);
+
+//gives [Weiss, Goldmann, Gobel, Weiss, Gothe, Goethe und Gotz]
+//which is our original string flattened into 7-bit ASCII as
+//an English speaker would do it (ie. simply remove the umlauts)
+echo $trans_sentence . PHP_EOL;
+
+//Germany
+setlocale(LC_ALL, 'de_DE');
+
+$trans_sentence = iconv('UTF-8', 'ASCII//TRANSLIT', $utf8_sentence);
+
+//gives [Weiss, Goldmann, Goebel, Weiss, Goethe, Goethe und Goetz]
+//which is exactly how a German would transliterate those
+//umlauted characters if forced to use 7-bit ASCII!
+//(because really ä = ae, ö = oe and ü = ue)
+echo $trans_sentence . PHP_EOL;
+
+?>
+===============================================================================
+
+to test different combinations of convertions between charsets (when we don't
+know the source charset and what is the convenient destination charset) this is
+an example :
+
+<?php
+$tab = array("UTF-8", "ASCII", "Windows-1252", "ISO-8859-15", "ISO-8859-1", 
+"ISO-8859-6", "CP1256");
+$chain = "";
+foreach ($tab as $i)
+    {
+        foreach ($tab as $j)
+        {
+            $chain .= " $i$j ".iconv($i, $j, "$my_string");
+        }
+    }
+
+echo $chain;
+?>
+
+then after displaying, you use the $i$j that shows good displaying.
+NB: you can add other charsets to $tab  to test other cases.
+===============================================================================
+
+There may be situations when a new version of a web site, all in UTF-8, has to
+display some old data remaining in the database with ISO-8859-1 accents. The
+problem is iconv("ISO-8859-1", "UTF-8", $string) should not be applied if
+$string is already UTF-8 encoded.
+
+I use this function that does'nt need any extension :
+
+function convert_utf8( $string ) {
+    if ( strlen(utf8_decode($string)) == strlen($string) ) {  
+        // $string is not UTF-8
+        return iconv("ISO-8859-1", "UTF-8", $string);
+    } else {
+        // already UTF-8
+        return $string;
+    }
+}
+
+I have not tested it extensively, hope it may help.
+===============================================================================
+
+If you are getting question-marks in your iconv output when transliterating, be
+sure to 'setlocale' to something your system supports.
+
+Some PHP CMS's will default setlocale to 'C', this can be a problem.
+
+use the "locale" command to find out a list..
+
+$ locale -a
+C
+en_AU.utf8
+POSIX
+
+<?php
+  setlocale(LC_CTYPE, 'en_AU.utf8');
+  $str = iconv('UTF-8', 'ASCII//TRANSLIT', "Côte d'Ivoire");
+?>
+===============================================================================
+
+Here is a code to convert ISO 8859-1 to UTF-8 and vice versa without using
+iconv.
+
+<?php
+//Logic from http://twiki.org/cgi-bin/view/Codev/InternationalisationUTF8
+$str_iso8859_1 = 'foo in ISO 8859-1';
+//ISO 8859-1 to UTF-8
+$str_utf8 = preg_replace("/([\x80-\xFF])/e",
+            "chr(0xC0|ord('\\1')>>6).chr(0x80|ord('\\1')&0x3F)",
+             $str_iso8859_1);
+//UTF-8 to ISO 8859-1
+$str_iso8859_1 = preg_replace("/([\xC2\xC3])([\x80-\xBF])/e",
+                "chr(ord('\\1')<<6&0xC0|ord('\\2')&0x3F)",
+                 $str_utf8);
+?>
+
+HTH,
+R. Rajesh Jeba Anbiah
+===============================================================================
+
+As orrd101 said, there is a bug with //IGNORE in recent PHP versions (we use
+5.6.5) where we couldn't convert some strings (i.e. "∙" from UTF8 to CP1251
+with //IGNORE).
+But we have found a workaround and now we use both //TRANSLIT and //IGNORE
+flags:
+$text="∙";
+iconv("UTF8", "CP1251//TRANSLIT//IGNORE", $text);
+===============================================================================
+
+In my case, I had to change:
+<?php
+setlocale(LC_CTYPE, 'cs_CZ');
+?>
+to
+<?php
+setlocale(LC_CTYPE, 'cs_CZ.UTF-8');
+?>
+Otherwise it returns question marks.
+
+When I asked my linux for locale (by locale command) it returns "cs_CZ.UTF-8",
+so there is maybe correlation between it.
+
+iconv (GNU libc) 2.6.1
+glibc 2.3.6
+===============================================================================
+
+iconv with //IGNORE works as expected: it will skip the character if this one
+does not exist in the $out_charset encoding.
+
+If a character is missing from the $in_charset encoding (eg byte \x81 from
+CP1252 encoding), then iconv will return an error, whether with //IGNORE or
+not.
+===============================================================================
+
+You can use 'CP1252' instead of 'Windows-1252':
+<?php
+// These two lines are equivalent
+$result = iconv('Windows-1252', 'UTF-8', $string);
+$result = iconv('CP1252', 'UTF-8', $string);
+?>
+Note: The following code points are not valid in CP1252 and will cause errors.
+129 (0x81)
+141 (0x8D)
+143 (0x8F)
+144 (0x90)
+157 (0x9D)
+Use the following instead:
+<?php
+// Remove invalid code points, convert everything else
+$result = iconv('CP1252', 'UTF-8//IGNORE', $string);
+?>
+===============================================================================
+
+So, as iconv() does not always work correctly, in most cases, much easier to
+use htmlentities().
+Example: <?php $content=htmlentities(file_get_contents("incoming.txt"), 
+ENT_QUOTES, "Windows-1252");  file_put_contents("outbound.txt", 
+html_entity_decode($content, ENT_QUOTES , "utf-8")); ?>
+===============================================================================
+
+Here is how to convert UCS-2 numbers to UTF-8 numbers in hex:
+
+<?php
+function ucs2toutf8($str)
+{
+        for ($i=0;$i<strlen($str);$i+=4)
+        {
+                $substring1 = $str[$i].$str[$i+1];
+                $substring2 = $str[$i+2].$str[$i+3];
+
+                if ($substring1 == "00")
+                {
+                        $byte1 = "";
+                        $byte2 = $substring2;
+                }
+                else
+                {
+                        $substring = $substring1.$substring2;
+                        $byte1 = dechex(192+(hexdec($substring)/64));
+                        $byte2 = dechex(128+(hexdec($substring)%64));
+                }
+                $utf8 .= $byte1.$byte2;
+        }
+        return $utf8;
+}
+
+echo strtoupper(ucs2toutf8("06450631062D0020"));
+
+?>
+
+Input:
+06450631062D
+Output:
+D985D8B1D8AD
+
+regards,
+Ziyad
+===============================================================================
+
+Like many other people, I have encountered massive problems when using iconv()
+to convert between encodings (from UTF-8 to ISO-8859-15 in my case), especially
+on large strings.
+
+The main problem here is that when your string contains illegal UTF-8
+characters, there is no really straight forward way to handle those. iconv()
+simply (and silently!) terminates the string when encountering the problematic
+characters (also if using //IGNORE), returning a clipped string. The
+
+<?php
+
+$newstring = html_entity_decode(htmlentities($oldstring, ENT_QUOTES, 'UTF-8'), 
+ENT_QUOTES , 'ISO-8859-15');
+
+?>
+
+workaround suggested here and elsewhere will also break when encountering
+illegal characters, at least dropping a useful note ("htmlentities(): Invalid
+multibyte sequence in argument in...")
+
+I have found a lot of hints, suggestions and alternative methods (it's scary
+and in my opinion no good sign how many ways PHP natively provides to convert
+the encoding of strings), but none of them really worked, except for this one:
+
+<?php
+
+$newstring = mb_convert_encoding($oldstring, 'ISO-8859-15', 'UTF-8');
+
+?>
+===============================================================================
+
+Please keep in mind that iconv is not your magic stick by which you can convert
+anything to your desired encoding sheme.
+
+Even if there is encoding declaration for text you're about to manipulate in
+PHP, there is always chances that there are some characters or character
+sequences that are in wrong encoding scheme and despite that your browser (for
+example) is displaying text to you properly.
+
+These are situations with so-called mixed encoding. You have to:
+
+detect current encoding for your string,
+
+repair broken encoding sheme (here I'm struggling with different methods and
+third-party libraries such as forceutf8 on GitHub),
+
+and in last step you can hope to good conversion results.
+===============================================================================
+
+You can use native iconv in Linux via passthru if all else failed.
+Use the -c parameter to suppress error messages.
+===============================================================================
+
+I have used iconv to convert from cp1251 into UTF-8. I spent a day to
+investigate why a string with Russian capital 'Р' (sounds similar to 'r') at
+the end cannot be inserted into a database.
+
+The problem is not in iconv. But 'Р' in cp1251 is chr(208) and 'Р' in UTF-8 is
+chr(208).chr(106). chr(106) is one of the space symbol which match '\s' in
+regex. So, it can be taken by a greedy '+' or '*' operator. In that case, you
+loose 'Р' in your string.
+
+For example, 'ГР   ' (Russian, UTF-8). Function preg_match. Regex is '(.+?)[\s]
+*'. Then '(.+?)' matches 'Г'.chr(208) and '[\s]*' matches chr(106).'   '.
+
+Although, it is not a bug of iconv, but it looks like it very much. That's why
+I put this comment here.
+===============================================================================
+
+Didn't know its a feature or not but its works for me (PHP 5.0.4)
+
+iconv('', 'UTF-8', $str)
+
+test it to convert from windows-1251 (stored in DB) to UTF-8 (which i use for
+web pages).
+BTW i convert each array i fetch from DB with array_walk_recursive...
+===============================================================================
+
+function detectUTF8($string)
+{
+        return preg_match('%(?:
+        [\xC2-\xDF][\x80-\xBF]        # non-overlong 2-byte
+        |\xE0[\xA0-\xBF][\x80-\xBF]               # excluding overlongs
+        |[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}      # straight 3-byte
+        |\xED[\x80-\x9F][\x80-\xBF]               # excluding surrogates
+        |\xF0[\x90-\xBF][\x80-\xBF]{2}    # planes 1-3
+        |[\xF1-\xF3][\x80-\xBF]{3}                  # planes 4-15
+        |\xF4[\x80-\x8F][\x80-\xBF]{2}    # plane 16
+        )+%xs', $string);
+}
+
+function cp1251_utf8( $sInput )
+{
+    $sOutput = "";
+
+    for ( $i = 0; $i < strlen( $sInput ); $i++ )
+    {
+        $iAscii = ord( $sInput[$i] );
+
+        if ( $iAscii >= 192 && $iAscii <= 255 )
+            $sOutput .=  "&#".( 1040 + ( $iAscii - 192 ) ).";";
+        else if ( $iAscii == 168 )
+            $sOutput .= "&#".( 1025 ).";";
+        else if ( $iAscii == 184 )
+            $sOutput .= "&#".( 1105 ).";";
+        else
+            $sOutput .= $sInput[$i];
+    }
+   
+    return $sOutput;
+}
+
+function encoding($string){
+    if (function_exists('iconv')) {   
+        if (@!iconv('utf-8', 'cp1251', $string)) {
+            $string = iconv('cp1251', 'utf-8', $string);
+        }
+        return $string;
+    } else {
+        if (detectUTF8($string)) {
+            return $string;       
+        } else {
+            return cp1251_utf8($string);
+        }
+    }
+}
+echo encoding($string);
+===============================================================================
+
+Here is how to convert UTF-8 numbers to UCS-2 numbers in hex:
+
+<?php
+
+function utf8toucs2($str)
+{
+       for ($i=0;$i<strlen($str);$i+=2)
+       {
+                $substring1 = $str[$i].$str[$i+1]; 
+                $substring2 = $str[$i+2].$str[$i+3];
+              
+                if (hexdec($substring1) < 127)
+                        $results = "00".$str[$i].$str[$i+1];
+                else
+                {
+                        $results = dechex((hexdec($substring1)-192)*64 + (
+hexdec($substring2)-128));
+                        if ($results < 1000) $results = "0".$results;
+                        $i+=2;
+                }
+                $ucs2 .= $results;
+        }
+        return $ucs2;
+}
+
+echo strtoupper(utf8toucs2("D985D8B1D8AD"))."\n";
+echo strtoupper(utf8toucs2("456725"))."\n";
+
+?>
+
+Input:
+D985D8B1D8AD
+Output:
+06450631062D
+
+Input:
+456725
+Output:
+004500670025
+===============================================================================
+
+On some systems there may be no such function as iconv(); this is due to the
+following reason: a constant is defined named `iconv` with the value `libiconv
+`. So, the string PHP_FUNCTION(iconv) transforms to PHP_FUNCTION(libiconv), and
+you have to call libiconv() function instead of iconv().
+I had seen this on FreeBSD, but I am sure that was a rather special build.
+If you'd want not to be dependent on this behaviour, add the following to your
+script:
+<?php
+if (!function_exists('iconv') && function_exists('libiconv')) {
+    function iconv($input_encoding, $output_encoding, $string) {
+        return libiconv($input_encoding, $output_encoding, $string);
+    }
+}
+?>
+Thanks to tony2001 at phpclub.net for explaining this behaviour.
+===============================================================================
+
+mirek code, dated 16-May-2008 10:17, added the characters `^~'" to the output.
+This function will strip out these extra characters:
+<?php
+setlocale(LC_ALL, 'en_US.UTF8');
+function clearUTF($s)
+{
+    $r = '';
+    $s1 = @iconv('UTF-8', 'ASCII//TRANSLIT', $s);
+    $j = 0;
+    for ($i = 0; $i < strlen($s1); $i++) {
+        $ch1 = $s1[$i];
+        $ch2 = @mb_substr($s, $j++, 1, 'UTF-8');
+        if (strstr('`^~\'"', $ch1) !== false) {
+            if ($ch1 <> $ch2) {
+                --$j;
+                continue;
+            }
+        }
+        $r .= ($ch1=='?') ? $ch2 : $ch1;
+    }
+    return $r;
+}
+?>
+===============================================================================
+
+Many mail servers don't handle utf-8 correctly as they assume iso-8859-x
+encodings, so you would want to convert the headers, subject and body of an
+email prior to sending it out.
+
+If iconv() and mb_convert_encoding() are missing the following function can be
+used to convert UTF8 to iso-8859-7 encoding. It discards all characters that
+are not 2-byte greek characters or single-byte (ascii).
+
+<?php
+function conv_utf8_iso8859_7($s) {
+    $len = strlen($s);
+    $out = "";
+    $curr_char = "";
+    for($i=0; $i < $len; $i++) {
+        $curr_char .= $s[$i];
+        if( ( ord($s[$i]) & (128+64) ) == 128) {
+            //character end found
+            if ( strlen($curr_char) == 2) {
+                // 2-byte character check for it is greek one and convert
+                if      (ord($curr_char[0])==205) $out .= chr( ord($curr_char[1
+])+16 );
+                else if (ord($curr_char[0])==206) $out .= chr( ord($curr_char[1
+])+48 );
+                else if (ord($curr_char[0])==207) $out .= chr( ord($curr_char[1
+])+112 );
+                else ; // non greek 2-byte character, discard character
+            } else ;// n-byte character, n>2, discard character
+            $curr_char = "";
+        } else if (ord($s[$i]) < 128) {
+            // character is one byte (ascii)
+            $out .= $curr_char;
+            $curr_char = "";
+        }
+    }
+    return $out;
+}
+?>
+===============================================================================
+
+The following are Microsoft encodings that are based on ISO-8859 but with the
+addition of those stupid control characters.
+
+CP1250 is Eastern European (not ISO-8859-2)
+CP1251 is Cyrillic (not ISO-8859-5)
+CP1252 is Western European (not ISO-8859-1)
+CP1253 is Greek (not ISO-8859-7)
+CP1254 is Turkish (not ISO-8859-9)
+CP1255 is Hebrew (not ISO-8859-8)
+CP1256 is Arabic (not ISO-8859-6)
+CP1257 is Baltic (not ISO-8859-4)
+
+If you know you're getting input from a Windows machine with those encodings,
+use one of these as a parameter to iconv.
+===============================================================================
+
+<?php
+//script from http://zizi.kxup.com/
+//javascript unesape
+function unescape($str) {
+  $str = rawurldecode($str);
+  preg_match_all("/(?:%u.{4})|&#x.{4};|&#\d+;|.+/U",$str,$r);
+  $ar = $r[0];
+print_r($ar);
+  foreach($ar as $k=>$v) {
+    if(substr($v,0,2) == "%u")
+      $ar[$k] = iconv("UCS-2","UTF-8",pack("H4",substr($v,-4)));
+    elseif(substr($v,0,3) == "&#x")
+      $ar[$k] = iconv("UCS-2","UTF-8",pack("H4",substr($v,3,-1)));
+    elseif(substr($v,0,2) == "&#") {
+echo substr($v,2,-1)."<br>";
+      $ar[$k] = iconv("UCS-2","UTF-8",pack("n",substr($v,2,-1)));
+    }
+  }
+  return join("",$ar);
+}
+?>
+===============================================================================
+
+Here is an example how to convert windows-1251 (windows) or cp1251(Linux/Unix)
+encoded string to UTF-8 encoding.
+
+<?php
+function cp1251_utf8( $sInput )
+{
+    $sOutput = "";
+
+    for ( $i = 0; $i < strlen( $sInput ); $i++ )
+    {
+        $iAscii = ord( $sInput[$i] );
+
+        if ( $iAscii >= 192 && $iAscii <= 255 )
+            $sOutput .=  "&#".( 1040 + ( $iAscii - 192 ) ).";";
+        else if ( $iAscii == 168 )
+            $sOutput .= "&#".( 1025 ).";";
+        else if ( $iAscii == 184 )
+            $sOutput .= "&#".( 1105 ).";";
+        else
+            $sOutput .= $sInput[$i];
+    }
+   
+    return $sOutput;
+}
+?>
+===============================================================================
+
+On my system, according to tests, and also as reported by other people
+elsewhere, you can combine TRANSLIT and IGNORE only by appending
+
+//IGNORE//TRANSLIT
+
+strictly in that order, but NOT by appending //TRANSLIT//IGNORE, which would
+lead to //IGNORE being ignored ( :) ).
+
+Anyway, it's hard to understand how one could devise a system of passing
+options that does not allow to couple both options in a neat manner, and also
+to understand why the default behaviour should be the less useful and most
+dangerous one (throwing away most of your data at the first unexpected
+character). Software design FAIL :-/
+===============================================================================
+
+Provided that there is no invalid code point in the character chain for the
+input encoding, the //IGNORE option works as expected. No bug here.
+===============================================================================
+
+If you want to normalize a filename on Mac OS X, because it is in UTF-8 NFD and
+you need UTF-8 NFC
+(See: http://en.wikipedia.org/wiki/Unicode_equivalence#
+Combining_and_precomposed_characters)
+you may use:
+<?php
+$filename_nfc = iconv("UTF-8-MAC", "UTF-8", $filename_nfd);
+?>
+===============================================================================
+
+For text with special characters such as (é) &eacute; which appears at 0xE9 in
+the ISO-8859-1 and at 0x82 in IBM-850. The correct output character set is
+'IBM850' as:
+('ISO-8859-1', 'IBM850', 'Québec')
+===============================================================================
+
+For transcoding values in an Excel generated CSV the following seems to work:
+
+<?php
+$value = iconv('Windows-1252', 'UTF-8//TRANSLIT', $value);
+?>
+===============================================================================
+
+Turkish characters is error with the used set_locale and strftime commands.
+
+My key example:
+<?php iconv('','UTF-8',strftime('%d %B %Y %A')); ?>
+===============================================================================
+
+To strip bogus characters from your input (such as data from an unsanitized or
+other source which you can't trust to necessarily give you strings encoded
+according to their advertised encoding set), use the same character set as both
+the input and the output, with //IGNORE on the output charcter set.
+<?php
+// assuming '†' is actually UTF8, htmlentities will assume it's iso-8859 
+// since we did not specify in the 3rd argument of htmlentities.
+// This generates "&acirc;[bad utf-8 character]"
+// If passed to any libxml, it will generate a fatal error.
+$badUTF8 = htmlentities('†');
+
+// iconv() can ignore characters which cannot be encoded in the target
+character set
+$goodUTF8 = iconv("utf-8", "utf-8//IGNORE", $badUTF8);
+?>
+The result of the example does not give you back the dagger character which was
+the original input (it got lost when htmlentities was misused to encode it
+incorrectly, though this is common from people not accustomed to dealing with
+extended character sets), but it does at least give you data which is sane in
+your target character set.
+===============================================================================
+
+Ritchie's example
+
+<?
+setlocale(LC_CTYPE, 'cs_CZ');
+echo iconv('UTF-8', 'ASCII//TRANSLIT', "Žluťoučký kůň\n");
+?>
+
+dasn't output `Zlutoucky kun`, but `Zlutouck'y kun`
+===============================================================================
+
+<?php // it's only example
+function CP1251toUTF8($string){
+  $out = '';
+  for ($i = 0; $i<strlen($string); ++$i){
+    $ch = ord($string{$i});
+    if ($ch < 0x80) $out .= chr($ch);
+    else
+      if ($ch >= 0xC0)
+        if ($ch < 0xF0)
+             $out .= "\xD0".chr(0x90 + $ch - 0xC0); // &#1040;-&#1071;, &#1072;
+-&#1087; (A-YA, a-p)
+        else $out .= "\xD1".chr(0x80 + $ch - 0xF0); // &#1088;-&#1103; (r-ya)
+      else
+        switch($ch){
+          case 0xA8: $out .= "\xD0\x81"; break; // YO
+          case 0xB8: $out .= "\xD1\x91"; break; // yo
+          // ukrainian
+          case 0xA1: $out .= "\xD0\x8E"; break; // &#1038; (U)
+          case 0xA2: $out .= "\xD1\x9E"; break; // &#1118; (u)
+          case 0xAA: $out .= "\xD0\x84"; break; // &#1028; (e)
+          case 0xAF: $out .= "\xD0\x87"; break; // &#1031; (I..)
+          case 0xB2: $out .= "\xD0\x86"; break; // I (I)
+          case 0xB3: $out .= "\xD1\x96"; break; // i (i)
+          case 0xBA: $out .= "\xD1\x94"; break; // &#1108; (e)
+          case 0xBF: $out .= "\xD1\x97"; break; // &#1111; (i..)
+          // chuvashian
+          case 0x8C: $out .= "\xD3\x90"; break; // &#1232; (A)
+          case 0x8D: $out .= "\xD3\x96"; break; // &#1238; (E)
+          case 0x8E: $out .= "\xD2\xAA"; break; // &#1194; (SCH)
+          case 0x8F: $out .= "\xD3\xB2"; break; // &#1266; (U)
+          case 0x9C: $out .= "\xD3\x91"; break; // &#1233; (a)
+          case 0x9D: $out .= "\xD3\x97"; break; // &#1239; (e)
+          case 0x9E: $out .= "\xD2\xAB"; break; // &#1195; (sch)
+          case 0x9F: $out .= "\xD3\xB3"; break; // &#1267; (u)
+        }
+  }
+  return $out;
+}
+?>
+===============================================================================
+
+convert windows-1255 to utf-8 with the following code
+<?php
+$heb = 'put hebrew text here';
+$utf = preg_replace("/([\xE0-\xFA])/e","chr(215).chr(ord(\${1})-80)",$heb);
+?>
+===============================================================================
+
+If you get this error message: "Notice: iconv(): Detected an illegal character
+in input string in file.php on line x", and your text or database is likely to
+contain text copied from Microsoft Word documents, it's very likely that the
+error is because of the evil 0x96 "long dash" character. MS Word as default
+converts all double hyphens into this illegal character. The solution is either
+to convert 0x96 (dash) into the regular 0x2d (hyphen/minus), or to append the /
+/TRANSLIT or //IGNORE parameters (se above).
+===============================================================================
+
+Note an important difference between iconv() and mb_convert_encoding() - if
+you're working with strings, as opposed to files, you most likely want
+mb_convert_encoding() and not iconv(), because iconv() will add a byte-order
+marker to the beginning of (for example) a UTF-32 string when converting from
+e.g. ISO-8859-1, which can throw off all your subsequent calculations and
+operations on the resulting string.
+
+In other words, iconv() appears to be intended for use when converting the
+contents of files - whereas mb_convert_encoding() is intended for use when
+juggling strings internally, e.g. strings that aren't being read/written to/
+from files, but exchanged with some other media.
+===============================================================================
+
+I just found out today that the Windows and *NIX versions of PHP use different
+iconv libraries and are not very consistent with each other.
+
+Here is a repost of my earlier code that now works on more systems. It converts
+as much as possible and replaces the rest with question marks:
+
+<?php
+if (!function_exists('utf8_to_ascii')) {
+  setlocale(LC_CTYPE, 'en_AU.utf8');
+  if (@iconv("UTF-8", "ASCII//IGNORE//TRANSLIT", 'é') === false) {
+    // PHP is probably using the glibc library (*NIX)
+    function utf8_to_ascii($text) {
+      return iconv("UTF-8", "ASCII//TRANSLIT", $text);
+    }
+  }
+  else {
+    // PHP is probably using the libiconv library (Windows)
+    function utf8_to_ascii($text) {
+      if (is_string($text)) {
+        // Includes combinations of characters that present as a single glyph
+        $text = preg_replace_callback('/\X/u', __FUNCTION__, $text);
+      }
+      elseif (is_array($text) && count($text) == 1 && is_string($text[0])) {
+        // IGNORE characters that can't be TRANSLITerated to ASCII
+        $text = iconv("UTF-8", "ASCII//IGNORE//TRANSLIT", $text[0]);
+        // The documentation says that iconv() returns false on failure but it
+returns ''
+        if ($text === '' || !is_string($text)) {
+          $text = '?';
+        }
+        elseif (preg_match('/\w/', $text)) {        // If the text contains any
+letters...
+          $text = preg_replace('/\W+/', '', $text); // ...then remove all
+non-letters
+        }
+      }
+      else {  // $text was not a string
+        $text = '';
+      }
+      return $text;
+    }
+  }
+}
+===============================================================================
+
+You can use iconv in order to access filenames or paths that containt Japanese
+(and probably also Koreans and Chinese) characters that would normally not be
+processed correctly by 'copy', 'fopen', 'rename', etc...
+
+<?PHP
+
+function convertPath($path)
+{
+    //split networkpath into parts
+    $parts = explode('\\',$path);
+    // convert each part to SJIS
+    foreach($parts as $index => $part)
+    {
+         $parts[$index] = iconv('UTF-8','SJIS//IGNORE',$part);
+    }   
+    // put the network path back together
+    return implode('\\',$parts);
+}
+
+$oldname = convertPath('c:/Temp/ほげほげ.pdf');
+$newname  = convertPath('\\\\PFSV0100\\DATA\\06：個人別\\333328_ほげほげ\\test_
+あいうえお.pdf');
+
+copy($oldname, $newname);
+?>
+
+Note that there are some characters which do not have a SJIS equivalent like
+'②'.
+They will be omitted by iconv without any error or warning.
+===============================================================================
+
+iconv also support CP850.
+I used iconv("CP850", "UTF-8//TRANSLIT", $var);
+to convert from SQL_Latin1_General_CP850_CI_AI to UTF-8.
+===============================================================================
+
+Be aware that iconv in PHP uses system implementations of locales and
+languages, what works under linux, normally doesn't in windows.
+
+Also, you may notice that recent versions of linux (debian, ubuntu, centos,
+etc) the //TRANSLIT option doesn't work. since most distros doesn't include the
+intl packages (example: php5-intl and icuxx (where xx is a number) in debian)
+by default. And this because the intl package conflicts with another package
+needed for international DNS resolution.
+
+Problem is that configuration is dependent of the sysadmin of the machine where
+you're hosted, so iconv is pretty much useless by default,  depending on what
+configuration is used by your distro or the machine's admin.
+===============================================================================
+
+Provided that there is no invalid code point in the character chain for the
+input encoding, the //IGNORE option works as expected. No bug here.
+===============================================================================
+
+For those who have troubles in displaying UCS-2 data on browser, here's a
+simple function that convert ucs2 to html unicode entities :
+
+<?php
+
+function ucs2html($str) {
+    $str=trim($str); // if you are reading from file
+    $len=strlen($str);
+    $html='';
+    for($i=0;$i<$len;$i+=2)
+        $html.='&#'.hexdec(dechex(ord($str[$i+1])).
+                   sprintf("%02s",dechex(ord($str[$i])))).';';
+    return($html);
+}
+?>
+===============================================================================
+
+When doing transliteration, you have to make sure that your LC_COLLATE is
+properly set, otherwise the default POSIX will be used.
+
+To transform "rené" into "rene" we could use the following code snippet:
+
+<?php
+
+setlocale(LC_CTYPE, 'nl_BE.utf8');
+
+$string = 'rené';
+$string = iconv('UTF-8', 'ASCII//TRANSLIT', $string);
+
+echo $string; // outputs rene
+
+?>
+===============================================================================
+
+I noticed that iconv might return not entire string, and no error. It happens
+when iconv encounters characters it doesn't know how to convert to certain
+encoding.
+Simplest way to check how it works is:
+<?php
+$text=iconv('utf-8','iso-8859-2',$text);
+$text=iconv('utf-8','iso-8859-2',$text);
+?>
+the result will be $text till first encounter of iso-8859-2 -specific char
+(such as ą / ź which already was converted to ± / Ľ ). It's quite hard to catch
+this error and brings a lot of trouble. I got it with converting greek alpha
+into iso-8859-2 (should be &alpha; but causes the error)
+===============================================================================
+
+If you need to strip as many national characters from UTF-8 as possible and
+keep the rest of input unchanged (i.e. convert whatever can be converted to
+ASCII and leave the rest), you can do it like this:
+
+<?php
+setlocale(LC_ALL, 'en_US.UTF8');
+
+function clearUTF($s)
+{
+    $r = '';
+    $s1 = iconv('UTF-8', 'ASCII//TRANSLIT', $s);
+    for ($i = 0; $i < strlen($s1); $i++)
+    {
+        $ch1 = $s1[$i];
+        $ch2 = mb_substr($s, $i, 1);
+
+        $r .= $ch1=='?'?$ch2:$ch1;
+    }
+    return $r;
+}
+
+echo clearUTF('Šíleně žluťoučký Vašek úpěl olol! This will remain untranslated:
+ᾡᾧῘઍિ૮');
+//outputs Silene zlutoucky Vasek upel olol! This will remain untranslated:
+ᾡᾧῘઍિ૮
+?>
+
+Just remember you HAVE TO set locale to some unicode encoding to make iconv
+handle //TRANSLIT correctly!
+===============================================================================
+
+Here a very small but useful way to handle text files before further using
+them:
+
+<?php
+
+$in = file("/tmp/myfile.txt");
+$out = fopen("/tmp/myfile.txt", "w");
+
+foreach ($in as $line) {
+
+  fputs($out, iconv("UTF-8","ISO-8859-1", $line));}
+
+?>
+===============================================================================
+
+yet another "fix my horrible data" function, this one should convert
+windows-1250 entities into iso-8859-2, ready to be iconv()ed into utf8
+
+to be applied when converting the entire thing from windows-1250 doesn't work
+
+<?php
+
+function w1250_to_iso88592($text) {
+    // map based on http://konfiguracja.c0.pl/iso02vscp1250en.html
+
+    $map = array(
+        chr(0x8A) => chr(0xA9),
+        chr(0x8C) => chr(0xA6),
+        chr(0x8D) => chr(0xAB),
+        chr(0x8E) => chr(0xAE),
+        chr(0x8F) => chr(0xAC),
+        chr(0x9C) => chr(0xB6),
+        chr(0x9D) => chr(0xBB),
+        chr(0xA1) => chr(0xB7),
+        chr(0xA5) => chr(0xA1),
+        chr(0xBC) => chr(0xA5),
+        chr(0x9F) => chr(0xBC),
+        chr(0xB9) => chr(0xB1),
+        chr(0x9A) => chr(0xB9),
+        chr(0xBE) => chr(0xB5),
+        chr(0x9E) => chr(0xBE),
+    );
+
+    return strtr($text, $map);
+}
+
+?>
+===============================================================================
+
+Valid cyrillic OEM codepage name is "cp866".
+===============================================================================
+
+A function to convert UTF-8 to best-fit ASCII. Handles punctuation too.
+Characters it doesn't understand get converted to '?'.
+
+<?php
+function utf8_to_ascii($text) {
+    if (is_string($text)) {
+        // Includes combinations of characters that present as a single glyph
+        $text = preg_replace_callback('/\X/u', __FUNCTION__, $text);
+    }
+    elseif (is_array($text) && count($text) == 1 && is_string($text[0])) {
+        // IGNORE characters that can't be TRANSLITerated to ASCII
+        $text = iconv("UTF-8", "ASCII//IGNORE//TRANSLIT", $text[0]);
+        // The documentation says that iconv() returns false on failure but it
+returns ''
+        if ($text === '' || !is_string($text)) {
+            $text = '?';
+        }
+        elseif (preg_match('/\w/', $text)) {            // If the text contains
+any letters...
+            $text = preg_replace('/\W+/', '', $text);   // ...then remove all
+non-letters
+        }
+    }
+    else {  // $text was not a string
+        $text = '';
+    }
+    return $text;
+}
+
+$text = 'Française señor café 0123 කොහොමද ශ්‍රී ලංකා  hello Žluťoučký kůň '
+. 'ÀÁÂ,ÃÄÅ,Æ,ÇÈ,ÉÊË,ÌÍÎ,ÏÐÑ,ÒÓÔ,ÕÖØ,ÙÚÛ,ÜÝ,Þ,'
+. 'ß,àáâ,ãäå,æ,çèé,êëì,íîï,ðñò,óôõ,öøù,úûýý,þ,ÿŔŕ '
+. 'YA(亚） HE（何） Tra Mỹ';
+print(utf8_to_ascii($text));
+/* prints
+Francaise senor cafe 0123 ???? ?? ?? hello Zlutoucky kun
+AAA,AAA,AE,CE,EEE,III,IDN,OOO,OOO,UUU,UY,Th,
+ss,aaa,aaa,ae,cee,eei,iii,dno,ooo,oou,uuyy,th,yRr
+YA(?) HE(?) Tra My
+*/
+?>
+===============================================================================
+
+A simple cleaning function [eg: iconv("UTF-8","UTF-8//IGNORE", $s)] may not be
+enough when receiving UTF8 input that needs to be saved in MySQL.  Prior to
+MySQL v5.5 four byte sequences were not supported so a function is needed to
+strip these out as well:
+
+<?php
+            for($pos=strlen($strUtf8)-1; $pos >= 0 ; $pos--){
+                $char = substr($strUtf8, $pos, 1);
+                if (ord($char) > 0xEF) $strUtf8 = substr($strUtf8, 0, $pos).
+substr($strUtf8, $pos+1);
+            }
+?>

@@ -1,0 +1,215 @@
+
+SoapServer::handle
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+SoapServer::handle — Handles a SOAP request
+
+说明
+
+public void SoapServer::handle ([ string $soap_request ] )
+
+Processes a SOAP request, calls necessary functions, and sends a response back.
+
+参数
+
+soap_request
+
+    The SOAP request. If this argument is omitted, the request is assumed to be
+    in the raw POST data of the HTTP request.
+
+返回值
+
+没有返回值。
+
+范例
+
+Example #1 SoapServer::handle() example
+
+<?php
+function test($x)
+{
+    return $x;
+}
+
+$server = new SoapServer(null, array('uri' => "http://test-uri/"));
+$server->addFunction("test");
+$server->handle();
+?>
+
+参见
+
+  • SoapServer::SoapServer() - SoapServer constructor
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+Sometimes returned data can contain characters which are not valid in xml 1.0.
+This causes the xml being output by SoapServer::handle to be invalid. Although
+it's probably better to sanitize the data ealier, a combination of output
+buffering and a simple regular expression can be used as a quick fix to make
+sure the output is indeed valid xml.
+
+For example:
+
+<?php
+    ob_start();
+    $soapServer->handle();
+    $soapXml = ob_get_contents();
+    ob_end_clean();
+    $soapXml = preg_replace ('/[^\x{0009}\x{000a}\x{000d}\x{0020}-\x{D7FF}\x
+{E000}-\x{FFFD}]+/u', ' ', $soapXml);
+    echo $soapXml;
+?>
+===============================================================================
+
+After much headache and looking through PHP source code, I finally found out
+why the handle() function would immediately send back a fault with the string
+"Bad Request".
+Turns out that my client was sending valid XML, but the first line of the XML
+was the actual XML declaration:
+
+<?xml version="1.0" encoding="UTF-8"?>
+
+When the "handle" function in the SoapServer class is called, it first tries to
+parse the XML.  When the XML document can't be parsed, a "Bad Request" fault is
+returned and execution of the script immediately stops.  I assume that the XML
+parser built into PHP (libxml2) already assumes the document to be XML and when
+it finds the declaration, it thinks it isn't valid.
+
+I added some XML parsing calls to my service before the handle() function is
+called to check for valid XML and avoid the "Bad Request" fault.  This also
+allows me to send back a more suitable error message:
+
+<?php
+$parser = xml_parser_create("UTF-8");
+if (!xml_parse($parser,$HTTP_RAW_POST_DATA,true)){
+   $webService->fault("500", "Cannot parse XML: ".
+      xml_error_string(xml_get_error_code($parser)).
+       " at line: ".xml_get_current_line_number($parser).
+       ", column: ".xml_get_current_column_number($parser));
+}
+?>
+===============================================================================
+
+Additional information to the comment of "Joeri Thissen" (http://www.php.net/
+manual/en/soapserver.handle.php#113866)
+
+In some cases the replacements generates a timeout (looks like it is in
+combination with Nginx). The problem is that PHP has already sent a
+content-length, and the webserver is still waiting for new content.
+
+To fix this you have to reset the HTTP Content-Length with the right value:
+
+<?php
+ob_start();
+$soapServer->handle();
+$result = ob_get_contents();
+ob_end_clean();
+
+$result = str_replace("abcdef", "abc", $result);
+$length = strlen($result);
+       
+header("Content-Length: ".$length);
+echo $result;
+===============================================================================
+
+Please note that when defining several services in one wsdl file, and calling
+one of those services, you may always get the response for your first service.
+
+This is a known bug. You will find its description and some workarounds here  :
+https://bugs.php.net/bug.php?id=49169
+===============================================================================
+
+Be aware that SoapServer::handle(); method sends additional HTTP headers to the
+browser. One of them is "Content-Type: application/soap+xml". If you want to
+execute SOAP methods locally as a part of SoapClient::__doRequest() (see
+example at http://pl2.php.net/manual/en/soapclient.dorequest.php ) you may need
+to reset (override) this header back to "Content-Type: text/html" like so:
+
+<?php
+function Add($x,$y) {
+  return $x+$y;
+}
+
+class LocalSoapClient extends SoapClient {
+
+  function __construct($wsdl, $options) {
+    parent::__construct($wsdl, $options);
+    $this->server = new SoapServer($wsdl, $options);
+    $this->server->addFunction('Add');
+  }
+
+  function __doRequest($request, $location, $action, $version) {
+    ob_start();
+    $this->server->handle($request);
+    $response = ob_get_contents();
+    ob_end_clean();
+    return $response;
+  }
+
+}
+
+$x = new LocalSoapClient(NULL,array('location'=>'test://',
+                                   'uri'=>'http://testuri.org'));
+
+header("Content-Type: text/html");
+
+var_dump($x->Add(3,4));
+
+?>
+===============================================================================
+
+In response to Blizzke:
+
+Sometimes this problem can be hidden by an Apache segmentation fault along with
+an HTTP headers error SoapFault thrown to the client.
+
+If you get either of those 2, try checking to make sure that style="rpc" in
+your WSDL file's soap:operation's.
+
+-T
+===============================================================================
+
+Seems pretty logical once you find the solution, but it took me quite a while
+to figure this one out:
+If you are using WSDL based SOAP requests and you have more than one operation
+in your binding (with the same parameters), make sure the <soap:operation>
+style is set to rpc, NOT body!
+
+When you specify 'body' here, all that will be transmitted in the request is
+the parameters for the function call, and SoapServer->handle() will use the
+first function it finds with the same parameter-makeup to handle the call.
+
+ie If you have 2 functions:
+<?php
+function One ( string $blah );
+function Two ( string $blah );
+?>
+Making a client call with SoapClient -> Two ( 'test' ); will result in One ( )
+being called when your 'type' is set to 'body'
+
+The actual method to call will only be included in the request when your type
+is set to 'rpc', resulting in the expected behavior
+===============================================================================
+
+Sometime, it happens that PHP does not detect anything in $HTTP_RAW_POST_DATA.
+
+To solve this problem and make it work in any case:
+
+function soaputils_autoFindSoapRequest()    {
+    global $HTTP_RAW_POST_DATA;
+   
+    if($HTTP_RAW_POST_DATA)
+        return $HTTP_RAW_POST_DATA;
+   
+    $f = file("php://input");
+    return implode(" ", $f);
+}
+
+$server = new SoapServer($wsdl);
+$server->setClass($MyClass);
+
+$server->handle(soaputils_autoFindSoapRequest());

@@ -1,0 +1,388 @@
+
+DateInterval::format
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+DateInterval::format — Formats the interval
+
+说明
+
+public string DateInterval::format ( string $format )
+
+Formats the interval.
+
+参数
+
+format
+
+    The following characters are recognized in the format parameter string.
+         Each format character must be prefixed by a percent sign (%).
+      format                        Description                       Example
+     character                                                         values
+    %           Literal %                                            %
+    Y           Years, numeric, at least 2 digits with leading 0     01, 03
+    y           Years, numeric                                       1, 3
+    M           Months, numeric, at least 2 digits with leading 0    01, 03, 12
+    m           Months, numeric                                      1, 3, 12
+    D           Days, numeric, at least 2 digits with leading 0      01, 03, 31
+    d           Days, numeric                                        1, 3, 31
+    a           Total number of days as a result of a DateTime::diff 4, 18,
+                () or (unknown) otherwise                            8123
+    H           Hours, numeric, at least 2 digits with leading 0     01, 03, 23
+    h           Hours, numeric                                       1, 3, 23
+    I           Minutes, numeric, at least 2 digits with leading 0   01, 03, 59
+    i           Minutes, numeric                                     1, 3, 59
+    S           Seconds, numeric, at least 2 digits with leading 0   01, 03, 57
+    s           Seconds, numeric                                     1, 3, 57
+    R           Sign "-" when negative, "+" when positive            -, +
+    r           Sign "-" when negative, empty when positive          -,
+
+返回值
+
+Returns the formatted interval.
+
+注释
+
+    Note:
+
+    The DateInterval::format() method does not recalculate carry over points in
+    time strings nor in date segments. This is expected because it is not
+    possible to overflow values like "32 days" which could be interpreted as
+    anything from "1 month and 4 days" to "1 month and 1 day".
+
+范例
+
+Example #1 DateInterval example
+
+<?php
+
+$interval = new DateInterval('P2Y4DT6H8M');
+echo $interval->format('%d days');
+
+?>
+
+以上例程会输出：
+
+4 days
+
+Example #2 DateInterval and carry over points
+
+<?php
+
+$interval = new DateInterval('P32D');
+echo $interval->format('%d days');
+
+?>
+
+以上例程会输出：
+
+32 days
+
+Example #3 DateInterval and DateTime::diff() with the %a and %d modifiers
+
+<?php
+
+$january = new DateTime('2010-01-01');
+$february = new DateTime('2010-02-01');
+$interval = $february->diff($january);
+
+// %a will output the total number of days.
+echo $interval->format('%a total days')."\n";
+
+// While %d will only output the number of days not already covered by the
+// month.
+echo $interval->format('%m month, %d days');
+
+?>
+
+以上例程会输出：
+
+31 total days
+1 month, 0 days
+
+参见
+
+  • DateTime::diff() - Returns the difference between two DateTime objects
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+How to easy recalculate carry over points:
+
+<?php
+class DateIntervalEnhanced extends DateInterval {
+
+    public function recalculate()
+    {
+        $from = new DateTime;
+        $to = clone $from;
+        $to = $to->add($this);
+        $diff = $from->diff($to);
+        foreach ($diff as $k => $v) $this->$k = $v;
+        return $this;
+    }
+
+}
+
+$di = new DateIntervalEnhanced('PT3600S');
+echo "Instead of " . $di->format('%h:%i:%s') . " it outputs " . $di->
+recalculate()->format('%h:%i:%s');
+# output will be: "Instead of 0:0:3600 it outputs 1:0:0"
+===============================================================================
+
+With php 5.3, DateTime is sweet !
+Here is one quick example :
+
+<?php
+/**
+* A sweet interval formatting, will use the two biggest interval parts.
+* On small intervals, you get minutes and seconds.
+* On big intervals, you get months and days.
+* Only the two biggest parts are used.
+*
+* @param DateTime $start
+* @param DateTime|null $end
+* @return string
+*/
+public function formatDateDiff($start, $end=null) {
+    if(!($start instanceof DateTime)) {
+        $start = new DateTime($start);
+    }
+   
+    if($end === null) {
+        $end = new DateTime();
+    }
+   
+    if(!($end instanceof DateTime)) {
+        $end = new DateTime($start);
+    }
+   
+    $interval = $end->diff($start);
+    $doPlural = function($nb,$str){return $nb>1?$str.'s':$str;}; // adds
+plurals
+   
+    $format = array();
+    if($interval->y !== 0) {
+        $format[] = "%y ".$doPlural($interval->y, "year");
+    }
+    if($interval->m !== 0) {
+        $format[] = "%m ".$doPlural($interval->m, "month");
+    }
+    if($interval->d !== 0) {
+        $format[] = "%d ".$doPlural($interval->d, "day");
+    }
+    if($interval->h !== 0) {
+        $format[] = "%h ".$doPlural($interval->h, "hour");
+    }
+    if($interval->i !== 0) {
+        $format[] = "%i ".$doPlural($interval->i, "minute");
+    }
+    if($interval->s !== 0) {
+        if(!count($format)) {
+            return "less than a minute ago";
+        } else {
+            $format[] = "%s ".$doPlural($interval->s, "second");
+        }
+    }
+   
+    // We use the two biggest parts
+    if(count($format) > 1) {
+        $format = array_shift($format)." and ".array_shift($format);
+    } else {
+        $format = array_pop($format);
+    }
+   
+    // Prepend 'since ' or whatever you like
+    return $interval->format($format);
+}
+?>
+===============================================================================
+
+Note that `%a` is broken on Windows on VC6 builds. http://bugs.php.net/bug.php?
+id=51184
+===============================================================================
+
+Be aware that your default timezone can sometimes alter the result of a diff so
+that the returned months/days are incorrect.
+
+There is a bug report at: http://bugs.php.net/bug.php?id=52480
+===============================================================================
+
+Quick class to allow you to input a time in any unit, and have it recalculate
+in to different denominations (for example, seconds to hours, minutes and
+seconds):
+
+<?php
+    class DateIntervalEnhanced extends DateInterval
+    {
+
+      /* Keep in mind that a year is seen in this class as 365 days, and a
+month is seen as 30 days.        
+         It is not possible to calculate how many days are in a given year or
+month without a point of 
+         reference in time.*/
+      public function to_seconds()
+      {
+        return ($this->y * 365 * 24 * 60 * 60) +
+               ($this->m * 30 * 24 * 60 * 60) +
+               ($this->d * 24 * 60 * 60) +
+               ($this->h * 60 * 60) +
+               ($this->i * 60) +
+               $this->s;
+      }
+     
+      public function recalculate()
+      {
+        $seconds = $this->to_seconds();
+        $this->y = floor($seconds/60/60/24/365);
+        $seconds -= $this->y * 31536000;
+        $this->m = floor($seconds/60/60/24/30);
+        $seconds -= $this->m * 2592000;
+        $this->d = floor($seconds/60/60/24);
+        $seconds -= $this->d * 86400;
+        $this->h = floor($seconds/60/60);
+        $seconds -= $this->h * 3600;
+        $this->i = floor($seconds/60);
+        $seconds -= $this->i * 60;
+        $this->s = $seconds;
+      }
+    }
+
+    // Example usage
+    $di = new DateIntervalEnhanced('PT3600S');
+    $di->recalculate();
+    // outputs 1:0:0 instead of 0:0:3600 now!
+    echo $di->format('%H:%i:%s');
+?>
+===============================================================================
+
+German Version of formatDateDiff:
+
+function formatDateDiff($start, $end=null) {
+    if(!($start instanceof DateTime)) {
+        $start = new DateTime($start);
+    }
+
+    if($end === null) {
+        $end = new DateTime();
+    }
+
+    if(!($end instanceof DateTime)) {
+        $end = new DateTime($start);
+    }
+
+    $interval = $end->diff($start);
+    $doPlural = function($nb,$str){
+        if ($nb > 1) {
+            switch ($str) {
+                case 'Jahr':
+                case 'Monat':
+                case 'Tag':
+                    return $str.'e';
+                case 'Stunde':
+                case 'Minute':
+                case 'Sekunde':
+                    return $str.'n';
+            }
+        } else
+            return $str;
+    }; // adds plurals
+
+    $format = array();
+    if($interval->y !== 0) {
+        $format[] = "%y ".$doPlural($interval->y, "Jahr");
+    }
+    if($interval->m !== 0) {
+        $format[] = "%m ".$doPlural($interval->m, "Monat");
+    }
+    if($interval->d !== 0) {
+        $format[] = "%d ".$doPlural($interval->d, "Tag");
+    }
+    if($interval->h !== 0) {
+        $format[] = "%h ".$doPlural($interval->h, "Stunde");
+    }
+    if($interval->i !== 0) {
+        $format[] = "%i ".$doPlural($interval->i, "Minute");
+    }
+    if($interval->s !== 0) {
+        $format[] = "%s ".$doPlural($interval->s, "Sekunde");
+    }
+   
+    if(count($format)==0 || (count($format)==1 && $interval->s !== 0)) {
+        return "weniger als eine Minute";
+    }
+
+    // We use the two biggest parts
+    if(count($format) > 1) {
+        $format = array_shift($format).", ".array_shift($format);
+    } else {
+        $format = array_pop($format);
+    }
+
+    // Prepend 'since ' or whatever you like
+    return $interval->format($format);
+}
+===============================================================================
+
+I was doing this: $endDate->diff($startDate)->format('%a’)
+to get the number of the days between the end date and the start date. This is
+correct, but if I subtract 2016-04-23 00:00:00 to 2016-04-02 09:39:01 (note
+that in only one of the datetime values we have the time) the result is 21 (and
+not 20 as I expected). This is because the result of the diff is 20 days AND 14
+hours, 20 mins and 59 secs. If you use the %a to get the days from a
+dateinterval, it will round the days (and if the hours are greater than 12, it
+will round days up).
+
+So, DO NOT USE the %a formatting to get the difference in days between 2
+datetime unless you are 100% sure that both the Datetime objects don't have the
+time.
+
+You can solve easily with $valueDate->diff($startDate)->days that will return
+only the days in a dateinterval (without the fuc***g rounding).
+===============================================================================
+
+If you want the difference between two timestamps in HOURS, do not forget to
+add the number of days:
+
+<?php
+// Bad example
+$lastEntryDate = new \DateTime('2015-05-23 00:10:20', new \DateTimeZone('UTC'
+));
+$dateDifference = $lastEntryDate->diff(new \DateTime('2015-05-25 02:35:45', new
+\DateTimeZone('UTC')));
+
+var_dump((int)$dateDifference->format('%H'));
+// Returns 2
+if ((int)$dateDifference->format('%H') > 24) {
+        // Will never enter here, (int)$dateDifference->format('%H') will
+contain 0-23 ONLY
+}
+?>
+
+Instead, sum the days:
+<?php
+// Bad example
+$lastEntryDate = new \DateTime('2015-05-23 00:10:20', new \DateTimeZone('UTC'
+));
+$dateDifference = $lastEntryDate->diff(new \DateTime('2015-05-25 02:35:45', new
+\DateTimeZone('UTC')));
+
+var_dump(($dateDifference->days * 24 + (int)$dateDifference->format('%H')));
+// Returns 50
+if (($dateDifference->days * 24 + (int)$dateDifference->format('%H')) > 24) {
+        // Will enter here now :)
+}
+?>
+
+Hope this saves somebody some time and possible bugs :)
+===============================================================================
+
+glavic, this does not eliminate the problem of "32 days", if you use your class
+for normalizing intervals of days, because the result will depend on the
+current month which is used for DateTime by default. And if that does not
+matter (because the interval is not that long) you don't have to call diff() to
+get the same recalculation:
+$DT=new DateTime('0000-01-01'); $DT->add($oInt); echo($DT->format('Y-m-d
+H:i:s'));

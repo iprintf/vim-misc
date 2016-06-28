@@ -1,0 +1,207 @@
+
+SWFMovie::streamMP3
+
+(PHP 5 <= 5.3.0, PECL ming SVN)
+
+SWFMovie::streamMP3 — Streams a MP3 file
+
+说明
+
+int SWFMovie::streamMP3 ( mixed $mp3file [, float $skip = 0 ] )
+Warning
+
+此函数是实验性的。此函数的表象，包括名称及其相关文档都可能在未来的 PHP 发布版本
+中未通知就被修改。使用本函数风险自担。
+
+Streams the given MP3 file mp3file.
+
+This method is not very robust in dealing with oddities (can skip over an
+initial ID3 tag, but that's about it).
+
+Note that the movie isn't smart enough to put enough frames in to contain the
+entire mp3 stream- you'll have to add (length of song * frames per second)
+frames to get the entire stream in.
+
+参数
+
+mp3file
+
+    Can be a file pointer returned by fopen() or the MP3 data, as a binary
+    string.
+
+skip
+
+    Number of seconds to skip.
+
+返回值
+
+Return number of frames.
+
+更新日志
+
+版本     说明
+5.2.0 skip added
+
+范例
+
+Example #1 Streaming example
+
+<?php
+$m = new SWFMovie();
+$m->setRate(12.0);
+$m->streamMp3(file_get_contents("distortobass.mp3"));
+// use your own MP3
+
+// The file is 11.85 seconds at 12.0 fps = 142 frames
+$m->setFrames(142);
+
+header('Content-type: application/x-shockwave-flash');
+$m->output();
+?>
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+if you want to control the sound use these functions like this:
+
+<?php
+
+$m -> add(new SWFAction('
+stop(); // pauses the song
+goToAndStop(1); // stops the song, and goes back to the beginning
+play(); // plays the song from current position
+'));
+
+?>
+
+i hope this is helpful
+===============================================================================
+
+a nice feature to handle Id3tag is to get support from Unix mp3info command
+into a returning exec parsing
+===============================================================================
+
+Hey all,
+
+For those using Ming 0.3 (like me), there is a way to calculate the length of
+the MP3 you are using.  It might be a bit iffy for VBR files, but it seems to
+work well for the files I've tested thus far.  The process of calculating the
+frame length (and size) is detailed at http://www.mpgedit.org/mpgedit/
+mpeg_format/mpeghdr.htm
+
+<?php
+
+function get_mp3_len ($file) {
+
+        $rate1=array(0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384
+, 416, 448, "bad");
+        $rate2=array(0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 
+320, 384, "bad");
+        $rate3=array(0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 
+256, 320, "bad");
+        $rate4=array(0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 
+224, 256, "bad");
+        $rate5=array(0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 
+160, "bad");
+
+        $bitrate=array(
+                '1'  => $rate5,
+                '2'  => $rate5,
+                '3'  => $rate4,
+                '9'  => $rate5,
+                '10' => $rate5,
+                '11' => $rate4,
+                '13' => $rate3,
+                '14' => $rate2,
+                '15' => $rate1
+        );
+
+        $sample=array(
+                '0'  => 11025,
+                '1'  => 12000,
+                '2'  => 8000,
+                '8'  => 22050,
+                '9'  => 24000,
+                '10' => 16000,
+                '12' => 44100,
+                '13' => 48000,
+                '14' => 32000
+        );
+
+        $fd=fopen($file, 'rb');
+        $header=fgets($fd, 5);
+        fclose($fd);
+
+        $bits="";
+        while (strlen($header) > 0) {
+
+                //var_dump($header);
+                $bits.=str_pad(base_convert(ord($header{0}), 10, 2), 8, '0', 
+STR_PAD_LEFT);
+                $header=substr($header, 1);
+        }
+
+        $bits=substr($bits, 11); // lets strip the frame sync bits first.
+
+        $version=substr($bits, 0, 2); // this gives us the version
+        $layer=base_convert(substr($bits, 2, 2), 2, 10); // this gives us the
+layer
+        $verlay=base_convert(substr($bits, 0, 4), 2, 10); // this gives us both
+
+        $rateidx=base_convert(substr($bits, 5, 4), 2, 10); // this gives us the
+bitrate index
+        $sampidx=base_convert($version.substr($bits, 9, 2), 2, 10); // this
+gives the sample index
+        $padding=substr($bits, 11, 1); // are we padding frames?
+
+        $rate=$bitrate[$verlay][$rateidx];
+        $samp=$sample[$sampidx];
+
+        $framelen=0;
+        $framesize=384; // Size of the frame in samples
+        if ($layer == 3) { // layer 1?
+                $framelen=(12 * ($rate * 1000) / $samp + $padding) * 4;
+        } else { // Layer 2 and 3
+                $framelen=144 * ($rate * 1000) / $samp + $padding;
+                $framesize=1152;
+        }
+
+        $headerlen=4 + ($bits{4} == 0 ? '2' : '0');
+
+        return (filesize($file) - $headerlen) / $framelen / ($samp / $framesize
+);
+}
+
+?>
+===============================================================================
+
+Seems that this function only handles some MP3 files with specified sample
+rates and not others. 44100 and 21050 work. With the lame MP3 converter, this
+is obtained with setting the "bit rate" at 112 (average compression/quality),
+mono or stereo. Other values may work, probably multiples, I did not tried all.
+===============================================================================
+
+Don't forget to use fopen function in example above !
+
+Use
+
+<?php
+$m->streamMp3(fopen("distortobass.mp3", "rb"));
+instead of
+$m->streamMp3("distortobass.mp3");
+?>
+
+I hope this is useful for you :)
+===============================================================================
+
+If you need to play an mp3 fully you need to do something like:
+
+<?php
+$len = $m->streamMp3(fopen("sound.mp3", "r"));
+$m->setFrames($len);
+?>
+
+This works only in Ming 0.4. I'm not 100% sure but it doesn't sound to work on
+Ming 0.3

@@ -1,0 +1,419 @@
+
+is_uploaded_file
+
+(PHP 4 >= 4.0.3, PHP 5, PHP 7)
+
+is_uploaded_file — 判断文件是否是通过 HTTP POST 上传的
+
+说明
+
+bool is_uploaded_file ( string $filename )
+
+如果 filename 所给出的文件是通过 HTTP POST 上传的则返回 TRUE。这可以用来确保恶
+意的用户无法欺骗脚本去访问本不能访问的文件，例如 /etc/passwd。
+
+这种检查显得格外重要，如果上传的文件有可能会造成对用户或本系统的其他用户显示其
+内容的话。
+
+为了能使 is_uploaded_file() 函数正常工作，必段指定类似于 $_FILES['userfile']
+['tmp_name'] 的变量，而在从客户端上传的文件名 $_FILES['userfile']['name'] 不能
+正常运作。
+
+参数
+
+filename
+
+    要检查的文件名。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 is_uploaded_file() 例子
+
+<?php
+
+if (is_uploaded_file($_FILES['userfile']['tmp_name'])) {
+   echo "File ". $_FILES['userfile']['name'] ." uploaded successfully.\n";
+   echo "Displaying contents\n";
+   readfile($_FILES['userfile']['tmp_name']);
+} else {
+   echo "Possible file upload attack: ";
+   echo "filename '". $_FILES['userfile']['tmp_name'] . "'.";
+}
+
+?>
+
+参见
+
+  • move_uploaded_file() - 将上传的文件移动到新位置
+  • $_FILES
+  • 关于用法的简单例子文件上传处理
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+Note that calling this function before move_uploaded_file() is not necessary,
+as it does the exact same checks already. It provides no extra security. Only
+when you're trying to use an uploaded file for something other than moving it
+to a new location.
+
+Reference:
+https://github.com/php/php-src/blob/master/ext/standard/basic_functions.c#L5796
+===============================================================================
+
+As of PHP 4.2.0, rather than automatically assuming a failed file uploaded is a
+file attack, you can use the error code associated with the file upload to
+check and see why the upload failed.  This error code is stored in the userfile
+array (ex: $HTTP_POST_FILES['userfile']['error']).
+
+Here's an example of a switch:
+
+if (is_uploaded_file($userfile)) {
+ 
+  //include code to copy tmp file to final location here...
+ 
+}else{
+  switch($HTTP_POST_FILES['userfile']['error']){
+    case 0: //no error; possible file attack!
+      echo "There was a problem with your upload.";
+      break;
+    case 1: //uploaded file exceeds the upload_max_filesize directive in
+php.ini
+      echo "The file you are trying to upload is too big.";
+      break;
+    case 2: //uploaded file exceeds the MAX_FILE_SIZE directive that was
+specified in the html form
+      echo "The file you are trying to upload is too big.";
+      break;
+    case 3: //uploaded file was only partially uploaded
+      echo "The file you are trying upload was only partially uploaded.";
+      break;
+    case 4: //no file was uploaded
+      echo "You must select an image for upload.";
+      break;
+    default: //a default error, just in case!  :)
+      echo "There was a problem with your upload.";
+      break;
+}
+
+Additionally, by testing the 'name' element of the file upload array, you can
+filter out unwanted file types (.exe, .zip, .bat, etc).  Here's an example of a
+filter that can be added before testing to see if the file was uploaded:
+
+//rejects all .exe, .com, .bat, .zip, .doc and .txt files
+if(preg_match("/.exe$|.com$|.bat$|.zip$|.doc$|.txt$/i", $HTTP_POST_FILES
+['userfile']['name'])){
+  exit("You cannot upload this type of file.");
+}
+
+//if file is not rejected by the filter, continue normally
+if (is_uploaded_file($userfile)) {
+
+/*rest of code*/
+===============================================================================
+
+to get the example to work on windows, youll have to add a line, that replaces
+backslashes with slashes. eg.: $filename = str_replace ("\\", "/", $filename);
+
+also, as someone mentioned, globalizing $HTTP_POST_FILES is a good idea ...
+
+<pre>
+/* Userland test for uploaded file. */
+function is_uploaded_file($filename)
+{
+    global $HTTP_POST_FILES;
+    if (!$tmp_file = get_cfg_var("upload_tmp_dir")) {
+        $tmp_file = dirname(tempnam("", ""));
+    }
+    $tmp_file .= "/" . basename($filename);
+    /* User might have trailing slash in php.ini... */
+    // fix for win platform
+    $filename = str_replace ("\\", "/", $filename);
+    return (ereg_replace("/+", "/", $tmp_file) == $filename);
+}
+</pre>
+===============================================================================
+
+Just looked at what I posted again and found several mistakes of the major and
+minor sort.  That's what I get for posting before I finish my coffee.  This
+should work better (i.e. should work in the first place):
+
+<?php
+   default: //a default error, just in case!  :)
+       echo "There was a problem with your upload.";
+       $err_msg = "Unrecognized file POST error: ".$HTTP_POST_FILES['userfile']
+['error'];
+       if (!(strpos($err_msg, "\n") === false)) {
+           $err_lines = explode("\n", $err_msg);
+           foreach ($err_lines as $msg) {
+               error_log($msg, 0);
+           }
+       } else {
+           error_log($err_msg, 0);
+       }
+       break;
+?>
+===============================================================================
+
+Here is my code for file handler, i hope it help to all:
+
+First a class to handler file upload:
+<?php
+    define('UPLOAD_PATH', 'upload/');
+    define('MAXIMUM_FILESIZE', '10485760'); //10 MB
+    class FileHandler
+    {
+        private $file_types = array('xls', 'xlsx');
+        private $files = null;
+        private $filename_sanitized = null;
+        private $filename_original = null;
+       
+       
+        public function __construct($files)
+        {
+            $this->files = $files;   
+        }
+       
+        public function setFileTypes($fileTypes = array())
+        {
+            $this->file_types = $fileTypes;
+            return $this;
+        }
+       
+        public function setFileNameOriginal($filename)
+        {
+            $this->filename_original = $filename;
+        }
+       
+        public function fileNameOriginal()
+        {
+            return $this->filename_original;
+        }
+       
+        public function sanitize($cursor = 0)
+        {
+            $this->setFileNameOriginal($this->files['name'][$cursor]);
+           
+            $safe_filename = preg_replace(
+                    array("/\s+/", "/[^-\.\w]+/"),
+                    array("_", ""),
+                    trim($this->fileNameOriginal()));
+            $this->filename_sanitized  = md5($safe_filename.time()).
+$safe_filename;
+            return $this;
+        }
+       
+        public function fileSize($cursor = 0)
+        {
+            return $this->files['size'][$cursor];
+        }
+       
+        public function extensionValid()
+        {
+            $fileTypes = implode('|', $this->file_types);
+            $rEFileTypes = "/^\.($fileTypes){1}$/i";
+            if(!preg_match($rEFileTypes, strrchr($this->filename_sanitized, '.'
+)))
+                throw new Exception('No se pudo encontrar el tipo de archivo
+apropiado');
+           
+            return $this;
+        }
+       
+        public function isUploadedFile($cursor)
+        {
+            if(!is_uploaded_file($this->files['tmp_name'][$cursor]))
+            {
+                throw new Exception("No se obtuvo la carga del archivo");
+            }
+        }
+       
+        public function saveUploadedFile($cursor)
+        {
+            if(!move_uploaded_file ($this->files['tmp_name'][$cursor],
+UPLOAD_PATH.$this->filename_sanitized))
+                throw new Exception("No se consigui&oacute; guardar el archivo"
+);
+        }
+       
+        public function fileNameSanitized()
+        {
+            return $this->filename_sanitized;
+        }
+       
+        public function uploadFile($cursor = 0)
+        {
+            $this->isUploadedFile($cursor);
+            if ($this->sanitize($cursor)->fileSize($cursor) <= MAXIMUM_FILESIZE
+)
+            {
+                $this->extensionValid()->saveUploadedFile($cursor);
+            }
+            else
+            {
+                throw new Exception("El archivo es demasiado grande.");
+            }
+            return $name;           
+        }
+       
+    }
+
+?>
+
+Next a part of code to use the class
+
+<?php
+//form is submited  and detect that
+if ($form_submited == 1)
+{
+    try
+    {
+                //i assume de input file is:
+                /*
+                       <input id="<?php echo EXCEL_FILE;?>[]" name="<?php echo
+EXCEL_FILE;?>[]" type="file"/>
+                       where EXCEL_FILE is the constant:
+                       define('EXCEL_FILE', 'excel_file');
+                */
+        $file = new FileHandler($_FILES['excel_file']);
+        $inputFileName = $file->uploadFile()->fileNameSanitized();  // File to
+read
+                ...
+       
+    }
+    catch(Exception $e)
+    {
+        die('Error cargando archivo "'.($file->fileNameOriginal()).'": '.$e->
+getMessage());
+    }
+   
+   
+}
+?>
+===============================================================================
+
+The example brought out does not work as supposed to:
+
+function is_uploaded_file($filename) {
+    if (!$tmp_file = get_cfg_var('upload_tmp_dir')) {
+        $tmp_file = dirname(tempnam('', ''));
+    }
+    $tmp_file .= '/' . basename($filename);
+    /* User might have trailing slash in php.ini... */
+    return (ereg_replace('/+', '/', $tmp_file) == $filename);
+}
+
+It works only with files under ....4 or 5 kb, other files automatically get the
+size of 0 bytes. So something must be wrong here. Built-in is_uploaded_file()
+works good.
+===============================================================================
+
+To expand on what nicoSWD stated about this function.
+
+Any script working with the temporary file $_FILES[]['tmp_name'] should call
+this function.
+
+In any case where the script is modified to unlink(), rename() or otherwise
+modify the file that IS NOT move_uploaded_file() will not have the upload
+checked.
+
+Likewise, most file operations are cached in PHP, therefore there should be
+minimal performance hit running is_uploaded_file before move_uploaded_file,
+since it will usually used a cached result for the latter.
+
+The security benefits outweigh the microsecond difference in performance in any
+event, and should universally be used as soon as the $_FILES array is first
+entered into an application. While there may not be an immediate issue, code
+evolves and could quickly change this fact.
+===============================================================================
+
+It isn't mentioned anywhere that I've seen, but $filename *is* case-sensitive
+on Windows.
+It means that while C:\Windows\TEMP\php123.tmp may have been uploaded, C:\
+Windows\Temp\php123.tmp was not.
+
+I found this out because I was using realpath() on the filename which 'fixed'
+the case (my Temp folder is in titlecase, not uppercase - thank you Vista).
+
+Anyways, the problem was that PHP used %TEMP% to determine the destination for
+the uploaded file, and %TEMP% used the all-capitals version of the path.
+Changing it to use titlecase instead + restarting Apache fixed the problem.
+===============================================================================
+
+Regarding topcat's suggested change, I am split on doing that.  I don't like
+showing users errors that may give them more information than they should have
+(or show that I haven't provided for that particular error).  But I want to
+know when there are errors that fall to the default case so I can fix my code. 
+What I will typically do is write them to the error log something like this
+modification to metaltoad's post (takes into account the possibility of
+multi-line errors which error_log doesn't handle well):
+
+<?php
+    default: //a default error, just in case!  :)
+        echo "There was a problem with your upload.";
+        $err_msg = "Unrecognized file POST error: ".$HTTP_POST_FILES['userfile'
+]['error'];
+        if ((strpos($err_msg, "\n") === 0) {
+            $err_lines = explode("\n", $err_msg);
+            foreach ($err_lines as $msg) {
+                error_log($msg, 0);
+            }
+        } else {
+            error_log($err_msg, 0)
+        }
+        break;
+?>
+===============================================================================
+
+make use u got the enctype="multipart/form-data" in ur form tag otrherwise
+nothing works... took me two hours to find that out.......
+===============================================================================
+
+Regarding the comment of info at metaltoad dot net
+@ 19-Feb-2003 04:03
+
+<?php
+// ... yada yada yada...
+preg_match("/.exe$|.com$|.bat$|.zip$|.doc$|.txt$/i", $HTTP_POST_FILES[
+'userfile']['name']))
+// ... yada yada yada...
+?>
+
+This will not work. It will, but not correctly.
+You shuld escape the . (dot) for the preg function,
+and escape the $ (dollar) sign for PHP, or use
+single-quoted string...
+
+The syntax should be (much shorter and neater):
+
+<?php
+// ... yada yada yada...
+preg_match('/\\.(exe|com|bat|zip|doc|txt)$/i', $_FILES['userfile']['name']))
+// ... yada yada yada...
+?>
+===============================================================================
+
+If your $_FILES and $_POST are empty, this can be due to
+- the limit set by post_max_size in php.ini
+- the limit set by upload_max_filesize in php.ini
+
+Unfortunately the first limit is not reported back as an error code in $_FILES
+['error'].
+===============================================================================
+
+if files are not getting uploaded and $_FILE array is empty ..and your code
+looks fine..then check php.ini file..the file_uploads option should be turned
+'On' to allow file uploads. Turn it on and restart apache to have effect .
+===============================================================================
+
+Just a little tip to info at metaltoad's comment:
+It's good practice to print error code when it can't be recognized:
+
+   default: //print the error code
+     echo "Unrecognized error code: ".$HTTP_POST_FILES['userfile']['error'];
+     break;

@@ -1,0 +1,429 @@
+
+gettext
+
+(PHP 4, PHP 5, PHP 7)
+
+gettext — Lookup a message in the current domain
+
+说明
+
+string gettext ( string $message )
+
+Looks up a message in the current domain.
+
+参数
+
+message
+
+    The message being translated.
+
+返回值
+
+Returns a translated string if one is found in the translation table, or the
+submitted message if not found.
+
+范例
+
+Example #1 gettext()-check
+
+<?php
+// Set language to German
+putenv('LC_ALL=de_DE');
+setlocale(LC_ALL, 'de_DE');
+
+// Specify location of translation tables
+bindtextdomain("myPHPApp", "./locale");
+
+// Choose domain
+textdomain("myPHPApp");
+
+// Translation is looking for in ./locale/de_DE/LC_MESSAGES/myPHPApp.mo now
+
+// Print a test message
+echo gettext("Welcome to My PHP Application");
+
+// Or use the alias _() for gettext()
+echo _("Have a nice day");
+?>
+
+注释
+
+    Note:
+
+    You may use the underscore character '_' as an alias to this function.
+
+    Note:
+
+    Setting a language isn't enough for some systems and the putenv() should be
+    used to define the current locale.
+
+参见
+
+  • setlocale() - 设置地区信息
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+As of php 5.3, you can use the following code to get the preferred locale of
+the http agent.
+
+<?php
+$locale = Locale::acceptFromHttp($_SERVER['HTTP_ACCEPT_LANGUAGE']);
+?>
+===============================================================================
+
+I just wanted to say that gettext won't work on WAMP Server 2.4 / 64 Bit, see
+the thread I posted here:
+
+Title: Gettext doesn't work on WAMP 64 Bits
+http://forum.wampserver.com/read.php?2,120770,120770#msg-120770
+
+I haven't tested with only apache 64 Bit, so, I don't know if the issue is
+related to apache or WAMP. Anyway, to make it work with WAMP, install the 32
+Bit version of WAMP and only do this:
+
+define('LOCALE_DIR', '<root_dir_of_your_po_files>'); //ie: C:/wamp/www/your_app
+/locale
+$locale = '<your_locale>'; //ie: es_CO
+$domain = 'your_gettext_domain'; //ie: messages
+putenv('LC_ALL=' . $locale);
+bindtextdomain($domain, LOCALE_DIR);
+textdomain($domain);
+echo _('<your_string>'; // ie: Hello world
+
+"setlocale" nor setting the LANG, LANGUAGE, and LC_MESSAGES environment
+variables seems to be necessary under windows. I got it working by setting
+"LC_ALL" only.
+===============================================================================
+
+Gettext translations are cached. If you change *.mo files your page may not be
+translated as expected. Here's simple workaround which does not require
+restarting webserver (I know, this is just a dirty hack):
+
+<?php
+function initialize_i18n($locale) {
+    putenv('LANG='.$locale);
+    setlocale(LC_ALL,"");
+    setlocale(LC_MESSAGES,$locale);
+    setlocale(LC_CTYPE,$locale);
+    $domains = glob($locales_root.'/'.$locale.'/LC_MESSAGES/messages-*.mo');
+    $current = basename($domains[0],'.mo');
+    $timestamp = preg_replace('{messages-}i','',$current);
+    bindtextdomain($current,$locales_root);
+    textdomain($current);
+    }
+?>
+
+to make this work you have to put your locale inside file messages-
+[unix_time].mo and use this name (without .mo) as your domain to fool caching
+mechanism (domain names differ)
+
+msgfmt messages.po -o messages-`date +%s`.mo
+
+for me this works fine (although this is not very elegant solution)
+===============================================================================
+
+The simplest way to by-pass gettext() cache, without restart apache nor change
+domain.
+
+The fix is incredible simple, first create a dummy link to the locale folder
+where .mo files stored:
+
+cd locale
+ln -s . nocache
+
+Then add one single line before bindtextdomain()
+
+<?php
+bindtextdomain('domain', './locale/nocache');
+bindtextdomain('domain', './locale');
+?>
+
+Now the cache is forced to flush every time.
+===============================================================================
+
+Worth noting is that gettext honors environment variables while selecting the
+language to use: http://www.gnu.org/software/gettext/manual/html_node/
+Locale-Environment-Variables.html
+
+"When a program looks up locale dependent values, it does this according to the
+following environment variables, in priority order:
+
+    LANGUAGE
+    LC_ALL
+    LC_xxx, according to selected locale category: LC_CTYPE, LC_NUMERIC,
+LC_TIME, LC_COLLATE, LC_MONETARY, LC_MESSAGES, ...
+    LANG
+
+Variables whose value is set but is empty are ignored in this lookup. "
+
+In short, if you have non-empty LANGUAGE, you may end up with unexpected
+localization strings. On the other hand, LANGUAGE can be used to define
+fallback language if some translation is missing.
+===============================================================================
+
+on OSX (10.9.3) and PHP (5.4.24) you need to use full local name including
+codeset
+
+i.e. for German need to use de_DE.UTF-8 even setlocale returns success when
+used without .UTF-8 the lookups will not work.
+===============================================================================
+
+For me it is sufficient to call setlocale() with a string like "nl_BE" as the
+second parameter, to make gettext() work. Just plain "nl" was not enough.
+
+Ditto when using an environment variable like LANG: "en", "fr", "nl", "de" are
+not enough: I have to specify the country, too.
+===============================================================================
+
+Take care when extracting the strings from the source files : if your source
+files are not encoded in ascii, then xgettext must be used with the --from-code
+option, and the generated .po file is *always* UTF-8 (even if you used a
+different --from-code charset).
+
+The usage of gettext will not work later on strings which include non ascii
+caracters. For make it working, you have to translate the .po file to your
+proper charset with msgconv.
+
+Example :
+my source files are encoded in iso-8859-1
+$ xgettext --from-code=iso-8859-1 -n *.php -o myapp.po
+==> myapp.po is in UTF-8 (and generated .mo files will not work with gettext).
+I have to convert it to iso-8859-1 before translating :
+$ msgconv --to-code=iso-8859-1 myapp.po -o myapp.po
+...and now translate the file.
+===============================================================================
+
+Depending on the implementation of gettext used you might have to call the
+setlocale(LC_ALL, "") command. 
+So your example code would be
+
+<?php
+
+// Set language to German
+putenv ("LANG=de");
+
+// set the locale into the instance of gettext
+setlocale(LC_ALL, "");
+
+// Specify location of translation tables
+bindtextdomain ("myPHPApp", "./locale");
+
+// Choose domain
+textdomain ("myPHPApp");
+
+// Print a test message
+print (gettext ("Welcome to My PHP Application"));
+?>
+
+NOTE:  If setlocale returns NULL the LANG specified is invalid and "not
+supported".
+===============================================================================
+
+If you 're experiencing problems like gettext() is not working and you're
+getting translated text only occassionaly use: unset LANG before starting
+apache.
+Next thing is that you have to restart apache after you 've changed .mo files
+because they're treated something like shared libraries.
+I've only tested this with Linux (Sourcemage Linux distro, Mandrake) but it
+might be true for others as well.
+===============================================================================
+
+There's a good tutorial to the GetText tools used with PHP at http://zez.org/
+article/articleview/42
+The only modification I needed to do was to use the correct ISO-language/
+country-codes (don't know the ISO number) and call setlocale.
+helloworld.php:
+
+<?php
+putenv("LC_ALL=da_DK"); // For danish/Denmark
+setlocale(LC_ALL, "");
+
+// ./locale/da/LC_MESSAGES holds the helloworld.mo file
+bindtextdomain("helloworld", "./locale");
+textdomain("helloworld");
+
+print(gettext("Hello world!"));
+?>
+
+I had a lot of trouble getting this to work on Red Hat (Yellow Dog) Linux
+though.
+===============================================================================
+
+gettext returns the headers from .mo files
+if the message parameter is set to empty.
+
+So if you are for example using Smarty blocks, make sure that the values given
+checks if the text has content or else your text will have a bunch of headers
+printing.
+
+If you are putting a variable to the gettext, like so:
+_($text);
+you are better of making another function like this:
+<?php
+function __($text){
+if(empty($text)) return "";
+else gettext($text);
+}
+?>
+===============================================================================
+
+Default behavior is name .mo file equally in every language version:
+===
+locale_dir
+
+--- en_US
+------ LC_MESSAGES
+--------- lang.mo
+
+--- sk_SK
+------ LC_MESSAGES
+--------- lang.mo
+===
+
+I think, better form is:
+===
+locale_dir
+
+--- en_US
+------ LC_MESSAGES
+--------- en.mo
+
+--- sk_SK
+------ LC_MESSAGES
+--------- sk.mo
+===
+
+Then the following code works very well (surprisingly on win32 too), and you
+don't need restart apache and do other confusing things:
+
+<?php
+$gettext_domain = 'sk'; // change by language
+setlocale(LC_ALL, 'sk_SK.UTF-8'); // change by language, directory name sk_SK,
+not sk_SK.UTF-8
+bindtextdomain($gettext_domain, "lang");
+textdomain($gettext_domain);
+bind_textdomain_codeset($gettext_domain, 'UTF-8');
+?>
+
+Have nice day :-)
+===============================================================================
+
+This function is not able to handle null values. It can return the complete
+translation file if you enter null as argument.
+===============================================================================
+
+I had a problem like "adino at adino dot sk" said, so I did the unsetting of
+LANG ($ unset LANG), but it was not sufficient, I had to unset the environment
+variable LANGUAGE too.
+
+I tried to do this using "sudo", but it didn't works, so I had to change to
+root using "su"
+
+If you need to know, I use Musix (a sub-distro of Devia).
+
+I hope this will help you, Seeya! ^__^'
+===============================================================================
+
+If like me, you are stuck with making a lot of code localizable, you have to go
+through all your php files and wrap all srings in _("string"). Here's an elisp
+function which can help you out.
+
+This function enables you to highlight some text in an emacs buffer and make it
+a localizable string using the keyboard shortcut C-l (Ctrl and l). If the first
+character highlighted is " or ', then it assumes the text is in php-context and
+changes it to: _(HIGHLIGHTED_TEXT). Otherwise it assumes the text is in
+html-context and changes it to <?=_('HIGHLIGHTED_TEXT')?>
+
+The shortcut C-k can be used for translating parts of php strings which contain
+html tabs. We dont want to translate the entire string including the tabs, so
+we highlight just the substring that needs to be translated and use C-k.
+
+To use it, do either of:
+Copy and paste the following code into your .emacs file. This would permanently
+associate the keyboard shortcut C-l with this function.
+Save the code in a new file ending with the .el extension. Evaluate it using
+M-x eval-buffer. This makes the C-l keyboard shortcut only last for the current
+Emacs session.
+
+Code
+;author: Vinay Kuruvila March 01 2006
+;updated to handle php strings containing html tabs
+
+;makes the text starting at left and ending at right in the
+;current buffer a localizable string, assuming that the
+;string is within php context
+(defun make-localizable-string-in-php-context(left right)
+(goto-char left)
+(insert "_(")
+(goto-char (+ right 2))
+(insert ")")
+)
+
+;makes the text starting at left and ending at right in the
+;current buffer a localizable string, assuming that the
+;string is within html context
+(defun make-localizable-string-in-html-context(left right)
+(goto-char left)
+(insert "<?= _('")
+(goto-char (+ right 7))
+(insert "')?>")
+)
+
+;makes the highlighted text a localizable string
+;uses php-context localization if the first char highlighted
+;is " or '
+;otherwise uses html-context localization
+(defun make-localizable-string()
+(interactive)
+
+;find the positions of the left and right ends of
+;the highlighted text
+(if (> (point) (mark))
+(progn
+(setq right (point))
+(setq left (mark))
+)
+(progn
+(setq right (mark))
+(setq left (point))
+)
+)
+
+;determine php-context or html-context and dispatch
+(if (or (char-equal (char-after left) ?\") (char-equal (char-after left) ?'))
+(make-localizable-string-in-php-context left right)
+(make-localizable-string-in-html-context left right)
+)
+(deactivate-mark)
+)
+
+;to handle php strings which contain html tabs
+;we dont want to translate the html tabs
+(defun make-localizable-string-within-php-string ()
+(interactive)
+
+;find the positions of the left and right ends of
+;the highlighted text
+(if (> (point) (mark))
+(progn
+(setq right (point))
+(setq left (mark))
+)
+(progn
+(setq right (mark))
+(setq left (point))
+)
+)
+(goto-char left)
+(insert "\". _(\"")
+(goto-char (+ right 6))
+(insert "\").\"")
+(deactivate-mark)
+)
+
+;assigns a keyboard shortcut
+(global-set-key "\C-l" 'make-localizable-string)
+(global-set-key "\C-k" 'make-localizable-string-within-php-string)

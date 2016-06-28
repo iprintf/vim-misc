@@ -1,0 +1,182 @@
+
+ldap_control_paged_result
+
+(PHP 5 >= 5.4.0, PHP 7)
+
+ldap_control_paged_result — Send LDAP pagination control
+
+说明
+
+bool ldap_control_paged_result ( resource $link , int $pagesize [, bool
+$iscritical = false [, string $cookie = "" ]] )
+
+Enable LDAP pagination by sending the pagination control (page size,
+cookie...).
+
+参数
+
+link
+
+    An LDAP link identifier, returned by ldap_connect().
+
+pagesize
+
+    The number of entries by page.
+
+iscritical
+
+    Indicates whether the pagination is critical or not. If true and if the
+    server doesn't support pagination, the search will return no result.
+
+cookie
+
+    An opaque structure sent by the server (ldap_control_paged_result_response
+    ()).
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+The example below show the retrieval of the first page of a search paginated
+with one entry by page.
+
+Example #1 LDAP pagination
+
+<?php
+     // $ds is a valid link identifier (see ldap_connect)
+     ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
+
+     $dn        = 'ou=example,dc=org';
+     $filter    = '(|(sn=Doe*)(givenname=John*))';
+     $justthese = array('ou', 'sn', 'givenname', 'mail');
+
+     // enable pagination with a page size of 1.
+     ldap_control_paged_result($ds, 1);
+
+     $sr = ldap_search($ds, $dn, $filter, $justthese);
+
+     $info = ldap_get_entries($ds, $sr);
+
+     echo $info['count'] . ' entries returned' . PHP_EOL;
+
+The example below show the retrieval of all the result paginated with 100
+entries by page.
+
+Example #2 LDAP pagination
+
+<?php
+     // $ds is a valid link identifier (see ldap_connect)
+     ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
+
+     $dn        = 'ou=example,dc=org';
+     $filter    = '(|(sn=Doe*)(givenname=John*))';
+     $justthese = array('ou', 'sn', 'givenname', 'mail');
+
+     // enable pagination with a page size of 100.
+     $pageSize = 100;
+
+     $cookie = '';
+     do {
+         ldap_control_paged_result($ds, $pageSize, true, $cookie);
+
+         $result  = ldap_search($ds, $dn, $filter, $justthese);
+         $entries = ldap_get_entries($ds, $result);
+             
+         foreach ($entries as $e) {
+             echo $e['dn'] . PHP_EOL;
+         }
+
+         ldap_control_paged_result_response($ds, $result, $cookie);
+       
+     } while($cookie !== null && $cookie != '');
+
+注释
+
+    Note:
+
+    Pagination control is a LDAPv3 protocol feature.
+
+参见
+
+  • ldap_control_paged_result_response() - Retrieve the LDAP pagination cookie
+  • » RFC2696 : LDAP Control Extension for Simple Paged Results Manipulation
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Paged results, as specified in the RFC 2696, does not allow to get over the
+server sizeLimit. The RFC clearly states "If the page size is greater than or
+equal to the sizeLimit value, the server should ignore the control as the
+request can be satisfied in a single page".
+With OpenLDAP, you will not get more than the sizeLimit number of entries with
+paged results.
+===============================================================================
+
+If you did a paged search operation and want to do any other read operation on
+LDAP, you need to reset it, otherwise you will experience LDAP errors (code 12,
+for instance).
+
+<?php
+…
+ldap_control_paged_result($link, 0);
+…
+?>
+===============================================================================
+
+I was able to get these functions to work successfully with Active Directory. 
+When I first tried it, ldap_search kept returning a Not Supported reply from
+the server.  I finally figured out that I needed to include
+
+ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
+
+in my code, so that AD would let me page results.  Make sure you're using a
+compatible protocol.
+
+Hope this note helps someone else.
+===============================================================================
+
+While another note suggests resetting the control paged result by passing in `0
+` (zero), it actually still prevents any further queries being ran during the
+same request.
+
+You actually need to set it to a large number to run further queries it seems.
+For example:
+
+<?php
+ldap_control_paged_result($connection, 100, true, $cookie);
+
+// Run the search
+...
+
+// What is supposed to work (reset)
+ldap_control_paged_result($connection, 0, false, $cookie);
+
+// What actually works
+ldap_control_paged_result($connection, 1000, false, $cookie);
+?>
+
+In the above method, 1000 is just a placeholder, but this seems to actually
+**limit** further queries to this amount of results, so if you set it to `1`,
+then you'll only receive **one** result for any further queries during the same
+request.
+===============================================================================
+
+You may need to do an ldap_bind before running ldap_control_paged_result to get
+this to work:
+
+$conn = ldap_connect("you_ip");
+ldap_set_option($conn, LDAP_OPT_PROTOCOL_VERSION, 3);
+ldap_bind("your_connection_info");       
+ldap_control_paged_result($conn, $pageSize, true, $cookie)
+
+Without doing an ldap_bind, I kept getting the error "Critical extension is
+unavailable". I don't if this is standard knowledge, but knowing this would
+have saved me days of frustration.
+===============================================================================
+
+So how do you now sort the entire result? It appears you can't use ldap_sort as
+it uses the search resource which is within the loop.

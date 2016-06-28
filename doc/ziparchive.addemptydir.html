@@ -1,0 +1,264 @@
+
+ZipArchive::addEmptyDir
+
+(PHP 5 >= 5.2.0, PHP 7, PECL zip >= 1.8.0)
+
+ZipArchive::addEmptyDir — Add a new directory
+
+说明
+
+bool ZipArchive::addEmptyDir ( string $dirname )
+
+Adds an empty directory in the archive.
+
+参数
+
+dirname
+
+    The directory to add.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Create a new directory in an archive
+
+<?php
+$zip = new ZipArchive;
+if ($zip->open('test.zip') === TRUE) {
+    if($zip->addEmptyDir('newDirectory')) {
+        echo 'Created a new root directory';
+    } else {
+        echo 'Could not create the directory';
+    }
+    $zip->close();
+} else {
+    echo 'failed';
+}
+?>
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Add folder and sub-directories to zip archive.
+
+<?php
+$archive_name = "archive.zip"; // name of zip file
+$archive_folder = "folder"; // the folder which you archivate
+
+$zip = new ZipArchive;
+if ($zip -> open($archive_name, ZipArchive::CREATE) === TRUE)
+{
+    $dir = preg_replace('/[\/]{2,}/', '/', $archive_folder."/");
+   
+    $dirs = array($dir);
+    while (count($dirs))
+    {
+        $dir = current($dirs);
+        $zip -> addEmptyDir($dir);
+       
+        $dh = opendir($dir);
+        while($file = readdir($dh))
+        {
+            if ($file != '.' && $file != '..')
+            {
+                if (is_file($file))
+                    $zip -> addFile($dir.$file, $dir.$file);
+                elseif (is_dir($file))
+                    $dirs[] = $dir.$file."/";
+            }
+        }
+        closedir($dh);
+        array_shift($dirs);
+    }
+   
+    $zip -> close();
+    echo 'Archiving is sucessful!';
+}
+else
+{
+    echo 'Error, can\'t create a zip file!';
+}
+?>
+===============================================================================
+
+addEmptyDir doesn't exist now,
+use $zip->addFile($file, $dir.$fichier);
+
+nothing on the net about this,
+
+addEmptyDir work on Ubuntu but not on Debian Etch
+===============================================================================
+
+On PHP >5.4, This function will create a file, not a directory.
+
+For instance:
+
+   $zip->addEmptyDir ( 'path/to/dir/' );
+
+will create the folders "path/", and "path/to/", and a dummy 0-byte file named
+"dir" in the latter.
+If then we add a file to that dir, say like this:
+
+   $zip->addFromString ( 'path/to/dir/file.txt', $data ); 
+
+the result will be a SEPARATE folder named "dir" next to the dummy "dir" file.
+The "dir" folder will contain the file "file.txt".
+
+This was tested on an APACHE server running PHP 5.4
+===============================================================================
+
+Here's a stack-based way to zip a directory. No recursion, no function, no
+class:
+
+<?php
+$zip = new ZipArchive();
+$zip->open('test.zip', ZipArchive::CREATE);
+
+$dirName = 'test';
+
+if (!is_dir($dirName)) {
+    throw new Exception('Directory ' . $dirName . ' does not exist');
+}
+
+$dirName = realpath($dirName);
+if (substr($dirName, -1) != '/') {
+    $dirName.= '/';
+}
+
+/*
+* NOTE BY danbrown AT php DOT net: A good method of making
+* portable code in this case would be usage of the PHP constant
+* DIRECTORY_SEPARATOR in place of the '/' (forward slash) above.
+*/
+
+$dirStack = array($dirName);
+//Find the index where the last dir starts
+$cutFrom = strrpos(substr($dirName, 0, -1), '/')+1;
+
+while (!empty($dirStack)) {
+    $currentDir = array_pop($dirStack);
+    $filesToAdd = array();
+
+    $dir = dir($currentDir);
+    while (false !== ($node = $dir->read())) {
+        if (($node == '..') || ($node == '.')) {
+            continue;
+        }
+        if (is_dir($currentDir . $node)) {
+            array_push($dirStack, $currentDir . $node . '/');
+        }
+        if (is_file($currentDir . $node)) {
+            $filesToAdd[] = $node;
+        }
+    }
+
+    $localDir = substr($currentDir, $cutFrom);
+    $zip->addEmptyDir($localDir);
+   
+    foreach ($filesToAdd as $file) {
+        $zip->addFile($currentDir . $file, $localDir . $file);
+    }
+}
+
+$zip->close();
+?>
+===============================================================================
+
+Here's a simple recurring function to add a directory, all sub-directories and
+all files to an already created zip file;
+
+<?php
+// Function to recursively add a directory,
+// sub-directories and files to a zip archive
+function addFolderToZip($dir, $zipArchive){
+    if (is_dir($dir)) {
+        if ($dh = opendir($dir)) {
+
+            //Add the directory
+            $zipArchive->addEmptyDir($dir);
+           
+            // Loop through all the files
+            while (($file = readdir($dh)) !== false) {
+           
+                //If it's a folder, run the function again!
+                if(!is_file($dir . $file)){
+                    // Skip parent and root directories
+                    if( ($file !== ".") && ($file !== "..")){
+                        addFolderToZip($dir . $file . "/", $zipArchive);
+                    }
+                   
+                }else{
+                    // Add the files
+                    $zipArchive->addFile($dir . $file);
+                   
+                }
+            }
+        }
+    }
+}
+?>
+
+Would be nice to see more input on these functions :)
+
+Dayjo
+===============================================================================
+
+There is kind of a bug in the method
+ZipArchive::addFile
+which affects the class ZipFolder below.
+It is related to the numer of max filehandles of the OS.
+
+As workaround add a file-counter to the class and close + reopen the archive if
+a certain number of files (directories count as files!) is reached.
+
+For more details see here:
+http://de.php.net/manual/en/function.ziparchive-addfile.php
+or go directly here
+http://bugs.php.net/bug.php?id=40494
+or here
+http://pecl.php.net/bugs/bug.php?id=9443
+===============================================================================
+
+I've brought a little modification to dayjo's code, so it wouldn't re-create
+the whole structure of your working drive in the zip file:
+
+<?php
+// Function to recursively add a directory,
+// sub-directories and files to a zip archive
+function addFolderToZip($dir, $zipArchive, $zipdir = ''){
+    if (is_dir($dir)) {
+        if ($dh = opendir($dir)) {
+
+            //Add the directory
+            if(!empty($zipdir)) $zipArchive->addEmptyDir($zipdir);
+          
+            // Loop through all the files
+            while (($file = readdir($dh)) !== false) {
+          
+                //If it's a folder, run the function again!
+                if(!is_file($dir . $file)){
+                    // Skip parent and root directories
+                    if( ($file !== ".") && ($file !== "..")){
+                        addFolderToZip($dir . $file . "/", $zipArchive, $zipdir
+. $file . "/");
+                    }
+                  
+                }else{
+                    // Add the files
+                    $zipArchive->addFile($dir . $file, $zipdir . $file);
+                  
+                }
+            }
+        }
+    }
+}
+?>
+
+If you don't specify the third parameter (zipdir), the directory you're adding
+will be added at the root of the zip file.
+
+D.Jann

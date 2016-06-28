@@ -1,0 +1,791 @@
+
+socket_select
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+socket_select — Runs the select() system call on the given arrays of sockets
+with a specified timeout
+
+说明
+
+int socket_select ( array &$read , array &$write , array &$except , int $tv_sec
+[, int $tv_usec = 0 ] )
+
+socket_select() accepts arrays of sockets and waits for them to change status.
+Those coming with BSD sockets background will recognize that those socket
+resource arrays are in fact the so-called file descriptor sets. Three
+independent arrays of socket resources are watched.
+
+参数
+
+read
+
+    The sockets listed in the read array will be watched to see if characters
+    become available for reading (more precisely, to see if a read will not
+    block - in particular, a socket resource is also ready on end-of-file, in
+    which case a socket_read() will return a zero length string).
+
+write
+
+    The sockets listed in the write array will be watched to see if a write
+    will not block.
+
+except
+
+    The sockets listed in the except array will be watched for exceptions.
+
+tv_sec
+
+    The tv_sec and tv_usec together form the timeout parameter. The timeout is
+    an upper bound on the amount of time elapsed before socket_select() return.
+    tv_sec may be zero , causing socket_select() to return immediately. This is
+    useful for polling. If tv_sec is NULL (no timeout), socket_select() can
+    block indefinitely.
+
+tv_usec
+
+Warning
+
+On exit, the arrays are modified to indicate which socket resource actually
+changed status.
+
+You do not need to pass every array to socket_select(). You can leave it out
+and use an empty array or NULL instead. Also do not forget that those arrays
+are passed by reference and will be modified after socket_select() returns.
+
+    Note:
+
+    Due a limitation in the current Zend Engine it is not possible to pass a
+    constant modifier like NULL directly as a parameter to a function which
+    expects this parameter to be passed by reference. Instead use a temporary
+    variable or an expression with the leftmost member being a temporary
+    variable:
+   
+    Example #1 Using NULL with socket_select()
+
+    <?php
+    $e = NULL;
+    socket_select($r, $w, $e, 0);
+    ?>
+
+返回值
+
+On success socket_select() returns the number of socket resources contained in
+the modified arrays, which may be zero if the timeout expires before anything
+interesting happens. On error FALSE is returned. The error code can be
+retrieved with socket_last_error().
+
+    Note:
+
+    Be sure to use the === operator when checking for an error. Since the 
+    socket_select() may return 0 the comparison with == would evaluate to TRUE:
+   
+    Example #2 Understanding socket_select()'s result
+
+    <?php
+    $e = NULL;
+    if (false === socket_select($r, $w, $e, 0)) {
+        echo "socket_select() failed, reason: " .
+            socket_strerror(socket_last_error()) . "\n";
+    }
+    ?>
+
+范例
+
+Example #3 socket_select() example
+
+<?php
+/* Prepare the read array */
+$read   = array($socket1, $socket2);
+$write  = NULL;
+$except = NULL;
+$num_changed_sockets = socket_select($read, $write, $except, 0);
+
+if ($num_changed_sockets === false) {
+    /* Error handling */
+} else if ($num_changed_sockets > 0) {
+    /* At least at one of the sockets something interesting happened */
+}
+?>
+
+注释
+
+    Note:
+
+    Be aware that some socket implementations need to be handled very
+    carefully. A few basic rules:
+      □ You should always try to use socket_select() without timeout. Your
+        program should have nothing to do if there is no data available. Code
+        that depends on timeouts is not usually portable and difficult to
+        debug.
+      □ No socket resource must be added to any set if you do not intend to
+        check its result after the socket_select() call, and respond
+        appropriately. After socket_select() returns, all socket resources in
+        all arrays must be checked. Any socket resource that is available for
+        writing must be written to, and any socket resource available for
+        reading must be read from.
+      □ If you read/write to a socket returns in the arrays be aware that they
+        do not necessarily read/write the full amount of data you have
+        requested. Be prepared to even only be able to read/write a single
+        byte.
+      □ It's common to most socket implementations that the only exception
+        caught with the except array is out-of-bound data received on a socket.
+
+参见
+
+  • socket_read() - Reads a maximum of length bytes from a socket
+  • socket_write() - Write to a socket
+  • socket_last_error() - Returns the last error on the socket
+  • socket_strerror() - Return a string describing a socket error
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+A simple PHP script using socket_select() to manage multiple connections.
+connect using "telnet localhost 9050". it broadcasts your messages that you
+send through telnet to other users connected to the server -- sort of like a
+chat script
+
+#!/usr/local/bin/php
+<?php
+
+    $port = 9050;
+   
+    // create a streaming socket, of type TCP/IP
+    $sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+   
+    // set the option to reuse the port
+    socket_set_option($sock, SOL_SOCKET, SO_REUSEADDR, 1);
+   
+    // "bind" the socket to the address to "localhost", on port $port
+    // so this means that all connections on this port are now our
+resposibility to send/recv data, disconnect, etc..
+    socket_bind($sock, 0, $port);
+   
+    // start listen for connections
+    socket_listen($sock);
+
+    // create a list of all the clients that will be connected to us..
+    // add the listening socket to this list
+    $clients = array($sock);
+   
+    while (true) {
+        // create a copy, so $clients doesn't get modified by socket_select()
+        $read = $clients;
+       
+        // get a list of all the clients that have data to be read from
+        // if there are no clients with data, go to next iteration
+        if (socket_select($read, $write = NULL, $except = NULL, 0) < 1)
+            continue;
+       
+        // check if there is a client trying to connect
+        if (in_array($sock, $read)) {
+            // accept the client, and add him to the $clients array
+            $clients[] = $newsock = socket_accept($sock);
+           
+            // send the client a welcome message
+            socket_write($newsock, "no noobs, but ill make an exception :)\n".
+            "There are ".(count($clients) - 1)." client(s) connected to the
+server\n");
+           
+            socket_getpeername($newsock, $ip);
+            echo "New client connected: {$ip}\n";
+           
+            // remove the listening socket from the clients-with-data array
+            $key = array_search($sock, $read);
+            unset($read[$key]);
+        }
+       
+        // loop through all the clients that have data to read from
+        foreach ($read as $read_sock) {
+            // read until newline or 1024 bytes
+            // socket_read while show errors when the client is disconnected,
+so silence the error messages
+            $data = @socket_read($read_sock, 1024, PHP_NORMAL_READ);
+           
+            // check if the client is disconnected
+            if ($data === false) {
+                // remove client for $clients array
+                $key = array_search($read_sock, $clients);
+                unset($clients[$key]);
+                echo "client disconnected.\n";
+                // continue to the next client to read from, if any
+                continue;
+            }
+           
+            // trim off the trailing/beginning white spaces
+            $data = trim($data);
+           
+            // check if there is any data after trimming off the spaces
+            if (!empty($data)) {
+           
+                // send this to all the clients in the $clients array (except
+the first one, which is a listening socket)
+                foreach ($clients as $send_sock) {
+               
+                    // if its the listening sock or the client that we got the
+message from, go to the next one in the list
+                    if ($send_sock == $sock || $send_sock == $read_sock)
+                        continue;
+                   
+                    // write the message to the client -- add a newline
+character to the end of the message
+                    socket_write($send_sock, $data."\n");
+                   
+                } // end of broadcast foreach
+               
+            }
+           
+        } // end of reading foreach
+    }
+
+    // close the listening socket
+    socket_close($sock);
+?>
+===============================================================================
+
+as of 12/2015 and php 5.3.3, the socket_select() maximum sockets is still 1024
+and not risable by process file limits (bash ulimit -n). PHP new compilation is
+required to raise the limits. Or one might rather choose forking or multiple
+binaries.
+===============================================================================
+
+The way the document describes socket_select()'s handling of sockets polled for
+read is rather obscure.
+
+It says that it checks to see if reading would not "block," but the overall
+description of socket_select() says it checks for a change in blocking status.
+Unfortunately, these are in conflict.
+
+If a socket already has data in the buffer, calling socket_select() on that
+socket would never return (assuming null timeout), and would block forever. :-(
+This is because the blocking status wouldn't change. It simply stays
+"non-blocking"
+
+It is important to remember NOT to select() on a socket which may already have
+data available.
+
+An example...
+<?php
+//... $socket is already here...
+$done = false;
+$n = 0;
+do{
+    $tmp = 0;
+    $r = $w = $e = array();
+    $r = array($socket);
+    socket_select($r,$w,$e,null);
+    $n = socket_recv($socket, $tmp, 1024, 0);
+
+    //$done = true; //Something determines that we are done reading...
+}while(!$done);
+?>
+This MAY NOT work... socket_select() is always being called... but we may have
+data in the input buffer.
+
+We need to ensure that the last time we read, nothing was read... (empty
+buffer)
+<?php
+//... $socket is already here...
+$done = false;
+$n = 0;
+do{
+    $tmp = 0;
+    $r = $w = $e = array();
+    $r = array($socket);
+    if($n === 0) socket_select($r,$w,$e,null);
+    $n = socket_recv($socket, $tmp, 1024, 0);
+
+    //$done = true; //Something determines that we are done reading...
+}while(!$done);
+?>
+===============================================================================
+
+Probably you will want to use
+
+// get a list of all the clients that have data to be read from
+// if there are no clients with data, go to next iteration
+        if (socket_select($read, $write = NULL, $except = NULL, NULL) < 1)
+            continue;
+           
+instead 
+        if (socket_select($read, $write = NULL, $except = NULL, 0) < 1)
+            continue;
+which will hang your CPU to 100% (return immediate if nothing to be done)
+===============================================================================
+
+As it was already said, some clients need \0 character to end transmission, for
+example Flash's XMLSocket.
+
+You should also be prepared to read less data than you have requested.
+
+Here is an example of a socket buffer - it's an array which has socket
+resources for keys and an array of a timestamp and recieved data as values.
+
+I find that the best practice for sending data is trailing it with a new line
+and zero character (\n\0), because you will probably have different types of
+clients which behave differently for reading data from sockets. Some need a \n
+to fire an event, some need \0.
+
+For recieving data, sometimes you will get splitted data - this can hapen
+because the buffer is full (in my example 8192 bytes) or it just gets broken
+during transmission in lower levels.
+
+Sometimes you can read two messages at once, but they have a zero character in
+between, so you can just use preg_split() to split the messages. The second
+message may not be complete, so you add it to your buffer.
+
+<?php
+    const message_delimiter = "\n\0";
+
+    /*
+     * Clear socket buffers older than 1 hour
+     */
+    function clear_buffer() {
+        foreach($this->buffer as $key=>$val) {
+            if(time() - $val['ts'] > 3600) {
+                unset($this->buffer[$key]);
+            }
+        }
+    }
+
+    /*
+     * Add data to a buffer
+     */
+    function buffer_add($sock,$data) {
+        if(!isset($this->buffer[$sock])) {
+            $this->buffer[$sock]['data'] = '';
+        }
+
+        $this->buffer[$sock]['data'] .= $data;
+        $this->buffer[$sock]['ts'] = time();
+    }
+
+    function buffer_get($sock) {
+        // split buffer by the end of string
+        $lines = preg_split('/\0/',$this->buffer[$sock]['data']);
+
+        // reset buffer to the last line of input
+        // if the buffer was sent completely, the last line of input should be
+        // an empty string
+        $this->buffer[$sock]['data'] = trim($lines[count($lines)-1]);
+
+        if(!empty($this->buffer[$sock]['data'])) {
+            debug("buffer is not empty for $sock, len: ".strlen($this->buffer[
+$sock]['data']));
+        }
+
+        // remove the last line of input (incomplete data)
+        // parse any complete data
+        unset($lines[count($lines)-1]);
+
+        // return only the fully sent data
+        return $lines;
+    }
+
+    function read(&$sock,$len=8192,$flag=MSG_DONTWAIT) {
+        $lines = array();
+
+        $this->clear_buffer();
+
+        $bytes_read = @socket_recv($sock,$read_data,$len,$flag);
+
+        if ($bytes_read === false || $bytes_read == 0) {
+            return false;
+        } else {
+            debug("recv: $read_data");
+            $this->buffer_add($sock,$read_data);
+            return $this->buffer_get($sock);
+        }
+    }
+
+    /*
+     * Write to a socket
+     * add a newline and null character at the end
+     * some clients don't read until new line is recieved
+     *
+     * try to send the rest of the data if it gets truncated
+     */
+    function write(&$sock,$msg) {
+        $msg = $msg.self::message_delimiter;
+        $length = strlen($msg);
+        while(true) {
+            $sent = @socket_write($sock,$msg,$length);
+            if($sent <= 0) {
+                return false;
+            }
+            if($sent < $length) {
+                $msg = substr($msg, $sent);
+                $length -= $sent;
+                debug("Message truncated: Resending: $msg");
+            } else {
+                return true;
+            }
+        }
+        return false;
+    }
+?>
+===============================================================================
+
+If you using a Flash client - you should know some specific features:
+
+1) when client connects to the server - it is sending to you "
+<policy-file-request/>"."\0" string. Server should answer an XML policy file,
+then disconnect from this client. Code is something like
+
+if ('<policy-file-request/>'==substr($data, 0, 22))
+                {
+                    echo "policy requset.\n";
+                    flush();ob_flush();
+                    $msg = '<'.'?xml version="1.0"?>
+<!DOCTYPE cross-domain-policy SYSTEM "http://www.macromedia.com/xml/dtds/
+cross-domain-policy.dtd">
+<cross-domain-policy>
+<allow-access-from domain="*" to-ports="*" />
+</cross-domain-policy>'."\0";
+                    echo "Say to client (crossdomain.xml) ... ";
+                    flush();ob_flush();
+                    socket_write($read_sock, $msg, strlen($msg));
+                    echo "OK\n";
+                    flush();ob_flush();
+                   
+                    echo "Closing ... ";
+                    flush();ob_flush();
+                    socket_close($read_sock);
+                    echo "OK\n";
+                    flush();ob_flush();
+                }
+                else
+                {
+// here is normal IO operations with client
+}
+
+2) every output to client should be ended with "\0" (if using XMLSocket in
+Flash client) - otherwise flash will not generate onData event
+
+Russian examples is there - http://www.flasher.ru/forum/showpost.php?p=901346&
+postcount=7
+===============================================================================
+
+In regards to the code posted by vardhan ( at ) rogers ( dot ) com, it appears
+that on the following line:
+        if (socket_select($read, $write = NULL, $except = NULL, 0) < 1)
+the timeout parameter is accidentally set to 0, rather than NULL. This means
+that the select call will return immediately rather than blocking indefinitely.
+
+Change the socket_select line to the following for great success:
+        if (socket_select($read, $write = NULL, $except = NULL, NULL) < 1)
+===============================================================================
+
+A verry simple HTTP webserver written in PHP
+Run it in the shell with php <name of file> and test in in the browser with
+<server address>:8080/test
+
+<?php
+  // Reduce the amount of warnings displayed
+  error_reporting(E_ALL ^ E_NOTICE);
+
+  // Set up socket for listening
+  $host_socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+  if(!$host_socket) die("Failed to start event server. socket_create: ". 
+socket_strerror(socket_last_error())."\n");
+
+  // set the option to reuse the port
+  if(! socket_set_option($host_socket, SOL_SOCKET, SO_REUSEADDR, 1) )
+    die("Failed to start event server. socket_set_option: ". socket_strerror(
+socket_last_error())."\n");
+
+  // bind host socket to localhost or 0.0.0.0 on port 8080
+  if(! socket_bind($host_socket,"0.0.0.0",8080) )
+    die("Failed to start event server. socket_bind: ". socket_strerror(
+socket_last_error())."\n");
+
+  // start listening for connections
+  if(! socket_listen($host_socket,10) )
+    die("Failed to start event server. socket_listen: ".socket_strerror(
+socket_last_error())."\n");
+
+  while (true) {
+    // Make list of sockets to listen for changes in, including host
+    $read = array($host_socket);
+        
+    // get a list of all the clients that have data to be read from
+    $ready=@socket_select($read, $write = NULL, $except = NULL,0);
+    if ($ready=== false)
+      die("Failed to listen for clients: ". socket_strerror(socket_last_error
+()));
+
+    // a client request service
+    elseif($ready>0){
+      // accept new client
+      $newsocket = socket_accept($host_socket);
+
+      // Read from socket
+      $input = socket_read($newsocket, 1024);
+      if($input){
+        unset($client_header);
+        // Read headers; Split into safe lines
+        $line=explode("\n",preg_replace('/[^A-Za-z0-9\-+\n :;=%*?.,\/_]/','',
+substr($input,0,2000)));
+        // Split request line into its parts
+        list($client_header["method"],$client_header["url"],$client_header[
+"protocol"])=explode(" ",$line[0]);
+        // Remove the request line again.
+        unset($line[0]);
+        // Make key=value array of headers
+        foreach($line as $l){
+          list($key,$val)=explode(": ",$l);
+          if($key) $client_header[strtolower($key)]=$val;
+        }
+        // Get IP of client
+        socket_getpeername($newsocket, $client_header['ip']);
+
+        // Decode url
+        $client_header+=(array)parse_url($client_header['url']);
+        parse_str($client_header['query'],$client_header['arg']);
+
+        print_r($client_header);
+
+        // Serve file
+        if(strpos($client_header['path'],".html") && file_exists(__DIR__.
+$client_header['path'])){
+          echo "Sending a HTML page to client\n";
+          socket_write($newsocket,"$client_header[protocol] 200 OK\r\n");   
+          socket_write($newsocket,"Content-type: text/html; charset=utf-8\r\n\r
+\n");
+          socket_write($newsocket,file_get_contents(__DIR__.$client_header[
+'path'])."\r\n\r\n");
+          socket_close($newsocket);
+        }elseif($client_header['path']=="/test"){
+          echo "Sending test HTML page to client\n";
+          socket_write($newsocket,"<!DOCTYPE HTML><html><head><html><body><h1>
+Its working!</h1>Have fun\r\n");
+          socket_write($newsocket,"<pre>Request header: ". print_r(
+$client_header,true) . "</pre>\r\n");
+          socket_write($newsocket,"</body></html>\r\n\r\n");
+          socket_close($newsocket);
+        }else{
+          echo "$client_header[protocol] 404 Not Found\r\n";
+          socket_write($newsocket,"$client_header[protocol] 404 Not Found\r\n\r
+\n");  
+          socket_close($newsocket);
+        }
+      }
+    }
+  }
+  socket_close($host_socket);
+?>
+===============================================================================
+
+Another solution to the problem of keys not being preserved is to have an
+additional array for looking up sockets that uses their resource identifiers as
+keys. This can be obtained using array_flip() in some cases, but is
+particularly useful if each socket is associated with an object. In this case,
+you can make the object's constructor add a pointer to itself to the lookup
+array with its socket resource identifier as a key and use the following code
+to execute a read method for the object associated with each socket returned by
+socket_select():
+
+<?php
+socket_select($reads, $writes, $excepts, 0);
+
+foreach ($sockets as $socket) {
+    $lookuparray[$socket]->read();
+}
+?>
+===============================================================================
+
+Just noticed that you have to loop socket_select () when using UDP to get all
+queued packets:
+
+<?php
+while (socket_select ($aRead, $aWrite, $aExcept, 1) > 0) {
+    foreach ($aReadUdp as $oSocket) {
+        $this->clientReadUdp ($oSocket);
+    }
+}
+?>
+
+That's important because every call of socket_select () on UDP brings you only
+one result. But there could be 10.000 results queued and if your turnarround
+time is to slow (server busy, other sleeps etc.), you'll never progress all
+results in near realtime.
+===============================================================================
+
+Just to add to this.  Since the information contained in the notes is somewhat
+old.   It appears keys are being preserved now.
+
+So, if you rely on knowing which keys need to be worked with and were like me
+and thought that it didnot preserve.  Well it does.
+===============================================================================
+
+If you want to use a simple fractional value for timeout:
+
+<?php
+socket_select(..., floor($timeout), ceil($timeout*1000000));
+?>
+===============================================================================
+
+Regarding the comment below, No, it does not, it's a system call and I believe
+it's rather hard to preserve keys.
+
+Additionally, socket_select should be used like it was a user-inputted array,
+that you don't know what you sent in to.
+
+<?php
+$reads = $clients;
+$reads[] = $server;
+
+socket_select($reads);
+
+foreach ($reads as $read) {
+    /* do some stuff */
+}
+?>
+===============================================================================
+
+Note that the resulting arrays do NOT maintain keys (PHP 4.3.2) after being run
+through this function:
+
+Before:
+Array
+(
+    [Client_Socket] => Resource id #6
+    [Server_Socket] => Resource id #9
+)
+
+After:
+Array
+(
+    [0] => Resource id #6
+    [1] => Resource id #9
+)
+
+It would have been nice to have the keys stay to figure out which stream you
+need to receive from, but you'll have to use some fancy foreach loop to figure
+out which sockets to check.
+===============================================================================
+
+The continuation of my my previous post on 28-Apr-2005 10:19 at
+http://ca3.php.net/manual/en/function.socket-select.php
+
+Here it is: (Link is broken into 2 parts)
+
+'http://gtkphp.org/php_socket_select_hangs
+_explanation_and_solution.html'
+===============================================================================
+
+It is probably a bad idea to watch an array of sockets for input with
+socket_select, and then socket_read() using PHP_NORMAL_READ.
+
+Although this seems desirable, you can end up with a permanently blocked
+program, if someone sends you malformed input which is missing a trailing \n \
+r. Guess how I found that out.
+===============================================================================
+
+Please note that the timeout parameter has important side-effects on the CPU
+usage of your script.
+
+Setting the timeout to 0 will make your CPU looping without any time to have
+some rest and handle other running processes on your system, causing the system
+load to increase heavily while your script is running.
+
+Personnaly, I use a value of 15 ms for this parameter. this ensures a good
+listening frequency while letting your system load clear.
+
+Example :
+$read = array($ListeningSocket);
+$num_changed_sockets = socket_select($read, $write = NULL, $except = NULL, 0,
+10);
+
+Hope this helps.
+===============================================================================
+
+hello,
+i just made a class which acts similiar to Perl's IO::Select in order to make
+socket selecting very easy
+
+your script should look something like that:
+
+<?php
+$server = new Server;
+$client = new Client;
+
+for (;;) {
+  foreach ($select->can_read(0) as $socket) {
+
+    if ($socket == $client->socket) {
+      // New Client Socket
+      $select->add(socket_accept($client->socket));
+    }
+    else {
+      //there's something to read on $socket
+    }
+  }
+}
+?>
+
+you should of course implement some routines to detect broken sockets and
+remove them from the select object.
+
+you can also do output buffering and check in the main-loop for sockets that
+are ready to write
+
+<?php
+class select {
+  var $sockets;
+
+  function select($sockets) {
+
+    $this->sockets = array();
+
+    foreach ($sockets as $socket) {
+      $this->add($socket);
+    }
+  }
+
+  function add($add_socket) {
+    array_push($this->sockets,$add_socket);
+  }
+
+  function remove($remove_socket) {
+    $sockets = array();
+
+    foreach ($this->sockets as $socket) {
+      if($remove_socket != $socket)
+        $sockets[] = $socket;
+    }
+
+    $this->sockets = $sockets;
+  }
+
+  function can_read($timeout) {
+    $read = $this->sockets;
+    socket_select($read,$write = NULL,$except = NULL,$timeout);
+    return $read;
+  }
+
+  function can_write($timeout) {
+    $write = $this->sockets;
+    socket_select($read = NULL,$write,$except = NULL,$timeout);
+    return $write;
+  }
+}
+?>
+===============================================================================
+
+If you haven't done any network programming before, PHP's socket_select() might
+appear a bit strange to you. I've written a simple php "partyline" script to
+demonstrate the multi-socket use of select'ing at http://dave.dapond.com/
+socketselect.php.txt
+===============================================================================
+
+socket_select() can also serve as a more granular sleep():
+
+<?php
+  # half-second sleep
+  $undef = array();
+  socket_select($undef, $undef, $undef, 0, "500000");
+?>

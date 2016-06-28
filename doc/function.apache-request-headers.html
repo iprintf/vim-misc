@@ -1,0 +1,172 @@
+
+apache_request_headers
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+apache_request_headers — 获取全部 HTTP 请求头信息
+
+说明
+
+array apache_request_headers ( void )
+
+获取当前请求的所有请求头信息
+
+返回值
+
+包含当前请求所有头信息的数组，失败返回 FALSE 。
+
+更新日志
+
+版本                                    说明
+5.5.7 此函数可用于 CLI server。
+5.4.0 此函数可用于 FastCGI。此前仅在PHP以 Apache 模块方式运行时支持。
+4.3.3 从 PHP 4.3.3 起，也可在 Netscape/iPlanet/SunONE Web 服务器的 NSAPI 服务器
+      模块使用此函数。
+
+范例
+
+Example #1 apache_request_headers() 示例
+
+<?php
+$headers = apache_request_headers();
+
+foreach ($headers as $header => $value) {
+    echo "$header: $value <br />\n";
+}
+?>
+
+以上例程的输出类似于：
+
+Accept: */*
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+User-Agent: Mozilla/4.0
+Host: www.example.com
+Connection: Keep-Alive
+
+注释
+
+    Note:
+
+    你也可以试图从环境变量中读取普通CGI变量，PHP以Apache模块方式运行时有可能无
+    法获得。使用phpinfo()获得可读取的变量列表。环境变量.
+
+参见
+
+  • apache_response_headers() - 获得全部 HTTP 响应头信息
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+There is a simple way to get request headers from Apache even on PHP running as
+a CGI. As far as I know, it's the only way to get the headers
+"If-Modified-Since" and "If-None-Match" when apache_request_headers() isn't
+available. You need mod_rewrite, which most web hosts seem to have enabled. Put
+this in an .htacess file in your web root:
+
+RewriteEngine on
+RewriteRule .* - [E=HTTP_IF_MODIFIED_SINCE:%{HTTP:If-Modified-Since}]
+RewriteRule .* - [E=HTTP_IF_NONE_MATCH:%{HTTP:If-None-Match}]
+
+The headers are then available in PHP as
+<?php
+  $_SERVER['HTTP_IF_MODIFIED_SINCE'];
+  $_SERVER['HTTP_IF_NONE_MATCH'];
+?>
+
+I've tested this on PHP/5.1.6, on both Apache/2.2.3/Win32 and Apache/2.0.54/
+Unix, and it works perfectly.
+
+Note: if you use RewriteRules already for clean URLs, you need to put the above
+rules AFTER your existing ones.
+===============================================================================
+
+Superglobal $_SERVER,  used in all patches for missing getallheaders() contains
+only truly basic headers.  To pass ANY header into PHP in any httpd
+environment, including CGI/FCGI just add rule (any number of rules) into
+.htaccess:
+
+RewriteRule .* - [E=HTTP_MY_HEADER:%{HTTP:My-Header}]
+
+and the header with it's value will appear for PHP as
+<?php print $_SERVER['HTTP_MY_HEADER']; ?>
+
+And... just couldn't hold off. Rewrtiting $_SERVER keys for replacing missing
+function really does not require RegExps, preg_matches or evals... Try this:
+<?php
+function getallheaders() {
+  foreach($_SERVER as $K=>$V){$a=explode('_' ,$K);
+      if(array_shift($a)=='HTTP'){
+           array_walk($a,function(&$v){$v=ucfirst(strtolower($v));});
+       $retval[join('-',$a)]=$V;}
+    } return $retval; }
+?>
+===============================================================================
+
+I didn't found a replacement for apache_request_headers() in PHP::Compat (http:
+//pear.php.net/package/PHP_Compat) so I wrote my own:
+
+<?php
+if( !function_exists('apache_request_headers') ) {
+///
+function apache_request_headers() {
+  $arh = array();
+  $rx_http = '/\AHTTP_/';
+  foreach($_SERVER as $key => $val) {
+    if( preg_match($rx_http, $key) ) {
+      $arh_key = preg_replace($rx_http, '', $key);
+      $rx_matches = array();
+      // do some nasty string manipulations to restore the original letter case
+      // this should work in most cases
+      $rx_matches = explode('_', $arh_key);
+      if( count($rx_matches) > 0 and strlen($arh_key) > 2 ) {
+        foreach($rx_matches as $ak_key => $ak_val) $rx_matches[$ak_key] = 
+ucfirst($ak_val);
+        $arh_key = implode('-', $rx_matches);
+      }
+      $arh[$arh_key] = $val;
+    }
+  }
+  return( $arh );
+}
+///
+}
+///
+?>
+===============================================================================
+
+A slightly modified version from  limalopex.eisfux.de. Fixes the missing
+Headers Content-Type and Content-Length and makes it Camel-Case.
+
+<?php
+if( !function_exists('apache_request_headers') ) {
+        function apache_request_headers() {
+                $arh = array();
+                $rx_http = '/\AHTTP_/';
+                foreach($_SERVER as $key => $val) {
+                        if( preg_match($rx_http, $key) ) {
+                                $arh_key = preg_replace($rx_http, '', $key);
+                                $rx_matches = array();
+                                // do some nasty string manipulations to
+restore the original letter case
+                                // this should work in most cases
+                                $rx_matches = explode('_', strtolower($arh_key
+));
+                                if( count($rx_matches) > 0 and strlen($arh_key)
+> 2 ) {
+                                        foreach($rx_matches as $ak_key => 
+$ak_val) $rx_matches[$ak_key] = ucfirst($ak_val);
+                                        $arh_key = implode('-', $rx_matches);
+                                }
+                                $arh[$arh_key] = $val;
+                        }
+                }
+                if(isset($_SERVER['CONTENT_TYPE'])) $arh['Content-Type'] = 
+$_SERVER['CONTENT_TYPE'];
+                if(isset($_SERVER['CONTENT_LENGTH'])) $arh['Content-Length'] = 
+$_SERVER['CONTENT_LENGTH'];
+                return( $arh );
+        }
+}

@@ -1,0 +1,139 @@
+
+openssl_seal
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+openssl_seal — Seal (encrypt) data
+
+说明
+
+int openssl_seal ( string $data , string &$sealed_data , array &$env_keys , 
+array $pub_key_ids [, string $method = "RC4" ] )
+
+openssl_seal() seals (encrypts) data by using the given method with a randomly
+generated secret key. The key is encrypted with each of the public keys
+associated with the identifiers in pub_key_ids and each encrypted key is
+returned in env_keys. This means that one can send sealed data to multiple
+recipients (provided one has obtained their public keys). Each recipient must
+receive both the sealed data and the envelope key that was encrypted with the
+recipient's public key.
+
+参数
+
+data
+
+    The data to seal.
+
+sealed_data
+
+    The sealed data.
+
+env_keys
+
+    Array of encrypted keys.
+
+pub_key_ids
+
+    Array of public key resource identifiers.
+
+method
+
+    The cipher method.
+
+返回值
+
+Returns the length of the sealed data on success, or FALSE on error. If
+successful the sealed data is returned in sealed_data, and the envelope keys in
+env_keys.
+
+范例
+
+Example #1 openssl_seal() example
+
+<?php
+// $data is assumed to contain the data to be sealed
+
+// fetch public keys for our recipients, and ready them
+$fp = fopen("/src/openssl-0.9.6/demos/maurice/cert.pem", "r");
+$cert = fread($fp, 8192);
+fclose($fp);
+$pk1 = openssl_get_publickey($cert);
+// Repeat for second recipient
+$fp = fopen("/src/openssl-0.9.6/demos/sign/cert.pem", "r");
+$cert = fread($fp, 8192);
+fclose($fp);
+$pk2 = openssl_get_publickey($cert);
+
+// seal message, only owners of $pk1 and $pk2 can decrypt $sealed with keys
+// $ekeys[0] and $ekeys[1] respectively.
+openssl_seal($data, $sealed, $ekeys, array($pk1, $pk2));
+
+// free the keys from memory
+openssl_free_key($pk1);
+openssl_free_key($pk2);
+?>
+
+更新日志
+
+版本               说明
+5.3.0 The method parameter was added.
+
+参见
+
+  • openssl_open() - Open sealed data
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+"seals (encrypts) data by using RC4 with a randomly generated secret key"
+It should be noted that the randomly generated secret key is 128 bits long
+(openssl: EVP_rc4(void):  RC4 stream cipher. This is a variable key length
+cipher with default key length 128 bits.)
+===============================================================================
+
+while the default is using RC4, it is possible to use other more secure
+algorithms. These are specified as the fifth parameter. Also, one needs to add
+an initialization vector (random bytes). Eg.
+
+<?php
+    $data = "This is top secret.";
+    // fetch public keys for our recipients, and ready them
+    $cert = file_get_contents('./cert.pem');
+
+    $pk1 = openssl_get_publickey($cert);
+    $iv = openssl_random_pseudo_bytes(32);
+    openssl_seal($data, $sealed, $ekeys, array($pk1), "AES256", $iv);
+
+    // free the keys from memory
+    openssl_free_key($pk1);
+    echo base64_encode($sealed);
+?>
+===============================================================================
+
+According to several sources (e.g. crypto101.io or Wikipedia) RC4 is not safe
+and not supposed to be used anymore.
+So, shouldn't openssl_seal use another stream cipher in place of RC4?
+===============================================================================
+
+openssl_seal() can work well when you need to pass data securely to other
+platforms / languages. What openssl_seal() does is;
+
+1. Generate a random key
+2. Encrypt the data symmetrically with RC4 using the random key
+3. Encrypt the random key itself with RSA using the public key / certificate
+4. Returns the encrypted data and the encrypted key
+
+So to decrypt the steps are simply;
+
+1. Decrypt the key using RSA and your private key
+2. Decrypt the data using RC4 and the decrypted key
+
+The trickiest part may be figuring out how handle the private key -
+BouncyCastle ( http://www.bouncycastle.org/ ) provides a PEMReader for Java and
+C# while Not Yet commons-ssl ( http://juliusdavies.ca/commons-ssl/ ) has a
+KeyStoreBuilder to build Java keystores out of a PEM certificate.
+
+A complete example in Java is described at http://blog.local.ch/archive/2007/10
+/29/openssl-php-to-java.html

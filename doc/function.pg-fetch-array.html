@@ -1,0 +1,230 @@
+
+pg_fetch_array
+
+(PHP 4, PHP 5, PHP 7)
+
+pg_fetch_array — 提取一行作为数组
+
+说明
+
+array pg_fetch_array ( resource $result [, int $row [, int $result_type ]] )
+
+pg_fetch_array() 返回一个与所提取的行（元组/记录）相一致的数组。如果没有更多行
+可供提取，则返回 FALSE。
+
+pg_fetch_array() 是 pg_fetch_row() 的扩展版本。在返回的数组中不仅以数字索引方式
+存放数据（字段编号），默认情况下还用字段名做索引存放数据（字段名）。
+
+row 是想要取得的行（记录）的编号。第一行为 0。
+
+result_type 是可选参数，控制着怎样初始化返回值。result_type 是一个常量，可以有
+以下取值：PGSQL_ASSOC，PGSQL_NUM 和 PGSQL_BOTH。取值为 PGSQL_ASSOC 时 
+pg_fetch_array() 返回用字段名作为键值索引的关联数组，取值为 PGSQL_NUM 时用字段
+编号作为键值，取值为 PGSQL_BOTH 时则同时用两者作为键值。默认值是 PGSQL_BOTH。
+
+
+    Note:
+
+    result_type 是在 PHP 4.0 中才加入的参数。
+
+pg_fetch_array() 并不明显比使用 pg_fetch_row() 慢，而且在使用中提供了更大的方便
+。
+
+Example #1 pg_fetch_array()
+
+<?php 
+
+$conn = pg_pconnect("dbname=publisher");
+if (!$conn) {
+    echo "An error occured.\n";
+    exit;
+}
+
+$result = pg_query($conn, "SELECT * FROM authors");
+if (!$result) {
+    echo "An error occured.\n";
+    exit;
+}
+
+$arr = pg_fetch_array($result, 0, PGSQL_NUM);
+echo $arr[0] . " <- array\n";
+
+$arr = pg_fetch_array($result, 1, PGSQL_ASSOC);
+echo $arr["author"] . " <- array\n";
+
+?>
+
+    Note:
+
+    从 4.1.0 开始，row 成为可选参数。每次调用 pg_fetch_array()，内部的行计数器
+    都会加一。
+
+参见 pg_fetch_row() 和 pg_fetch_object() 以及 pg_fetch_result()。
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+As of PHP 4.1.0, you can now use code such as the following to iterate through
+a result set:
+
+$conn = pg_connect("host=localhost dbname=whatever");
+$result = pg_exec($conn, "select * from table");
+while ($row = pg_fetch_array($result))
+{
+     echo "data: ".$row["data"];
+}
+
+Can be a nice little time saver, PHP with MySQL has supported this for a while
+but I'm glad to see it extended to PostgreSQL...
+===============================================================================
+
+The column names if you use PGSQL_ASSOC or PGSQL_BOTH are always in lowercase,
+no matter what the name is in the database or in the query.
+===============================================================================
+
+(Timesaver) Be aware of the fact that keys in array returned by this function
+are (well, at least as of 4.2.3) of the same case as SQL column names (e.g. if
+your column name is ID then key name is also ID, not id or Id), and the keys in
+associative array are CASE SENSITIVE!!! So don't be surprised if you get
+unexpected results. Double check SQL column names and the key names.
+===============================================================================
+
+Please remember that if you have for example a table Customers with "cust_ID",
+"name" and "address" and another table Users with "u_ID","name" and "other" and
+then you SELECT WHERE cust_ID=u_ID then you'll get in the result array ONLY ONE
+"name" field, precisely the last one resulted from the select!!!
+===============================================================================
+
+PGSQL_BOTH is the default, meaning your array size will be doubled. 
+If you specify this field (result type), include no quotes around it or you
+won't get any data, not even an error. 
+Here's my wrapper function:
+function SQL_fetch_array($result_ndx, $row, $result_type=PGSQL_ASSOC) {
+   return pg_fetch_array($result_ndx, $row, $result_type);
+===============================================================================
+
+In addition to returning "false if there are no more rows", pg_fetch_array will
+also trigger an E_WARNING.  You can temporarily turn that error reporting level
+off and suck out all your data like so:
+
+<?php
+$errRptLvl = error_reporting();
+error_reporting($errRptLvl & ~(E_WARNING));
+      
+list($i,$j)=array(0,0);
+while ($selection[$i++] = $this->fetchArray($j++)); // (fetchArray is a
+pg_fetch_array wrapper.)
+error_reporting($errRptLvl); // Restore error reporting level.
+unset($selection[$i-1]); // Delete the last, empty row.
+return $selection;
+?>
+===============================================================================
+
+Hopefully most people realize this on their own, but the examples below where
+people tried to get creative with getting numerical or associative (not both)
+keys in the result are rather pointless. See the pg_fetch_assoc() and
+pg_fetch_row() for the built in functions that do this automatically. It's
+generally a better idea to use one of these other functions unless you *need*
+to access fields by both collumn name *and* index.
+===============================================================================
+
+Just because it is not really clear how to specify the result type, I poste
+this message.
+
+I wrote a wrapper function which looks like this:
+
+<?php
+    function db_fetch_array ($result, $row = NULL, $result_type = PGSQL_ASSOC)
+    {
+        $return = @pg_fetch_array ($result, $row, $result_type);
+        return $return;
+    }
+?>
+
+I think this way it is quite comfortable to get the arrays you want.
+===============================================================================
+
+Note that when using PGSQL_BOTH, numerically and associatively indexed fields
+are separate variables and treated as such:
+
+<?php
+$res = pg_query("Select 'foo' as bar");
+
+$data = pg_fetch_array($res, 0, PGSQL_BOTH);
+
+var_dump($data);
+// Array(2)
+// {
+//   [0] => string(3) "foo"
+//   ["bar"] => string(3) "foo"
+// }
+
+// This won't affect $data['bar']
+$data[0] = 'bar';
+
+var_dump($data);
+// Array(2)
+// {
+//   [0] => string(3) "bar"
+//   ["bar"] => string(3) "foo"
+// }
+?>
+
+If you want to have reference binding between your numeric and associative
+indexes, you'll have to establish that yourself:
+
+<?php
+
+$result = pg_query("Select 'foo' as bar");
+
+$data = pg_fetch_row($result);
+
+// Establish references between column name/number
+$from = $data;
+foreach($from as $cx => $value)
+{
+    $key = pg_field_name($result, $cx);
+    if (is_string($key)) $data[$key] =& $data[$cx];
+}
+
+var_dump($data);
+// Array(2)
+// {
+//   [0] => &string(3) "foo"
+//   ["bar"] => &string(3) "foo"
+// }
+// Note the reference binding between $data[0] and $data['bar']
+
+$data[0] = 'baz';
+
+var_dump($data);
+// Array(2)
+// {
+//   [0] => &string(3) "baz"
+//   ["bar"] => &string(3) "baz"
+// }
+
+?>
+===============================================================================
+
+In response to eth0's comment below about SELECT'ing from two tables where the
+tables have columns with the same names, you can get around this problem like
+this:
+
+"SELECT table1.foo AS foo1, table2.foo AS foo2 FROM table1, table2"
+
+In the associative array returned, the keys will be "foo1" and "foo2".
+===============================================================================
+
+Just remember when you 'or die' to close your table(s) or you may get a
+confused look from non-internet explorer users.
+===============================================================================
+
+I found this out through help from the mailing lists.  If you need to reset the
+internal counter, use the pg_result_seek, similar to:
+
+pg_result_seek($result, 0)
+
+...plagiarized from the comment on the function's doc page.

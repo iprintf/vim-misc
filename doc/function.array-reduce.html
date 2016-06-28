@@ -1,0 +1,384 @@
+
+array_reduce
+
+(PHP 4 >= 4.0.5, PHP 5, PHP 7)
+
+array_reduce — 用回调函数迭代地将数组简化为单一的值
+
+说明
+
+mixed array_reduce ( array $input , callable $function [, mixed $initial = NULL
+] )
+
+array_reduce() 将回调函数 function 迭代地作用到 input 数组中的每一个单元中，从
+而将数组简化为单一的值。
+
+参数
+
+input
+
+    The input array.
+
+function
+
+    The callback function.
+
+    mixed callback ( mixed &$result , mixed $item )
+initial
+
+    如果指定了可选参数 initial，该参数将被当成是数组中的第一个值来处理，或者如
+    果数组为空的话就作为最终返回值。
+
+返回值
+
+返回结果值。
+
+initial 参数，array_reduce() 返回 NULL。
+
+更新日志
+
+版本                         说明
+5.3.0 Changed initial to allow mixed, previously integer.
+
+范例
+
+Example #1 array_reduce() 例子
+
+<?php
+function rsum($v, $w)
+{
+    $v += $w;
+    return $v;
+}
+
+function rmul($v, $w)
+{
+    $v *= $w;
+    return $v;
+}
+
+$a = array(1, 2, 3, 4, 5);
+$x = array();
+$b = array_reduce($a, "rsum");
+$c = array_reduce($a, "rmul", 10);
+$d = array_reduce($x, "rsum", "No data to reduce");
+?>
+
+这将使 $b 的值为 15，$c 的值为 1200（= 10*1*2*3*4*5），以及 $d 的值为 1。
+
+参见
+
+  • array_filter() - 用回调函数过滤数组中的单元
+  • array_map() - 将回调函数作用到给定数组的单元上
+  • array_unique() - 移除数组中重复的值
+  • array_count_values() - 统计数组中所有的值出现的次数
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+To make it clearer about what the two parameters of the callback are for, and
+what "reduce to a single value" actually means (using associative and
+commutative operators as examples may obscure this).
+
+The first parameter to the callback is an accumulator where the
+result-in-progress is effectively assembled. If you supply an $initial value
+the accumulator starts out with that value, otherwise it starts out null.
+The second parameter is where each value of the array is passed during each
+step of the reduction.
+The return value of the callback becomes the new value of the accumulator. When
+the array is exhausted, array_reduce() returns accumulated value.
+
+If you carried out the reduction by hand, you'd get something like the
+following lines, every one of which therefore producing the same result:
+<?php
+array_reduce(array(1,2,3,4), 'f',         99             );
+array_reduce(array(2,3,4),   'f',       f(99,1)          );
+array_reduce(array(3,4),     'f',     f(f(99,1),2)       );
+array_reduce(array(4),       'f',   f(f(f(99,1),2),3)    );
+array_reduce(array(),        'f', f(f(f(f(99,1),2),3),4) );
+f(f(f(f(99,1),2),3),4)
+?>
+
+If you made function f($v,$w){return "f($v,$w)";} the last line would be the
+literal result.
+
+A PHP implementation might therefore look something like this (less details
+like error checking and so on):
+<?php
+function array_reduce($array, $callback, $initial=null)
+{
+    $acc = $initial;
+    foreach($array as $a)
+        $acc = $callback($acc, $a);
+    return $acc;
+}
+?>
+===============================================================================
+
+You can effectively ignore the fact $result is passed into the callback by
+reference. Only the return value of the callback is accounted for.
+
+<?php
+
+$arr = [1,2,3,4];
+
+var_dump(array_reduce(
+    $arr,
+    function(&$res, $a) { $res += $a; },
+    0
+));
+
+# NULL
+
+?>
+
+<?php
+
+$arr = [1,2,3,4];
+
+var_dump(array_reduce(
+    $arr,
+    function($res, $a) { return $res + $a;  },
+    0
+));
+
+# int(10)
+?>
+
+Be warned, though, that you *can* accidentally change $res if it's not a simple
+scalar value, so despite the examples I'd recommend not writing to it at all.
+===============================================================================
+
+If you do not provide $initial, the first value used in the iteration is NULL.
+This is not a problem for callback functions that treat NULL as an identity
+(e.g. addition), but is a problem for cases when NULL is not identity (such as
+boolean context).
+
+Compare:
+
+<?php
+function andFunc($a, $b) {
+  return $a && $b;
+}
+$foo = array(true, true, true);
+var_dump(array_reduce($foo, "andFunc"));
+?>
+
+returns false! One would expect that it would return true because `true && true
+&& true == true`!
+
+Adding diagnostic output to andFunc() shows that the first call to andFunc is
+with the arguments (NULL, true). This resolves to false (as `(bool) null ==
+false`) and thereby corrupts the whole reduction.
+
+So in this case I have to set `$initial = true` so that the first call to
+andFunc() will be (true, true). Now, if I were doing, say, orFunc(), I would
+have to set `$initial = false`. Beware.
+
+Note that the "rmul" case in the example sneakily hides this defect! They use
+an $initial of 10 to get `10*1*2*3*4*5 = 12000`. So you would assume that
+without an initial, you would get `1200/10 = 120 = 1*2*3*4*5`. Nope! You get
+big fat zero, because `int(null)==0`, and `0*1*2*3*4*5 = 0`!
+
+I don't honestly see why array_reduce starts with a null argument. The first
+call to the callback should be with arguments ($initial[0],$initial[1]) [or
+whatever the first two array entries are], not (null,$initial[0]). That's what
+one would expect from the description.
+
+Incidentally this also means that under the current implementation you will
+incur `count($input)` number of calls to the callback, not `count($input) - 1`
+as you might expect.
+===============================================================================
+
+The above code works better this way.
+
+<?php
+function reduceToTable($html, $p) {
+   $html .= "<TR><TD><a href=\"$p.html\">$p</a></td></tr>\n";
+   return $html;
+}
+
+$list = Array("page1", "page2", "page3");
+
+$tab = array_reduce($list, "reduceToTable");
+echo "<table>".$tab . "</table>\n";
+?>
+===============================================================================
+
+This code will reduce array deeply.
+
+<?php
+function print_s($s) {
+    return is_null($s) ? "NULL" : (is_array($s) ? "Array" : ($s ? "TRUE" : 
+"FALSE"));
+}
+function r_and_dp($a, $b) {
+    echo "phase1:" . print_s($a) . "," . print_s($b) . "<br>\n";
+    if(is_array($a)) {
+        $a = array_reduce($a, "r_and_dp");
+    }
+    if(is_array($b)) {
+        $b = array_reduce($b, "r_and_dp");
+    }
+    echo "phase2:" . print_s($a) . "," . print_s($b) . "<br>\n";
+    $a = is_null($a) ? TRUE : $a;
+    $b = is_null($b) ? TRUE : $b;
+    echo "phase3:" . print_s($a) . "," . print_s($b) . "<br>\n";
+    return $a && $b;
+}
+$bools = array(TRUE, array(FALSE, TRUE), TRUE);
+echo print_s(array_reduce($bools, "r_and_dp")) . "<br>\n";
+
+// result: FALSE
+?>
+
+When using boolean, you have to carefully set an "initial" argument.
+
+<?php
+function r_or_dp($a, $b) {
+    if(is_array($a)) {
+        $a = array_reduce($a, "r_or_dp");
+    }
+    if(is_array($b)) {
+        $b = array_reduce($b, "r_or_dp");
+    }
+    return (is_null($a) ? FALSE : $a) || (is_null($b) ? FALSE : $b);
+}
+?>
+===============================================================================
+
+The code posted below by bishop to count the characters of an array is
+simply... erm... well useless to me...
+
+$array=Array("abc","de","f");
+strlen(implode("",$array)); //6
+
+works; and is much smaller. Probably much faster too.
+===============================================================================
+
+Walking down related object's properties using array_reduce:
+
+<?php
+  $a=new stdClass;
+  $a->b=new stdClass;
+  $a->b->c="Hello World!\n";
+
+  $reductionPath=array("b","c");
+
+  print_r(
+    array_reduce(
+      $reductionPath,
+      function($result, $item){
+        return $result->$item;
+      },
+      $a
+    )
+  );
+?>
+===============================================================================
+
+You can reduce a two-dimensional array into one-dimensional using array_reduce
+and array_merge. (PHP>=5.3.0)
+
+<?php
+
+$two_dimensional = array();
+$two_dimensional['foo'] = array(1, 2, 3);
+$two_dimensional['bar'] = array(4, 5, 6);
+
+$one_dimensional = array_reduce($two_dimensional, 'array_merge', array());
+# becomes array(1, 2, 3, 4, 5, 6)
+===============================================================================
+
+So, if you were wondering how to use this where key and value are passed in to
+the function. I've had success with the following (this example generates
+formatted html attributes from an associative array of attribute => value
+pairs):
+
+<?php
+
+    // Attribute List
+    $attribs = [
+        'name' => 'first_name',
+        'value' => 'Edward'
+    ];
+
+    // Attribute string formatted for use inside HTML element
+    $formatted_attribs = array_reduce(
+        array_keys($attribs),                       // We pass in the
+array_keys instead of the array here
+        function ($carry, $key) use ($attribs) {    // ... then we 'use' the
+actual array here
+            return $carry . ' ' . $key . '="' . htmlspecialchars( $attribs[$key
+] ) . '"';
+        },
+        ''
+    );
+
+echo $formatted_attribs;
+
+?>
+
+This will output:
+name="first_name" value="Edward"
+===============================================================================
+
+The single value returned by array_reduce() can be an array -- as illustrated
+in the following example:
+<?php
+# calculate the average of an array
+function calculate_sum_and_count($sum_and_count, $item)
+{
+  list($sum, $count) = $sum_and_count;
+  $sum += $item;
+  $count += 1;
+  return [$sum, $count];
+}
+
+$a = array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+$initial_sum_and_count = [0, 0];
+list($sum, $count) = array_reduce($a, "calculate_sum_and_count", 
+$initial_sum_and_count);
+echo $sum / $count;
+?>
+===============================================================================
+
+If you want something elegant in your code, when dealing with reducing array,
+just unshift first element, and use it as initial, because if you do not do so,
+you will + first element with first element:
+
+<?php
+$arr = array(
+    array('min' => 1.5456, 'max' => 2.28548, 'volume' => 23.152),
+    array('min' => 1.5457, 'max' => 2.28549, 'volume' => 23.152),
+    array('min' => 1.5458, 'max' => 2.28550, 'volume' => 23.152),
+    array('min' => 1.5459, 'max' => 2.28551, 'volume' => 23.152),
+    array('min' => 1.5460, 'max' => 2.28552, 'volume' => 23.152),
+);
+
+$initial = array_shift($arr);
+
+$t = array_reduce($arr, function($result, $item) {
+    $result['min'] = min($result['min'], $item['min']);
+    $result['max'] = max($result['max'], $item['max']);
+    $result['volume'] += $item['volume'];
+
+    return $result;
+}, $initial);
+?>
+===============================================================================
+
+notice to function array_reduce()
+I suppose the function rsum in the example 1 so it is not correct,
+but
+$ v + = $ w;
+will output 15
+===============================================================================
+
+notice to function array_reduce()
+I suppose the function rsum in the example 1 so it is not correct,
+but
+$ v + = $ w;
+will output 15

@@ -1,0 +1,298 @@
+
+session_register
+
+(PHP 4, PHP 5 < 5.4.0)
+
+session_register — Register one or more global variables with the current
+session
+
+说明
+
+bool session_register ( mixed $name [, mixed $... ] )
+
+session_register() accepts a variable number of arguments, any of which can be
+either a string holding the name of a variable or an array consisting of
+variable names or other arrays. For each name, session_register() registers the
+global variable with that name in the current session.
+
+You can also create a session variable by simply setting the appropriate member
+of the $_SESSION or $HTTP_SESSION_VARS (PHP < 4.1.0) array.
+<?php
+// Use of session_register() is deprecated
+$barney = "A big purple dinosaur.";
+session_register("barney");
+
+// Use of $_SESSION is preferred, as of PHP 4.1.0
+$_SESSION["zim"] = "An invader from another planet.";
+
+// The old way was to use $HTTP_SESSION_VARS
+$HTTP_SESSION_VARS["spongebob"] = "He's got square pants.";
+?>
+
+If session_start() was not called before this function is called, an implicit
+call to session_start() with no parameters will be made. $_SESSION does not
+mimic this behavior and requires session_start() before use.
+
+Warning
+
+本函数已自 PHP 5.3.0 起废弃并将自 PHP 5.4.0 起移除。
+
+参数
+
+name
+
+    A string holding the name of a variable or an array consisting of variable
+    names or other arrays.
+
+...
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+Caution
+
+If you want your script to work regardless of register_globals, you need to
+instead use the $_SESSION array as $_SESSION entries are automatically
+registered. If your script uses session_register(), it will not work in
+environments where the PHP directive register_globals is disabled.
+
+    Note: register_globals 重要说明：
+
+    自 PHP 4.2.0 起，PHP 指令 register_globals 的默认值为 off。PHP 社区鼓励开发
+    者不要依赖于此指令, 用其他手段替代，例如superglobals。
+
+Caution
+
+This registers a global variable. If you want to register a session variable
+from within a function, you need to make sure to make it global using the
+global keyword or the $GLOBALS[] array, or use the special session arrays as
+noted below.
+
+Caution
+
+If you are using $_SESSION (or $HTTP_SESSION_VARS), do not use session_register
+(), session_is_registered(), and session_unregister().
+
+    Note:
+
+    It is currently impossible to register resource variables in a session. For
+    example, you cannot create a connection to a database and store the
+    connection id as a session variable and expect the connection to still be
+    valid the next time the session is restored. PHP functions that return a
+    resource are identified by having a return type of resource in their
+    function definition. A list of functions that return resources are
+    available in the resource types appendix.
+
+    If $_SESSION (or $HTTP_SESSION_VARS for PHP 4.0.6 or less) is used, assign
+    values to $_SESSION. For example: $_SESSION['var'] = 'ABC';
+
+参见
+
+  • session_is_registered() - 检查变量是否在会话中已经注册
+  • session_unregister() - Unregister a global variable from the current
+    session
+  • $_SESSION
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+if you remove session_register() calls and replace with $_SESSION assignments,
+make sure that it wasn't being used in place of session_start(). If it was,
+you'll need to add a call to session_start() too, before you assign to
+$_SESSION.
+===============================================================================
+
+Below is a fix that may be included in older code to make it work with PHP6.
+When needed it recreates the functions
+- session_register()
+- session_is_registered()
+- session_unregister()
+
+The functions inside the function fix_session_register() are only available 
+after fix_session_register() has run.
+Therefore in PHP<6 where there already is a session_register() nothing happens.
+
+<?php
+// Fix for removed Session functions
+function fix_session_register(){
+    function session_register(){
+        $args = func_get_args();
+        foreach ($args as $key){
+            $_SESSION[$key]=$GLOBALS[$key];
+        }
+    }
+    function session_is_registered($key){
+        return isset($_SESSION[$key]);
+    }
+    function session_unregister($key){
+        unset($_SESSION[$key]);
+    }
+}
+if (!function_exists('session_register')) fix_session_register();
+?>
+
+
+[EDIT BY danbrown AT php DOT net: Bugfix provided by "dr3w" on 02-APR-2010:
+"its [sic] function_exists with an S at the end".]
+===============================================================================
+
+If you have an old code with a lot of call to the function session_register(),
+and you would like to make it compatible with PHP5 or PHP6, instead of
+rewriting all your code by replacing this function by $_SESSION['var']="val";
+you could use the function set_session_vars(), that is used exactly the same
+way than session_register() (but there is no implicit call to session_start()
+).
+
+<?php
+function set_session_vars() {
+    $nb_args=func_num_args();
+    $arg_list=func_get_args();
+    for($i=0;$i<$nb_args;$i++) {
+        global $$arg_list[$i];
+        $_SESSION[$arg_list[$i]] = $$arg_list[$i];
+    }
+}
+?>
+===============================================================================
+
+Something that hasn't really been touch on when migrating old code, is that
+changes to variables made AFTER the session_register() call are still included
+in the session state.
+A lot of the implementations above only add the entry to $_SESSION[] at the
+point it's called.
+If the old code relies on this behaviour, you will either need to have code
+called on exit to assign back to $_SESSION, or replace it in entirety with
+$_SESSION usage. With over 1000 uses of the session_ functions, this is a bit
+daunting!
+===============================================================================
+
+I've noticed that if you try to assign a value to a session variable with a
+numeric name, the variable will not exist in future sessions.
+For example, if you do something like:
+session_start();
+$_SESSION['14'] = "blah";
+print_r($_SESSION);
+
+It'll display:
+Array ( [14] => "blah" )
+
+But if on another page (with same session) you try
+session_start();
+print_r($_SESSION);
+
+$_SESSION[14] will no longer exist.
+
+Maybe everyone else already knows this, but I didn't realize it until messing
+around with a broken script for quite a while.
+===============================================================================
+
+If you are using sessions and use session_register()  to register objects,
+these objects are serialized automatically at the end of each PHP page, and are
+unserialized automatically on each of the following pages. This basically means
+that these objects can show up on any of your pages once they become part of
+your session.
+===============================================================================
+
+You *MUST* notice that
+
+session_register($var)
+
+*IS NOT*
+
+$_SESSION[$var] = $$var;
+
+it is
+
+if (!isset($_SESSION[$var]))
+  $_SESSION[$var] = $$var;
+
+when migrating from old style code.
+===============================================================================
+
+If you want to store an  object into the session, you have to check up that
+object can be serialized at all.
+For example, if your object contains aggregated PDO object (which can't be
+serialized), you will get an error and no data would be stored.
+===============================================================================
+
+in addition to function set_session_vars instead of replacing all $var with
+$_SESSION['var'],
+you could get all set session-vars in prevoius scripts with this function
+
+<?php
+function get_session_vars() {
+    $nb_args=func_num_args();
+    $arg_list=func_get_args();
+    for($i=0;$i<$nb_args;$i++) {
+        global $$arg_list[$i] = $_SESSION[$arg_list[$i]];
+    }
+}
+?>
+===============================================================================
+
+Please note that if you use a "|" sign in a variable name your entire session
+will be cleared, so the example below will clear out all the contents of your
+session.
+
+<?php
+session_start();
+$_SESSION["foo|bar"] = "foo";
+?>
+
+It took me quite some time finding out why my session data kept disappearing.
+According to this bugreport this behaviour is intended.
+http://bugs.php.net/bug.php?id=33786
+===============================================================================
+
+If you have many websites with these functions in the source code (like me) you
+can include the following functions in some kind of include.php that you have:
+
+function session_register($session)
+{
+  //
+}
+
+function session_unregister($session)
+{
+  unset($_SESSION[$session]);
+}
+
+In this way the PHP interpreter detects the functions and do not return the
+error, and the maintenance work is minimized.
+===============================================================================
+
+Make sure you put session_start() at the beggining of your script.
+
+My sessions kept unsetting and I finally figured out why.
+
+On my script, session_start() has to be said and uses cookies to set the
+session.
+
+But I was outputting html prior to calling session_start(), which prevented it
+from succeeding becouse it uses the header function to place the cookies.
+
+Once html has been outputed, session_start() can't use the header function to
+set cookies, hence session_start() fails and no session can be started.
+===============================================================================
+
+For those of you who use this function (session_register that is), even though
+the manual does specify that this function implicitly calls session_start(), I
+just wanted to reiterate that fact. It is also important to know that if you
+ever switch from session_register to using $_SESSION, make sure to call
+session_start before adding items to the $_SESSION variable, because unlike
+session_register, no implicit call to session_start is done.
+
+Another reason I explain this is because I ran into a problem in which you can
+add items to the $_SESSION variable all you want, but if session_start is not
+called before adding them, they will not actually be saved to the session.
+Using the same code, though, and replacing the $_SESSION assignments with
+session_register without calling session_start WILL save that info to the
+session.
+
+It would be nice to have PHP check for writes to the $_SESSION variable and
+complain with a warning if session_start hasn't been called.

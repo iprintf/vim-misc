@@ -1,0 +1,320 @@
+
+gzinflate
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+gzinflate — Inflate a deflated string
+
+说明
+
+string gzinflate ( string $data [, int $length = 0 ] )
+
+This function inflates a deflated string.
+
+参数
+
+data
+
+    The data compressed by gzdeflate().
+
+length
+
+    The maximum length of data to decode.
+
+返回值
+
+The original uncompressed data or FALSE on error.
+
+The function will return an error if the uncompressed data is more than 32768
+times the length of the compressed input data or more than the optional
+parameter length.
+
+范例
+
+Example #1 gzinflate() example
+
+<?php
+$compressed   = gzdeflate('Compress me', 9);
+$uncompressed = gzinflate($compressed);
+echo $uncompressed;
+?>
+
+参见
+
+  • gzdeflate() - Deflate a string
+  • gzcompress() - Compress a string
+  • gzuncompress() - Uncompress a compressed string
+  • gzencode() - Create a gzip compressed string
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+To decode / uncompress the received HTTP POST data in PHP code, request data
+coming from Java / Android application via HTTP POST GZIP / DEFLATE compressed
+format
+
+1) Data sent from Java Android app to PHP using DeflaterOutputStream java class
+and received in PHP as shown below
+echo gzinflate( substr($HTTP_RAW_POST_DATA,2,-4) ) . PHP_EOL  . PHP_EOL;
+
+2) Data sent from Java Android app to PHP using GZIPOutputStream java class and
+received in PHP code as shown below
+echo gzinflate( substr($HTTP_RAW_POST_DATA,10,-8) ) . PHP_EOL  . PHP_EOL;
+
+From Java Android side (API level 10+), data being sent in DEFLATE compressed
+format
+        String body = "Lorem ipsum shizzle ma nizle";
+        URL url = new URL("http://www.url.com/postthisdata.php");
+        URLConnection conn = url.openConnection();
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-encoding", "deflate");
+        conn.setRequestProperty("Content-type", "application/octet-stream");
+        DeflaterOutputStream dos = new DeflaterOutputStream(
+                conn.getOutputStream());
+        dos.write(body.getBytes());
+        dos.flush();
+        dos.close();
+        BufferedReader in = new BufferedReader(new InputStreamReader(
+                conn.getInputStream()));
+        String decodedString = "";
+        while ((decodedString = in.readLine()) != null) {
+            Log.e("dump",decodedString);
+        }
+        in.close();
+
+On PHP side (v 5.3.1), code for decompressing this DEFLATE data will be
+    echo substr($HTTP_RAW_POST_DATA,2,-4);
+
+From Java Android side (API level 10+), data being sent in GZIP compressed
+format
+
+        String body1 = "Lorem ipsum shizzle ma nizle";
+        URL url1 = new URL("http://www.url.com/postthisdata.php");
+        URLConnection conn1 = url1.openConnection();
+        conn1.setDoOutput(true);
+        conn1.setRequestProperty("Content-encoding", "gzip");
+        conn1.setRequestProperty("Content-type", "application/octet-stream");
+        GZIPOutputStream dos1 = new GZIPOutputStream(conn1.getOutputStream());
+        dos1.write(body1.getBytes());
+        dos1.flush();
+        dos1.close();
+        BufferedReader in1 = new BufferedReader(new InputStreamReader(
+                conn1.getInputStream()));
+        String decodedString1 = "";
+        while ((decodedString1 = in1.readLine()) != null) {
+            Log.e("dump",decodedString1);
+        }
+        in1.close();
+
+On PHP side (v 5.3.1), code for decompressing this GZIP data will be
+    echo substr($HTTP_RAW_POST_DATA,10,-8);
+
+Useful PHP code for printing out compressed data using all available formats.
+
+$data = "Lorem ipsum shizzle ma nizle";
+echo "\n\n\n";
+for($i=-1;$i<=9;$i++)
+    echo chunk_split(strtoupper(bin2hex(gzcompress($data,$i))),2," ") .
+PHP_EOL  . PHP_EOL;
+echo "\n\n\n";
+for($i=-1;$i<=9;$i++)
+    echo chunk_split(strtoupper(bin2hex(gzdeflate($data,$i))),2," ") . PHP_EOL 
+. PHP_EOL;
+echo "\n\n\n";
+for($i=-1;$i<=9;$i++)
+    echo chunk_split(strtoupper(bin2hex(gzencode($data,$i,FORCE_GZIP))),2," ")
+. PHP_EOL  . PHP_EOL;
+echo "\n\n\n";
+for($i=-1;$i<=9;$i++)
+    echo chunk_split(strtoupper(bin2hex(gzencode($data,$i,FORCE_DEFLATE))),2,"
+") . PHP_EOL  . PHP_EOL;
+echo "\n\n\n";
+
+Hope this helps. Please ThumbsUp if this saved you a lot of effort and time.
+===============================================================================
+
+The correct function for gzip and chunked data particularly when you get
+"Content-Encoding: gzip" and "Transfer-Encoding: chunked" headers:
+
+<?php
+function decode_gzip($h,$d,$rn="\r\n"){
+if (isset($h['Transfer-Encoding'])){
+$lrn = strlen($rn);
+$str = '';
+$ofs=0;
+do{
+    $p = strpos($d,$rn,$ofs);
+    $len = hexdec(substr($d,$ofs,$p-$ofs));
+    $str .= substr($d,$p+$lrn,$len);
+     $ofs = $p+$lrn*2+$len;
+}while ($d[$ofs]!=='0');
+$d=$str;
+}
+if (isset($h['Content-Encoding'])) $d = gzinflate(substr($d,10));
+return $d;
+}
+?>
+
+Enjoy!
+===============================================================================
+
+You can use this to uncompress a string from Linux command line gzip by
+stripping the first 10 bytes:
+
+<?php
+$inflatedOutput = gzinflate(substr($output, 10, -8));
+?>
+===============================================================================
+
+Take care when using the optional second parameter $length!
+In our tests -at least in certain situations- we were unable to determine the
+actual use of this parameter, plus, it lead to the script either being unable
+to inflate compressed data or crash due to memory-problems.
+
+Example:
+When trying to inflate the compressed data from a website, we were literally
+unable to find a value (other than 0) for $length in order to make gzinflate
+work... while without the second parameter (or setting it to 0) gzinflate
+worked like a charm:
+
+<?php
+// -----------------------------------------------------------------------
+// Test 1 works without problems. Memory peak usage: Before inflating: 24.787
+kB; after: 24.844 kB.
+gzinflate( substr($deflated_body, 10) );
+
+// -----------------------------------------------------------------------
+// ALL three of the following tests failed with a warning. Memory peak usage:
+Before inflating: 24.787 kB; after: 298.262 kB.
+gzinflate( substr($deflated_body, 10),       200 * strlen($deflated_body) );
+gzinflate( substr($deflated_body, 10),     32768 * strlen($deflated_body) );
+gzinflate( substr($deflated_body, 10),     11000 );
+gzinflate( substr($deflated_body, 10), 280000000 );    // the PHP memory limit
+was set to 300MB  (memory_limit=300M)
+=>
+Warning:  gzinflate() [function.gzinflate]: insufficient memory in [...]
+
+// -----------------------------------------------------------------------
+// The last test failed with a fatal error. Memory peak usage: Before
+inflating: 24.787 kB; after: ? (> 300M).
+gzinflate( substr($deflated_body, 10), 300000000 );    // the PHP memory limit
+was set to 300MB  (memory_limit=300M)
+=>
+Fatal error:  Allowed memory size of 314572800 bytes exhausted (tried to
+allocate 300000000 bytes) in
+?>
+
+In short: We were unable to determine the actual use of the second parameter in
+certain situations.
+Be careful with using the second parameter $length!
+===============================================================================
+
+And when retrieving mod_deflate gzip'ed content and using gzinflate() to decode
+the data, be sure to strip the first 11 chars from the retrieved content.
+
+<?php $dec = gzinflate(substr($enc,11)); ?>
+===============================================================================
+
+The code below illustrates usage of the second parameter, in particular to
+protect against fatal out-of-memory errors. It outputs:
+
+1000000
+1000000
+error
+
+Tested with PHP 5.3 on 32bit Linux.
+
+<?php
+
+function tryToGzinflate($deflatedData, $maxLen = 0) {
+  $data = gzinflate($deflatedData, $maxLen);
+  if ($data === false)
+    echo 'error<br>';
+  else
+    echo strlen($data).'<br>';
+}
+
+// random data:
+$data = '';
+for ($i = 0; $i < 1000000; $i++)
+  $data .= chr(mt_rand(97, 122)); // a-z
+
+$deflatedData = gzdeflate($data);
+
+ini_set('memory_limit', '5M'); // plenty of memory
+tryToGzinflate($deflatedData);
+tryToGzinflate($deflatedData, strlen($data));
+
+ini_set('memory_limit', '100'); // little memory
+tryToGzinflate($deflatedData, 100);
+tryToGzinflate($deflatedData); // causes fatal out-of-memory error
+?>
+===============================================================================
+
+alternative, with detection for optional filename header
+<?php
+function gzdecode($data) {
+
+        // check if filename field is set in FLG, is 4th byte
+        $hex = bin2hex($data);
+
+        $flg = (int)hexdec(substr($hex, 6, 2));
+
+        // remove headers
+        $hex = substr($hex, 20);
+
+        $ret = '';
+        if (  ($flg & 0x8) == 8 ){
+                print "ello";
+                for ( $i = 0; $i < strlen($hex); $i += 2 ){
+                        $value = substr($hex, $i, 2);
+                        if ( $value == '00' ){
+                                $ret = substr($hex, ($i+2));
+                                break;
+                        }
+                }
+        }
+        return gzinflate(pack('H*', $ret));
+}
+?>
+===============================================================================
+
+Some gz string strip header and return inflated
+It actualy processes some first member of the gz
+See rfc1952 at http://www.faqs.org/rfcs/rfc1952.html for more details and
+improvment as gzdecode
+
+<?php
+function gzBody($gzData){
+    if(substr($gzData,0,3)=="\x1f\x8b\x08"){
+        $i=10;
+        $flg=ord(substr($gzData,3,1));
+        if($flg>0){
+            if($flg&4){
+                list($xlen)=unpack('v',substr($gzData,$i,2));
+                $i=$i+2+$xlen;
+            }
+            if($flg&8) $i=strpos($gzData,"\0",$i)+1;
+            if($flg&16) $i=strpos($gzData,"\0",$i)+1;
+            if($flg&2) $i=$i+2;
+        }
+        return gzinflate(substr($gzData,$i,-8));
+    }
+    else return false;
+}
+?>
+===============================================================================
+
+This can be used to inflate streams compressed by the Java class
+java.util.zip.Deflater but you must strip the first 2 bytes off it. ( much like
+the above comment )
+
+<?php $result = gzinflate(substr($compressedData, 2)); ?>
+===============================================================================
+
+When retrieving mod_gzip'ed content and using gzinflate() to decode the data,
+be sure to strip the first 10 chars from the retrieved content.
+
+<?php $dec = gzinflate(substr($enc,10)); ?>

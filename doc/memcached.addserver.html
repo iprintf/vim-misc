@@ -1,0 +1,115 @@
+
+Memcached::addServer
+
+(PECL memcached >= 0.1.0)
+
+Memcached::addServer — 向服务器池中增加一个服务器
+
+说明
+
+public bool Memcached::addServer ( string $host , int $port [, int $weight = 0
+] )
+
+Memcached::addServer()增加指定服务器到服务器池中。此时不会建立与服务端的连接，
+但是，如果你使用一致性key分布选项（Memcached::DISTRIBUTION_CONSISTENT或
+Memcached::OPT_LIBKETAMA_COMPATIBLE），一些内部的数据结构将会被更新。因此，如果
+你需要增加多台服务器，更好的方式是使用Memcached::addServers() 以确保这种更新只
+发生一次。
+
+同一台服务器可以在服务器池中多次出现，因为这里没有做重复检测。但这是不推荐的做
+法，对于期望提高某台服务器权重的需求，请使用weight参数。
+
+参数
+
+host
+
+    memcached服务端主机名。如果主机名无效，相关的数据操作的返回代码将被设置为
+    Memcached::RES_HOST_LOOKUP_FAILURE。
+
+port
+
+    memcached服务端端口号，通常是11211。
+
+weight
+
+    此服务器相对于服务器池中所有服务器的权重。此参数用来控制服务器在操作时被选
+    种的概率。这个仅用于一致性分布选项，并且这个值通常是由服务端分配的内存来设
+    置的。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Memcached::addServer() example
+
+<?php
+$m = new Memcached();
+
+/* Add 2 servers, so that the second one
+   is twice as likely to be selected. */
+$m->addServer('mem1.domain.com', 11211, 33);
+$m->addServer('mem2.domain.com', 11211, 67);
+?>
+
+参见
+
+  • Memcached::addServers() - 向服务器池中增加多台服务器
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+As of version 2.0.0b1 you can use Unix socket.
+
+<?php
+$m = new Memcached();
+$m->addServer('/path/to/socket',0);
+?>
+
+Not to be confused with Memcache that use 'unix:///path/to/socket'
+===============================================================================
+
+Important to not call ->addServers() every run -- only call it if no servers
+exist (check getServerList() ); otherwise, since addServers() does not check
+for dups, it will let you add the same server again and again and again,
+resultings in hundreds if not thousands of connections to the MC daemon.
+Specially when using FastCGI.
+
+Example:
+
+<?php
+class Cache {
+        private $id;
+        private $obj;
+
+        function __construct($id){
+                $this->id = $id;
+                $this->obj = new Memcached($id);
+        }
+
+        public function connect($host , $port){
+                $servers = $this->obj->getServerList();
+                if(is_array($servers)) {
+                        foreach ($servers as $server)
+                                if($server['host'] == $host and $server['port']
+== $port)
+                                        return true;
+                }
+                return $this->obj->addServer($host , $port);
+        }
+
+}
+?>
+===============================================================================
+
+On my Debian Squeeze system I was getting WRITE FAILURE errors. After debugging
+and finally tcpdump it seems that the problem was me adding the server
+'localhost', which resolved to '::1' (ipv6) while the default memcached server
+on debian only listens to '127.0.0.1' (ipv4). DNS automatically prefers ipv6
+over ipv4.
+
+I added the server '127.0.0.1' instead and everything worked. You could also
+disable ipv6 or have memcached listen on ::1

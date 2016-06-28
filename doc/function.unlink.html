@@ -1,0 +1,600 @@
+
+unlink
+
+(PHP 4, PHP 5, PHP 7)
+
+unlink — 删除文件
+
+说明
+
+bool unlink ( string $filename [, resource $context ] )
+
+删除 filename。和 Unix C 的 unlink() 函数相似。发生错误时会产生一个 E_WARNING
+级别的错误。
+
+参数
+
+filename
+
+    文件的路径。
+
+context
+
+
+        Note: 在 PHP 5.0.0 中增加了对上下文（Context）的支持。有关上下文（
+        Context）的说明参见 Streams。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+5.0.0 自 PHP 5.0.0 起 unlink() 也可以用于某些 URL 封装协议。参考支持的协议和封
+      装协议中的列表看哪些封装协议支持 unlink()。
+
+范例
+
+Example #1 基本的 unlink() 用法
+
+<?php
+$fh = fopen('test.html', 'a');
+fwrite($fh, '<h1>Hello world!</h1>');
+fclose($fh);
+
+unlink('test.html');
+?>
+
+参见
+
+  • rmdir() - 删除目录
+
+
+User Contributed Notes 34 notes
+
+===============================================================================
+
+This will delete all files in a directory matching a pattern in one line of
+code.
+
+<?php array_map('unlink', glob("some/dir/*.txt")); ?>
+===============================================================================
+
+Deleted a large file but seeing no increase in free space or decrease of disk
+usage? Using UNIX or other POSIX OS?
+
+The unlink() is not about removing file, it's about removing a file name. The
+manpage says: ``unlink - delete a name and possibly the file it refers to''.
+
+Most of the time a file has just one name -- removing it will also remove
+(free, deallocate) the `body' of file (with one caveat, see below). That's the
+simple, usual case.
+
+However, it's perfectly fine for a file to have several names (see the link()
+function), in the same or different directories. All the names will refer to
+the file body and `keep it alive', so to say. Only when all the names are
+removed, the body of file actually is freed.
+
+The caveat:
+A file's body may *also* be `kept alive' (still using diskspace) by a process
+holding the file open. The body will not be deallocated (will not free disk
+space) as long as the process holds it open. In fact, there's a fancy way of
+resurrecting a file removed by a mistake but still held open by a process...
+===============================================================================
+
+Here the simplest way to delete files with mask
+
+<?php
+   $mask = "*.jpg"
+   array_map( "unlink", glob( $mask ) );
+?>
+===============================================================================
+
+To delete all files of a particular extension, or infact, delete all with
+wildcard, a much simplar way is to use the glob function.  Say I wanted to
+delete all jpgs .........
+
+<?php
+
+foreach (glob("*.jpg") as $filename) {
+   echo "$filename size " . filesize($filename) . "\n";
+   unlink($filename);
+}
+
+?>
+===============================================================================
+
+unlink($fileName); failed for me .
+Then i tried using the realpath($fileName)  function as
+unlink(realpath($fileName)); it worked
+
+just posting it , in case if any one finds it useful .
+===============================================================================
+
+I have been working on some little tryout where a backup file was created
+before modifying the main textfile. Then when an error is thrown, the main file
+will be deleted (unlinked) and the backup file is returned instead.
+
+Though, I have been breaking my head for about an hour on why I couldn't get my
+persmissions right to unlink the main file.
+
+Finally I knew what was wrong: because I was working on the file and hadn't yet
+closed the file, it was still in use and ofcourse couldn't be deleted :)
+
+So I thought of mentoining this here, to avoid others of making the same
+mistake:
+
+<?php
+// First close the file
+fclose($fp);
+
+// Then unlink :)
+unlink($somefile);
+?>
+===============================================================================
+
+This might seem obvious, but I was tearing my hair out with this problem - make
+sure the file you're trying to delete isn't currently being used. I had a
+script that was parsing a text file and was supposed to delete it after
+completing, but kept getting a permission denied error because I hadn't
+explicitly closed the file, hence it was technically still being "used" even
+though the parsing was complete.
+===============================================================================
+
+To anyone who's had a problem with the permissions denied error, it's sometimes
+caused when you try to delete a file that's in a folder higher in the hierarchy
+to your working directory (i.e. when trying to delete a path that starts with
+"../").
+
+So to work around this problem, you can use chdir() to change the working
+directory to the folder where the file you want to unlink is located.
+
+<?php
+    $old = getcwd(); // Save the current directory
+    chdir($path_to_file);
+    unlink($filename);
+    chdir($old); // Restore the old working directory   
+?>
+===============================================================================
+
+Here is the recursive delete method made a little more readable:
+
+<?php
+/**
+* Recursively delete a directory
+*
+* @param string $dir Directory name
+* @param boolean $deleteRootToo Delete specified top-level directory as well
+*/
+function unlinkRecursive($dir, $deleteRootToo)
+{
+    if(!$dh = @opendir($dir))
+    {
+        return;
+    }
+    while (false !== ($obj = readdir($dh)))
+    {
+        if($obj == '.' || $obj == '..')
+        {
+            continue;
+        }
+
+        if (!@unlink($dir . '/' . $obj))
+        {
+            unlinkRecursive($dir.'/'.$obj, true);
+        }
+    }
+
+    closedir($dh);
+   
+    if ($deleteRootToo)
+    {
+        @rmdir($dir);
+    }
+   
+    return;
+}
+?>
+===============================================================================
+
+On OSX, when fighting against a "Permission Denied" error, make sure, the
+directory has WRITE permissions for the executing php-user.
+
+Furthermore, if you rely on ACLs, and want to delete a file or symlink, the
+containing directory needs to have "delete_child" permission in order to unlink
+things inside. If you only grant "delete" to the folder that will allow you to
+delete the container folder itself, but not the objects inside.
+===============================================================================
+
+ggarciaa's post above has already one small error, closedir has to be used even
+if $DeleteMe is false
+
+<?php
+// ggarciaa at gmail dot com (04-July-2007 01:57)
+// I needed to empty a directory, but keeping it
+// so I slightly modified the contribution from
+// stefano at takys dot it (28-Dec-2005 11:57)
+// A short but powerfull recursive function
+// that works also if the dirs contain hidden files
+//
+// $dir = the target directory
+// $DeleteMe = if true delete also $dir, if false leave it alone
+
+function SureRemoveDir($dir, $DeleteMe) {
+    if(!$dh = @opendir($dir)) return;
+    while (false !== ($obj = readdir($dh))) {
+        if($obj=='.' || $obj=='..') continue;
+        if (!@unlink($dir.'/'.$obj)) SureRemoveDir($dir.'/'.$obj, true);
+    }
+
+    closedir($dh);
+    if ($DeleteMe){
+        @rmdir($dir);
+    }
+}
+
+//SureRemoveDir('EmptyMe', false);
+//SureRemoveDir('RemoveMe', true);
+
+?>
+===============================================================================
+
+This code deletes all files from directory, but there's a secret :)
+I killed a lot of time before I realized my mistake.
+I used jquery to create event in frame.
+@ - it`s a secret :)
+
+$dir = '../upload_tmp/';
+if($dh = opendir($dir)){
+    while(($file = readdir($dh))!== false){
+        if(file_exists($dir.$file)) @unlink($dir.$file);
+    }
+        closedir($dh);
+}
+===============================================================================
+
+remove directory with all content
+
+<?php
+$dir = "boss"; // directory name
+?>
+
+<?php
+foreach (scandir($dir) as $item) {
+    if ($item == '.' || $item == '..') continue;
+    unlink($dir.DIRECTORY_SEPARATOR.$item);
+}
+rmdir($dir);
+?>
+===============================================================================
+
+unlink can fail after using ODBC commands on the file (on Windows).
+
+Neither <?php odbc_free_result($result); ?> nor <?php odbc_close($conn); unset(
+$conn); ?> did the trick.
+
+Only <?php odbc_close_all(); ?> released the file such that it could be deleted
+afterwards ...
+===============================================================================
+
+before you could unlink a file created which uses a handle e.g.,
+
+$handle = sqlite('temp.db');
+
+unset($handle); first befofe
+unlink($handle);
+
+to avoide permission denied error.
+===============================================================================
+
+using this function with windows will generate an error, make sure to use
+is_file
+===============================================================================
+
+This is in response to alvaro at demogracia dot com
+
+Yes, I found that out and have had to wrap it with is_file:
+
+<?php
+if(is_file("$file")) {
+unlink("$file");
+}
+?>
+===============================================================================
+
+Here you have a function to delete a directory and subdirectories recursively:
+
+function deleteDirectory($dir){
+    $result = false;
+    if ($handle = opendir("$dir")){
+        $result = true;
+        while ((($file=readdir($handle))!==false) && ($result)){
+            if ($file!='.' && $file!='..'){
+                if (is_dir("$dir/$file")){
+                    $result = deleteDirectory("$dir/$file");
+                } else {
+                    $result = unlink("$dir/$fich");
+                }
+            }
+        }
+        closedir($handle);
+        if ($result){
+            $result = rmdir($dir);
+        }
+    }
+    return $result;
+}
+
+The source is found in http://softontherocks.blogspot.com/2014/09/
+eliminar-un-directorio-completo-con-php.html
+===============================================================================
+
+Complete retardation. This does NOT delete the file.
+===============================================================================
+
+Actually you should use "@unlink" rather than testing with file_exists. The
+former is atomic, whereas the latter can break if you can't guarantee only one
+process will try to delete a given file at a time.
+===============================================================================
+
+Shorter'n'faster version of Eddys "The shortest recursive delete possible"
+
+function rrmdir($path)
+{
+  return is_file($path)?
+    @unlink($path):
+    array_map('rrmdir',glob($path.'/*'))==@rmdir($path)
+  ;
+}
+===============================================================================
+
+[Editor's note: A suggestion for a work-around was submitted by argistof at
+gmail dot com: You can use the recursive option (see man chmod) when chmodding,
+for instance 'chmod 777 directory/ -R'. Be aware though, this will change the
+permissions of all files and folders in the diectory.]
+
+Just a note which you probably all know, but I didn't, and it might save
+another poor sap some unnecessary time:
+
+I was doing unlink() and fopen() on a file and got a permission denied error,
+even after chmoding the file to 0777. 
+
+The folder that contains the file must ALSO have write permission.  Took a
+headache to find this out. 
+
+Hope this helps someone :)
+===============================================================================
+
+Under Windows System and Apache, denied access to file is an usual error to
+unlink file.
+To delete file you must to change file's owern.
+An example:
+
+<?php
+chown($TempDirectory."/".$FileName,666); //Insert an Invalid UserId to set to
+Nobody Owern; 666 is my standard for "Nobody"
+unlink($TempDirectory."/".$FileName);
+?>
+===============================================================================
+
+Here is simple function that will find and remove all files (except "." ones)
+that match the expression ($match, "*" as wildcard) under starting directory
+($path) and all other directories under it.
+
+function rfr($path,$match){
+   static $deld = 0, $dsize = 0;
+   $dirs = glob($path."*");
+   $files = glob($path.$match);
+   foreach($files as $file){
+      if(is_file($file)){
+         $dsize += filesize($file);
+         unlink($file);
+         $deld++;
+      }
+   }
+   foreach($dirs as $dir){
+      if(is_dir($dir)){
+         $dir = basename($dir) . "/";
+         rfr($path.$dir,$match);
+      }
+   }
+   return "$deld files deleted with a total size of $dsize bytes";
+}
+===============================================================================
+
+ggarciaa's post above has one small error, it will ignore file and directory
+strings that are evaluated as false (ie. "0")
+
+Fixed code is below (false !==)
+
+<?php
+// ggarciaa at gmail dot com (04-July-2007 01:57)
+// I needed to empty a directory, but keeping it
+// so I slightly modified the contribution from
+// stefano at takys dot it (28-Dec-2005 11:57)
+// A short but powerfull recursive function
+// that works also if the dirs contain hidden files
+//
+// $dir = the target directory
+// $DeleteMe = if true delete also $dir, if false leave it alone
+
+function SureRemoveDir($dir, $DeleteMe) {
+    if(!$dh = @opendir($dir)) return;
+    while (false !== ($obj = readdir($dh))) {
+        if($obj=='.' || $obj=='..') continue;
+        if (!@unlink($dir.'/'.$obj)) SureRemoveDir($dir.'/'.$obj, true);
+    }
+    if ($DeleteMe){
+        closedir($dh);
+        @rmdir($dir);
+    }
+}
+
+//SureRemoveDir('EmptyMe', false);
+//SureRemoveDir('RemoveMe', true);
+
+?>
+===============================================================================
+
+To delete files using wildcards:
+
+<?
+function delfile($str)
+{
+    foreach(glob($str) as $fn) {
+        unlink($fn);
+    }
+}
+?>
+===============================================================================
+
+The best way to delete files by mask is as follows:
+<?php
+array_walk(glob('/etc/*'), 'unlink');
+?>
+Do not use array_map mentioned below - it's purpose is to process values in a
+given array AND COLLECT data returned by the callback function. So, array_map
+is slower and uses additional memory compared to array_walk.
+===============================================================================
+
+<?php
+$myFile = "testFile.txt";
+$fh = fopen($myFile, 'w') or die("can't open file");
+fclose($fh);
+?>
+
+Now to delete testFile.txt we simply run a PHP script that is located in the
+same directory. Unlink just needs to know the name of the file to start working
+its destructive magic.
+
+<?php
+$myFile = "testFile.txt";
+unlink($myFile);
+?>
+
+The testFile.txt should now be removed.
+===============================================================================
+
+<?php
+// ggarciaa at gmail dot com (04-July-2007 01:57)
+// I needed to empty a directory, but keeping it
+// so I slightly modified the contribution from
+// stefano at takys dot it (28-Dec-2005 11:57)
+// A short but powerfull recursive function
+// that works also if the dirs contain hidden files
+//
+// $dir = the target directory
+// $DeleteMe = if true delete also $dir, if false leave it alone
+
+function SureRemoveDir($dir, $DeleteMe) {
+    if(!$dh = @opendir($dir)) return;
+    while (($obj = readdir($dh))) {
+        if($obj=='.' || $obj=='..') continue;
+        if (!@unlink($dir.'/'.$obj)) SureRemoveDir($dir.'/'.$obj, true);
+    }
+    if ($DeleteMe){
+        closedir($dh);
+        @rmdir($dir);
+    }
+}
+
+//SureRemoveDir('EmptyMe', false);
+//SureRemoveDir('RemoveMe', true);
+
+?>
+===============================================================================
+
+The shortest recursive delete possible.
+
+<?php
+    /**
+     * Delete a file or recursively delete a directory
+     *
+     * @param string $str Path to file or directory
+     */
+    function recursiveDelete($str){
+        if(is_file($str)){
+            return @unlink($str);
+        }
+        elseif(is_dir($str)){
+            $scan = glob(rtrim($str,'/').'/*');
+            foreach($scan as $index=>$path){
+                recursiveDelete($path);
+            }
+            return @rmdir($str);
+        }
+    }
+?>
+===============================================================================
+
+To unlink, the web server user must have write permissions to the directory.
+
+Conversely, if a user has write permissions to a directory, it may delete files
+from that directory regardless of who owns them...
+===============================================================================
+
+I know it is obvious, but.... if you have nested symlinks (for example, we
+archive into yyyy-mm for backups, and symbolic link to make our directory
+structure look flat - don't ask), unlink will only delete the top level symlink
+(as expected).
+
+If you want to delete the actual file, you'll need to use readlink. If you want
+to delete all of the files and the symlinks, you'll need to recurse up and down
+to achieve that.
+===============================================================================
+
+<?php
+/**
+* rm() -- Vigorously erase files and directories.
+*
+* @param $fileglob mixed If string, must be a file name (foo.txt), glob pattern
+(*.txt), or directory name.
+*                        If array, must be an array of file names, glob
+patterns, or directories.
+*/
+function rm($fileglob)
+{
+    if (is_string($fileglob)) {
+        if (is_file($fileglob)) {
+            return unlink($fileglob);
+        } else if (is_dir($fileglob)) {
+            $ok = rm("$fileglob/*");
+            if (! $ok) {
+                return false;
+            }
+            return rmdir($fileglob);
+        } else {
+            $matching = glob($fileglob);
+            if ($matching === false) {
+                trigger_error(sprintf('No files match supplied glob %s', 
+$fileglob), E_USER_WARNING);
+                return false;
+            }      
+            $rcs = array_map('rm', $matching);
+            if (in_array(false, $rcs)) {
+                return false;
+            }
+        }      
+    } else if (is_array($fileglob)) {
+        $rcs = array_map('rm', $fileglob);
+        if (in_array(false, $rcs)) {
+            return false;
+        }
+    } else {
+        trigger_error('Param #1 must be filename or glob pattern, or array of
+filenames or glob patterns', E_USER_ERROR);
+        return false;
+    }
+
+    return true;
+}
+?>
+===============================================================================
+
+<?php
+// for deleting in other directory
+
+unlink("dir/" .$file ); //or
+unlink("http://www.localhost/dir/" . $file );
+?>

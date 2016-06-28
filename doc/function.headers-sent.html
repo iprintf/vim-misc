@@ -1,0 +1,345 @@
+
+headers_sent
+
+(PHP 4, PHP 5, PHP 7)
+
+headers_sent — Checks if or where headers have been sent
+
+说明
+
+bool headers_sent ([ string &$file [, int &$line ]] )
+
+Checks if or where headers have been sent.
+
+You can't add any more header lines using the header() function once the header
+block has already been sent. Using this function you can at least prevent
+getting HTTP header related error messages. Another option is to use Output
+Buffering.
+
+参数
+
+file
+
+    If the optional file and line parameters are set, headers_sent() will put
+    the PHP source file name and line number where output started in the file
+    and line variables.
+
+line
+
+    The line number where the output started.
+
+返回值
+
+headers_sent() will return FALSE if no HTTP headers have already been sent or
+TRUE otherwise.
+
+范例
+
+Example #1 Examples using headers_sent()
+
+<?php
+
+// If no headers are sent, send one
+if (!headers_sent()) {
+    header('Location: http://www.example.com/');
+    exit;
+}
+
+// An example using the optional file and line parameters, as of PHP 4.3.0
+// Note that $filename and $linenum are passed in for later use.
+// Do not assign them values beforehand.
+if (!headers_sent($filename, $linenum)) {
+    header('Location: http://www.example.com/');
+    exit;
+
+// You would most likely trigger an error here.
+} else {
+
+    echo "Headers already sent in $filename on line $linenum\n" .
+          "Cannot redirect, for now please click this <a " .
+          "href=\"http://www.example.com\">link</a> instead\n";
+    exit;
+}
+
+?>
+
+注释
+
+    Note:
+
+    数据头只会在SAPI支持时得到处理和输出。
+
+参见
+
+  • ob_start() - 打开输出控制缓冲
+  • trigger_error() - 产生一个用户级别的 error/warning/notice 信息
+  • headers_list() - Returns a list of response headers sent (or ready to send)
+  • header() - 发送原生 HTTP 头 for a more detailed discussion of the matters
+    involved.
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+<?php
+function redirect($filename) {
+    if (!headers_sent())
+        header('Location: '.$filename);
+    else {
+        echo '<script type="text/javascript">';
+        echo 'window.location.href="'.$filename.'";';
+        echo '</script>';
+        echo '<noscript>';
+        echo '<meta http-equiv="refresh" content="0;url='.$filename.'" />';
+        echo '</noscript>';
+    }
+}
+redirect('http://www.google.com');
+?>
+===============================================================================
+
+I was having trouble getting my mind around the concepts involved. Here is my
+dilemma and the conclusion I reached in case recounting them can help others:
+
+I am using WAMPserver: PHP 5.2.6, and Apache 2.2.8 on Windows XP SP3. If it
+matters to your duplication,
+I found two php.ini files in WAMPserver where output_buffering had been set to
+4096. I changed them to OFF for this testing.
+
+Here is how you can replicate what I am experiencing: With IE 7.0 go to Tools
+... Display ieHTTPheaders ... and run the following script repeatedly and watch
+what happens:
+
+<?php
+header( 'Expires: Mon, 26 Jul 1998 05:00:00 GMT' );
+//var_dump(headers_sent());
+//print("whatever");
+//flush();
+//echo "whatever";
+var_dump(headers_sent());
+?>
+
+Result: the final var_dump of the headers_sent() function will
+always return FALSE unless any one or  more of the commented lines above it are
+uncommented. Uncommenting the statements allows an output to be sent to the
+user not just to their browser, after which the final var_dump will return
+TRUE. What I found confusing was that the ieHTTPheaders tool shows that the
+header is being sent to the user's browser even when all the output lines are
+commented out. So why does headers_sent() return FALSE in this case? Because
+you can keep sending other headers. The headers_sent function is meant to alert
+one to when no further headers can be sent. My testing shows it does not return
+true unless some other output is also sent after the header, thereby signaling
+that  "Headers have been sent and concluded with user output. NOW you can't
+send any more headers."
+
+Someone else worked his way through this problem in a (false) bug report: http:
+//bugs.php.net/bug.php?id=30264
+Here is the relevant part of the reply from the pro:
+"When you use compression the entire page is buffered in memory, until end of
+the request. Consequently you can send headers at any time because no data is
+being actually sent to user when you print it. Until PHP actually decides to
+send any page output to the user you can still send additional headers which is
+why the headers_sent() function is returning false. It will return true,
+indicating that headers have been sent  only at a time when output began going
+to the user and you no longer can send any additional headers."
+
+So in summary, my point is that there is a difference between headers being
+sent only to the browser (which can be followed by other headers) vs. headers
+being sent and concluded by output for the user. The function should have been
+given a more clear name like headers_concluded().
+===============================================================================
+
+Note that in IIS (or at least the version that comes with W2K server), the
+server seems to do some buffering, so even if you output someting or cause a
+warning, the value of headers_sent() may be false because the headers haven't
+been sent yet.
+
+So it's not a safe way to know if warnings have been encountered in your
+script.
+===============================================================================
+
+In response to K.Tomono and alexrussell101 at gmail dot com :
+
+Yes,
+headers_sent() will return false, even if you sent something to the ouptut
+using print() or header() , if output_buffering is different from Off in you
+php.ini, and the length of what you sent does not exceed the size of
+output_buffering.
+
+To test it, try this code with  these values in php.ini
+1) output_buffering=32
+2) output buffering = 4096
+
+[code]
+<?php
+    echo "Yo<br />";
+    echo "Sent:",headers_sent(),"<br />";
+    echo "enough text to feed the buffer until it overflows ;-)<br />";
+    echo "Sent:",headers_sent(),"<br />";
+?>
+[/code]
+
+then put
+3) output buffering = Off
+and try this code
+[code]
+<?php
+    echo "Yo<br />";
+    echo "Sent:",headers_sent(),"<br />";
+?>
+[/code]
+which will this time unconditionnally say that headers were sent.
+
+This is noticed in php.ini comment :
+"Output buffering allows you to send header lines (including cookies) even
+after you send body content, in the price of slowing PHP's output layer a bit."
+
+Note : This is completly independant of implicit_flush tuning.
+===============================================================================
+
+Here a function to check also if any other outout is already sent:
+<?php
+
+function output_send(){
+    if (!headers_sent() && error_get_last()==NULL ) {
+        return false;
+
+    }
+    return true;
+}
+?>
+===============================================================================
+
+This is becoming annoying the amount of posts to try and describe the behaviour
+of headers
+
+Headers appear first in the data sent to the user's browser
+
+if headers have been called using the header() function but no data has been
+sent to the output buffer (using echo, readfile etc), then the headers are sent
+at the end of script execution otherwise they are sent when the buffer reaches
+it's limit and emptied
+
+simple
+
+this means that headers_sent() will return false if nothing is sent to the
+output buffer because the headers are being sent at the end of the script
+
+This is not a bug either, this is expected behaviour. Keeping headers until
+forced to send them out is a good idea because certain measures can be taken
+like prevention of meta injection etc (option in header() to replace headers
+that have not yet been sent)
+
+besides, headers_sent() is good for when you try and send headers but the
+output buffer has already been emptied (in cases of php error handling for
+example). Obviously if the buffer has emtpied, sending headers won't work.
+===============================================================================
+
+very handy function!
+
+When working with GD I made something like:
+
+<?php
+class image{
+
+    /**
+     * show
+     * sends image to browser and destroy the resource if headers not sent.
+     * use php constants IMAGETYPE_GIF, IMAGETYPE_JPEG, IMAGETYPE_PNG
+     *
+     * @final
+     * @static
+     * @access public
+     * @param resource $resource
+     * @param int $type
+     */
+    final static public function show($resource, $type){
+        if(!headers_sent()){
+            header('Cache-control: private');
+            switch($type){
+                case IMAGETYPE_GIF :    header('Content-type: image/gif');
+                                        header('Content-Disposition: filename='
+.basename(__FILE__).'.gif');
+                                        imagegif($resource);
+                                        break;
+                case IMAGETYPE_JPEG :     header('Content-type: image/jpeg');
+                                        header('Content-Disposition: filename='
+.basename(__FILE__).'.jpg');
+                                        imagejpeg($resource, NULL, 99);
+                        break;
+                case IMAGETYPE_PNG :     header('Content-type: image/png');
+                                        header('Content-Disposition: filename='
+.basename(__FILE__).'.png');
+                                        imagepng($resource, NULL, 0,  NULL);
+                        break;
+            }
+            imagedestroy($resource);
+            exit;
+        }
+    }
+}
+?>
+
+This way if you are debugging... and flush output... you will not get the
+endless list of headers allready send errors...
+
+Hope it's helpfull... ;)
+===============================================================================
+
+In my case, when I install PHP 5.2.1 in CGI mode under Apache 2.2.3 (on windows
+2003 SP2),
+function sent_headers() always return false. flash(), ob_end_flash(), so on...
+no matter.
+I suppose, Apache buffering all PHP output until exit()
+===============================================================================
+
+For programmers used to Perl, note that sending a relative 'Location:' header
+sends a redirect to the browser in PHP, unlike Perl which will attempt to call
+relative URLs using an internal subrequest and return that page to the browser
+without redirecting.  If you want to do the same trick in PHP, use include() or
+virtual().
+===============================================================================
+
+RE: antti at haapakangas dot net's post
+
+I've changed the code so $_SERVER['SERVER_NAME'] is used if $_SERVER
+['HTTP_HOST'] is not set.  $_SERVER['SERVER_NAME'] doesn't meet my needs, but I
+suppose it's good to fall back on it.  I've also fixed a problem in the meta
+refresh line - it was missing the "url=" part of the content attribute.
+
+<?php
+function server_url()
+{  
+    $proto = "http" .
+        ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == "on") ? "s" : "") . 
+"://";
+    $server = isset($_SERVER['HTTP_HOST']) ?
+        $_SERVER['HTTP_HOST'] : $_SERVER['SERVER_NAME'];
+    return $proto . $server;
+}
+   
+function redirect_rel($relative_url)
+{
+    $url = server_url() . dirname($_SERVER['PHP_SELF']) . "/" . $relative_url;
+    if (!headers_sent())
+    {
+        header("Location: $url");
+    }
+    else
+    {
+        echo "<meta http-equiv=\"refresh\" content=\"0;url=$url\">\r\n";
+    }
+}
+?>
+===============================================================================
+
+Re: php at fufachew dot com
+
+That's a nice example how to implement Location header in a correct way (using
+absoluteURI). 95% of the scripts I have seen just use relativeURI which is
+wrong. Some browsers, for example lynx, actually notify user about incomplete
+Location headers. However it might be safer to use $_SERVER['SERVER_NAME']
+instead of $_SERVER['HTTP_HOST']. Host header is a HTTP/1.1 feature and you can
+not count on that if you want to be interoperable with HTTP/1.0
+implementations.

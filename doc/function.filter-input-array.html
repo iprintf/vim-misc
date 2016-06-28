@@ -1,0 +1,484 @@
+
+filter_input_array
+
+(PHP 5 >= 5.2.0, PHP 7)
+
+filter_input_array — 获取一系列外部变量，并且可以通过过滤器处理它们
+
+说明
+
+mixed filter_input_array ( int $type [, mixed $definition [, bool $add_empty =
+true ]] )
+
+这个函数当需要获取很多变量却不想重复调用filter_input()时很有用。
+
+参数
+
+type
+
+    INPUT_GET, INPUT_POST, INPUT_COOKIE, INPUT_SERVER, or INPUT_ENV之一。
+
+definition
+
+    一个定义参数的数组。一个有效的键必须是一个包含变量名的string，一个有效的值
+    要么是一个filter type，或者是一个array 指明了过滤器、标示和选项。如果值是一
+    个数组，那么它的有效的键可以是 filter，用于指明 filter type，flags 用于指明
+    任何想要用于过滤器的标示，或者 options 用于指明任何想要用于过滤器的选项。参
+    考下面的例子来更好的理解这段说明。
+
+    这个参数也可以是一个filter constant的整数。那么数组中的所有变量都会被这个过
+    滤器所过滤。
+
+add_empty
+
+    在返回值中添加 NULL 作为不存在的键。
+
+返回值
+
+如果成功的话返回一个所请求的变量的数组，如果失败的话返回 FALSE 。对于数组的值，
+如果过滤失败则返回 FALSE ，如果variable_name 不存在的话则返回 NULL 。如果标示
+FILTER_NULL_ON_FAILURE 被使用了，那么当变量不存在时返回 FALSE ，当过滤失败时返
+回 NULL 。
+
+范例
+
+Example #1 一个 filter_input_array() 的例子
+
+<?php
+error_reporting(E_ALL | E_STRICT);
+/* data actually came from POST
+$_POST = array(
+    'product_id'    => 'libgd<script>',
+    'component'     => '10',
+    'versions'      => '2.0.33',
+    'testscalar'    => array('2', '23', '10', '12'),
+    'testarray'     => '2',
+);
+*/
+
+$args = array(
+    'product_id'   => FILTER_SANITIZE_ENCODED,
+    'component'    => array('filter'    => FILTER_VALIDATE_INT,
+                            'flags'     => FILTER_REQUIRE_ARRAY, 
+                            'options'   => array('min_range' => 1, 'max_range' 
+=> 10)
+                           ),
+    'versions'     => FILTER_SANITIZE_ENCODED,
+    'doesnotexist' => FILTER_VALIDATE_INT,
+    'testscalar'   => array(
+                            'filter' => FILTER_VALIDATE_INT,
+                            'flags'  => FILTER_REQUIRE_SCALAR,
+                           ),
+    'testarray'    => array(
+                            'filter' => FILTER_VALIDATE_INT,
+                            'flags'  => FILTER_REQUIRE_ARRAY,
+                           )
+
+);
+
+$myinputs = filter_input_array(INPUT_POST, $args);
+
+var_dump($myinputs);
+echo "\n";
+?>
+
+以上例程会输出：
+
+array(6) {
+  ["product_id"]=>
+  array(1) {
+    [0]=>
+    string(17) "libgd%3Cscript%3E"
+  }
+  ["component"]=>
+  array(1) {
+    [0]=>
+    int(10)
+  }
+  ["versions"]=>
+  array(1) {
+    [0]=>
+    string(6) "2.0.33"
+  }
+  ["doesnotexist"]=>
+  NULL
+  ["testscalar"]=>
+  bool(false)
+  ["testarray"]=>
+  array(1) {
+    [0]=>
+    int(2)
+  }
+}
+
+更新日志
+
+版本          说明
+5.4.0 添加 add_empty 参数.
+
+注释
+
+    Note:
+
+    在 INPUT_SERVER 数组中并没有 REQUEST_TIME ，因为它是被稍后插入到$_SERVER 中
+    的。
+
+参见
+
+  • filter_input() - 通过名称获取特定的外部变量，并且可以通过过滤器处理它
+  • filter_var_array() - 获取多个变量并且过滤它们
+  • Types of filters
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+Note that although you can provide a default filter for the entire input array
+there is no way to provide a flag for that filter without building the entire
+definition array yourself.
+
+So here is a small function that can alleviate this hassle!
+
+<?php
+function filter_input_array_with_default_flags($type, $filter, $flags, 
+$add_empty = true) {
+    $loopThrough = array();
+    switch ($type) {
+        case INPUT_GET : $loopThrough = $_GET; break;
+        case INPUT_POST : $loopThrough = $_POST; break;
+        case INPUT_COOKIE : $loopThrough = $_COOKIE; break;
+        case INPUT_SERVER : $loopThrough = $_SERVER; break;
+        case INPUT_ENV : $loopThrough = $_ENV; break;
+    }
+  
+    $args = array();
+    foreach ($loopThrough as $key=>$value) {
+        $args[$key] = array('filter'=>$filter, 'flags'=>$flags);
+    }
+   
+    return filter_input_array($type, $args, $add_empty);
+}
+?>
+===============================================================================
+
+[New Version]
+This function is very useful for filtering complicated array structure.
+Also, Some integer bitmasks and invalid UTF-8 sequence detection are available.
+
+Code:
+<?php
+/**
+* @param  integer $type    Constant like INPUT_XXX.
+* @param  array   $default Default structure of the specified super global var.
+*                          Following bitmasks are available:
+*  + FILTER_STRUCT_FORCE_ARRAY - Force 1 dimensional array.
+*  + FILTER_STRUCT_TRIM        - Trim by ASCII control chars.
+*  + FILTER_STRUCT_FULL_TRIM   - Trim by ASCII control chars,
+*                                full-width and no-break space.
+* @return array            The value of the filtered super global var.
+*/
+define('FILTER_STRUCT_FORCE_ARRAY', 1);
+define('FILTER_STRUCT_TRIM', 2);
+define('FILTER_STRUCT_FULL_TRIM', 4);
+function filter_struct_utf8($type, array $default) {
+    static $func = __FUNCTION__;
+    static $trim = "[\\x0-\x20\x7f]";
+    static $ftrim = "[\\x0-\x20\x7f\xc2\xa0\xe3\x80\x80]";
+    static $recursive_static = false;
+    if (!$recursive = $recursive_static) {
+        $types = array(
+            INPUT_GET => $_GET,
+            INPUT_POST => $_POST,
+            INPUT_COOKIE => $_COOKIE,
+            INPUT_REQUEST => $_REQUEST,
+        );
+        if (!isset($types[(int)$type])) {
+            throw new LogicException('unknown super global var type');
+        }
+        $var = $types[(int)$type];
+        $recursive_static = true;
+    } else {
+        $var = $type;
+    }
+    $ret = array();
+    foreach ($default as $key => $value) {
+        if ($is_int = is_int($value)) {
+            if (!($value | (
+                FILTER_STRUCT_FORCE_ARRAY |
+                FILTER_STRUCT_FULL_TRIM |
+                FILTER_STRUCT_TRIM
+            ))) {
+                $recursive_static = false;
+                throw new LogicException('unknown bitmask');
+            }
+            if ($value & FILTER_STRUCT_FORCE_ARRAY) {
+                $tmp = array();
+                if (isset($var[$key])) {
+                    foreach ((array)$var[$key] as $k => $v) {
+                        if (!preg_match('//u', $k)){
+                            continue;
+                        }
+                        $value &= FILTER_STRUCT_FULL_TRIM | FILTER_STRUCT_TRIM;
+                        $tmp += array($k => $value ? $value : '');
+                    }
+                }
+                $value = $tmp;
+            }
+        }
+        if ($isset = isset($var[$key]) and is_array($value)) {
+            $ret[$key] = $func($var[$key], $value);
+        } elseif (!$isset || is_array($var[$key])) {
+            $ret[$key] = null;
+        } elseif ($is_int && $value & FILTER_STRUCT_FULL_TRIM) {
+            $ret[$key] = preg_replace("/\A{$ftrim}++|{$ftrim}++\z/u", '', $var[
+$key]);
+        } elseif ($is_int && $value & FILTER_STRUCT_TRIM) {
+            $ret[$key] = preg_replace("/\A{$trim}++|{$trim}++\z/u", '', $var[
+$key]);
+        } else {
+            $ret[$key] = preg_replace('//u', '', $var[$key]);
+        }
+        if ($ret[$key] === null) {
+            $ret[$key] = $is_int ? '' : $value;
+        }
+    }
+    if (!$recursive) {
+        $recursive_static = false;
+    }
+    return $ret;
+}
+?>
+===============================================================================
+
+[New Version]
+
+Example Usage:
+<?php
+$_GET['A']['a'] = '  CORRECT(including some spaces)    ';
+$_GET['A']['b'] = '  CORRECT(including some spaces)    ';
+$_GET['A']['c'] = "Invalid UTF-8 sequence: \xe3\xe3\xe3";
+$_GET['A']['d']['invalid_structure'] = 'INVALID';
+
+$_GET['B']['a'] = '  CORRECT(including some spaces)    ';
+$_GET['B']['b'] = "Invalid UTF-8 sequence: \xe3\xe3\xe3";
+$_GET['B']['c']['invalid_structure'] = 'INVALID';
+$_GET['B']["Invalid UTF-8 sequence: \xe3\xe3\xe3"] = 'INVALID';
+
+$_GET['C']['a'] = '  CORRECT(including some spaces)    ';
+$_GET['C']['b'] = "Invalid UTF-8 sequence: \xe3\xe3\xe3";
+$_GET['C']['c']['invalid_structure'] = 'INVALID';
+$_GET['C']["Invalid UTF-8 sequence: \xe3\xe3\xe3"] = 'INVALID';
+
+$_GET['unneeded_item'] = 'UNNEEDED';
+
+var_dump(filter_struct_utf8(INPUT_GET, array(
+    'A' => array(
+        'a' => '',
+        'b' => FILTER_STRUCT_TRIM,
+        'c' => '',
+        'd' => '',
+    ),
+    'B' => FILTER_STRUCT_FORCE_ARRAY,
+    'C' => FILTER_STRUCT_FORCE_ARRAY | FILTER_STRUCT_TRIM,
+)));
+?>
+
+Example Result:
+array(3) {
+  ["A"]=>
+  array(4) {
+    ["a"]=>
+    string(36) "  CORRECT(including some spaces)    "
+    ["b"]=>
+    string(30) "CORRECT(including some spaces)"
+    ["c"]=>
+    string(0) ""
+    ["d"]=>
+    string(0) ""
+  }
+  ["B"]=>
+  array(3) {
+    ["a"]=>
+    string(36) "  CORRECT(including some spaces)    "
+    ["b"]=>
+    string(0) ""
+    ["c"]=>
+    string(0) ""
+  }
+  ["C"]=>
+  array(3) {
+    ["a"]=>
+    string(30) "CORRECT(including some spaces)"
+    ["b"]=>
+    string(0) ""
+    ["c"]=>
+    string(0) ""
+  }
+}
+===============================================================================
+
+Beware: if none of the arguments is set, this function returns NULL, not an
+array of NULL values.
+
+/* No POST vars set in request
+$_POST = array();
+*/
+
+$args = array('some_post_var' => FILTER_VALIDATE_INT);
+$myinputs = filter_input_array(INPUT_POST, $args);
+var_dump($myinputs);
+
+Expected Output: array(1) { ["some_post_var"]=> NULL }
+
+Actual Output: NULL
+===============================================================================
+
+If you are trying to handling multiple form inputs with same name, then you
+must assign the `'flags'  => FILTER_REQUIRE_ARRAY` to the definitions entry.
+
+Example, you have a html form as such:
+<form>
+<input name="t1[]" value="Some string One" />
+<input name="t1[]" value="Another String Two" />
+</form>
+
+Your definitions array will look a little like this:
+$args = array(
+  't1'    => array(
+      'name' => 't1',
+      'filter' => FILTER_SANITIZE_STRING,
+      'flags'  => FILTER_REQUIRE_ARRAY)
+);
+===============================================================================
+
+This function is very useful for filtering complicated array structure.
+
+Code:
+<?php
+function filter_request($var, $default_structure) {
+
+    $ret = array();
+
+    foreach ($default_structure as $key => $value) {
+        if (!isset($var[$key])) {
+            $ret[$key] = $value;
+        } elseif (is_array($value)) {
+            $ret[$key] = filter_request($var[$key], $value);
+        } elseif (is_array($var[$key])) {
+            $ret[$key] = $value;
+        } else {
+            $ret[$key] = $var[$key];
+        }
+    }
+
+    return $ret;
+
+}
+?>
+
+Sample Usage:
+<?php
+$_GET['a']['wrong_structure'] = 'foo';
+$_GET['b']['c'] = 'CORRECT';
+$_GET['b']['d']['wrong_structure'] = 'bar';
+$_GET['unneeded_item'] = 'baz';
+
+var_dump(filter_request($_GET, array(
+    'a' => 'DEFAULT',
+    'b' => array(
+        'c' => 'DEFAULT',
+        'd' => 'DEFAULT',
+    ),
+)));
+?>
+
+Sample Result:
+array(2) {
+  ["a"]=>
+  string(21) "DEFAULT"
+  ["b"]=>
+  array(2) {
+    ["c"]=>
+    string(12) "CORRECT"
+    ["d"]=>
+    string(21) "DEFAULT"
+  }
+}
+===============================================================================
+
+While filtering input arrays, be careful of what flags you set besides
+FILTER_REQUIRE_ARRAY. For example, setting the flags like so:
+
+<?php
+$filter = array(
+'myInputArr' => array('filter' => FILTER_SANITIZE_STRING,
+                      'flags' => array('FILTER_FLAG_STRIP_LOW', 
+'FILTER_REQUIRE_ARRAY'))
+);
+
+$form_inputs = filter_input_array(INPUT_POST, $filter);
+?>
+
+.. will result in a blank $form_inputs['myInputArr'] regardless of what $_POST
+['myInputArr'] contains.
+===============================================================================
+
+Looks like filter_input_array isn't aware of changes to the input arrays that
+were made before calling filter_input_array. Instead, it always looks at the
+originally submitted input arrays.
+
+So this will not work:
+
+$_POST['my_float_field'] = str_replace(',','.',$_POST['my_float_field']);
+$args = array('my_float_field',FILTER_VALIDATE_FLOAT);
+$result = filter_input_array(INPUT_POST, $args);
+===============================================================================
+
+The above example will actually output "NULL" because of the undefined variable
+doesnotexist - see http://bugs.php.net/bug.php?id=42608.
+===============================================================================
+
+The above example raises other questions such as how one would validate an html
+array.  In the input form each input tag that refers to an html array would be
+named for example testarray[].  However, after the form is submitted, the
+syntax for validating the values is different from  the expected $_POST
+['testarray[]']. Instead one has to drop the braces and validate as follows,
+assuming that testarray[] is supposed to be an html array of numerical values:
+
+Valid test:
+
+echo '*';
+echo filter_input(
+INPUT_POST,
+'testarray',
+FILTER_VALIDATE_INT,
+FILTER_REQUIRE_ARRAY
+);
+echo '*';
+
+But the following is an invalid test that results in 2 consequtive asterisks
+only!
+
+echo '*';
+echo filter_input(INPUT_POST,
+'testarray[]',
+FILTER_VALIDATE_INT,
+FILTER_REQUIRE_ARRAY
+);
+echo '*';
+
+So, there is a naming inconsistency going on, as after the form is submitted,
+one has to forget about the original name of the submitted array by dropping
+its braces. Maybe when the PECL/Filter extension is reviewed again, the great
+ones might consider making the syntax a little more forgiving.
+===============================================================================
+
+@iam4webwork
+
+This is not specific to filter_input.  If you have an element in HTML called
+names[], it can be accessed by calling $_POST['names'].
+===============================================================================
+
+extract() is a very convenient way of copying all those variables to the local
+scope. (see http://www.php.net/extract)

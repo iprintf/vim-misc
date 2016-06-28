@@ -1,0 +1,295 @@
+
+posix_setuid
+
+(PHP 4, PHP 5, PHP 7)
+
+posix_setuid — Set the UID of the current process
+
+说明
+
+bool posix_setuid ( int $uid )
+
+Set the real user ID of the current process. This is a privileged function that
+needs appropriate privileges (usually root) on the system to be able to perform
+this function.
+
+参数
+
+uid
+
+    The user id.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 posix_setuid() example
+
+This example will show the current user id and then set it to a different
+value.
+
+<?php
+echo posix_getuid()."\n"; //10001
+echo posix_geteuid()."\n"; //10001
+posix_setuid(10000);
+echo posix_getuid()."\n"; //10000
+echo posix_geteuid()."\n"; //10000
+?>
+
+参见
+
+  • posix_setgid() - Set the GID of the current process
+  • posix_seteuid() - Set the effective UID of the current process
+  • posix_getuid() - Return the real user ID of the current process
+  • posix_geteuid() - Return the effective user ID of the current process
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Note that on unix, if your target user does not have a valid shell, some php
+functions (eg: tempnam) will not work correctly:
+
+$ grep www-data /etc/passwd
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+
+$ cat test.php
+#!/usr/bin/php -q
+<?php
+    $info=posix_getpwnam("www-data");
+    $id=$info["uid"];
+
+    $file=tempnam("/tmp","something");
+    print "PRE SetUID: $file\n";
+
+    $SETUID=posix_setuid($id);
+
+    $file=tempnam("/tmp","something");
+    print "POST SetUID: $file\n";
+?>
+
+$ sudo ./test.php
+PRE SetUID: /tmp/somethingrsb1qZ
+POST SetUID:
+===============================================================================
+
+When you do a posix_setuid from root to some other users you will not have
+access to files owned by root according to their permissions. For instance if
+you change owner of the process and still need to open a file for read or write
+with 600 permission owned by root you will receive a permission denied.
+There are some ways to do this (i.e. a unix socket or tcp daemon etc), but
+probably the most easiest way is:
+
+Open the file before changing ownership of process, save the file pointer in a
+global variable and use it after changing ownership.
+
+For example assume /root/test_file is a file owned by root:root and have a
+permission of 600 and you are running this script under root. This code will
+not work:
+
+<?php
+// Change ownership of process to nobody
+posix_setgid(99);
+posix_setuid(99);
+
+$fd = fopen('/root/test_file','a');
+fwrite($fd,"some test strings");
+fclose();
+
+?>
+
+But this one will work:
+
+<?php
+$fd = fopen('/root/test_file','a');
+
+// Change ownership of process to nobody
+posix_setgid(99);
+posix_setuid(99);
+
+fwrite($fd,"some test strings");
+fclose();
+
+?>
+
+Hope this helps some one.
+
+[Tested on CentOS 5 - Linux 2.6.x - PHP 5.2.x]
+===============================================================================
+
+In response to a note above that advocated the user of system() in a setuid
+program written in C, this is generally a bad idea for security. 
+
+You should use the standard library calls like execl() instead because system()
+can be manipulated to execute the wrong thing using the SHELL, IFS and possibly
+other variables.
+===============================================================================
+
+On many UNIX systems (tested on Debian GNU/Linux), SUID is disabled for scripts
+and works only for binaries. If you need to setuid, you must use a wrapper
+binary that runs setuid() php script. Here's an example:
+
+$ nano suexec.cpp
+#include <stdlib>
+using namespace std;
+int main()
+{
+system("php /home/php/php_user.php");
+return 0;
+}
+
+$ g++ -o suexec suexec.cpp
+$ sudo chown root:root suexec
+$ sudo chmod 4755 root
+
+Then we create short PHP script to set process uid (you should already know how
+to do this). Don't even try to experiment with auto_prepend_file in php.ini, it
+doesn't work as expected.
+===============================================================================
+
+It seems like this function returns true if you try to change uid to the
+already active user - even if you aren't root.
+
+Should save you one if-statement in some cases.
+===============================================================================
+
+For simple operations, you can easily create a privilege-separation mechanism
+to perform commands that require elevated privileges.
+
+For example, in creating a document repository, I had the need to provide
+access to certain directory and file operations based on a user's login name. 
+It's unrealistic and unsecure to provide the web server access to all of the
+directories that the user may need to access, so I created a setuid() script to
+perform the required operations for me.
+
+An exerpt from the code demonstrates this:
+
+<?
+
+//
+// main.php
+//
+
+// Perform a privileged stat()
+function privsep_stat($path)
+{
+        // Call the privilege separation program, ask for a stat of the
+specified path
+        $serialized_result = exec("/path/to/privsep.php stat " . $path, $oa,
+$return_code);
+        if ($return_code != 0)
+        {
+                return false;
+        }
+
+        // Return the unserialized object
+        return unserialize($serialized_result);
+}
+
+// Get file statistics on a file we don't have access to as the web server user
+$st = privsep_stat("/private_directory/private_file");
+print_r($st);
+
+?>
+
+privsep.php looks like this:
+
+#!/usr/local/bin/php
+<?
+
+//
+// privsep.php
+//
+
+// Don't allow this script to be run from the web
+if (isset($_SERVER['REQUEST_METHOD']))
+{
+    print "<br>This program is not intended to be run directly from the WWW.\
+n";
+    return 1;
+}
+
+// TODO: add your argument validation here
+
+// A stat was requested
+if ($argv[1] == "stat")
+{
+    // Reset the stat() cache
+    clearstatcache();
+
+    // Original user ID
+    $original_uid = posix_get_uid();
+
+    // Set our real user ID to root
+    $success = posix_setuid(0);
+    if (!$success)
+    {
+        print "Error: Cannot setuid().\n";
+        return 1;
+    }
+
+    // Store the file statistics
+    $st = stat($argv[2]);
+
+    // Drop the real UID back to the calling user ID
+    $success = posix_setuid($original_uid);
+    if (!$success)
+    {
+        print "Error: Cannot setuid().\n";
+        return 1;
+    }
+
+    // Drop the effective UID as well
+    $success = posix_seteuid($original_uid);
+    if (!$success)
+    {
+        print "Error: Cannot seteuid().\n";
+        return 1;
+    }
+
+    // Serialize the result and print it
+    $result = serialize($st);
+    print $result;
+
+    // Success!
+    return 0;
+}
+?>
+
+Finally, privsep.php's permissions are configured like this:
+
+# chown root:wheel privsep.php
+# chmod 4755 privsep.php
+
+And look like this:
+
+-rwsr-xr-x  1 root      wheel     1000 Nov  1 00:00 privsep.php
+
+It's probably wise to keep privsep.php out of your document root to help
+mitigate any successful attack.
+
+This method can be extended for other functions.  Use at your own risk.
+===============================================================================
+
+Here's some Perl code to run a PHP script setuid. Just put it into a CGI, make
+that CGI setuid and executable, then call the CGI where you would usually call
+the PHP script.
+
+#!/usr/local/bin/perl
+
+# Perl wrapper to execute a PHP script setuid
+#  2002 Simon Kornblith
+# Requires PHP CGI
+
+# Make UID = EUID (so that PHP can run system()s and execs() setuid)
+$< = $>;
+# Set this to the path, so that we can't get poisoned
+$ENV{'PATH'} = "/home/httpd/cgi-bin/ssl/admin";     
+# Open the PHP script (must start with !#/usr/local/bin/php or similar and
+# be executable
+open(STDOUT, "| /home/httpd/cgi-bin/ssl/admin/new.php");
+# Write STDIN to PHP script
+print while <STDIN>;

@@ -1,0 +1,318 @@
+
+ReflectionClass::newInstanceWithoutConstructor
+
+(PHP >= 5.4.0)
+
+ReflectionClass::newInstanceWithoutConstructor — 创建一个新的类实例而不调用它的
+构造函数
+
+说明
+
+public object ReflectionClass::newInstanceWithoutConstructor ( void )
+
+创建一个新的类的实例而不调用它的构造函数。
+
+参数
+
+返回值
+
+更新日志
+
+版本                                    说明
+5.6.0 All internal classes can now be instantiated except for those declared
+      final.
+
+错误／异常
+
+如果这个类是一个不能不调用构造函数来实例化的内置类，将导致一个
+ReflectionException。在 PHP 5.6.0 及更高版本中，此异常仅限于 final 的内置类。
+
+参见
+
+  • ReflectionClass::newInstance() - 从指定的参数创建一个新的类实例
+  • ReflectionClass::newInstanceArgs() - 从给出的参数创建一个新的类实例。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+If this method is not available in your version of PHP you can use a trick to
+create an instance without calling the constructor.
+Use reflection to get the properties and default values of the class, and
+create a fake "serialized" string.
+
+<?php
+function createInstanceWithoutConstructor($class){
+    $reflector = new ReflectionClass($class);
+    $properties = $reflector->getProperties();
+    $defaults = $reflector->getDefaultProperties();
+           
+    $serealized = "O:" . strlen($class) . ":\"$class\":".count($properties) .':
+{';
+    foreach ($properties as $property){
+        $name = $property->getName();
+        if($property->isProtected()){
+                $name = chr(0) . '*' .chr(0) .$name;
+            } elseif($property->isPrivate()){
+                $name = chr(0)  . $class.  chr(0).$name;
+            }
+            $serealized .= serialize($name);
+            if(array_key_exists($property->getName(),$defaults) ){
+                $serealized .= serialize($defaults[$property->getName()]);
+            } else {
+                $serealized .= serialize(null);
+            }
+        }
+    $serealized .="}";
+    return unserialize($serealized);
+}
+?>
+
+Example:
+
+<?php
+class foo
+{
+    public $a = 10;
+    protected $b = 2;
+    private $c = "default";
+    protected $d;
+    public function __construct(){
+        $this->a = null;
+        $this->b = null;
+        $this->c = "constructed";
+        $this->d = 42;
+    }
+}
+
+var_dump(createInstanceWithoutConstructor('foo'));
+?>
+
+Output:
+object(foo)#6 (4) {
+  ["a"]=>
+  int(10)
+  ["b":protected]=>
+  int(2)
+  ["c":"foo":private]=>
+  string(7) "default"
+  ["d":protected]=>
+  NULL
+}
+
+I hope this can help someone.
+Oliver Anan
+===============================================================================
+
+It should be made clear that from an OOP theory perspective the use of this
+method is very bad practice in the same manner as goto, eval and singletons. If
+you find a need to use it in production code you're almost certainly doing
+something wrong somewhere. It may occasionally be useful for debugging, but
+even then hints at poor initial code.
+
+The problem? It breaks encapsulation. An object can exist in the application
+but may not be able to fulfill its responsibility because it's missing
+dependencies. The use of this method makes it possible for an incomplete object
+to exist in the system; the object can exist in a state that its author never
+intended. This is bad because it will cause unexpected things to happen! A
+fundamental principle in OOP is that objects are in complete control of their
+state, the use of this method prevents that guarantee.
+
+n.b. The annotation based "dependency injection" listed below is not a solution
+or valid use-case for this either because it breaks encapsulation (Among other
+things!) and the class being constructed needs to know of the container by
+providing annotations.
+===============================================================================
+
+This new Feature enables Annotation based Dependency Injection:
+<?php
+
+//dependency to inject
+class dep {}
+
+class a {
+  /**
+   * @inject
+   * @var dep
+   */
+  protected $foo;
+}
+
+class b extends a {
+  /**
+   * @inject
+   * @var dep
+   */
+  protected $bar;
+ 
+  public function __construct() {
+    echo "CONSTRUCTOR CALLED\n";
+  }
+}
+
+$ref = new ReflectionClass('b');
+$inst = $ref->newInstanceWithoutConstructor();
+
+$list = $ref->getProperties();
+foreach($list as $prop){
+  /* @var $prop ReflectionProperty */
+  $prop->getDocComment(); //grep for @inject and the @vars class name
+  $prop->setAccessible(true);
+  $prop->setValue($inst, new dep());
+}
+if($const = $ref->getConstructor()) {
+  $constName = $const->getName();
+  $inst->{$constName}(); //use call_user_func_array($function, $param_arr); for
+arguments
+}
+
+print_r($inst);
+print_r($inst->foo); //property still not accessable
+
+The Output:
+
+CONSTRUCTOR CALLED
+b Object
+(
+    [bar:protected] => dep Object
+        (
+        )
+
+    [foo:protected] => dep Object
+        (
+        )
+
+)
+PHP Fatal error:  Cannot access protected property b::$foo in diTest.php on
+line 42
+===============================================================================
+
+A good first use for this new method.
+
+It implements a transparent parser constructor argument to achieve 99% reusable
+component.
+
+<?php
+
+use ReflectionClass ;
+
+trait TSingleton
+{
+    /**
+    *    Constructor.
+    */
+    protected function __construct() {}
+
+    /**
+    *    Drop clone singleton objects.
+    */
+    protected function __clone() {}
+
+    /**
+    *    Gets only one instance.
+    *
+    *    @params Optional multiple values as arguments for the constructor.
+    *    @return Object instance from called class.
+    */
+    public static function getInstance()
+    {
+        static $instance = null ;
+
+        if ( ! $instance )
+        {
+            $ref  = new ReflectionClass( get_called_class() ) ;
+            $ctor = $ref->getConstructor() ;
+
+            // Thanks PHP 5.4
+            $self = $ref->newInstanceWithoutConstructor() ;
+
+            // The magic.
+            $ctor->setAccessible( true ) ;
+            $instance = $ctor->invokeArgs( $self, func_get_args() ) ;
+        }
+
+        return $instance ;
+    }
+}
+
+?>
+===============================================================================
+
+sorry for replying to such an old comment, but there's something i wanted to
+point out.
+
+@  tom at r dot je:
+While I agree with what you said in general, there *are* cases where it's not
+true, and since PHP doesn't allow for multiple constructors there's no other
+good way around it.
+
+> The problem? It breaks encapsulation.
+> An object can exist in the application but may not be able to fulfill its
+> responsibility because it's missing dependencies.
+> The use of this method makes it possible for an incomplete object
+> to exist in the system;
+> the object can exist in a state that its author never intended.
+
+If you're using this method from some factory method, to manually init the
+object in other way that the constructor that, this point is no longer valid.
+
+Consider the example, where you use constructor to set-up the object after
+getting it from database (e.g. you need to pull some array from other table,
+basing on some id parameter). But you want to also be able to create object
+manually (for inserting to the database, for example).
+The best thing to do would be to have two different constructors, but since it
+is not possible in php you need some other way to create the object.
+
+example:
+
+<?php
+// this usually would be a static cache in some class, or array returned by
+method getMeta($id), etc.
+$meta = array(1337 => array('key1' => 'value1', 'key2' => 'value2'));
+
+class Test {
+    public $id;
+    public $data;
+    public $meta;
+
+    public function __construct() {
+        global $meta;
+        if(is_int($this->id)) $this->meta = $meta[$this->id];
+    }
+    public static function create_empty() {
+        $r = new ReflectionClass(__CLASS__);
+        return $r->newInstanceWithoutConstructor();
+    }
+}
+echo "emulating PDO::FETCH_CLASS behavior: ";
+$t = Test::create_empty();
+$t->meta = 1337;
+$t->__construct();
+var_dump($t);
+
+echo "empty class: ";
+$testItem = Test::create_empty();
+// ... here you can start setting up the item, e.g. from XML
+var_dump($testItem);
+
+$testItem->id = 0;
+$testItem->data = "some data";
+$testItem->meta = array("somekey" => "somevalue");
+
+echo "after setup:";
+var_dump($testItem);
+?>
+
+Of course, you can instead make empty constructor, and create some init()
+method, but then you have to remember to call init() everywhere.
+You can also create some other way of adding the item to database, but then
+you'd have to classes to handle the same data - one for retrieving and other
+for storing.
+
+If you instead use some factory class (or just a factory method, like in the
+simplified example above) having a way to create totally empty object is
+useful. With full factory approach you would first use some TestFactory->
+prepare() method, then you'd call methods to set what you need, and the factory
+would set all uninitialized variables to some default values upon calling
+TestFactory->get() to retrieve prepared object.

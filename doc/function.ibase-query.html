@@ -1,0 +1,219 @@
+
+ibase_query
+
+(PHP 5, PHP 7)
+
+ibase_query — Execute a query on an InterBase database
+
+说明
+
+resource ibase_query ([ resource $link_identifier ], string $query [, int
+$bind_args ] )
+
+Performs a query on an InterBase database.
+
+参数
+
+link_identifier
+
+    An InterBase link identifier. If omitted, the last opened link is assumed.
+
+query
+
+    An InterBase query.
+
+bind_args
+
+返回值
+
+If the query raises an error, returns FALSE. If it is successful and there is a
+(possibly empty) result set (such as with a SELECT query), returns a result
+identifier. If the query was successful and there were no results, returns TRUE
+.
+
+    Note:
+
+    In PHP 5.0.0 and up, this function will return the number of rows affected
+    by the query for INSERT, UPDATE and DELETE statements. In order to retain
+    backward compatibility, it will return TRUE for these statements if the
+    query succeeded without affecting any rows.
+
+错误／异常
+
+If you get some error like "arithmetic exception, numeric overflow, or string
+truncation. Cannot transliterate character between character sets" (this occurs
+when you try use some character with accents) when using this and after 
+ibase_query() you must set the character set (i.e. ISO8859_1 or your current
+character set).
+
+更新日志
+
+版本                                    说明
+5.3.1 On success the function now returns TRUE if there were no affected rows,
+      where it previously returned 0 (a zero followed by an empty space).
+
+范例
+
+Example #1 ibase_query() example
+
+<?php
+
+$host = 'localhost:/path/to/your.gdb';
+
+$dbh = ibase_connect($host, $username, $password);
+$stmt = 'SELECT * FROM tblname';
+
+$sth = ibase_query($dbh, $stmt) or die(ibase_errmsg());
+
+?>
+
+参见
+
+  • ibase_errmsg() - Return error messages
+  • ibase_fetch_row() - Fetch a row from an InterBase database
+  • ibase_fetch_object() - Get an object from a InterBase database
+  • ibase_free_result() - Free a result set
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+Simple function to retrieve the results of an SQL statement into an array, will
+also cater for BLOB fields:
+
+<?php
+function interbase_sql_exec ($sql) {
+    $dataArr = array();
+    $host = "svrname:path\filename.GDB";
+    $username = "whatever";
+    $password = "******";
+    $connection = ibase_connect ($host, $username, $password,'ISO8859_1', '100'
+, '1');
+    $rid = @ibase_query ($connection, $sql);
+    if ($rid===false) errorHandle(ibase_errmsg(),$sql);
+    $coln = ibase_num_fields($rid);
+    $blobFields = array();
+    for ($i=0; $i < $coln; $i++) {
+        $col_info = ibase_field_info($rid, $i);
+        if ($col_info["type"]=="BLOB") $blobFields[$i] = $col_info["name"];
+    }
+    while ($row = ibase_fetch_row ($rid)) {
+        foreach ($blobFields as $field_num=>$field_name) {
+            $blobid = ibase_blob_open($row[$field_num]);
+            $row[$field_num] = ibase_blob_get($blobid,102400);
+            ibase_blob_close($blobid);
+        }
+        $dataArr[] = $row;
+    }
+    ibase_close ($connection);
+    return $dataArr;
+}
+?>
+===============================================================================
+
+/* If your work environment is windows */
+
+$link=ibase_connect ($path, $usuario, $password, 'WIN1251');
+===============================================================================
+
+Two comments on interogating system tables in Interbase or Firebird; I hope it
+helps.
+
+1. if you try to build a query string to extract data from a system table (that
+has the form "rdb$some_name"), you should divide the "rdb$some_name" table name
+in your query string using the string merge operator ".".
+$query = "select rdb"."$"."relation_name as TABLE_NAME from rdb"."$"."relations
+where rdb"."$"."system_flag=0";
+
+2. The second thing is related to the fact that you can later use (after the
+call to ibase_fetch_object) as field identifier the ALIAS used in the query for
+the "rdb$some_name" table.
+
+Example:
+$get_table_names_query = "select rdb"."$"."relation_name as TABLE_NAME from
+rdb"."$"."relations where rdb"."$"."system_flag=0";
+//
+$res_table_names_query = ibase_query($dbconnection, $get_table_names_query);
+//
+while ($row_table_names = ibase_fetch_object($res_table_names_query))
+{
+    print($row_table_names->TABLE_NAME);//alias used
+}
+
+Editor's note:
+it is easier to use a backslash to protect the $-sign.
+eg. "select rdb\$relation_name as TABLE_NAME from ..."
+===============================================================================
+
+Using BLOB
+
+Insert BLOB:
+
+/* create blob */
+$blob_id = ibase_blob_create();
+
+/* fill blob */
+ibase_blob_add($blob_id, $var_datablob);
+
+/* close new blob */
+$blob_id_str = ibase_blob_close($blob_id);
+
+/* insert into table  */
+ibase_query("INSERT INTO BLOB_TABLE (ID, BLOB) VALUES (1, ?)",$blob_id_str);
+
+Open BLOB:
+
+/* query */
+$set = ibase_query("SELECT BLOB FROM BLOB_TABLE WHERE ID = 1");
+
+/* fetche a row */
+$row = ibase_fetch_object($set);
+
+/* open BLOB for read */
+$blob_id = ibase_blob_open($row->BLOB);
+
+/* get BLOB data */
+$stringBLOB = ibase_blob_get($blob_id);
+
+/* print BLOB */
+echo $stringBLOB;
+
+/* close new blob */
+ibase_blob_close($blob_id);
+
+/* free result */
+ibase_free_result($set);
+===============================================================================
+
+Contrary to it's description, the function does not always execute the query,
+unless you try fetching the results. I discovered this through the following
+code:
+
+<?php
+                $result = ibase_query($dbh,"SELECT boniid FROM
+PROC_INS_OBONI_DELIV_ADDBONITM ( ? , ? , ? , ? , null , ? )", $bon_id , 
+$plucode2 , $amount , $note ,  $discount);
+                $this->log_add(mb_convert_encoding("SELECT boniid FROM
+PROC_INS_OBONI_DELIV_ADDBONITM ( " . $bon_id . ", " . $plucode2 . ", " . 
+$amount . ", " . $note . ", " . $nullparent . ", " . $discount . " )",'utf8',
+'cp1251'));
+
+                if (!$result){
+                    $errmsg = ibase_errmsg();
+                    ibase_rollback($dbh);
+                    ibase_close($dbh);
+
+                    $this->log_add("Item (" . $mid . " - " . $plucode2 . ") :
+Error returned (" . __LINE__ . "): " . $errmsg);
+                    return "Error sending product ( $m_name). Error message:  
+$errmsg";
+                }
+
+                // item data does NOT enter the database if I don't call
+ibase_fetch_assoc
+                $row = ibase_fetch_assoc($result);
+?>
+
+This problem may be limited to FireBird 1.5 or it may not be. Either way, be
+wary of it.

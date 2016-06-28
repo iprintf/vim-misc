@@ -1,0 +1,454 @@
+
+php_check_syntax
+
+(PHP 5 <= 5.0.4)
+
+php_check_syntax — 检查PHP的语法（并执行）指定的文件
+
+说明
+
+bool php_check_syntax ( string $filename [, string &$error_message ] )
+
+对指定的 filename 进行语法检查，检测脚本的错误。
+
+此函数除了会执行（但不会输出）filename，其他与命令行中使用php -l 相似。
+
+例如，如果函数在文件 filename 中被定义了，则该函数在执行php_check_syntax()后可
+用。但是filename输出内容不会被输出。
+
+    Note:
+
+    因为某些技术原因，该函数已被弃用，并且从PHP中移除了。请以commandline使用
+    php -l somefile.php取而代之。
+
+参数
+
+filename
+
+    需要被检测的文件。
+
+error_message
+
+    如果使用了参数 error_message，它会包含语法检测出的错误信息。 error_message
+    以引用方式传递。
+
+返回值
+
+如果语法检测通过返回 TRUE，未通过或者文件无法打开则返回 FALSE。
+
+更新日志
+
+版本                          说明
+5.0.5 函数从PHP中移除。
+5.0.3 php_check_syntax()之后调用 exit() 会导致一个段错误。
+5.0.1 error_message 通过引用传递
+
+范例
+
+php -l somefile.php
+
+以上例程的输出类似于：
+
+PHP Parse error: unexpected T_STRING in /tmp/somefile.php on line 81
+
+参见
+
+  • include - include
+  • is_readable() - 判断给定文件名是否可读
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+I've given it some thought and rewritten my function to take full advantage of
+the CLI -l option (that's lower L). It requires that you enable error reporting
+via your own php.ini file (which you should edit the function to apply)
+otherwise the return result is a worthless "Error parsing".
+
+Anyway, I hope this is useful for someone. I'm sure it could use improvement,
+so use at your own risk. Demo here:
+http://kevinpeno.com/projects/php_syntax_check.php
+
+<?php
+/**
+*    Check Syntax
+*    Performs a Syntax check within a php script, without killing the parser
+(hopefully)
+*    Do not use this with PHP 5 <= PHP 5.0.4, or rename this function.
+*
+*    @params    string    PHP to be evaluated
+*    @return    array    Parse error info or true for success
+**/
+function php_check_syntax( $php, $isFile=false )
+{
+    # Get the string tokens
+    $tokens = token_get_all( '<?php '.trim( $php  ));
+   
+    # Drop our manually entered opening tag
+    array_shift( $tokens );
+    token_fix( $tokens );
+
+    # Check to see how we need to proceed
+    # prepare the string for parsing
+    if( isset( $tokens[0][0] ) && $tokens[0][0] === T_OPEN_TAG )
+       $evalStr = $php;
+    else
+        $evalStr = "<?php\n{$php}?>";
+
+    if( $isFile OR ( $tf = tempnam( NULL, 'parse-' ) AND file_put_contents( $tf
+, $php ) !== FALSE ) AND $tf = $php )
+    {
+        # Prevent output
+        ob_start();
+        system( 'C:\inetpub\PHP\5.2.6\php -c "'.dirname(__FILE__).'/php.ini" -l
+< '.$php, $ret );
+        $output = ob_get_clean();
+
+        if( $ret !== 0 )
+        {
+            # Parse error to report?
+            if( (bool)preg_match( '/Parse error:\s*syntax error,(.+?)\s+in\
+s+.+?\s*line\s+(\d+)/', $output, $match ) )
+            {
+                return array(
+                    'line'    =>    (int)$match[2],
+                    'msg'    =>    $match[1]
+                );
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+//fixes related bugs: 29761, 34782 => token_get_all returns <?php NOT as
+T_OPEN_TAG
+function token_fix( &$tokens ) {
+    if (!is_array($tokens) || (count($tokens)<2)) {
+        return;
+    }
+   //return of no fixing needed
+    if (is_array($tokens[0]) && (($tokens[0][0]==T_OPEN_TAG) || ($tokens[0][0]=
+=T_OPEN_TAG_WITH_ECHO)) ) {
+        return;
+    }
+    //continue
+    $p1 = (is_array($tokens[0])?$tokens[0][1]:$tokens[0]);
+    $p2 = (is_array($tokens[1])?$tokens[1][1]:$tokens[1]);
+    $p3 = '';
+
+    if (($p1.$p2 == '<?') || ($p1.$p2 == '<%')) {
+        $type = ($p2=='?')?T_OPEN_TAG:T_OPEN_TAG_WITH_ECHO;
+        $del = 2;
+        //update token type for 3rd part?
+        if (count($tokens)>2) {
+            $p3 = is_array($tokens[2])?$tokens[2][1]:$tokens[2];
+            $del = (($p3=='php') || ($p3=='='))?3:2;
+            $type = ($p3=='=')?T_OPEN_TAG_WITH_ECHO:$type;
+        }
+        //rebuild erroneous token
+        $temp = array($type, $p1.$p2.$p3);
+        if (version_compare(phpversion(), '5.2.2', '<' )===false)
+            $temp[] = isset($tokens[0][2])?$tokens[0][2]:'unknown';
+
+        //rebuild
+        $tokens[1] = '';
+        if ($del==3) $tokens[2]='';
+        $tokens[0] = $temp;
+    }
+    return;
+}
+?>
+===============================================================================
+
+While developing an app where I have to include PHP files written by a user, I
+came across the following problem:
+
+I used "php -l somefile.php" to check the syntax of the file I was about to
+include and if it passed, I would include it - so far so good. But in some test
+cases, the file I was including would have other includes/requires inside it.
+If one of these was invalid, then I would still get the parse error that I was
+trying to avoid.
+
+I got round it using this:
+
+<?php
+    function CheckSyntax($fileName, $checkIncludes = true)
+    {
+        // If it is not a file or we can't read it throw an exception
+        if(!is_file($fileName) || !is_readable($fileName))
+            throw new Exception("Cannot read file ".$fileName);
+       
+        // Sort out the formatting of the filename
+        $fileName = realpath($fileName);
+       
+        // Get the shell output from the syntax check command
+        $output = shell_exec('php -l "'.$fileName.'"');
+       
+        // Try to find the parse error text and chop it off
+        $syntaxError = preg_replace("/Errors parsing.*$/", "", $output, -1, 
+$count);
+       
+        // If the error text above was matched, throw an exception containing
+the syntax error
+        if($count > 0)
+            throw new Exception(trim($syntaxError));
+       
+        // If we are going to check the files includes
+        if($checkIncludes)
+        {
+            foreach(GetIncludes($fileName) as $include)
+            {
+                // Check the syntax for each include
+                CheckSyntax($include);
+            }
+        }
+    }
+   
+    function GetIncludes($fileName)
+    {
+        // NOTE that any file coming into this function has already passed the
+syntax check, so
+        // we can assume things like proper line terminations
+           
+        $includes = array();
+        // Get the directory name of the file so we can prepend it to relative
+paths
+        $dir = dirname($fileName);
+       
+        // Split the contents of $fileName about requires and includes
+        // We need to slice off the first element since that is the text up to
+the first include/require
+        $requireSplit = array_slice(preg_split('/require|include/i', 
+file_get_contents($fileName)), 1);
+       
+        // For each match
+        foreach($requireSplit as $string)
+        {
+            // Substring up to the end of the first line, i.e. the line that
+the require is on
+            $string = substr($string, 0, strpos($string, ";"));
+           
+            // If the line contains a reference to a variable, then we cannot
+analyse it
+            // so skip this iteration
+            if(strpos($string, "$") !== false)
+                continue;
+           
+            // Split the string about single and double quotes
+            $quoteSplit = preg_split('/[\'"]/', $string);
+           
+            // The value of the include is the second element of the array
+            // Putting this in an if statement enforces the presence of '' or
+"" somewhere in the include
+            // includes with any kind of run-time variable in have been
+excluded earlier
+            // this just leaves includes with constants in, which we can't do
+much about
+            if($include = $quoteSplit[1])
+            {
+                // If the path is not absolute, add the dir and separator
+                // Then call realpath to chop out extra separators
+                if(strpos($include, ':') === FALSE)
+                    $include = realpath($dir.DIRECTORY_SEPARATOR.$include);
+           
+                array_push($includes, $include);
+            }
+        }
+       
+        return $includes;
+    }
+?>
+
+This checks as many of the includes inside the file as it possibly can without
+executing anything.
+===============================================================================
+
+Hi again, here is my last contribution to the subject : this php_syntax_error()
+function returns false if there is no syntax error in $code, or an array
+($message, $line) if there is one (idea borrowed from kevin's code) .
+
+For exemple, php_syntax_error(' DELIBERTE PHP ERROR; ') returns array
+('unexpected T_STRING', 1) ;)
+
+Please note that the dead code sandbox IS important. A "return" at the
+beginning of the evaluated string can easily be broken: try eval('return;
+function strlen(){}') versus eval('if(0){function strlen(){}}').
+
+<?php
+
+function php_syntax_error($code)
+{
+    $braces = 0;
+    $inString = 0;
+
+    // First of all, we need to know if braces are correctly balanced.
+    // This is not trivial due to variable interpolation which
+    // occurs in heredoc, backticked and double quoted strings
+    foreach (token_get_all('<?php ' . $code) as $token)
+    {
+        if (is_array($token))
+        {
+            switch ($token[0])
+            {
+            case T_CURLY_OPEN:
+            case T_DOLLAR_OPEN_CURLY_BRACES:
+            case T_START_HEREDOC: ++$inString; break;
+            case T_END_HEREDOC:   --$inString; break;
+            }
+        }
+        else if ($inString & 1)
+        {
+            switch ($token)
+            {
+            case '`':
+            case '"': --$inString; break;
+            }
+        }
+        else
+        {
+            switch ($token)
+            {
+            case '`':
+            case '"': ++$inString; break;
+
+            case '{': ++$braces; break;
+            case '}':
+                if ($inString) --$inString;
+                else
+                {
+                    --$braces;
+                    if ($braces < 0) break 2;
+                }
+
+                break;
+            }
+        }
+    }
+
+    // Display parse error messages and use output buffering to catch them
+    $inString = @ini_set('log_errors', false);
+    $token = @ini_set('display_errors', true);
+    ob_start();
+
+    // If $braces is not zero, then we are sure that $code is broken.
+    // We run it anyway in order to catch the error message and line number.
+
+    // Else, if $braces are correctly balanced, then we can safely put
+    // $code in a dead code sandbox to prevent its execution.
+    // Note that without this sandbox, a function or class declaration inside
+    // $code could throw a "Cannot redeclare" fatal error.
+
+    $braces || $code = "if(0){{$code}\n}";
+
+    if (false === eval($code))
+    {
+        if ($braces) $braces = PHP_INT_MAX;
+        else
+        {
+            // Get the maximum number of lines in $code to fix a border case
+            false !== strpos($code, "\r") && $code = strtr(str_replace("\r\n", 
+"\n", $code), "\r", "\n");
+            $braces = substr_count($code, "\n");
+        }
+
+        $code = ob_get_clean();
+        $code = strip_tags($code);
+
+        // Get the error message and line number
+        if (preg_match("'syntax error, (.+) in .+ on line (\d+)$'s", $code, 
+$code))
+        {
+            $code[2] = (int) $code[2];
+            $code = $code[2] <= $braces
+                ? array($code[1], $code[2])
+                : array('unexpected $end' . substr($code[1], 14), $braces);
+        }
+        else $code = array('syntax error', 0);
+    }
+    else
+    {
+        ob_end_clean();
+        $code = false;
+    }
+
+    @ini_set('display_errors', $token);
+    @ini_set('log_errors', $inString);
+
+    return $code;
+}
+
+?>
+===============================================================================
+
+My previous code was buggy sorry, here is an update (thanks phprockstheworld).
+I can't find a way to break the dead code sandbox. Who can ?
+
+<?php
+
+function eval_syntax($code)
+{
+    $braces = 0;
+    $inString = 0;
+
+    // We need to know if braces are correctly balanced.
+    // This is not trivial due to variable interpolation
+    // which occurs in heredoc, backticked and double quoted strings
+    foreach (token_get_all('<?php ' . $code) as $token)
+    {
+        if (is_array($token))
+        {
+            switch ($token[0])
+            {
+            case T_CURLY_OPEN:
+            case T_DOLLAR_OPEN_CURLY_BRACES:
+            case T_START_HEREDOC: ++$inString; break;
+            case T_END_HEREDOC:   --$inString; break;
+            }
+        }
+        else if ($inString & 1)
+        {
+            switch ($token)
+            {
+            case '`':
+            case '"': --$inString; break;
+            }
+        }
+        else
+        {
+            switch ($token)
+            {
+            case '`':
+            case '"': ++$inString; break;
+
+            case '{': ++$braces; break;
+            case '}':
+                if ($inString) --$inString;
+                else
+                {
+                    --$braces;
+                    if ($braces < 0) return false;
+                }
+
+                break;
+            }
+        }
+    }
+
+    if ($braces) return false; // Unbalanced braces would break the eval below
+    else
+    {
+        ob_start(); // Catch potential parse error messages
+        $code = eval('if(0){' . $code . '}'); // Put $code in a dead code
+sandbox to prevent its execution
+        ob_end_clean();
+
+        return false !== $code;
+    }
+}
+===============================================================================
+
+On php syntax checking, a blog that supports a tool I like may be useful as it
+looks at remote php checking https://jresponse.net/blog/
+remote-php-syntax-checking-incron/

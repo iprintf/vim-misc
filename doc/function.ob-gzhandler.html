@@ -1,0 +1,795 @@
+
+ob_gzhandler
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+ob_gzhandler — 在ob_start中使用的用来压缩输出缓冲区中内容的回调函数。ob_start
+callback function to gzip output buffer
+
+说明
+
+string ob_gzhandler ( string $buffer , int $mode )
+
+ob_gzhandler()目的是用在ob_start()中作回调函数，以方便将gz 编码的数据发送到支持
+压缩页面的浏览器。在ob_gzhandler()真正发送压缩过的数据之前，该函数会确定（判定
+）浏览器可以接受哪种类型内容编码（"gzip","deflate",或者根本什么都不支持），然后
+返回相应的输出。所有可以发送正确头信息表明他自己可以接受压缩的网页的浏览器，都
+可以支持。 All browsers are supported since it's up to the browser to send the
+correct header saying that it accepts compressed web pages. 如果一个浏览器不支
+持压缩过的页面，此函数返回FALSE。
+
+参数
+
+buffer
+
+mode
+
+返回值
+
+更新日志
+
+版本         说明
+4.0.5 填加了 mode 参数。
+
+范例
+
+Example #1 ob_gzhandler() example
+
+<?php
+
+ob_start("ob_gzhandler");
+
+?>
+<html>
+<body>
+<p>This should be a compressed page.</p>
+</html>
+<body>
+
+注释
+
+    Note:
+
+    ob_gzhandler() 需要 zlib 扩展。
+
+    Note:
+
+    不能同时使用ob_gzhandler() 和 zlib.output_compression。也要注意使用
+    zlib.output_compression 要优于 ob_gzhandler()。
+
+参见
+
+  • ob_start() - 打开输出控制缓冲
+  • ob_end_flush() - 冲刷出（送出）输出缓冲区内容并关闭缓冲
+
+
+User Contributed Notes 41 notes
+
+===============================================================================
+
+I've just spent 5 hours fighting a bug in my application and outcome is:
+
+<?php
+// do not use
+ob_start("ob_gzhandler");
+// along with
+header('HTTP/1.1 304 Not Modified');
+
+// or in the end use
+ob_end_clean();
+?>
+
+W3C Standart requires response body to be empty if 304 header set. With
+compression on it will at least contain a gzip stream header even if your
+output is completely empty!
+
+This affects firefox (current ver.3.6.3) in a very subtle way: one of the
+requests after the one that gets 304 with not empty body gets it response
+prepended with contents of that body. In my case it was a css file and styles
+was not rendered at all, which made problem show up.
+===============================================================================
+
+The simplest way for gzip compression is:
+<?php
+if(!ob_start("ob_gzhandler")) ob_start();
+?>
+ob_start("ob_gzhandler") returns FALSE if browser doesn't support gzip, so then
+is called normal ob_start();
+===============================================================================
+
+Here are some precisions :
+
+- the "mode" arg accepts a bit field composed of PHP_OUTPUT_HANDLER_START,
+PHP_OUTPUT_HANDLER_CONT and PHP_OUTPUT_HANDLER_END. See http://www.php.net/
+manual/fr/ref.zlib.php#56216 for an example. The value that jazfresh recommends
+below (5) is the good one, because 5 == PHP_OUTPUT_HANDLER_START |
+PHP_OUTPUT_HANDLER_END.
+
+- when called INSIDE an output buffering handler, ob_gzhandler DOES NOT return
+false when the browser doesn't support compressed pages. It rather returns the
+original string.
+===============================================================================
+
+According to the manual, if ob_gzhander detects that the browser is unable to
+support deflate or gzip it returns FALSE.  Does this mean that if you use
+ob_start("ob_gzhandler"), any browsers that do not support gzip/deflate will
+receive a blank page?
+
+I've been having problems with IE6 displaying gzipped pages and adding a test:
+
+<?php
+
+if (substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')) ob_start(
+"ob_gzhandler");
+
+else ob_start();
+
+?>
+
+solved the problem.  Surely if ob_gzhandler detects a lack of support for
+deflation it should return the input unchanged and not FALSE?
+===============================================================================
+
+I just spent 30 minutes wondering why my browser wasn't getting the gzipped
+version :-O
+
+If you're using Google Web Access your pages will  be delivered to the browser
+uncompressed unless you tell GWA to ignore the specific site.
+
+Obvious, really.
+===============================================================================
+
+All versions of MSIE have a bug where they don't cache gzipd contents. If your
+application depends on caching, this is something to keep in mind. In the end,
+I did:
+
+<?php
+
+// These are so benificial, they default to true.
+if (!isset($use_page_cache))
+    $use_page_cache = 1;
+if (!isset($use_compression))
+    $use_compression = 1;
+
+// Add browsers here as we must detect them. Opera is an oddball, if we don't
+detect
+// it specifically, it will turn up as MSIE
+
+$browser="other";
+if (isset($_SERVER['HTTP_USER_AGENT'])) {
+    $agent = $_SERVER['HTTP_USER_AGENT'];
+    if (eregi("opera",$agent)){
+    $browser="opera";
+    }elseif(eregi("msie",$agent)){
+    $browser="msie";
+    }
+}
+
+if ($use_compression && !( $use_page_cache && $browser == "msie")) {
+    // Turn on compression, makes quite a difference in bandwith usage.
+    // However, MSIE (all versions) have a bug with compression and caching. So
+for MSIE
+    // it's either compression or caching. We choose caching.
+    ob_start('ob_gzhandler');
+}
+
+session_cache_limiter("must-revalidate");
+
+session_start();
+
+// ... put stuff in $content ...
+
+if ($use_page_cache) {
+    // MD5 is slow, however with a fast server (PIII or better) we should be OK
+    $hash = md5($content);
+    $headers = getallheaders();
+    if (isset($headers['If-None-Match']) && ereg($hash, $headers[
+'If-None-Match']))
+    {
+    header('HTTP/1.1 304 Not Modified');
+    exit;
+    }
+    header("ETag: \"$hash\"");
+}
+
+print $content;
+
+?>
+===============================================================================
+
+From what I can understand, quite some people seem to have problems with this
+functionality.  If you want to do this quick, like i did, you can use the
+outstanding class gzip_encode made by Leknor at http://leknor.com/code/php/view
+/class.gzip_encode.php.txt
+===============================================================================
+
+In the set_error_handler notes, there is a technique described for capturing
+all errors (even parse errors) before they are displayed the user, using a
+special error handler and output handler. If this output handler detects a
+fatal error in the output buffer, it's captured and dealt with before it can be
+displayed to the user. If no error was detected, then output buffer is
+displayed verbatim (i.e. without being compressed).
+
+If you are using this method, you can still take advantage of ob_gzhandler's
+compression. However, you MUST specify a mode argument (I'm using 4.2.2 on
+RedHat9). The mode value affects which headers are automatically added
+(Content-Encoding, etc). A value of '5' worked for me. '0' or discarding the
+argument produces a blank screen under Mozilla.
+
+<?php
+
+function my_output_handler(&$buffer) {
+  // Detect errors in the output
+  if(ereg("(error</b>:)(.+) in <b>(.+)</b> on line <b>(.+)</b>", $buffer, $regs
+)) {
+    my_error_handler(E_ERROR, $regs[2], $regs[3], $regs[4]);
+    // ...
+    // ... Insert your error handling here ...
+    // ...
+    return 'An internal error occurred.';
+  } else {
+    // The page rendered without any errors, so compress
+    // and output.
+    return ob_gzhandler($buffer, 5);
+  }
+}
+?>
+===============================================================================
+
+About the previous note from Davey:
+
+ob_start(array('ob_gzhandler',9));
+
+Does not work. The output size isn t affected at all, stays the same.
+
+ob_gzhandler compression level use zlib.output_compression_level, which is -1
+per default, level 6.
+
+To change the compression level on the fly, simply use ini_set:
+<?php
+ini_set('zlib.output_compression_level', 1);
+ob_start('ob_gzhandler');
+echo 'This is compressed at level 1';
+?>
+===============================================================================
+
+When using ob_start("ob_gzhandler"), be aware that the output buffer has to be
+flushed in order to invoke the ob_gzhandler callback function.
+
+This may not always happen. For example, if you use ob_get_contents() to copy
+the output buffer to a string for further manipulation and then silently
+discard the buffer with ob_end_clean(), the output buffer is never "flushed"
+and as a result, the ob_gzhandler callback function is never invoked. And your
+pages won't be compressed.
+
+This will be the case, for example, if you use the PHP Fusebox architecture/
+framework.
+===============================================================================
+
+I have a very well tested module in my framework (ie: running in production
+environments for a couple of years) called 'fastpage', which takes care of both
+memcaching and gzipping for frequently requested content.  It memcaches one
+version of each unique page both gzipped and non-gzipped, and returns the
+appropriate version based upon the browser's Accept-encoding header.
+
+Use is:
+$page_spec = array($dependent,$variables,$go,$here);
+if(!fastpage_display('content_id',$page_spec)) {
+... make page here ...
+fastpage_displayed('content_id',$page_spec);
+}
+
+Unfortunately, on IE8 beta (in IE8 mode, or in IE7 emulation mode), the
+fastpage-enabled content was not being un-gzipped.  IE would request the
+content, a 200 status and correct byte count would appear in the server
+logfile, and IE would show no errors.  However, CSS would not be applied and
+Javascript would not execute.
+
+The only fix I can find right now is to disable gzip entirely for this
+browser.  User agent string is: Mozilla/4.0 (compatible; MSIE 8.0; Windows NT
+5.1; Trident/4.0; .NET CLR 2.0.50727
+
+The same output works fine in firefox (windows, linux, mac), and in safari.
+
+Versions are: zlib 1.2.3-r1 / php 5.2.6-r7 / lighttpd 1.4.20
+
+So much for the 'this has been fixed in IE7' comment, above...
+===============================================================================
+
+Hi,
+
+if you are using apache, I think you are much better of using apache's
+compression, as this will also compress static text files (css, js, html, etc)
+and it will keep your php-code clean.
+
+See http://httpd.apache.org/docs/2.0/mod/mod_deflate.html for an excellent how
+to.
+
+And for other webservers, I'm pretty sure they have equivalents.
+
+Cheers, Ronald
+===============================================================================
+
+in reply to nyarl at hotep dot co dot uk;
+
+Your 'solution' doesn't really work since session_id() will return an empty
+string if there is no session started. Therefore it will never return NULL.
+Yes the problem is gone, but also is your output buffering xD
+
+I haven't found a solution to this problem yet... It seems ie6 just doesn't
+wanna play nice - like it does most of the times.
+===============================================================================
+
+I wrote a simple script that I use on my site. Bandwidth consumption dropped
+dramatically. Pages shrunk 3-5 times.
+
+The script simulates the results of using this function directly but by using
+regular output buffering with ob_start. So you get to output gzip and play with
+it before you do.
+
+You can find the script with explanations here:
+http://www.tellinya.com/art2/106/gzip-compress-html
+
+Cheers and input is always welcome fellow coders!
+===============================================================================
+
+Someone previously mentioned that MSIE doesn't cache gzipped content. This is
+false. He misread the source of information. In fact, IE will cache gzipped
+content no matter what. Here is the quote from the mailing list:
+
+The reason the COMPRESSED responses are, in fact,
+always getting cached no matter what "Vary:" field name
+is present is just as I suspected... it is because MSIE
+decides it MUST cache responses that arrive with
+"Content-Encoding: gzip" because it MUST have a
+disk ( cache ) file to work with in order to do the
+decompression.
+
+Source: http://lists.over.net/pipermail/mod_gzip/2002-December/006826.html
+===============================================================================
+
+faisun at sina dot com:
+If you read up on output buffering, you'll see that if an output buffer
+callback returns false, this instructs PHP to output the original string
+untouched.  That's why ob_gzhandler() returns false if the encoding is not
+supported.   When ob_start("ob_gzhandler") is used and encoding is not
+supported, ob_gzhandler() will return false and PHP outputs the original,
+uncompressed string.
+
+jsnell at e-normous dot com:
+Output buffering callback functions accept up to two parameters, so this would
+probably work better for your situation:
+
+<?php
+function ob_gz_handler_no_errors($buffer, $mode)
+{
+    @ob_gzhandler($buffer, $mode);
+}
+
+ob_start('ob_gzhandler_no_errors');
+?>
+
+However, if you're trying to suppress errors caused by headers already being
+sent, it would be better to start the output buffering earlier, before any
+output can be sent.
+===============================================================================
+
+If you want to suppress errors (such as for cases when headers are already
+sent) and you don't want to write or patch your error_handler, you need to
+create an intermediate callback:
+
+function ob_gz_handler_no_errors($buffer)
+{
+    @ob_gzhandler($buffer);
+}
+
+ob_start('ob_gzhandler_no_errors');
+===============================================================================
+
+DON'T compress/gzip your Error pages :
+
+i can think of two good reasons not to compress your error pages:
+1. You want to make sure that people can read you error pages, don't you ?
+2. Compressing pages have a "side effect" : it's smaller !! if you return "HTTP
+/1.x 404 Document Not fount" (or any other HTTP error), MSIE will display it's
+built in error message, not yours if it's small than 513bytes. (see "HOW TO:
+Turn Off the Internet Explorer 5.x and 6.x 'Show Friendly HTTP Error Messages'
+Feature on the Server Side" http://support.microsoft.com/default.aspx?scid=kb;
+en-us;Q294807 )
+===============================================================================
+
+When writing scripts for distribution, I would usually "null" out the following
+deprecated superglobals so that users who uses the script will not be able to
+use them.
+<?php
+$HTTP_GET_VARS = null;
+$HTTP_POST_VARS = null;
+$HTTP_COOKIE_VARS = null;
+$HTTP_POST_FILES = null;
+$HTTP_SERVER_VARS = null;
+?>
+
+However, when using ob_start('ob_gzhandler'), one of those superglobals somehow
+disable this function.
+
+Found out that it was $HTTP_SERVER_VARS that's causing the problems.
+
+<?php
+ob_start('ob_gzhandler');
+
+$HTTP_GET_VARS = null;
+$HTTP_POST_VARS = null;
+$HTTP_COOKIE_VARS = null;
+$HTTP_POST_FILES = null;
+/**
+* Causing the trouble
+*/
+//$HTTP_SERVER_VARS = null;
+?>
+
+I don't know why it does that, but I just want to point that out.
+===============================================================================
+
+Please be aware that, as other users have already mentioned, the compression
+will fail if there are characters before the php start tag "< ?".
+
+This is also the case when saving files in UTF-8 format with editors such as
+Ultraedit. Make sure you save the file using the defined option UTF-8 NO BOM or
+delete the BOM otherwise the two UTF BOM characters will be written at the
+start of the file.
+===============================================================================
+
+So why doesn't the web server just do this by default? 
+This works for me if I do:
+ini_set('zlib.output_compression_level', 3);  ob_start("ob_gzhandler");
+or even just:
+ob_start("ob_gzhandler");
+
+I did the level 3 compression, I think the default was 6 and I didn't want to
+put too much load on the server.  For a 895k file (my largest) the compression
+levels were:
+1 = 189k
+3 = 178k
+4 = 163k
+6 = 156k    (I believe 6 is the default if you leave out the ini_set)
+9 = 155k
+I use http://www.whatsmyip.org/mod_gzip_test/ to check the sizes.
+
+FYI: This works with dynamic files in Movable Type 3.x (I'm testing it in 3.2)
+I've got the above command in the first line of my mtview.php file.
+
+More info here: http://www.whatsmyip.org/forum/viewtopic.php?t=43
+
+On several sites I've read the some browsers don't like compressed CSS.
+===============================================================================
+
+if you want to send an output to the browser (which accepts gzip), and you
+haven't set the buffering callback ob_start("ob_gzhandler"), you may use the
+gzencode() function.
+
+header("Content-Encoding: gzip");
+echo gzencode("some output", 9, FORCE_GZIP);
+===============================================================================
+
+i had a LOT of trouble trying to get gzipping working correctly
+i kept getting a blank page on the first load, although subsequent pages loaded
+fine.
+i tried stuff with ob_flush and ob_end_clean and all kinds of stuff i didn't
+understand. i'm totally confused about different versions of php and different
+methods of gzipping.
+
+in the end, i got it working (maybe i'll understand it later).
+i ended up using phpBB's code (stripped of non-gz stuff, and ever-so-slightly
+modified)
+http://phpbb.com/
+
+index.php:
+------------
+<?php
+require_once('top.php');
+
+echo "<html>\n<head>\n<title>Gzip Test</title>\n<body>\n<h1>testing</h1>\n</
+body>\n</html>";
+
+require_once('bottom.php');
+?>
+
+gz_header.php - taken form phpBB's page_header.php
+--------------
+<?php
+    $phpver = phpversion();
+
+    $useragent = (isset($_SERVER["HTTP_USER_AGENT"]) ) ? $_SERVER[
+"HTTP_USER_AGENT"] : $HTTP_USER_AGENT;
+
+    if ( $phpver >= '4.0.4pl1' && ( strstr($useragent,'compatible') || strstr(
+$useragent,'Gecko') ) )
+    {
+        if ( extension_loaded('zlib') )
+        {
+            ob_start('ob_gzhandler');
+        }
+    }
+    else if ( $phpver > '4.0' )
+    {
+        if ( strstr($HTTP_SERVER_VARS['HTTP_ACCEPT_ENCODING'], 'gzip') )
+        {
+            if ( extension_loaded('zlib') )
+            {
+                $do_gzip_compress = TRUE;
+                ob_start();
+                ob_implicit_flush(0);
+
+                header('Content-Encoding: gzip');
+            }
+        }
+    }
+?>
+gz_footer.php - taken form phpBB's page_tail.php
+------------
+<?php
+// Compress buffered output if required and send to browser
+if ( $do_gzip_compress )
+{
+    //
+    // Borrowed from php.net!
+    //
+    $gzip_contents = ob_get_contents();
+    ob_end_clean();
+
+    $gzip_size = strlen($gzip_contents);
+    $gzip_crc = crc32($gzip_contents);
+
+    $gzip_contents = gzcompress($gzip_contents, 9);
+    $gzip_contents = substr($gzip_contents, 0, strlen($gzip_contents) - 4);
+
+    echo "\x1f\x8b\x08\x00\x00\x00\x00\x00";
+    echo $gzip_contents;
+    echo pack('V', $gzip_crc);
+    echo pack('V', $gzip_size);
+}
+
+exit;
+?>
+
+i must admit to not seeing this working in opera 7.11. perhaps i will figure
+that one out.
+if there is anything i should change email me and i can edit my post
+===============================================================================
+
+Following up on my previous post - it appears that while:
+
+<?php
+ini_set("zlib.output_compression", "Off"); // with no headers yet sent
+// followed by the rest of your code...
+?>
+
+did not work in php 4.2.3, it did begin to work as of php 4.3.0 as an override
+to the php.ini "zlib.output_compression=on" setting. I did not see this in the
+change log.
+
+In light of this, I'd say using zlib.output_compression is definitely the way
+to go over ob_gzhandler() in most cases.
+===============================================================================
+
+To pass the second argument to ob_gzhandler() which specifies what level of
+compression should be used (which I assume is 1-9 as with the gzip binary, with
+9 using the most processor and time to do, 4 is the standard IIRC) you must
+call ob_start() like so:
+
+ob_start(array('ob_gzhandler',9));
+
+- Davey
+===============================================================================
+
+Differences between zlib.output_compression and ob_gzhandler:
+
+zlib.output_compression runs in parallel with script execution - it begins
+compressing as soon as it receives any output from your script, and sends data
+to the client each time its buffer (4K by default) gets full. ob_gzhandler
+(actually 'ob_start("ob_gzhandler");') will not start compressing until the
+script flushes (or, usually, exits), and will in turn send the entire
+compressed document at once - which makes it more susceptible to causing a
+perception of latency.
+
+Advantage: zlib.output_compression
+
+On the other hand, ob_gzhandler gives you script-level control allowing you to
+use it selectively or to unset it after setting it in certain cases. Despite
+some documentation to the contrary, zlib.output_compression does not appear to
+be able to be set or unset on a script level; you must instead set it globally
+(in php.ini) or in your webserver configs or .htaccess files, possibly using
+FilesMatch-type mechanisms to control which scripts it will or won't apply to -
+which could get unwieldy for large projects - particularly those which employ
+PHP to produce images and other non-text output in addition to normal text
+output.
+
+Advantage: ob_gzhandler
+
+Net advantage: depends on your particular needs. I'm trying
+zlib.output_compression for now, but I miss the flexibility that ob_gzhandler
+would provide.
+
+p.s. here's an Apache 1.3.* httpd.conf/.htaccess file snippet that demonstrates
+the syntax for conditionally setting zlib.output_compression:
+
+<FilesMatch "\.(php|html?)$">
+# turn it on with the buffer set to 2K using php_value
+php_value zlib.output_compression 2048
+# or just turn it on using php_flag
+# php_flag zlib.output_compression On
+</FilesMatch>
+===============================================================================
+
+if you get errors like:
+"output handler 'ob_gzhandler' cannot be used twice"
+if you are using
+"ob_start("ob_gzhandler");"
+
+check for your php.ini file, it should look like this:
+
+output_buffering = Off  ; delete the 4096k value
+output_handler =
+zlib.output_compression = Off
+===============================================================================
+
+I have noticed that if you have the php setting for zlib.output_compression set
+to 'On' AND you attempt to use hte ob_gzhandler handler to ob_start () the
+output you get in the browser WILL be garbled in PHP 4.2.3.  I'm guessing that
+the output buffering is compressing the output to be sent, and then zlib is
+doing it a second time, but the browser is only uncompressing it once.
+
+But using either one will give you the same results (compressed output from the
+script)
+===============================================================================
+
+If you are trying to use the ob_gzhandler in a MSHTA (Microsoft HTML
+Application) you will find that your pages does not show up. the MSHTA-browser
+probably says it can handle gzip, but it just won't work (IE:6, PHP:4.1.2)
+===============================================================================
+
+Problem revelate by xn@bnw.com
+
+cause real problem when you have a global call
+to ob_gzhandler , for example in an include configuration
+file , and you want send a non gzip content , for any reason ...
+
+To resolve it ,
+
+put this after your global call to ob_gzhandler
+
+include("conf_that_call_ob_gzhandler.php");
+-->ob_end_clean();
+-->header("Content-Encoding: none");
+
+If you try to overload the header before the the ob_gzhandler call
+or during the buffering output , it will not work .
+( probably erase at the call of ob_gzhandler  and not allow during
+buffering ).
+
+Hope this help
+===============================================================================
+
+RFC 2616 suggests that a more correct way to compress documents on the fly is
+to use gzip transfer encoding rather than gzip content encoding.    However,
+it's perhaps not advisable to use this since client support for it is extremely
+limited.
+
+The difference is most evident when you come to save a file from your browser. 
+If it's gzip content encoded then the browser should (and may well) save it
+gzipped.  If it's gzip transfer encoded then the browser should uncompress it
+first.
+===============================================================================
+
+Following Browsers send
+Accept-Encoding: gzip
+but have Problems with
+Content-Encoding: gzip
+
+* netscape < 5 have problems with CSS/Javascript parts sendet in gzip
+* opera 5.x,6 store downloads compressed
+* lynx 2.8.4 store downloads compressed but tells this with attaching ".gz" to
+the filename
+
+You should know about:
+* Internet Explorer 5.x,6 should turned to HTTP 1.1 to get "Accept-Encoding:
+gzip"
+* In Mozilla 1.0 RC2 you can write the "Accept-Encoding:" in Preferences/
+Advanced/HTTP Networking
+===============================================================================
+
+if you call ob_end_clean() after ob_start("ob_gzhandler"), the
+"Content-Encoding: gzip" header will still get sent (assuming the browser
+supports the encoding).  if you don't call ob_start() again with the
+ob_gzhandler callback function, the output will not be compressed, but the
+header will say it is.  this causes mozilla (as of build 2002032808) to display
+a blank page.
+===============================================================================
+
+To get this to work properly, you have to compile PHP with "--with-zlib". If
+you don't, you won't get any errors, it just won't actually compress anything.
+This is a phenomenal thing. For just a small bit of processor time, you can
+DRASTICALLY reduce the bandwidth requirement of your scripts. There are very
+few circumstances in which this should not be used.
+===============================================================================
+
+Seems others have had problems with IE6 giving blank pages erratically when
+using ob_start("ob_gzhandler"). One reason may be that a session has already
+been started, so try:
+
+<?php
+  if (session_id() === null ) ob_start('ob_gzhandler');
+?>
+
+Worked for me. :)
+===============================================================================
+
+One of the earlier posts says caching of gzipped files is broken in all
+versions of MSIE. The following blog entry appears to declare that this has
+been fixed in IE7, but I haven't verified this.
+
+http://blogs.msdn.com/ie/archive/2005/10/31/487509.aspx
+===============================================================================
+
+No matter the circumstances, you MUST NOT check the user agent string to find
+out if gzip compression is enabled. HTTP defines the Accept-Encoding header for
+exactly this purpose and you MUST check it before enabling compression.
+===============================================================================
+
+IE 6+ appears to validate the CRC and disgard invalid gzip content FYI...
+Brian
+===============================================================================
+
+It is also possible to use ob_gzhandler to compress css and javascript files,
+however some browsers such as firefox expect content type text/css on css
+files.
+
+To get around this send a content type header:
+
+<?php
+ob_start('ob_gzhandler');
+?>
+
+.... your css content ...
+
+<?php
+header("Content-Type: text/css");
+header("Content-Length: ".ob_get_length());
+ob_end_flush();
+?>
+===============================================================================
+
+So much code...here's a lighter/faster one:
+<?php
+
+if ( $do_gzip_compress )
+{
+    $gzip_size        = ob_get_length();
+    $gzip_contents    = ob_get_clean(); // PHP < 4.3 use ob_get_contents() +
+ob_end_clean()
+   
+    echo "\x1f\x8b\x08\x00\x00\x00\x00\x00",
+         substr(gzcompress($gzip_contents, 9), 0, - 4), // substr -4 isn't
+needed
+         pack('V', crc32($gzip_contents)),    // crc32 and
+         pack('V', $gzip_size);               // size are ignored by all the
+browsers i have tested
+}
+
+exit;
+?>
+I wouldn't recommande using level 9, waste of CPU, something between 1 and 6
+would be more resonable
+I have tested without the substr/crc/size and it worked flawlessly in IE5/5.5/
+6, Opera7.11/7.21, IE5.5 MAC
+===============================================================================
+
+It may seem obvious but if you use ob_start("ob_gzhandler"),  make sure no
+content is unintentionally echo'ed before : this could be blank lines before '
+<?php' or after '?>' tags in included files or even errors.
+
+Otherwise, only a part of the content (the content sent after ob_start()) will
+be compressed, which will confuse the client.
+
+Setting compression using zlib.output_compression either in php.ini or in
+Apache configuration file (with directive php_flag) is safer in this regard.

@@ -1,0 +1,255 @@
+
+ReflectionClass::newInstanceArgs
+
+(PHP 5 >= 5.1.3, PHP 7)
+
+ReflectionClass::newInstanceArgs — 从给出的参数创建一个新的类实例。
+
+说明
+
+public object ReflectionClass::newInstanceArgs ([ array $args ] )
+
+创建一个类的新实例，给出的参数将传递到类的构造函数。
+
+参数
+
+args
+
+    这个参数以 array 形式传递到类的构造函数。
+
+返回值
+
+返回类的新实例。
+
+范例
+
+Example #1 ReflectionClass::newInstanceArgs() 的基本用法
+
+<?php
+$class = new ReflectionClass('ReflectionFunction');
+$instance = $class->newInstanceArgs(array('substr'));
+var_dump($instance);
+?>
+
+以上例程会输出：
+
+object(ReflectionFunction)#2 (1) {
+  ["name"]=>
+  string(6) "substr"
+}
+
+错误／异常
+
+如果类的构造函数不是 public 的将导致产生一个 ReflectionException。
+
+当 args 指定了一个或多个参数，而类不具有构造函数时,将导致一个
+ReflectionException。
+
+参见
+
+  • ReflectionClass::newInstance() - 从指定的参数创建一个新的类实例
+  • ReflectionClass::newInstanceWithoutConstructor() - 创建一个新的类实例而不调
+    用它的构造函数
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+I use reflection class and also detect whether arguments are passed by
+reference or passed by value
+and then initiate/call the method successfully with those arguments:
+
+<?php
+    if (count($args) > 1)
+    {
+        if (method_exists($class_name,  '__construct') === false)
+        {
+            exit("Constructor for the class <strong>$class_name</strong> does
+not exist, you should not pass arguments to the constructor of this class!");
+        }
+   
+        $refMethod = new ReflectionMethod($class_name,  '__construct');
+        $params = $refMethod->getParameters();
+   
+        $re_args = array();
+   
+        foreach($params as $key => $param)
+        {
+            if ($param->isPassedByReference())
+            {
+                $re_args[$key] = &$args[$key];
+            }
+            else
+            {
+                $re_args[$key] = $args[$key];
+            }
+        }
+   
+        $refClass = new ReflectionClass($class_name);
+        $class_instance = $refClass->newInstanceArgs((array) $re_args);
+    }
+?>
+===============================================================================
+
+Be aware that calling the method newInstanceArgs with an empty array will still
+call the constructor with no arguments. If the class has no constructor then it
+will generate an exception.
+
+You need to check if a constructor exists before calling this method or use try
+and catch to act on the exception.
+===============================================================================
+
+It should be noted that the the values in the array are mapped to constructor
+arguments positionally, rather than by name, so using an associative array will
+not make any difference.
+===============================================================================
+
+This is the way I dynamically instantiate objects in my lightweight IoC
+container
+
+<?php
+
+class SimpleContainer {
+
+  // ...
+
+  // Creates an instance of an object with the provided array of arguments
+  protected function instantiate($name, $args=array()){
+    if(empty($args))
+      return new $name();                                                     
+                                                                               
+                   
+    else {
+      $ref = new ReflectionClass($name);
+      return $ref->newInstanceArgs($args);
+    }
+  }
+  // ...
+}
+?>
+
+I explicitly do NOT handle the case where a user passes constructor arguments
+for a constructor-less class, as I this SHOULD fail.
+===============================================================================
+
+the newInstanceArgs function cannot call a class' constructor if it has
+references in its arguments, so be careful what you pass into it:
+
+<?php
+class Foo {
+    function __construct (&$arr) {
+        $this->arr = &$arr;
+    }
+    function createInstance () {
+        $reflectionClass = new ReflectionClass("Bar");
+       
+        return $reflectionClass->newInstanceArgs(array($this, $this->arr));
+    }
+    function mod($key, $val) {
+        $this->arr[$key] = $val;
+    }
+}
+
+class Bar {
+    function __construct (&$foo, &$arr) {
+        $this->foo = &$foo;
+        $this->arr = &$arr;
+    }
+    function mod($key, $val) {
+        $this->arr[$key] = $val;
+    }
+}
+
+$arr = array();
+
+$foo = new Foo($arr);
+
+$arr["x"] = 1;
+
+$foo->mod("y", 2);
+
+$bar = $foo->createInstance();
+
+$bar->mod("z", 3);
+
+echo "<pre>";
+print_r($arr);
+print_r($foo);
+print_r($bar);
+echo "</pre>";
+
+/*
+Output:
+Warning: Invocation of Bar's constructor failed in [code path] on line 31
+
+Fatal error: Call to a member function mod() on a non-object in [code path] on
+line 58
+*/
+?>
+===============================================================================
+
+Hack to properly instantiate class with private constructor:
+
+<?php
+
+class TestClass
+{
+    private $property;
+    private function __construct($argument)
+    {
+        $this->property = $argument;
+    }
+}
+
+$ref = new ReflectionClass(TestClass::class);
+$instance = $ref->newInstanceWithoutConstructor();
+var_dump($instance);
+echo PHP_EOL . '------------------------' . PHP_EOL . PHP_EOL;
+$constructor = $ref->getConstructor();
+$constructor->setAccessible(true);
+$constructor->invokeArgs($instance, ['It works!']);
+var_dump($instance);
+
+// Output:
+// class TestClass#3 (1) {
+//   private $property =>
+//   NULL
+// }
+//
+// ------------------------
+//
+// class TestClass#3 (1) {
+//   private $property =>
+//   string(9) "It works!"
+// }
+
+?>
+===============================================================================
+
+Annoyingly, this will throw an exception for classes with no constructor even
+if you pass an empty array for the arguments. For generic programming you
+should avoid this function and use call_user_func_array with newInstance.
+===============================================================================
+
+I misunderstood this function to be a sort of setter of Reflection::newInstance
+() arguments in an array form rather than a creator of new instances itself.
+
+This function is equivilant to call_user_func_array() while
+Reflection::newInstance() is equivilant to call_user_func()
+===============================================================================
+
+With PHP 5.6, we can use the ... (T_ELLIPSIS) operator
+
+<?php
+
+class Test {
+    public function __construct($a, $b) {
+        echo $a . ' ' . $b;
+    }
+}
+
+$args = array(12, 34);
+new Test(... $args); // Displays "12 34"
+
+?>

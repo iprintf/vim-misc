@@ -1,0 +1,529 @@
+
+SoapServer::SoapServer
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+SoapServer::SoapServer — SoapServer constructor
+
+说明
+
+public SoapServer::SoapServer ( mixed $wsdl [, array $options ] )
+
+This constructor allows the creation of SoapServer objects in WSDL or non-WSDL
+mode.
+
+参数
+
+wsdl
+
+    To use the SoapServer in WSDL mode, pass the URI of a WSDL file. Otherwise,
+    pass NULL and set the uri option to the target namespace for the server.
+
+options
+
+    Allow setting a default SOAP version (soap_version), internal character
+    encoding (encoding), and actor URI (actor).
+
+    The classmap option can be used to map some WSDL types to PHP classes. This
+    option must be an array with WSDL types as keys and names of PHP classes as
+    values.
+
+    The typemap option is an array of type mappings. Type mapping is an array
+    with keys type_name, type_ns (namespace URI), from_xml (callback accepting
+    one string parameter) and to_xml (callback accepting one object parameter).
+
+    The cache_wsdl option is one of WSDL_CACHE_NONE, WSDL_CACHE_DISK,
+    WSDL_CACHE_MEMORY or WSDL_CACHE_BOTH.
+
+    There is also a features option which can be set to SOAP_WAIT_ONE_WAY_CALLS
+    , SOAP_SINGLE_ELEMENT_ARRAYS, SOAP_USE_XSI_ARRAY_TYPE.
+
+    The send_errors option can be set to FALSE to sent a generic error message
+    ("Internal error") instead of the specific error message sent otherwise.
+
+范例
+
+Example #1 SoapServer::SoapServer() example
+
+<?php
+
+$server = new SoapServer("some.wsdl");
+
+$server = new SoapServer("some.wsdl", array('soap_version' => SOAP_1_2));
+
+$server = new SoapServer("some.wsdl", array('actor' => "http://example.org/
+ts-tests/C"));
+
+$server = new SoapServer("some.wsdl", array('encoding'=>'ISO-8859-1'));
+
+$server = new SoapServer(null, array('uri' => "http://test-uri/"));
+
+class MyBook {
+    public $title;
+    public $author;
+}
+
+$server = new SoapServer("books.wsdl", array('classmap' => array('book' => 
+"MyBook")));
+
+?>
+
+更新日志
+
+版本            说明
+5.2.0 Added the typemap option.
+
+参见
+
+  • SoapClient::SoapClient() - SoapClient constructor
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+Here's my solution to make SOAP-headers based authentication.
+
+1). First of all we define the decorator class for our service class:
+
+<?php
+
+class SOAP_Service_Secure
+{
+    protected $class_name    = '';
+    protected $authenticated = false;
+
+    // -----
+
+    public function __construct($class_name)
+    {
+        $this->class_name = $class_name;
+
+    }
+
+    public function AuthHeader($Header)
+    {
+        if($Header->username == 'foo' && $Header->password == 'bar')
+            $this->authenticated = true;
+
+    }
+
+    public function __call($method_name, $arguments)
+    {
+        if(!method_exists($this->class_name, $method_name))
+            throw new Exception('method not found');
+
+        $this->checkAuth();
+
+        return call_user_func_array(array($this->class_name, $method_name), 
+$arguments);
+
+    }
+
+    // -----
+
+    protected function checkAuth()
+    {
+        if(!$this->authenticated)
+            HTML_Output::error(403);
+
+    }
+
+}
+
+?>
+
+2). Then we pass an instance of it to the SoapServer object.
+
+<?php
+
+    $Service = new SOAP_Service_Secure('My_Service');
+
+    $Server = new SoapServer('my-service.wsdl');
+
+    $Server->setObject($Service);
+
+    $Server->handle();
+
+?>
+
+3). Implementing a client:
+
+<?php
+
+class AuthHeader
+{
+    public $username;
+    public $password;   
+   
+}
+
+// -----
+
+$Client = new SoapClient('http://example.com/my-service.wsdl', array(
+    'exceptions' => true
+));
+
+// -----
+
+$AuthHeader = new AuthHeader();
+
+$AuthHeader->username = 'foo';
+$AuthHeader->password = 'bar';
+
+$Headers[] = new SoapHeader('http://example.com', 'AuthHeader', $AuthHeader);
+
+$Client->__setSoapHeaders($Headers);
+
+// -----
+
+$Result = $Client->someMethod();
+
+?>
+
+As you can see SoapServer uses our decorator class to answer client requests.
+If request contains "AuthHeader" SOAP-header then our wrapper checks the
+credentials and sets $authenticated parameter to TRUE (on success). Then
+SoapServer calls requested method on our wrapper, we are intercepting it with
+__call(), checking authentication and if everything is allright we are calling
+real method on the "My_Service" class.
+===============================================================================
+
+Calling a server from .NET:
+If you intend to call a PHP SOAP server from a .NET Client, there are a couple
+of things to be aware of. First of all, I've only got it working in WSDL mode.
+If anyone have made it work in non-WSDL-mode, I'd be interested in hearing
+that. In WSDL-mode it works, but both input and output-parameters are wrapped
+from .NET.
+
+Basically, a function with this signature:
+
+<?php
+function SomeFunction($param1, $param2)
+{
+   return $param1+$param2;
+}
+?>
+
+Must be rewritten to this, without changing the WSDL:
+
+<?php
+function SomeFunction($data)
+{
+$valueArray = get_object_vars($data);
+$param1 = $valueArray["param1"];
+$param2 = $valueArray["param2"];
+return Array("SomeFunctionResult" => $param1+$param2);
+}
+?>
+===============================================================================
+
+A general thing i've experienced with SOAP and which, for some reason, isn't
+mentioned in ANY tutorials I've read, is this: The server tends to cache the
+interface. This means that if you add a function you'll usually get errors that
+the function doesn't exist.
+If your SOAP server is written in PHP just delete the cache files, usually
+located in /tmp, whenever you add a function, or modify the parameters. These
+are named wsdl-******something******
+I hope this will spare someone the grief I've experienced with this.
+===============================================================================
+
+Beware: in wsdl mode SoapServer does not properly validate if
+request matches the given WSDL. It just skips invalid elements. http://
+bugs.php.net/bug.php?id=45966
+===============================================================================
+
+If you are getting an error about always_populate_raw_post_data or Can't find
+HTTP_RAW_POST_DATA then it means the server isn't getting info from the (you
+guessed!) raw post data.
+Try doing something like this when coding your server:
+
+<?php
+$server = new SoapServer(null,array('uri' => "http://localhost/namespace"));
+$server->setClass('myClass');
+$data = file_get_contents('php://input');
+$server->handle($data);
+?>
+
+Worked for me!
+===============================================================================
+
+In response to Timo, it is possible to access Soap Headers from the SoapServer
+class and call methods to handle them. Rather than treat them seperately, they
+are treated as part of the Soap request.
+
+To pass approximately wss standard headers (note that I couldn't get attributes
+from the header tags without text preprocessing, so standards compliance failed
+me), first create the following class on the client:
+<?php
+/*
+* Login credentials to be supplied as a SOAP header
+* Class used to ensure Soap Head tags in correct format.
+*/
+class SoapHeaderUsernameToken
+{
+    /** @var int Password */
+    public $Password;
+    /** @var int Username */
+    public $Username;
+   
+    public function __construct($l, $p)
+    {
+        $this->Password = $p;
+        $this->Username = $l;
+    }
+}
+?>
+
+Now, set the Soap Headers:
+
+<?php
+    // Set the login headers
+    $wsu = 'http://schemas.xmlsoap.org/ws/2002/07/utility';
+    $usernameToken = new SoapHeaderUsernameToken($this->username, $this->
+password);
+    $soapHeaders[] = new SoapHeader($wsu, 'UsernameToken', $usernameToken);
+?>
+
+Next instantiate the client object, add the headers and make the call:
+
+<?php
+    $client = new SoapClient( $wsdl);
+    $client->__setSoapHeaders( $soapHeaders );
+    $client->__soapCall( $method, $params );
+?>
+
+Moving to the Server, you'll handle the Soap call somewhat like:
+<?php
+// Instantiate server with relevant wsdl & class.
+$server = new SoapServer( 'mysoapwsdl.wsdl' );
+$server->setClass(  'mysoapclass' );
+$server->handle();
+?>
+
+The key here is that the headers will be handled first by the server which will
+call the method mysoapclass::UsernameToken. The way we work this is the
+UsernameToken method authenticates the username / password combo and sets a
+protected class var. Then when the Soap Body is handled and the appropriate
+class method called, a check is made at the start of callable method to ensure
+authentication has been passed.
+
+If the Soap auth header is missing, the soap body method will be called anyway
+so the check is essential in case a malevolent client deliberately leaves the
+headers off.
+
+An example server class is below (missing various methods which I leave as an
+exercise to the reader to provide):
+<?php
+class mysoapclass {
+    /*
+     * Authentication function
+     * This is called by the Soap header of the same name. The function name is
+a Ws-security standard auth tag
+     * and corresponds to the header tag.
+     *
+     * @param string username
+     * @param string password
+     */
+    public function UsernameToken( $username, $password ){
+        // Store username for logging
+        $this->Username = $username;
+
+        $auth = new $this->AuthClass( $username, $password, get_class($this) );
+        if( $auth->IsValid() ){
+            $this->Authenticated = true;
+        } else {
+            $this->ThrowSoapFault( 'auth' );
+        }
+    }
+
+    /*
+     * Test method
+     */
+    public function felineResponse( $action ){
+
+        // Place this at the start of every exposed method
+        // This is because the SoapServer will attempt to call
+        // if no authentication headers are passed.
+        if(!$this->Authenticated){
+            $this->ThrowSoapFault( 'auth' );
+        }
+
+        if( $action == 'stroke' ){
+            return 'purr';
+        } elseif( $action == 'tease' ){
+            return 'hiss';
+        }
+    }
+
+}
+?>
+
+This is a adaptation of stuff I found online somewhere...
+===============================================================================
+
+There is a option key 'send_errors' that can be use not to expose PHP (fatal)
+error messages to the SoapFault message text.
+
+If server is created with a 'send_errors' => false option provied, the
+faultstring of the SoapFault thrown upon running into a PHP error would be a
+generic “Internal Error” instead of e.g. “Class 'MySecretClass' not found.”.
+
+Example:
+$server = new SoapServer('http://path.to/my.wsdl', array('send_errors' =>
+false));
+
+The only place this is mentioned is in a discussion under the bug #42214.
+However, it is not mentioned in the manual page, at least not at the time of
+writing this note.
+===============================================================================
+
+typemap isn't very well documented at all, but I thought I might be able to use
+it to clean some things up and map between object fields and XML attributes
+that have different names but are conceptually the same thing.
+
+Unfortunately type map works at the object level, not the field level like I
+was hoping, requiring you to provide functions for building the entire object
+from an XML string (using the XML parser of your choice) and vice versa.  I
+found the wording of the docs very confusing, both parameters are strings which
+are function names.
+
+the to_xml function will take the object as a parameter and return a string,
+the from_xml function will take an xml string as a parameter and should return
+an object of the correct type.
+
+Both methods can also throw SOAPFaults or other exceptions which can be caught
+from the actual client method call ($client->someRemoteMethod())
+
+There are decent usage examples in the PHP build tests:  http://cvs.php.net/
+viewvc.cgi/php-src/ext/soap/tests/?diff_format=u
+The typemap tests are at the bottom.
+===============================================================================
+
+While others may not do what I did, I thought if my WSDL was not local and
+needed to be grabbed via HTTP, I should set the $wsdl var in __construct() to
+NULL, and set the 'uri' value in the additional parameters.
+
+This does enable non-WSDL mode, which only causes problems when using complex
+types.  Since your complex types are not respected/imported, you get unexpected
+problems out the wazoo.
+
+So if you are exposing your class via "setClass" to the SOAP server and for
+some reason your "types" aren't being returned, you can do this:
+
+<?php
+$server = new SoapServer('http://soap.example.com/genwsdl.php?api');
+$server->setClass('myClass'); // previously included or defined
+$server->handle();
+?>
+
+This is NOT correct:
+<?php
+$server = new SoapServer(NULL, array('uri' => 'http://soap.example.com/
+genwsdl.php?api'));
+?>
+
+I sure wish someone really smart would go into a bit more detail in this
+documentation of the SoapServer options, why they exist, when to use them,
+etc.  I find the SOAP docs lacking polish.
+===============================================================================
+
+Things that I've searched a lot for that might be useful to somebody:
+
+If you are using Zend Studio, you can easily generate a wsdl file using the
+WSDL Generator if you document your code using PHPDOC.
+
+One thing a lot of people are searching everywhere, is the way to pass/return
+an array of variables... In your PHPDOC block use the [] after the variable
+name like this
+
+<?php
+class SoapServer {
+  /**
+   * This is My Soap Server
+   * @param integer[] $a
+   * @param string[] $b
+   * @param bar[] $c
+  */
+  public function foo ($a, $b, $c){
+  }
+}
+?>
+This way, the function will require an array of integers for $a, an array of
+strings for $b and an array of objets of Class "bar" for $c
+
+In the WSDL, you'll find something like this
+
+<xsd:complexType name="barArray">
+  <xsd:complexContent>
+    <xsd:restriction base="soapenc:Array">
+      <xsd:attribute ref="soapenc:arrayType" wsdl:arrayType="typens:bar[]"/>
+    </xsd:restriction>
+  </xsd:complexContent>
+</xsd:complexType>
+<xsd:complexType name="bar">
+  <xsd:all>
+    <xsd:element name="var1" type="xsd:boolean"/>
+    <xsd:element name="var2" type="xsd:integer"/>
+    <xsd:element name="var3" type="xsd:string"/>
+  </xsd:all>
+</xsd:complexType>
+
+I didn't define anywhere the barArray type, Zend's WSDL Generator generated it
+automatically...
+
+If you are not using Zend you can generate the wsdl file manually.
+
+Hope it helps someone
+===============================================================================
+
+only complementing Juamei answer, the header is passed to UsernameToken method
+as an object with 2 properties Username and Password.
+===============================================================================
+
+In response to jas [at] dansupport (dot) dk:
+
+All you need to do is disable wsdl caching like so:
+
+ini_set("soap.wsdl_cache_enabled", "0");
+
+Then you don't need to delete any cache files.
+===============================================================================
+
+It is currently not possible to process soap headers from within a SoapServer
+instance. If soap headers are specified within a WSDL file, you have to extract
+the headers manually from the request.
+
+For more information please see http://bugs.php.net/bug.php?id=38309
+===============================================================================
+
+The SoapServer can not generate WSDL's yet. (PHP 5.3.5)
+It'll exit with "SOAP-ENV:ServerWSDL generation is not supported yet"
+===============================================================================
+
+If you're running $soapServer->handle() and getting an empty server response
+and no errors (even in the logs), check if you're instantiating the SOAP server
+like this:
+
+<?php
+$soapServer = new SoapServer('http://www.example.com/soap/endpoint?wsdl');
+//...
+$soapServer->handle(); // Result: Empty response
+?>
+
+Instantiating the SOAP server with one the following should fix it:
+
+<?php
+// With slash before ?wsdl:
+$soapServer = new SoapServer('http://www.example.com/soap/endpoint/?wsdl');
+// Or instantiate with the "uri" option, which works with or without the
+trailing slash:
+$soapServer = new SoapServer(null, array('uri' => 'http://www.example.com/soap/
+endpoint?wsdl'));
+$soapServer = new SoapServer(null, array('uri' => 'http://www.example.com/soap/
+endpoint/?wsdl'));
+?>
+
+Hope that helps somebody! Zend_Soap_Server wasn't working for me, and I
+eventually found that it had to do with the native PHP SOAP class (which ZF
+uses).

@@ -1,0 +1,254 @@
+
+DOMNode::replaceChild
+
+(PHP 5, PHP 7)
+
+DOMNode::replaceChild — Replaces a child
+
+说明
+
+public DOMNode DOMNode::replaceChild ( DOMNode $newnode , DOMNode $oldnode )
+
+This function replaces the child oldnode with the passed new node. If the
+newnode is already a child it will not be added a second time. If the
+replacement succeeds the old node is returned.
+
+参数
+
+newnode
+
+    The new node. It must be a member of the target document, i.e. created by
+    one of the DOMDocument->createXXX() methods or imported in the document by
+    DOMDocument::importNode.
+
+oldnode
+
+    The old node.
+
+返回值
+
+The old node or FALSE if an error occur.
+
+错误／异常
+
+DOM_NO_MODIFICATION_ALLOWED_ERR
+
+    Raised if this node is readonly or if the previous parent of the node being
+    inserted is readonly.
+
+DOM_HIERARCHY_REQUEST_ERR
+
+    Raised if this node is of a type that does not allow children of the type
+    of the newnode node, or if the node to put in is one of this node's
+    ancestors or this node itself.
+
+DOM_WRONG_DOCUMENT_ERR
+
+    Raised if newnode was created from a different document than the one that
+    created this node.
+
+DOM_NOT_FOUND
+
+    Raised if oldnode is not a child of this node.
+
+参见
+
+  • DOMNode::appendChild() - Adds new child at the end of the children
+  • DOMNode::removeChild() - Removes child from list of children
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+If you are trying to replace more than one node at once, you have to be careful
+about iterating over the DOMNodeList.  If the old node has a different name
+from the new node, it will be removed from the list once it has been replaced. 
+Use a regressive loop:
+
+<?php
+
+$xml = new DOMDocument;
+$xml->load('docfile.xml');
+
+$elements = $xml->getElementsByTagNameNS('http://www.example.com/NS/', '*');
+$i = $elements->length - 1;
+while ($i > -1) {
+    $element = $elements->item($i);
+    $ignore = false;
+
+    $newelement = $xml>createTextNode('Some new node!');
+    $element->parentNode->replaceChild($newelement, $element);
+    $i--;
+}
+
+?>
+
+The loop counter ($i) will always be in the list's interval as removed elements
+indexes are above the counter.
+===============================================================================
+
+Here is a simple example for replacing a node:
+
+Let's define our XML like so:
+
+<?php
+$xml = <<<XML
+<?xml version="1.0"?>
+<root>
+  <parent>
+     <child>bar</child>
+     <child>foo</child>
+  </parent>
+</root>
+XML;
+?>
+
+If we wanted to replace the entire <parent> node, we could do something like
+this:
+
+<?php
+// Create a new document fragment to hold the new <parent> node
+$parent = new DomDocument;
+$parent_node = $parent ->createElement('parent');
+
+// Add some children
+$parent_node->appendChild($parent->createElement('child', 'somevalue'));
+$parent_node->appendChild($parent->createElement('child', 'anothervalue'));
+
+// Add the keywordset into the new document
+// The $parent variable now holds the new node as a document fragment
+$parent->appendChild($parent_node);
+?>
+
+Next, we need to locate the old node:
+
+<?php
+// Load the XML
+$dom = new DomDocument;
+$dom->loadXML($xml);
+
+// Locate the old parent node
+$xpath = new DOMXpath($dom);
+$nodelist = $xpath->query('/root/parent');
+$oldnode = $nodelist->item(0);
+?>
+
+We then import and replace the new node:
+
+<?php
+// Load the $parent document fragment into the current document
+$newnode = $dom->importNode($parent->documentElement, true);
+
+// Replace
+$oldnode->parentNode->replaceChild($newnode, $oldnode);
+
+// Display
+echo $dom->saveXML();
+?>
+
+Our new node is successfully imported:
+
+<?xml version="1.0"?>
+<root>
+<parent><child>somevalue</child><child>anothervalue</child></parent>
+</root>
+===============================================================================
+
+1) If your XPath query returns a NodeList including a unique item, or if you
+know for sure the order of the items returned, you can use the "item(n)" syntax
+instead of the "foreach" syntax.
+This can greatly improve you code lisibility.
+s the method name implies, replaceChild cannot replace a node itself but a
+child of a node.
+The trick is to use replaceChild on the parent node of your Xpath query result.
+
+<?xml version="1.0" ?>
+<action>
+<actionGlobal>
+  <actionGlobalFR>sometext</actionGlobalFR>
+<actionGlobal>
+</action>
+
+$frag = $doc->createElement("actionGlobalFR");  
+$fragA = $doc->createTextNode("anothertext");
+$frag->appendChild($fragA);
+     
+$xpResult = $xp->query("/action/actionGlobal/actionGlobalFR");  
+$blipblip = $xpResult->item(0)->parentNode->replaceChild($ajout, $xpResult->
+item(0));
+
+2) Also, as the method name implies, replaceChild cannot replace a node itself
+but a child of a node.
+Still it is possible to replace a node pointed by XPath istead of its child.
+The trick is to use replaceChild on the parent node of your Xpath query result.
+
+<?xml version="1.0" ?>
+<action>
+  <FR>French Text</FR>
+</action>
+
+<?php
+$frag = $doc->createElement("EN");  
+$fragA = $doc->createTextNode("English Text");
+$frag->appendChild($fragA);
+     
+$xpResult = $xp->query("/action/FR");  
+$blipblip = $xpResult->item(0)->parentNode->replaceChild($fragA, $xpResult->
+item(0));
+?>
+
+Et voil� !
+
+This produces :
+<?xml version="1.0" ?>
+<action>
+  <EN>English Text</EN>
+</action>
+
+....................................................
+
+3) Also, be carefull, you CANNOT replace a node that doesn't exist.
+While this may seems obvious, it is easy to forget.
+
+Consider this :
+<?xml version="1.0" ?>
+<action>
+  <EN></EN>
+</action>
+
+You cannot use replaceChild() to turn this into :
+<?xml version="1.0" ?>
+<action>
+  <EN>Some text</EN>
+</action>
+
+The reason is that since the <EN></EN> element is empty, it has no child (this
+is clearer to understand if you consider that <EN></EN> can be written <EN />).
+The fact that you intend to put some text inbetween <EN> and </EN> does not
+change the fact that it has no text yet, thus no child yet.
+When dealing with DOM, do not take your dream for the reality. The DOM parser
+doen't care about your dreams. If an element is currently empty, it has no
+child, whatever you intend to fill in.
+
+Thus, the solution to teh problem is to use appendChild intead of replaceChild
+:
+
+<?php
+$fragA = $doc->createTextNode("Some Text");
+$xpResult = $xp->query("/action/EN");  
+$blipblip = $xpResult->item(0)->appendChild($fragA);
+?>
+
+This produces the awaited :
+<?xml version="1.0" ?>
+<action>
+  <EN>Some Text</EN>
+</action>
+
+....................................................
+
+4) Note that the description of replaceChild in the doc is wrong. Arguments
+have been inverted.
+The correct description is :
+object DOMNode->replaceChild (object newnode, object oldnode)

@@ -1,0 +1,528 @@
+
+imagecreate
+
+(PHP 4, PHP 5, PHP 7)
+
+imagecreate — 新建一个基于调色板的图像
+
+说明
+
+resource imagecreate ( int $x_size , int $y_size )
+
+imagecreate() 返回一个图像标识符，代表了一幅大小为 x_size 和 y_size 的空白图像
+。
+
+推荐使用 imagecreatetruecolor()。
+
+Example #1 新建一个新的 GD 图像流并输出图像
+
+<?php
+header("Content-type: image/png");
+$im = @imagecreate(100, 50)
+    or die("Cannot Initialize new GD image stream");
+$background_color = imagecolorallocate($im, 255, 255, 255);
+$text_color = imagecolorallocate($im, 233, 14, 91);
+imagestring($im, 1, 5, 5,  "A Simple Text String", $text_color);
+imagepng($im);
+imagedestroy($im);
+?>
+
+参见 imagedestroy() 和 imagecreatetruecolor()。
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+to create an image from a BMP file, I made this function, that return a
+resource like the others ImageCreateFrom function:
+
+<?php
+/*********************************************/
+/* Fonction: ImageCreateFromBMP              */
+/* Author:   DHKold                          */
+/* Contact:  admin@dhkold.com                */
+/* Date:     The 15th of June 2005           */
+/* Version:  2.0B                            */
+/*********************************************/
+
+function ImageCreateFromBMP($filename)
+{
+//Ouverture du fichier en mode binaire
+   if (! $f1 = fopen($filename,"rb")) return FALSE;
+
+//1 : Chargement des ent tes FICHIER
+   $FILE = unpack("vfile_type/Vfile_size/Vreserved/Vbitmap_offset", fread($f1,
+14));
+   if ($FILE['file_type'] != 19778) return FALSE;
+
+//2 : Chargement des ent tes BMP
+   $BMP = unpack('Vheader_size/Vwidth/Vheight/vplanes/vbits_per_pixel'.
+                 '/Vcompression/Vsize_bitmap/Vhoriz_resolution'.
+                 '/Vvert_resolution/Vcolors_used/Vcolors_important', fread($f1,
+40));
+   $BMP['colors'] = pow(2,$BMP['bits_per_pixel']);
+   if ($BMP['size_bitmap'] == 0) $BMP['size_bitmap'] = $FILE['file_size'] - 
+$FILE['bitmap_offset'];
+   $BMP['bytes_per_pixel'] = $BMP['bits_per_pixel']/8;
+   $BMP['bytes_per_pixel2'] = ceil($BMP['bytes_per_pixel']);
+   $BMP['decal'] = ($BMP['width']*$BMP['bytes_per_pixel']/4);
+   $BMP['decal'] -= floor($BMP['width']*$BMP['bytes_per_pixel']/4);
+   $BMP['decal'] = 4-(4*$BMP['decal']);
+   if ($BMP['decal'] == 4) $BMP['decal'] = 0;
+
+//3 : Chargement des couleurs de la palette
+   $PALETTE = array();
+   if ($BMP['colors'] < 16777216)
+   {
+    $PALETTE = unpack('V'.$BMP['colors'], fread($f1,$BMP['colors']*4));
+   }
+
+//4 : Cr ation de l'image
+   $IMG = fread($f1,$BMP['size_bitmap']);
+   $VIDE = chr(0);
+
+   $res = imagecreatetruecolor($BMP['width'],$BMP['height']);
+   $P = 0;
+   $Y = $BMP['height']-1;
+   while ($Y >= 0)
+   {
+    $X=0;
+    while ($X < $BMP['width'])
+    {
+     if ($BMP['bits_per_pixel'] == 24)
+        $COLOR = unpack("V",substr($IMG,$P,3).$VIDE);
+     elseif ($BMP['bits_per_pixel'] == 16)
+     { 
+        $COLOR = unpack("n",substr($IMG,$P,2));
+        $COLOR[1] = $PALETTE[$COLOR[1]+1];
+     }
+     elseif ($BMP['bits_per_pixel'] == 8)
+     { 
+        $COLOR = unpack("n",$VIDE.substr($IMG,$P,1));
+        $COLOR[1] = $PALETTE[$COLOR[1]+1];
+     }
+     elseif ($BMP['bits_per_pixel'] == 4)
+     {
+        $COLOR = unpack("n",$VIDE.substr($IMG,floor($P),1));
+        if (($P*2)%2 == 0) $COLOR[1] = ($COLOR[1] >> 4) ; else $COLOR[1] = (
+$COLOR[1] & 0x0F);
+        $COLOR[1] = $PALETTE[$COLOR[1]+1];
+     }
+     elseif ($BMP['bits_per_pixel'] == 1)
+     {
+        $COLOR = unpack("n",$VIDE.substr($IMG,floor($P),1));
+        if     (($P*8)%8 == 0) $COLOR[1] =  $COLOR[1]        >>7;
+        elseif (($P*8)%8 == 1) $COLOR[1] = ($COLOR[1] & 0x40)>>6;
+        elseif (($P*8)%8 == 2) $COLOR[1] = ($COLOR[1] & 0x20)>>5;
+        elseif (($P*8)%8 == 3) $COLOR[1] = ($COLOR[1] & 0x10)>>4;
+        elseif (($P*8)%8 == 4) $COLOR[1] = ($COLOR[1] & 0x8)>>3;
+        elseif (($P*8)%8 == 5) $COLOR[1] = ($COLOR[1] & 0x4)>>2;
+        elseif (($P*8)%8 == 6) $COLOR[1] = ($COLOR[1] & 0x2)>>1;
+        elseif (($P*8)%8 == 7) $COLOR[1] = ($COLOR[1] & 0x1);
+        $COLOR[1] = $PALETTE[$COLOR[1]+1];
+     }
+     else
+        return FALSE;
+     imagesetpixel($res,$X,$Y,$COLOR[1]);
+     $X++;
+     $P += $BMP['bytes_per_pixel'];
+    }
+    $Y--;
+    $P+=$BMP['decal'];
+   }
+
+//Fermeture du fichier
+   fclose($f1);
+
+return $res;
+}
+?>
+===============================================================================
+
+It is easy and simple example to convert Text to Image with selected font.
+It helps me to display Bangla text as image when users have no installed bangla
+font.
+
+I hope it can help you too!
+
+<?php
+//Kip the font file together or write proper location.
+makeImageF("Life in PHP.","CENTURY.TTF");
+
+function makeImageF($text, $font="CENTURY.TTF", $W=200, $H=20, $X=0, $Y=0, 
+$fsize=18, $color=array(0x0,0x0,0x0), $bgcolor=array(0xFF,0xFF,0xFF)){
+       
+    $im = @imagecreate($W, $H)
+        or die("Cannot Initialize new GD image stream");
+       
+    $background_color = imagecolorallocate($im, $bgcolor[0], $bgcolor[1], 
+$bgcolor[2]);        //RGB color background.
+    $text_color = imagecolorallocate($im, $color[0], $color[1], $color[2]);   
+        //RGB color text.
+           
+    imagettftext($im, $fsize, $X, $Y, $fsize, $text_color, $font, $text);
+   
+    header("Content-type: image/gif");               
+    return imagegif($im);
+}
+
+?>
+===============================================================================
+
+Based on DHKold's contribution I realized imagecreatefrombmp() to support all
+1-, 4-, 8-, 16-, 24- und 32-Bit Bitmaps. Finally Fabien Ménager brought it to
+perfection for the project DOMPDF. Feel free to use it:
+https://code.google.com/p/dompdf/source/browse/trunk/dompdf/include/
+functions.inc.php?spec=svn504&r=504#551
+===============================================================================
+
+doesnt ruin the image but adds display to the output.
+this will generate an image with a random color. if you like it you can use it
+because you have the RBG result too.
+<?php
+header("content-type:image/png");
+$im = imagecreate(100, 100);
+$a = sprintf('%04x',mt_rand(0, 65535));
+$b = sprintf('%04x',mt_rand(0, 65535));
+$c = sprintf('%04x',mt_rand(0, 65535));
+$white = imagecolorallocate($im,$a,$b,$c);
+imagepng($im);
+imagedestroy($im);
+echo "\n\n\n$a-$b-$c";
+?>
+===============================================================================
+
+On windows.
+
+When you get undefined function image* it means the gd library isnt being used.
+Check the php.ini file. Make sure the php_gd.dll isnt commented out. Restarting
+apache should result in the image functions working.
+===============================================================================
+
+GD UPGRADE PROBLEM:
+I used imagecreate with gd 1.6 to make resized images of big photos. Then, when
+using the same script on gd 2.0, the colors got all wrong.
+Using imagecreatetruecolor() fixed the problem!
+===============================================================================
+
+Don't try and create an image with a really large width and/or height. First,
+$width x $height is (at least) the bytes of memory that need to be allocated.
+Secondly, if you exceed the range of int for either parameter, Apache crashes
+(before allocating any memory).
+Don't ask how I figured this out ;)
+===============================================================================
+
+The function ImageCreate() creates a PALETTE image.
+The function ImageCreateFromJPEG() creates a TRUE COLOR image.
+
+When you use GD 2.0 you will get an error when you try to use ImageCopy()
+with one True color image and one Palette image.
+
+Be sure to convert one of the images before using ImageCopy() or use
+ImageCreateTrueColor() instead of ImageCreate().
+===============================================================================
+
+Dont forget to use ImageDestoy after showed image. I forgot it, my webpage had
+about 15 pictures what was generated by GD and webserver died very fastly
+(server was Dual Xeon 900MHz and 4G RAM :[[ ). It died cos of not enough memory
+:\
+===============================================================================
+
+to compile GD support on some linux distributions you have to include these
+with the ./configure command :
+--with=gd=/usr --with-jpeg=/usr --with-png=/usr --with-zlib=/usr
+
+(i had to include this on Redhat 6.1)
+this becase the libraries are in /usr/lib instead of /lib
+===============================================================================
+
+Pay attention to a problem I encountered.
+Png images created with the PHP function seems to be very badly recognised by
+old browsers, especially -well, mainly - by IE 4.0 (crash of the browser).
+I think this is probably due to the fact that, when IE 4.0 was released, the
+png format was either very recent, either not very used, because of the
+widespread jpeg and gif formats...
+So, if you plan to dynamically create images for a web site to be seen by IE
+4.0 users, think of it...
+May'be the jpeg format will do the job better.
+===============================================================================
+
+It seems that imagecreate creates a grayscale image with gd2
+===============================================================================
+
+How I fixed my "undefined function imagecreate()" problem:
+I was having the same problem many have reported where most of PHP worked but
+the gd functions didn't.  I'd installed the RedHat rpm php-4.0.1pl2.  It said
+(phpinfo.php) that it had been configured with the '--with-gd=shared' option. 
+In my /usr/lib directory, I had both libgd.so.1.8.3 and libgd.a.  I decided to
+compile with the static library instead, so I downloaded the sources and built
+with all the same configuration flags except that I used --with-gd=/usr.  Now
+my gd library works!!!
+===============================================================================
+
+Loads a file based on its filetype and returns false if it fails.
+
+<?php
+function imagecreatefromfile($path, $user_functions = false)
+{
+    $info = @getimagesize($path);
+   
+    if(!$info)
+    {
+        return false;
+    }
+   
+    $functions = array(
+        IMAGETYPE_GIF => 'imagecreatefromgif',
+        IMAGETYPE_JPEG => 'imagecreatefromjpeg',
+        IMAGETYPE_PNG => 'imagecreatefrompng',
+        IMAGETYPE_WBMP => 'imagecreatefromwbmp',
+        IMAGETYPE_XBM => 'imagecreatefromwxbm',
+        );
+   
+    if($user_functions)
+    {
+        $functions[IMAGETYPE_BMP] = 'imagecreatefrombmp';
+    }
+   
+    if(!$functions[$info[2]])
+    {
+        return false;
+    }
+   
+    if(!function_exists($functions[$info[2]]))
+    {
+        return false;
+    }
+   
+    return $functions[$info[2]]($path);
+}
+?>
+===============================================================================
+
+// A simple XY graph
+
+<html>
+<head>
+       
+<title>XY Graph</title>
+
+<h2>Practice XY Graph</h2>
+</head>
+<body>
+
+<?php
+$left = 0;
+$top = 0;
+$x_size = 400;
+$y_size = 400;
+
+$char_width = 8;
+$char_height = 11;
+
+$x_start = $x_left + 100;
+$y_start = $top + $char_height * 1.5;
+$x_end = $x_start + $x_size;
+$y_end = $y_start + $y_size;
+$right = $x_start + $x_size + 40;
+$bottom = $y_start + $y_size + $char_height * 1.5;
+
+$graph_n = 100;
+for($i = 0; $i < $graph_n; $i++ )
+    {
+    $graph_x[$i] = $i;
+    $graph_y[$i] = $i * $i;
+    }
+
+    $min_x = 9e99;
+    $min_y = 9e99;
+    $max_x = -9e99;
+    $max_y = -9e99;
+
+    $avg_y = 0.0;
+   
+    for($i = 0; $i < $graph_n; $i++ )
+        {
+        if( $graph_x[$i] < $min_x )
+            $min_x = $graph_x[$i];
+
+        if( $graph_x[$i] > $max_x )
+            $max_x = $graph_x[$i];
+
+        if( $graph_y[$i] < $min_y )
+            $min_y = $graph_y[$i];
+
+        if( $graph_y[$i] > $max_y )
+            $max_y = $graph_y[$i];
+
+        $avg_y += $graph_y[$i];
+        }
+   
+    $avg_y = $avg_y / $graph_n;
+
+    $min_x = 0;
+    $min_y = 0;
+    $max_x += $max_x * 0.05;
+    $max_y += $max_y * 0.05;
+
+$image = ImageCreate($right - $left, $bottom - $top);
+$background_color = imagecolorallocate($image, 255, 255, 255);
+$text_color = imagecolorallocate($image, 233, 14, 91);
+
+$grey = ImageColorAllocate($image, 204, 204, 204);
+$white = imagecolorallocate($image, 255, 255, 255);
+$black = imagecolorallocate($image, 0, 0, 0);
+$red = imagecolorallocate($image, 255, 0, 0);
+
+imagerectangle($image, $left, $top, $right - 1, $bottom - 1, $black );
+imagerectangle($image, $x_start, $y_start, $x_end, $y_end, $grey );
+
+for($i = 0; $i < $graph_n; $i++ )
+   {
+   $pt_x = $x_start + ($x_end-$x_start)*($graph_x[$i]-$min_x)/($max_x-$min_x);
+   $pt_y = $y_end - ($y_end - $y_start)*($graph_y[$i]-$min_y)/($max_y-$min_y);
+
+//  imagesetpixel( $image, $pt_x, $pt_y, $black );
+   imagechar($image, 2, $pt_x - 3, $pt_y - 10, '.', $black);
+   }
+
+$string = sprintf("%2.5f", $max_y);
+imagestring($image, 4, $x_start - strlen($string) * $char_width, $y_start - 
+$char_width, $string, $black);
+
+$string = sprintf("%2.5f", $min_y);
+imagestring($image, 4, $x_start - strlen($string) * $char_width, $y_end - 
+$char_height, $string, $black);
+
+$string = sprintf("%2.5f", $min_x);
+imagestring($image, 4, $x_start - (strlen($string) * $char_width)/2, $y_end, 
+$string, $black);
+   
+$string = sprintf("%2.5f", $max_x);
+imagestring($image, 4, $x_end - (strlen($string) * $char_width) / 2, $y_end, 
+$string, $black);
+
+$x_title = 'x axis';
+$y_title = 'y axis';
+
+imagestring($image, 4, $x_start + ($x_end - $x_start) / 2 - strlen($x_title) * 
+$char_width / 2, $y_end, $x_title, $black);
+
+imagestring($image, 4, $char_width, ($y_end - $y_start) / 2, $y_title, $black);
+
+header('Content-type: image/png');
+$filename = sprintf("%d.png", time());
+ImagePNG($image,$filename);
+ImageDestroy($image);
+
+printf("<img src='%s'> ", $filename);
+?>
+
+</body>
+</html>
+===============================================================================
+
+to install on UBUNTU do the following..
+
+sudo apt-get install php5-gd
+
+After installing the package I restarted the apache
+
+sudo /etc/init.d/apache reload
+
+goto love ubuntu...
+===============================================================================
+
+You can set it up so you can write a text which is controled from the URL.
+
+Like this...
+
+<?php
+header("Content-type: image/png");
+$im = @imagecreate(128, 16) or die("Cannot Initialize new GD image stream");
+$bc = imagecolorallocate($im, 0, 255, 255);
+$tc = imagecolorallocate($im, 0, 0, 0);
+imagestring($im, 1, 4, 4,  $t, $tc);
+imagepng($im);
+imagedestroy($im);
+?>
+
+Then when you use the image, use this...
+
+<img src="http://www.yourdomain.com/stuff/cool_image.php?t=Text">
+
+This will create an image with a cyan background, and in black text it will say
+"Text"
+
+EMail me at foxlovr1@cox.net or aquafox90@yahoo.com for comments/questions.
+===============================================================================
+
+ImagePNG($pic,"./dir/pic.png");
+
+To save image as a file, I had to create a directory "dir" and CHMOD 777 to
+give read, write, and execute permission for everyone - or it wouldn't save
+it...
+===============================================================================
+
+This is how you can create a thumbnail with maximum height and width. This way
+it will fit nicely in a gallery table. In this example $im is the source image
+<?
+    //calculate thumb size
+            $ow = imagesx($im);
+            $oh = imagesy($im);
+            $maxh = 100;
+            $maxw = 150;
+            $new_h = $oh;
+            $new_w = $ow;
+
+            if($oh > $maxh || $ow > $maxw){
+               $new_h = ($oh > $ow) ? $maxh : $oh*($maxw/$ow);
+               $new_w = $new_h/$oh*$ow;
+            }
+
+            //create dst image
+            $dst_img = ImageCreateTrueColor($new_w,$new_h);
+            //resize and copy image
+            ImageCopyResized($dst_img, $im, 0,0,0,0, $new_w, $new_h, ImageSX
+($im), ImageSY($im));   
+            $function_image_new($dst_img,$galdir.$file);
+?>
+===============================================================================
+
+Here's how I resolved the "Fatal error: Call to undefined function: imagecreate
+()" error using Gentoo:
+
+1) add a USE flag for gdb in /etc/make.conf
+ 
+   USE="3dnow avi [whatever else you have] gdb"
+
+   Note: here's a list of all of the USE flags:
+   http://www.gentoo.org/dyn/use-index.xml
+
+2) unmerged mod_php
+
+*Note* It could take awhile to "remerge" as it may need to compile several
+dependancies...do this during not production hours and have a backup if you
+absolutely cannot have downtime
+
+   emerge -C mod_php
+
+3) emerged mod_php
+
+   emerge -p mod_php
+    # find out if it's going to take awhile
+
+4) edit /etc/php/apach2-php4/php.ini
+     uncomment the "extension=php_gd2.dll" line
+
+5) Restart apache2
+
+    /etc/init.d/apache2 restart
+
+Hope this helps!
+
+--
+Cooper Stevenson
+GenCom
+http://www.gencom.us

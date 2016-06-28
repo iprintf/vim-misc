@@ -1,0 +1,222 @@
+
+DOMDocument::save
+
+(PHP 5, PHP 7)
+
+DOMDocument::save — Dumps the internal XML tree back into a file
+
+说明
+
+public int DOMDocument::save ( string $filename [, int $options ] )
+
+Creates an XML document from the DOM representation. This function is usually
+called after building a new dom document from scratch as in the example below.
+
+参数
+
+filename
+
+    The path to the saved XML document.
+
+options
+
+    Additional Options. Currently only LIBXML_NOEMPTYTAG is supported.
+
+返回值
+
+Returns the number of bytes written or FALSE if an error occurred.
+
+更新日志
+
+版本             说明
+5.1.0 Added the options parameter
+
+范例
+
+Example #1 Saving a DOM tree into a file
+
+<?php
+
+$doc = new DOMDocument('1.0');
+// we want a nice output
+$doc->formatOutput = true;
+
+$root = $doc->createElement('book');
+$root = $doc->appendChild($root);
+
+$title = $doc->createElement('title');
+$title = $root->appendChild($title);
+
+$text = $doc->createTextNode('This is the title');
+$text = $title->appendChild($text);
+
+echo 'Wrote: ' . $doc->save("/tmp/test.xml") . ' bytes'; // Wrote: 72 bytes
+
+?>
+
+参见
+
+  • DOMDocument::saveXML() - Dumps the internal XML tree back into a string
+  • DOMDocument::load() - Load XML from a file
+  • DOMDocument::loadXML() - Load XML from a string
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+The XML parser converts the text of an XML document into UTF-8, even if you
+have set the character encoding of the XML, for example as a second parameter
+of the DOMDocument constructor. After parsing the XML with the load() command
+all its texts have been converted to UTF-8.
+
+In case you append text nodes with special characters (e. g. Umlaut) to your
+XML document you should therefore use utf8_encode() with your text to convert
+it into UTF-8 before you append the text to the document. Otherwise you will
+get an error message like "output conversion failed due to conv error" at the
+save() command. See example below:
+
+<?php
+// Text to insert into XML below
+$txt = "a text with special characters like 'ä', 'ß', 'Ü' etc.";
+
+// Create Instance of DOMDocument
+$dom =  new DOMDocument;
+// Load XML file
+// Was created before with DOMDocument('1.0', 'iso-8859-1')
+$dom = $dom->load("file.xml");
+// Find the parent node
+$parent = $dom->documentElement;
+// Create Instance of DomXPath
+$xpath = new DomXPath($dom);
+// new node will be inserted before this node
+$next = $xpath->query("//parentnode/childnode");
+// Create the new element
+$new_elem = $dom->createElement('new_elem');
+// Insert the new element
+$parent->insertBefore($new_elem, $next->item(0));
+// DOMXML = utf-8! (will be converted to iso-8859-1 only at 'save()')
+// prevents error message "output conversion failed due to conv error" at 'save
+()'
+$txt = utf8_encode($txt);
+// Create new text node with utf-8 encoded string
+$nodetext = $dom->createTextNode("$txt");
+// Append text node to new element
+$nodetext = $new_elem->appendChild($nodetext);
+// save
+$dom->save("file.xml");
+?>
+
+Hope this helps someone.
+
+siegparr
+===============================================================================
+
+It took me forever to discover that
+DOMDocument->formatOutput = true
+will only have an effect on documents that are loaded from disk if one also
+sets
+DOMDocument->preserveWhiteSpace = false ....
+
+Hope this saves somebody a headache.
+===============================================================================
+
+I had been hitting my head against the wall when I couldn't get an edited XML
+file to save due to file permissions, even though I knew that it was OK.
+
+Eventually I realised that for some odd reason, when I went to save the XML
+file, it would try to write the file to the root directory.
+
+As such, use realpath() to keep the complete system path to the XML file when
+you load it:
+
+<?php
+$myfile = 'myxml.xml';
+$myfile = realpath($myfile);
+$doc = new DOMDocument('1.0');
+$doc->load($myfile);
+
+// Let's just add a couple of elements for good measure
+$root = $doc->documentElement;
+
+$title = $doc->createElement('title');
+$title = $root->appendChild($title);
+
+$text = $doc->createTextNode('This is a title');
+$text = $title->appendChild($text);
+
+$doc->save($myfile);
+?>
+===============================================================================
+
+I just intend to bring my little contribution to the use of DOMDocument::save()
+function along with PHP serialize() function.
+
+Sometimes you could have to serialize a PHP object before you put it into a XML
+structure (or other..). And then I suppose you could have to save this XML
+structure in a file. Of course, you will further need to read this file and
+unserialize it before to use its content.
+
+The problem appears when there are some properties described as Protected in
+the object to be serialized.
+
+As it’s written in the PHP documentation, serialize function add for those
+protected properties an asterisk before the name of the property along with a
+NULL character on each side of the asterisk.
+In this case, the DOMDocument::save function will stop the save operation just
+before the first NULL character met in the string to be saved, because PHP
+consider it as a potential risk.
+So, after that, the unserialize operation of the file become impossible.
+
+To solve that, here is a first solution to apply :
+
+For the serialize , before the DOMDocument::save() ::
+$data_serial = explode("\x00\x2A\x00", serialize($object));  //take off the
+'NULL * NULL' string
+$data_serial = implode("\x5C\x30\x2A\x5C\x30", $data_serial);    //and replace
+with '\0*\0' string
+
+Before the unserialize :
+$data_serial = explode("\x5C\x30\x2A\x5C\x30", $serialized_object);    // take
+off the '\0*\0' string
+$serial_object = implode("\x00\x2A\x00", $data_serial);      // and replace
+with 'NULL * NULL' string as included by the previous serialize
+
+And a second solution :
+
+For the serialize, before the DOMDocument::save() :
+$serialized_object = addslashes(serialize($object)) ;
+
+Before re-using the object in your application :
+$object = unserialize(stripslashes($serialized_object)) ;
+
+Hope this will help some.
+===============================================================================
+
+When creating a DOMDocument from scratch and saving it, the encoding will be
+utf-8, although it's declared as iso-8859-1.
+
+When loading an XML-file declared and saved as iso-8859-1, php will keep the
+correct encoding when it's saved after changes are made.
+
+Php converts files declared as iso-8859-1 to utf-8 internally. To add text
+containing special characters, the text must be encoded as utf-8. When the
+document is saved, special characters are converted to iso-8859-1.
+
+To save an xml created from scratch, use fopen/fwrite and utf8_decode:
+  
+   $doc = new DOMDocument('1.0', 'iso-8859-1');
+
+//Add som nodes and text with apropriate methods
+  
+   $f = fopen('xmlfile.xml', 'w+');
+   fwrite($f, utf8_decode($doc->saveXML()));
+   fclose($f);
+===============================================================================
+
+In addition to:
+DOMDocument->formatOutput = true
+DOMDocument->preserveWhiteSpace = false
+
+...you also have to ensure you don't add text nodes as siblings of element
+nodes, or formatOutput won't work.

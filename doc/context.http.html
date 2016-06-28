@@ -1,0 +1,280 @@
+
+HTTP context 选项
+
+HTTP context 选项 — HTTP context 的选项列表
+
+说明
+
+提供给 http:// 和 https:// 传输协议的 context 选项。 transports.
+
+可选项
+
+method string
+
+    远程服务器支持的 GET，POST 或其它 HTTP 方法。
+
+    默认值是 GET。
+
+header string
+
+    请求期间发送的额外 header 。在此选项的值将覆盖其他值（诸如 User-agent:，
+    Host: 和 Authentication:）。
+
+user_agent string
+
+    要发送的 header User-Agent: 的值。如果在上面的 header context 选项中没有指
+    定 user-agent，此值将被使用。
+
+    默认使用 php.ini 中设置的 user_agent。
+
+content string
+
+    在 header 后面要发送的额外数据。通常使用POST或PUT请求。
+
+proxy string
+
+    URI 指定的代理服务器的地址。(e.g. tcp://proxy.example.com:5100).
+
+request_fulluri boolean
+
+    当设置为 TRUE 时，在构建请求时将使用整个 URI 。(i.e. GET http://
+    www.example.com/path/to/file.html HTTP/1.0)。虽然这是一个非标准的请求格式，
+    但某些代理服务器需要它。
+
+    默认值是 FALSE.
+
+follow_location integer
+
+    跟随 Location header 的重定向。设置为 0 以禁用。
+
+    默认值是 1。
+
+max_redirects integer
+
+    跟随重定向的最大次数。值为 1 或更少则意味不跟随重定向。
+
+    默认值是 20。
+
+protocol_version float
+
+    HTTP 协议版本。
+
+    默认值是 1.0。
+
+        Note:
+
+        PHP 5.3.0 以前的版本没有实现分块传输解码。如果此值设置为 1.1 ，与 1.1
+        的兼容将是你的责任。
+
+timeout float
+
+    读取超时时间，单位为秒（s），用 float 指定(e.g. 10.5)。
+
+    默认使用 php.ini 中设置的 default_socket_timeout。
+
+ignore_errors boolean
+
+    即使是故障状态码依然获取内容。
+
+    默认值为 FALSE.
+
+更新日志
+
+ 版本                                    说明
+5.3.4  添加 follow_location。
+5.3.0  当 protocol_version 设置为 1.1 时支持分块传输解码。
+5.2.10 添加 ignore_errors。
+5.2.10 header 现在可以是一个数字索引的 array。
+5.2.1  添加 timeout。
+5.1.0  Added HTTPS proxying through HTTP proxies. 添加经由 HTTP 代理的 HTTPS 代
+       理。
+5.1.0  添加 max_redirects。
+5.1.0  添加 protocol_version。
+
+范例
+
+Example #1 获取一个页面并发送 POST 数据
+
+<?php
+
+$postdata = http_build_query(
+    array(
+        'var1' => 'some content',
+        'var2' => 'doh'
+    )
+);
+
+$opts = array('http' =>
+    array(
+        'method'  => 'POST',
+        'header'  => 'Content-type: application/x-www-form-urlencoded',
+        'content' => $postdata
+    )
+);
+
+$context = stream_context_create($opts);
+
+$result = file_get_contents('http://example.com/submit.php', false, $context);
+
+?>
+
+Example #2 忽略重定向并获取 header 和内容
+
+<?php
+
+$url = "http://www.example.org/header.php";
+
+$opts = array('http' =>
+    array(
+        'method' => 'GET',
+        'max_redirects' => '0',
+        'ignore_errors' => '1'
+    )
+);
+
+$context = stream_context_create($opts);
+$stream = fopen($url, 'r', false, $context);
+
+// header information as well as meta data
+// about the stream
+var_dump(stream_get_meta_data($stream));
+
+// actual data at $url
+var_dump(stream_get_contents($stream));
+fclose($stream);
+?>
+
+注释
+
+    Note: Underlying socket stream context options
+    Additional context options may be supported by the underlying transport For
+    http:// streams, refer to context options for the tcp:// transport. For
+    https:// streams, refer to context options for the ssl:// transport.
+
+    Note: HTTP status line
+    When this stream wrapper follows a redirect, the wrapper_data returned by 
+    stream_get_meta_data() might not necessarily contain the HTTP status line
+    that actually applies to the content data at index 0.
+
+    array (
+      'wrapper_data' =>
+      array (
+        0 => 'HTTP/1.0 301 Moved Permantenly',
+        1 => 'Cache-Control: no-cache',
+        2 => 'Connection: close',
+        3 => 'Location: http://example.com/foo.jpg',
+        4 => 'HTTP/1.1 200 OK',
+        ...
+
+    The first request returned a 301 (permanent redirect), so the stream
+    wrapper automatically followed the redirect to get a 200 response (index =
+    4).
+
+参见
+
+  • http://
+  • 套接字上下文选项
+  • SSL 上下文选项
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Note that if you set the protocol_version option to 1.1 and the server you are
+requesting from is configured to use keep-alive connections, the function
+(fopen, file_get_contents, etc.) will "be slow" and take a long time to
+complete. This is a feature of the HTTP 1.1 protocol you are unlikely to use
+with stream contexts in PHP.
+
+Simply add a "Connection: close" header to the request to eliminate the
+keep-alive timeout:
+
+<?php
+// php 5.4 : array syntax and header option with array value
+$data = file_get_contents('http://www.example.com/', null, 
+stream_context_create([
+    'http' => [
+        'protocol_version' => 1.1,
+        'header'           => [
+            'Connection: close',
+        ],
+    ],
+]));
+?>
+===============================================================================
+
+If you use the proxy server and encounter an error "fopen(http://example.com):
+failed to open stream: HTTP request failed! HTTP/1.0 400 Bad Request" note that
+in many situations you need also set the parameter "request_fulluri" to "true"
+in your stream options. Without this option the php script sends the empty
+request to the server as "GET / HTTP/0.0" and the proxy server replies to it
+with the "HTTP 400" error.
+
+For example (working sample):
+<?php
+$stream = stream_context_create(Array("http" => Array("method"  => "GET",
+                                                      "timeout" => 20,
+                                                      "header"  => "User-agent:
+Myagent",
+                                                      "proxy"   => "tcp://
+my-proxy.localnet:3128",
+                                                      'request_fulluri' => True
+/* without this option we get an HTTP error! */
+                                )));
+
+if ( $fp = fopen("http://example.com", 'r', false, $stream) ) {
+    print "well done";
+}
+?>
+
+P>S> PHP 5.3.17
+===============================================================================
+
+watch your case when using methods (POST and GET)...it must be always
+uppercase. in case of you write it in lower case it wont work.
+===============================================================================
+
+I had quite a bit of trouble trying to make a request with fopen through a
+proxy to a secure url.  I kept getting a 400 Bad Request back from the remote
+host.  It was receiving the proxy url as the SNI host.  In order to get around
+this I had to explicity set the SNI host to the domain I was trying to reach. 
+It's apparently the issue outlined in this bug:
+
+https://bugs.php.net/bug.php?id=63519
+
+<?php
+$domain = parse_url($file, PHP_URL_HOST);
+$proxy_string = "tcp://" . WP_PROXY_HOST  . ":" . WP_PROXY_PORT;
+$opts = array(
+    'http' => array( 'proxy' => $proxy_string ),
+    'ssl' => array( 'SNI_enabled' => true, 'SNI_server_name' => $domain));
+$context = stream_context_create($opts);
+$handle = fopen( $file, 'r', false, $context );
+?>
+===============================================================================
+
+Remember to match content with Content-type:
+
+<?php
+
+$data = array(
+    'var1' => 'some content',
+    'var2' => 'doh'
+);
+
+$opts = array('http' =>
+    array(
+        'method'  => 'POST',
+        'header'  => 'Content-type: application/json',  // here...
+        'content' => json_encode($data)  // and here.
+    )
+);
+
+. . .
+
+?>
+===============================================================================
+
+Note that if the server is not able to 'getaddresses' change the name to an ip
+address and that'll sort that out for internal looking calls and posts.

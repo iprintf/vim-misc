@@ -1,0 +1,173 @@
+
+ReflectionProperty::setAccessible
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+ReflectionProperty::setAccessible — Set property accessibility
+
+说明
+
+public void ReflectionProperty::setAccessible ( bool $accessible )
+
+Sets a property to be accessible. For example, it may allow protected and
+private properties to be accessed.
+
+参数
+
+accessible
+
+    TRUE to allow accessibility, or FALSE.
+
+返回值
+
+没有返回值。
+
+参见
+
+  • ReflectionProperty::isPrivate() - Checks if property is private
+  • ReflectionProperty::isProtected() - Checks if property is protected
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+Note that the property will only become accessible using the ReflectionProperty
+class. The property is still private or protected in the class instances.
+
+<?php
+class MyClass {
+     private $myProperty = true;
+}
+
+$class = new ReflectionClass("MyClass");
+$property = $class->getProperty("myProperty");
+$property->setAccessible(true);
+
+$obj = new MyClass();
+echo $property->getValue($obj); // Works
+echo $obj->myProperty; // Doesn't work (error)
+?>
+===============================================================================
+
+Have you tried:
+
+<?php
+
+echo "PHP Version: ".phpversion()."\n";
+
+class Foo
+{
+    private   $bar  = "private";
+    protected $bar2 = "protected";
+    public    $bar3 = "public";
+}
+
+$obj = new Foo;
+
+$arr = (array)$obj;
+
+print_r($arr);
+?>
+
+Output:
+
+PHP Version: 5.2.12
+Array
+(
+    [Foobar] => private
+    [*bar2] => protected
+    [bar3] => public
+)
+
+PHP Version: 5.1.6
+Array
+(
+    [Foobar] => private
+    [*bar2] => protected
+    [bar3] => public
+)
+===============================================================================
+
+If you are using < PHP 5.3 and need to get the private attributes and values,
+you can use this method:
+
+This is what you are doing:
+
+<?php
+$obj_with_privates = new MyObject();
+$class     = get_class($obj_with_privates);
+$vars     = get_object_vars($obj_with_privates);
+//will not show private attributes
+print_r($vars);
+
+$reflection = new ReflectionClass( $class );
+$attributes = $reflection->getProperties();
+//still no private access!
+print_r($attributes);
+?>
+
+This is what you should do:
+
+<?php
+$obj_with_privates = new MyObject();
+
+$class         = get_class( $obj_with_privates );
+$reflection = new ReflectionClass( $class );
+$abstract    = $reflection->getMethods( ReflectionMethod::IS_ABSTRACT );
+$priv_attr  = $reflection->getProperties( ReflectionProperty::IS_PRIVATE );
+$privates   = array();
+$parent     = get_parent_class( $class );
+$child         = $class;
+$constructor = $reflection->getConstructor();
+
+//If the class has abstract methods you need to implement them
+$abstr_methods = "";
+if(sizeof($abstr_methods))
+{
+    foreach($abstract as $method)
+    {
+        $mname = $method->name;
+        $abstr_methods .= "public function $mname(){return false;}";
+    }
+}
+
+//Convert private attributes to public attributes
+if(sizeof($priv_attr))
+{
+    $parseable = unserialize(str_replace("\0$class\0", "\0*\0", serialize($obj
+)));
+    foreach($priv_attr as $attribute)
+    {
+        $aname = $attribute->name;
+        $privates[$aname] = $parseable->$aname;
+    }
+}
+           
+
+$temp_child_class = "temp" . str_replace("_", "", "$class");
+
+//You can gain access to protected attributes by extending the target class
+$class_def = "
+class $temp_child_class extends $class{
+    $constructor
+    public function reflect_getmyvars(){
+        return get_object_vars(\$this);
+    }
+    $abstr_methods
+}
+";
+
+//place class definition in memory
+eval($class_def);
+
+//generate object from dynamic class
+$tcobj =@ new $temp_child_class;   
+//call the method we added to the object (to access protected vars)
+$vars = $tcobj->reflect_getmyvars();
+
+$attribs = array_merge($vars, $privates);
+
+//will now show private attributes
+print_r($attribs);
+?>

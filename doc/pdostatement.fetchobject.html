@@ -1,0 +1,273 @@
+
+PDOStatement::fetchObject
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.2.4)
+
+PDOStatement::fetchObject — 获取下一行并作为一个对象返回。
+
+说明
+
+mixed PDOStatement::fetchObject ([ string $class_name = "stdClass" [, array
+$ctor_args ]] )
+
+获取下一行并作为一个对象返回。此函数（方法）是使用 PDO::FETCH_CLASS 或
+PDO::FETCH_OBJ 风格的 PDOStatement::fetch() 的一种替代。
+
+参数
+
+class_name
+
+    创建类的名称。
+
+ctor_args
+
+    此数组的元素被传递给构造函数。
+
+返回值
+
+返回一个属性名对应于列名的所要求类的实例，或者在失败时返回 FALSE.
+
+参见
+
+  • PDOStatement::fetch() - 从结果集中获取下一行
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Be warned of the rather unorthodox behavior of PDOStatement::fetchObject()
+which injects property-values BEFORE invoking the constructor - in other words,
+if your class  initializes property-values to defaults in the constructor, you
+will be overwriting the values injected by fetchObject() !
+
+A var_dump($this) in your __construct() method will reveal that property-values
+have been initialized prior to calling your constructor, so be careful.
+
+For this reason, I strongly recommend hydrating your objects manually, after
+retrieving the data as an array, rather than trying to have PDO apply
+properties directly to your objects.
+
+Clearly somebody thought they were being clever here - allowing you to access
+hydrated property-values from the constructor. Unfortunately, this is just not
+how OOP works - the constructor, by definition, is the first method called upon
+construction.
+
+If you need to initialize your objects after they have been constructed and
+hydrated, I suggest your model types implement an interface with an init()
+method, and you data access layer invoke this method (if implemented) after
+hydrating.
+===============================================================================
+
+It should be mentioned that this method can set even non-public properties. It
+may sound strange but it can actually be very useful when creating an object
+based on mysql result.
+Consider a User class:
+
+<?php
+class User {
+   // Private properties
+   private $id, $name;
+
+   private function __construct () {}
+
+   public static function load_by_id ($id) {
+      $stmt = $pdo->prepare('SELECT id, name FROM users WHERE id=?');
+      $stmt->execute([$id]);
+      return $stmt->fetchObject(__CLASS__);
+   }
+   /* same method can be written with the "name" column/property */
+}
+
+$user = User::load_by_id(1);
+var_dump($user);
+?>
+
+fetchObject() doesn't care about properties being public or not. It just passes
+the result to the object. Output is like:
+
+object(User)#3 (2) {
+  ["id":"User":private]=>
+  string(1) "1"
+  ["name":"User":private]=>
+  string(10) "John Smith"
+}
+===============================================================================
+
+If using a namespaced class, you must provide the fully qualified class name;
+fetchObject does not seem to know about any "use" statements.
+
+This results in a PHP Fatal error: Class 'MyClass' not found...:
+<?php
+use MyNamespace\MyClass;
+// ...
+$o = $statement->fetchObject('MyClass'));
+?>
+This works:
+<?php
+use MyNamespace\MyClass; //still needed for my code
+// ...
+$o = $statement->fetchObject('MyNamespace\\MyClass'));
+?>
+===============================================================================
+
+You can access MySQL tables in an objective way. Suppose you have a table named
+Users that has fields: UserID, UserName, UserPassword, UserBirthday, you can
+create a PHP class extending DataObject that is associated with this table:
+<?php
+class User extends DataObject {
+    // name: Table Name, key: Primary Key (can be an array), auto:
+AUTO_INCREMENT field
+    protected static $_table = array('name' => 'Users', 'key' => 'UserID', 
+'auto' => 'UserID');
+    // relationships between PHP properties and MySQL field names
+    protected static $_propertyList = array('id' => 'UserID', 'name' => 
+'UserName', 'password' => 'UserPassword', 'birthday' => 'UserBirthday');
+   
+    // A method that fetches all users as an array
+    public static function GetAll() {
+        global $dbh;
+        $sql = 'SELECT * FROM Users';
+        $stmt = $dbh->query($sql);
+        $users = array();
+        while ($user = $stmt->fetchObject(__CLASS__)) {
+            $users[] = $user;
+        }
+        return $users;
+    }
+    // Methods that fetch a specific user
+    public static function GetUserByName($name) {}
+    public static function GetUserByID($name) {}
+   
+    // Methods for the current user object
+    public function checkPassword($password) {return $this->password == 
+$password;}
+    public function showLink() {return "<a href=\"user.php?i={$this->id}\">{
+$this->name}</a>";}
+}
+
+// Then, you can create an instance of this class to insert a row in your table
+$user = new User();
+$user->name = 'oct1158';
+$user->password = '789012';
+$user->useFunction('birthday', 'NOW()');
+echo 'Field birthday uses MySQL Function: ', $user->birthday, '<br>';
+if ($user->insert()) {
+    echo 'New User ID: ', $user->id, '<br>';
+   
+    // Update the row
+    $user->password = '112233';
+    $user->update();
+} else {
+    echo 'INSERT Failed<br>';
+}
+// Get a specific user by a query
+$sql = 'SELECT * FROM Users WHERE UserName = ?';
+$stmt = $dbh->prepare($sql);
+$stmt->execute(array('admin'));
+$admin_user = $stmt->fetchObject('User');
+echo 'Admin ID is ', $admin_user->id, '.<br>';
+echo 'Admin Birthday is ', $admin_user->birthday, '.<br>';
+
+// Get all users by a static method of that class
+$users = User::GetAll();
+echo '<br>';
+echo $users[0]->name, ', ', $users[0]->birthday, '<br>';
+echo $users[1]->name, ', ', $users[1]->birthday, '<br>';
+echo $users[2]->name, ', ', $users[2]->birthday, '<br>';
+echo '<br>';
+
+// Create an empty user and then delete it immediately
+$user = new User();
+$user->insert();
+$user->delete();
+?>
+The DataObject class example:
+<?php
+class DataObject {
+    private $changedFields = array(); // list of updated fields
+    private $data = array(); // original row from PDOStatement
+    private $funcFields = array(); // fields that use MySQL functions
+    // The properties above are private in this class, so even if in your
+subclass you define some properties named the same, or you associate a property
+of the same name with a field in your table, they will never influence these
+properties.
+    function __get($property) {
+        if (isset($this::$_propertyList[$property])) {
+            return $this->data[$this::$_propertyList[$property]]; // access
+fields by PHP properties
+        } else {
+            return $this->$property; // throw the default PHP error
+        }
+    }
+    function __set($property, $value) {
+        if (isset($this::$_propertyList[$property])) {
+            $field = $this::$_propertyList[$property];
+            $this->data[$field] = $value; // update $data
+           
+            // take down changed fields
+            if (!in_array($field, $this->changedFields)) {
+                array_push($this->changedFields, $field);
+            }
+            $index = array_search($field, $this->funcFields);
+            if ($index !== false) {
+                unset($this->funcFields[$index]);
+                $this->funcFields = array_values($this->funcFields);
+            }
+        } else {
+            // For fetchObject
+            $this->data[$property] = $value; // redirect to Array $data
+        }
+    }
+    private function checkPrimaryKey() {}
+    private function clear() {}
+    public function delete() {}
+    public function insert() {}
+    public function update() {}
+    public function useFunction($property, $function) {}
+}
+?>
+===============================================================================
+
+I think so could us use this variant to implement the constructor, this is my
+example:
+
+<?php
+class User{
+    public $user;
+    public $password;
+    public $name;
+    public $email;
+   
+    public function __construct(){
+        $args = func_get_args();
+        $nargs = func_num_args();
+        $attribs = get_class_vars(get_class($this));
+        if(isset($args)){
+            foreach($args as $value){
+                $attrib = key($attribs);
+                $this->$attrib = $value;
+                next($attribs);
+            }
+        }
+    }
+}
+===============================================================================
+
+Because of the injection of object properties before the constructor is
+executed, I usually build my classes like this to make sure already set
+properties aren't overwritten:
+
+<?php
+class Person {
+  public $name;
+  public $age;
+  public $sex;
+
+  public function __construct($name=NULL, $age=NULL, $sex=NULL) {
+    $this->name = $name === NULL ? $this->name : $name;
+    $this->age = $age === NULL ? $this->age : $age;
+    $this->sex = $sex === NULL ? $this->sex : $sex;
+  }
+}
+?>

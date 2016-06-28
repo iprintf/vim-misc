@@ -1,0 +1,167 @@
+
+timezone_name_from_abbr
+
+(PHP 5 >= 5.1.3, PHP 7)
+
+timezone_name_from_abbr — Returns the timezone name from abbreviation
+
+说明
+
+string timezone_name_from_abbr ( string $abbr [, int $gmtOffset = -1 [, int
+$isdst = -1 ]] )
+
+参数
+
+abbr
+
+    Time zone abbreviation.
+
+gmtOffset
+
+    Offset from GMT in seconds. Defaults to -1 which means that first found
+    time zone corresponding to abbr is returned. Otherwise exact offset is
+    searched and only if not found then the first time zone with any offset is
+    returned.
+
+isdst
+
+    Daylight saving time indicator. Defaults to -1, which means that whether
+    the time zone has daylight saving or not is not taken into consideration
+    when searching. If this is set to 1, then the gmtOffset is assumed to be an
+    offset with daylight saving in effect; if 0, then gmtOffset is assumed to
+    be an offset without daylight saving in effect. If abbr doesn't exist then
+    the time zone is searched solely by the gmtOffset and isdst.
+
+返回值
+
+Returns time zone name on success 或者在失败时返回 FALSE.
+
+范例
+
+Example #1 A timezone_name_from_abbr() example
+
+<?php
+echo timezone_name_from_abbr("CET") . "\n";
+echo timezone_name_from_abbr("", 3600, 0) . "\n";
+?>
+
+以上例程的输出类似于：
+
+Europe/Berlin
+Europe/Paris
+
+参见
+
+  • timezone_abbreviations_list() - 别名 DateTimeZone::listAbbreviations
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+timezone_name_from_abbr() sometimes returns FALSE instead of an actual
+timezone: http://bugs.php.net/44780
+
+It's possible to workaround it for some cases by getting the timezone name from
+timezone_abbreviations_list(). For example, if you have the GMT offset and want
+a timezone name:
+
+<?php
+/* Takes a GMT offset (in hours) and returns a timezone name */
+function tz_offset_to_name($offset)
+{
+        $offset *= 3600; // convert hour offset to seconds
+        $abbrarray = timezone_abbreviations_list();
+        foreach ($abbrarray as $abbr)
+        {
+                foreach ($abbr as $city)
+                {
+                        if ($city['offset'] == $offset)
+                        {
+                                return $city['timezone_id'];
+                        }
+                }
+        }
+
+        return FALSE;
+}
+?>
+===============================================================================
+
+Another way to do this is to wrap the function in a class that extends the
+DateTimeZone class:
+
+<?php
+
+/**
+* Helps with timezones.
+* @link http://us.php.net/manual/en/class.datetimezone.php
+*
+* @package  Date
+*/
+class Helper_DateTimeZone extends DateTimeZone
+{
+    /**
+     * Converts a timezone hourly offset to its timezone's name.
+     * @example $offset = -5, $isDst = 0 <=> return value = 'America/New_York'
+     *
+     * @param float $offset The timezone's offset in hours.
+     *                      Lowest value: -12 (Pacific/Kwajalein)
+     *                      Highest value: 14 (Pacific/Kiritimati)
+     * @param bool  $isDst  Is the offset for the timezone when it's in
+daylight
+     *                      savings time?
+     *
+     * @return string The name of the timezone: 'Asia/Tokyo', 'Europe/Paris',
+...
+     */
+    final public static function tzOffsetToName($offset, $isDst = null)
+    {
+        if ($isDst === null)
+        {
+            $isDst = date('I');
+        }
+
+        $offset *= 3600;
+        $zone    = timezone_name_from_abbr('', $offset, $isDst);
+
+        if ($zone === false)
+        {
+            foreach (timezone_abbreviations_list() as $abbr)
+            {
+                foreach ($abbr as $city)
+                {
+                    if ((bool)$city['dst'] === (bool)$isDst &&
+                        strlen($city['timezone_id']) > 0    &&
+                        $city['offset'] == $offset)
+                    {
+                        $zone = $city['timezone_id'];
+                        break;
+                    }
+                }
+
+                if ($zone !== false)
+                {
+                    break;
+                }
+            }
+        }
+   
+        return $zone;
+    }
+}
+?>
+
+Then you could do something like this:
+
+<?php
+$Dtz = new Helper_DateTimeZone(Helper_DateTimeZone::tzOffsetToName(-5));
+var_dump($Dtz->getName());
+
+string(16) "America/New_York"
+?>
+===============================================================================
+
+Fun fact: (60*60) * -2 always seems to return null.
+
+Perhaps because there's no timezone that corresponds to UTC -2.

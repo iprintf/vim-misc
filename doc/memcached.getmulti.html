@@ -1,0 +1,172 @@
+
+Memcached::getMulti
+
+(PECL memcached >= 0.1.0)
+
+Memcached::getMulti — 检索多个元素
+
+说明
+
+public mixed Memcached::getMulti ( array $keys [, array &$cas_tokens [, int
+$flags ]] )
+
+Memcached::getMulti()与Memcached::get()类似，但是这个方法用来检索 keys数组指定
+的多个key对应的元素。如果提供了参数cas_tokens，对于检索到的元素会为其添加CAS标
+记值。
+
+
+    Note:
+
+    与Memcached::get()不同的是，不能为Memcached::getMulti()指定通读回调函数，因
+    为memcache协议不能提供多个key检索时没有查找到的key的信息。
+
+flags参数可以用做指定Memcached::getMulti()的附加选项。当前，仅可以指定为
+Memcached::GET_PRESERVE_ORDER以保证返回的key的顺序和请求时一致。
+
+参数
+
+keys
+
+    要检索的key的数组。
+
+cas_tokens
+
+    用来存储检索到的元素的CAS标记。
+
+flags
+
+    get操作的附加选项。
+
+返回值
+
+返回检索到的元素的数组或者在失败时返回 FALSE. 如需要则使用 
+Memcached::getResultCode()。
+
+范例
+
+Example #1 Memcached::getMulti() 示例
+
+<?php
+$m = new Memcached();
+$m->addServer('localhost', 11211);
+
+$items = array(
+    'key1' => 'value1',
+    'key2' => 'value2',
+    'key3' => 'value3'
+);
+$m->setMulti($items);
+$result = $m->getMulti(array('key1', 'key3', 'badkey'), $cas);
+var_dump($result, $cas);
+?>
+
+以上例程的输出类似于：
+
+array(2) {
+  ["key1"]=>
+  string(6) "value1"
+  ["key3"]=>
+  string(6) "value3"
+}
+array(2) {
+  ["key1"]=>
+  float(2360)
+  ["key3"]=>
+  float(2362)
+}
+
+Example #2 Memcached::GET_PRESERVE_ORDER 示例
+
+<?php
+$m = new Memcached();
+$m->addServer('localhost', 11211);
+
+$data = array(
+    'foo' => 'foo-data',
+    'bar' => 'bar-data',
+    'baz' => 'baz-data',
+    'lol' => 'lol-data',
+    'kek' => 'kek-data',
+);
+
+$m->setMulti($data, 3600);
+
+$null = null;
+$keys = array_keys($data);
+$keys[] = 'zoo';
+$got = $m->getMulti($keys, $null, Memcached::GET_PRESERVE_ORDER);
+
+foreach ($got as $k => $v) {
+    echo "$k $v\n";
+}
+?>
+
+以上例程的输出类似于：
+
+foo foo-data
+bar bar-data
+baz baz-data
+lol lol-data
+kek kek-data
+zoo
+
+参见
+
+  • Memcached::getMultiByKey() - 从特定服务器检索多个元素
+  • Memcached::get() - 检索一个元素
+  • Memcached::getDelayed() - 请求多个元素
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+GOTCHA: Recently I was tasked with moving from PECL memcache to PECL memcached
+and ran into a major problem -- memcache and memcached serialize data
+differently, meaning that data written with one library can't necessarily be
+read with the other library.
+
+For example, If you write an object or an array with memcache, it's interpreted
+as an integer by memcached.  If you write it with memcached, it's interpreted
+as a string by memcache.
+
+tl;dr - You can't safely switch between memcache and memcached without a either
+a cache flush or isolated cache environments.
+
+<?php
+$memcache = new Memcache;
+$memcacheD = new Memcached;
+$memcache->addServer($host);
+$memcacheD->addServers($servers);
+
+$checks = array(
+    123,
+    4542.32,
+    'a string',
+    true,
+    array(123, 'string'),
+    (object)array('key1' => 'value1'),
+);
+foreach ($checks as $i => $value) {
+    print "Checking WRITE with Memcache\n";
+    $key = 'cachetest' . $i;
+    $memcache->set($key, $value);
+    usleep(100);
+    $val = $memcache->get($key);
+    $valD = $memcacheD->get($key);
+    if ($val !== $valD) {
+        print "Not compatible!";
+        var_dump(compact('val', 'valD'));
+    }
+
+    print "Checking WRITE with MemcacheD\n";
+    $key = 'cachetest' . $i;
+    $memcacheD->set($key, $value);
+    usleep(100);
+    $val = $memcache->get($key);
+    $valD = $memcacheD->get($key);
+    if ($val !== $valD) {
+        print "Not compatible!";
+        var_dump(compact('val', 'valD'));
+    }
+}

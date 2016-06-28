@@ -1,0 +1,239 @@
+
+XSLTProcessor::setParameter
+
+(PHP 5, PHP 7)
+
+XSLTProcessor::setParameter — Set value for a parameter
+
+说明
+
+bool XSLTProcessor::setParameter ( string $namespace , string $name , string
+$value )
+bool XSLTProcessor::setParameter ( string $namespace , array $options )
+
+Sets the value of one or more parameters to be used in subsequent
+transformations with XSLTProcessor. If the parameter doesn't exist in the
+stylesheet it will be ignored.
+
+参数
+
+namespace
+
+    The namespace URI of the XSLT parameter.
+
+name
+
+    The local name of the XSLT parameter.
+
+value
+
+    The new value of the XSLT parameter.
+
+options
+
+    An array of name => value pairs. This syntax is available since PHP 5.1.0.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Changing the owner before the transformation
+
+<?php
+
+$collections = array(
+    'Marc Rutkowski' => 'marc',
+    'Olivier Parmentier' => 'olivier'
+);
+
+$xsl = new DOMDocument;
+$xsl->load('collection.xsl');
+
+// Configure the transformer
+$proc = new XSLTProcessor;
+$proc->importStyleSheet($xsl); // attach the xsl rules
+
+foreach ($collections as $name => $file) {
+    // Load the XML source
+    $xml = new DOMDocument;
+    $xml->load('collection_' . $file . '.xml');
+
+    $proc->setParameter('', 'owner', $name);
+    $proc->transformToURI($xml, 'file:///tmp/' . $file . '.html');
+}
+
+?>
+
+参见
+
+  • XSLTProcessor::getParameter() - Get value of a parameter
+  • XSLTProcessor::removeParameter() - Remove parameter
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Note that there is no way to remove a parameter from an XSLTProcessor unless
+you know its name, and there is no way (that I can find) to get a list of the
+current parameters.
+
+This means that you cannot reuse an XSLTProcessor with different parameters
+unless you call XSLTProcessor->removeParameter() on every parameter, and to do
+that you need to know the names of all the currently set parameters.
+
+I bumped into this because we were caching XSLTProcessors for reuse, and they
+were spitting out content based on phantom parameters (they were still there
+from previous uses).
+===============================================================================
+
+It seems heinemann's usage is not correct and does not achieve the intended
+result.
+
+This method's purpose is to change a global <xsl:param> value in the XSL
+stylesheet--not to change an attribute of any other element.  <xsl:param>
+basically lets you set up a stylesheet which can be customized (as from PHP)
+externally (without needing to tamper with the original XSL file).
+
+Here's an example of usage (that will work):
+
+Stylesheet:
+
+<?xml version="1.0"?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+    <xsl:param name="print_something" select="defaultstring"/>
+    <xsl:template match="/mydoc">
+        <p style="color:red;">Printed parameter: <xsl:value-of select=
+"$print_something"/></p>
+    </xsl:template>
+</xsl:stylesheet>
+
+Script:
+
+<?php
+$dom = new DOMDocument();
+$xsl = new XSLTProcessor;
+$xsl->setParameter( '', 'print_something', "Now I've overridden the default!");
+$style = realpath( "./my_stylesheet.xslt" );
+$dom->load($style);
+$xsl->importStyleSheet($dom);
+$dom->loadXML('<mydoc></mydoc>');
+
+$out = $xsl->transformToXML( $dom );
+
+var_dump( '<pre>',
+    htmlentities( $out, ENT_QUOTES, 'utf-8' ),
+    $xsl->getParameter('', 'print_something'),
+'</pre>' );
+?>
+
+gives:
+
+string(5) "
+
+"
+string(143) "<?xml version="1.0"?>
+<p style="color:red;">Printed parameter: Now I've overridden the default!</p>
+"
+string(32) "Now I've overridden the default!"
+string(6) "
+
+"
+
+Notice that at present adding a namespace will not work. The only option at
+present is to set the first parameter for namespace to an empty string (though
+you can add the prefix with colon to the second argument for name in order to
+set the parameter for a namespace-prefixed parameter name).
+
+See http://bugs.php.net/bug.php?id=30622
+===============================================================================
+
+The parameter will not be set if the value contains both single and double
+quotes. Instead a warning will be shown when transforming the document:
+
+PHP Warning:  XSLTProcessor::transformToXml(): Cannot create XPath expression
+(string contains both quote and double-quotes)
+===============================================================================
+
+After looking at this a little further (see http://bugs.php.net/bug.php?id=
+41248), it appears that it's a shortcoming of libxslt, not PHP, that prevents
+passing in DOMDocuments or DOMNodes as parameters.
+===============================================================================
+
+I've been trying to pass in a DOMDocument object as a parameter so I can stuff
+a bunch of data into XML nodes, but it appears that this function is not
+capable of it. I was hoping to get it to work like it does in the .NET 2.0
+framework. (See http://msdn2.microsoft.com/en-us/library/
+system.xml.xsl.xsltargumentlist.addparam.aspx)
+But after looking at the PHP 5.2.1 source code, /php-5.2.1/ext/xsl/
+xsltprocessor.c line 604-650, it appears that it's not possible to do so in PHP
+even though it appears that libxslt supports it (see http://xmlsoft.org/XSLT/
+html/libxslt-variables.html
+#xsltParseGlobalParam)
+
+In fact, if the parameters aren't exactly what's expected, you'll always get a
+warning like this:
+
+Wrong parameter count for XSLTProcessor::setParameter()
+===============================================================================
+
+Example for how it works.
+
+<?xml version = '1.0' encoding = 'utf-8' ?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+<xsl:output method="xml"
+    indent="yes"
+    encoding="ISO-8859-15"
+    doctype-system = "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    doctype-public = "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"
+/>
+<xsl:template match="docs">
+<html>
+<head>
+    <title>
+        <xsl:text>Example</xsl:text>
+    </title>
+</head>
+<body>
+    <xsl:for-each select="block">
+        <div>
+            <xsl:value-of select="." />
+        </div>
+    </xsl:for-each>
+</body>
+</html>
+</xsl:template>
+</xsl:stylesheet>
+
+------------------
+
+<?php
+$dom = new DomDocument( '1.0', 'utf-8' );
+$xsl = new XSLTProcessor;
+$xsl->setParameter( 'block', 'xmlns', 'http://www.w3.org/1999/xhtml' );
+
+$style = realpath( "./my_stylesheet.xslt" );
+$dom->load( $style );
+$xsl->importStyleSheet( $dom );
+
+$dom->loadXML( '<docs>
+    <block>Howto set xhtml Transitional Namespaces width php</block>
+    <block>see http://www.php.net</block>
+</docs>' );
+
+$out = $xsl->transformToXML( $dom );
+
+var_dump( '<pre>',
+    htmlentities( $out, ENT_QUOTES, 'utf-8' ),
+    $xsl->getParameter( 'block', 'xmlns' ),
+    $xsl->getParameter( 'docs', 'xmlns' ),
+'</pre>' );
+
+?>
+===============================================================================
+
+XSLTProcessor::removeParameter() won't work on parameters set via
+XSLTProcessor::setParameter(string namespace, array options) in 5.1+ -- they
+need to be set and removed one by one.

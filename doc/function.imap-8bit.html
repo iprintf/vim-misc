@@ -1,0 +1,364 @@
+
+imap_8bit
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_8bit — Convert an 8bit string to a quoted-printable string
+
+说明
+
+string imap_8bit ( string $string )
+
+Convert an 8bit string to a quoted-printable string (according to » RFC2045,
+section 6.7).
+
+参数
+
+string
+
+    The 8bit string to convert
+
+返回值
+
+Returns a quoted-printable string.
+
+参见
+
+  • imap_qprint() - Convert a quoted-printable string to an 8 bit string
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+imap_8bit seems to have a bug as it doesn't encode "?".
+Had a lot of trouble to encode a mail-subject with
+german umlaute with an ending "?"...
+
+Try this:
+
+$subject = "=?iso-8859-1?Q?" . str_replace("?","=3F",imap_8bit
+($tsubject_to_encode)) . "?=";
+===============================================================================
+
+...deed.ztinmehc-ut.zrh@umuumu@hrz.tu-chemnitz.deed...
+
+I use the following function instead of imap_8bit
+when using PHP without the IMAP module,
+which is based on code found in
+http://www.php.net/quoted_printable_decode,
+and giving (supposedly) exactly the same results as imap_8bit,
+(tested on thousands of random strings containing lots
+of spaces, tabs, crlf, lfcr, lf, cr and so on,
+no counterexample found SO FAR:)
+
+AND you can force a trailing space to be encoded,
+as opposed to what imap_8bit does,
+which I consider is a violation of RFC2045,
+(see http://bugs.php.net/bug.php?id=35290)
+by commenting that one central line.
+
+<?php
+function quoted_printable_encode($sText,$bEmulate_imap_8bit=true) {
+  // split text into lines
+  $aLines=explode(chr(13).chr(10),$sText);
+
+  for ($i=0;$i<count($aLines);$i++) {
+    $sLine =& $aLines[$i];
+    if (strlen($sLine)===0) continue; // do nothing, if empty
+
+    $sRegExp = '/[^\x09\x20\x21-\x3C\x3E-\x7E]/e';
+
+    // imap_8bit encodes x09 everywhere, not only at lineends,
+    // for EBCDIC safeness encode !"#$@[\]^`{|}~,
+    // for complete safeness encode every character :)
+    if ($bEmulate_imap_8bit)
+      $sRegExp = '/[^\x20\x21-\x3C\x3E-\x7E]/e';
+
+    $sReplmt = 'sprintf( "=%02X", ord ( "$0" ) ) ;';
+    $sLine = preg_replace( $sRegExp, $sReplmt, $sLine ); 
+
+    // encode x09,x20 at lineends
+    {
+      $iLength = strlen($sLine);
+      $iLastChar = ord($sLine{$iLength-1});
+
+      //              !!!!!!!!   
+      // imap_8_bit does not encode x20 at the very end of a text,
+      // here is, where I don't agree with imap_8_bit,
+      // please correct me, if I'm wrong,
+      // or comment next line for RFC2045 conformance, if you like
+      if (!($bEmulate_imap_8bit && ($i==count($aLines)-1)))
+         
+      if (($iLastChar==0x09)||($iLastChar==0x20)) {
+        $sLine{$iLength-1}='=';
+        $sLine .= ($iLastChar==0x09)?'09':'20';
+      }
+    }    // imap_8bit encodes x20 before chr(13), too
+    // although IMHO not requested by RFC2045, why not do it safer :)
+    // and why not encode any x20 around chr(10) or chr(13)
+    if ($bEmulate_imap_8bit) {
+      $sLine=str_replace(' =0D','=20=0D',$sLine);
+      //$sLine=str_replace(' =0A','=20=0A',$sLine);
+      //$sLine=str_replace('=0D ','=0D=20',$sLine);
+      //$sLine=str_replace('=0A ','=0A=20',$sLine);
+    }
+
+    // finally split into softlines no longer than 76 chars,
+    // for even more safeness one could encode x09,x20
+    // at the very first character of the line
+    // and after soft linebreaks, as well,
+    // but this wouldn't be caught by such an easy RegExp                  
+    preg_match_all( '/.{1,73}([^=]{0,2})?/', $sLine, $aMatch );
+    $sLine = implode( '=' . chr(13).chr(10), $aMatch[0] ); // add soft crlf's
+  }
+
+  // join lines into text
+  return implode(chr(13).chr(10),$aLines);
+}
+?>
+===============================================================================
+
+I modified nick at plumdigitalmedia dot com's note so that it may support
+ISO-8859-1 encoded headers:
+<?php
+    public function encodeSubject($string,$prefix="=?ISO-8859-1?Q?",$postfix="?
+=")    {
+        $crlf    = "\n\t";
+        $string  = preg_replace('!(\r\n|\r|\n)!', $crlf, $string) . $crlf ;
+        $f[]    = '/([\000-\010\013\014\016-\037\075\177-\377])/e' ;
+        $r[]    = "'=' . sprintf('%02X', ord('\\1'))" ;
+        $f[]    = '/([\011\040])' . $crlf . '/e' ;
+        $r[]    = "'=' . sprintf('%02X', ord('\\1')) . '" . $crlf . "'" ;
+        $string  = preg_replace($f, $r, $string);
+        return $prefix.trim(wordwrap($string, 70 - strlen($prefix) - strlen(
+$postfix), ' ' . $postfix . $crlf . $prefix, true)).$postfix;
+    }
+?>
+Regards, Hans @ http://lintoo.dk/
+===============================================================================
+
+Warning !
+This function splits input text into
+several lines aligned to 75 characters.
+This is critical when you need input
+text to be only one striaght line as
+e.g. in e-mail header values.
+===============================================================================
+
+umu's code seems to work great. BUT if you are on a Unix system you should
+replace all chr(13).chr(10) with just chr(10)
+
+Works for me anyway on php5.mail() -> qmail@suse10.1 -> outlook express
+===============================================================================
+
+Code based on k dot kozlowski at enter dot pl but for UTF-8
+(the only problem i encounter is SUBJECT_ENCODED_TWICE on SPAM test with very
+long subject, but the same produce others MUA's)
+<?
+function header_quoted_printable_encode($string, $encoding='UTF-8') {
+  
+    $string = str_replace(" ", "_", trim($string)) ;
+    // We need to delete "=\r\n" produced by imap_8bit() and replace '?'
+    $string = str_replace("?", "=3F", str_replace("=\r\n", "", imap_8bit
+($string))) ;
+   
+    // Now we split by \r\n - i'm not sure about how many chars (header name
+counts or not?)
+    $string = chunk_split($string, 73);
+    // We also have to remove last unneeded \r\n :
+    $string = substr($string, 0, strlen($string)-2);
+    // replace newlines with encoding text "=?UTF ..."
+    $string = str_replace("\r\n", "?=".HEAD_CRLF." =?".$encoding."?Q?",
+$string) ;
+   
+    return '=?'.$encoding.'?Q?'.$string.'?=';
+}
+?>
+===============================================================================
+
+I had problems with encoding large subjects with polish characters. The problem
+was that imap_8bit() splits subject (on 75-th char) but when I add "=?
+ISO-8859-2?Q?" the header is too long.
+
+This is a solution :
+<?php
+$subject = str_replace(" ", "_", trim($subject)) ;
+// We need to delete "=\r\n" produced by imap_8bit() and replace '?'
+$subject = str_replace("?", "=3F", str_replace("=\r\n", "", imap_8bit($subject
+))) ;
+// Now we split by \r\n but with encoding text "=?ISO ..."
+$subject = str_replace("\r\n", "?=\r\n =?ISO-8859-2?Q?", chunk_split($subject, 
+55)) ;
+// We also have to remove last unneeded encoding text :
+$subject = "=?ISO-8859-2?Q?" . substr($subject, 0, strlen($subject)-20) . "?=" 
+;
+?>
+===============================================================================
+
+There is a bug in MS Exchange server, that improperly handles CRLFs. Seems like
+it converts both CR and LF into LF, so, instead of getting just a new line, you
+get TWO new lines.
+The header information is then improperly parsed by the e-mail client, and is
+usually viewed in the message body.
+
+This can make custom-created headers unusable.
+
+The only way I found to get around this is to go against RFC rules for header
+formatting, and use only \n for new lines.
+
+Unfortunately I haven't been able to learn the version of Exchange server where
+this happened, but I have the feeling that it's not just the one I was unlucky
+to encounter.
+
+Hope this helps someone.
+===============================================================================
+
+When producing quoted printable emails this is the right way
+
+$subject="Subject: =?iso-8859-1?Q?". imap_8bit("áéíóú"). "?=";
+
+and the following would do the wrong thing, because qprint over "=ED" would
+produce 8bit data ( í ):
+
+$subject="Subject: =?iso-8859-1?Q?". imap_qprint("=ED"). "?=";
+===============================================================================
+
+you can use the following to make a larger subject.
+use the imap_qprint() function, to convert your subject.
+
+example:
+<?php
+
+$subject .= "=?iso-8859-1?Q?" . imap_qprint($subject) . "?=";
+
+?>
+===============================================================================
+
+This function appears to wrap lines in the middle of words, not just at
+whitespace, which upsets some versions of Outlook Express when used to format
+email body text. We've had more luck with this function:
+
+<?
+
+    function quoted_printable($string)
+    {
+        $crlf    = "\n" ;
+        $string  = preg_replace('!(\r\n|\r|\n)!', $crlf, $string) . $crlf ;
+        $f[]     = '/([\000-\010\013\014\016-\037\075\177-\377])/e' ;
+        $r[]     = "'=' . sprintf('%02X', ord('\\1'))" ;
+        $f[]     = '/([\011\040])' . $crlf . '/e' ;
+        $r[]     = "'=' . sprintf('%02X', ord('\\1')) . '" . $crlf . "'" ;
+        $string  = preg_replace($f, $r, $string) ;
+        return trim(wordwrap($string, 70, ' =' . $crlf)) ;
+    }
+
+?>
+===============================================================================
+
+Reading Bully's note :
+you can use the following to make a larger subject:
+<?
+$encoded = str_replace("=\r\n","",imap_8bit($string_to_encode));
+?>
+It's wrong. The header MAY NOT go over 75 chars per line.
+
+The right solution :
+<?
+$encoded = rtrim( str_replace( "\n","\n\t", imap_8bit ($string_to_encode)))."\r
+\n";
+?>
+
+It will add \t at the start of the encoded new lines.
+Mailers to see the lines after Subject: as extensions of this header.
+===============================================================================
+
+you can use the following to make a larger subject:
+
+$encoded = str_replace("=\r\n","",imap_8bit($string_to_encode));
+===============================================================================
+
+Encode a mail-subject-string to a encoded-word according to RFC2047 with
+awareness of special characters and total-linelength of 75.
+Example: "Subject Testä" -> "=?ISO-8859-1?Q?Subject_Test=E4?="
+<?php
+function getSubjectEncoded($_str,$_charset='ISO-8859-1'){
+    // 27.08.2015 david jufer
+    // Convert an 8bit string to a encoded-word string (according to RFC2047)
+www.ietf.org/rfc/rfc2047.txt
+    // encoded-word = "=?" charset "?" encoding "?" encoded-text "?="
+    // An 'encoded-word' may not be more than 75 characters long, including
+'charset', 'encoding', 'encoded-text', and delimiters.
+    // The "Q" encoding is similar to the "Quoted-Printable"
+content-transfer-encoding defined in RFC 2045
+    $ret = '';
+    $str = imap_8bit($_str);
+    $len = 7+strlen($_charset);
+    // remove linebreaks from imap_8bit, string chunks are too long
+    $str = str_replace("=\r\n",'',$str);
+    // insert linebreaks at right position, be aware of special chars ("ä" "=
+E4") do not split them
+    $s = 0;
+    $l = 75-$len;
+    while(strlen($str)>$s){
+        $ts = $s;
+        if(substr($str,($s+$l)-2,1)=='='){
+            $s += $l-2;
+        }else if(substr($str,($s+$l)-1,1)=='='){
+            $s += $l-1;
+        }else{
+            $s += $l;
+        }
+        $ret .= "\r\n".substr($str,$ts,$s-$ts);
+    }
+    // remove first linebreak, replace SPACES with "_"
+    $ret = str_replace(' ','_',trim($ret));
+    // put together encoded-word
+    $ret = '=?'.$_charset.'?Q?'.str_replace("\r\n","?=\r\n =?".$_charset."?Q?",
+$ret)."?=";
+    // rückgabe
+    return $ret;
+}
+?>
+===============================================================================
+
+A comment on the "split-after-75-characters" phenomenon:
+
+By splitting lines up after 75 characters, the function's behaviour is
+complying to RFC2047 (http://www.ietf.org/rfc/rfc2047.txt) (which specifies a
+protocol for the representation of non-ASCII text in message headers), section
+"2. Syntax of encoded-words".
+
+A so called 'encoded word' has the following format:
+
+   encoded-word = "=?" charset "?" encoding "?" encoded-text "?="
+
+An 'encoded-word' may not be more than 75 characters long, including 'charset',
+'encoding', 'encoded-text', and delimiters.  If it is desirable to encode more
+text than will fit in an 'encoded-word' of 75 characters, multiple
+'encoded-word's (separated by CRLF SPACE) may be used.
+
+hth
+WOT
+===============================================================================
+
+The code below this note gives a lot of trouple with SpamAssasin, to fix it you
+will need to encode your subject with something like this:
+<?php
+/**
+* Function to encode a header if necessary
+* according to RFC2047
+*/
+private function encodeHeader($input, $charset = 'ISO-8859-1')
+{
+    preg_match_all('/(\s?\w*[\x80-\xFF]+\w*\s?)/', $input, $matches);
+    foreach ($matches[1] as $value) {
+        $replacement = preg_replace('/([\x20\x80-\xFF])/e', '"=" . strtoupper
+(dechex(ord("\1")))', $value);
+        $input = str_replace($value, '=?' . $charset . '?Q?' . $replacement . 
+'?=', $input);
+    }
+   
+    return wordwrap($input,75,"\n\t",true);
+}
+?>

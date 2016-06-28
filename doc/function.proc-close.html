@@ -1,0 +1,194 @@
+
+proc_close
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+proc_close — 关闭由 proc_open() 打开的进程并且返回进程退出码
+
+说明
+
+int proc_close ( resource $process )
+
+proc_close() 同 pclose() 函数类似，只是 proc_close() 只能用来关闭由 proc_open()
+函数打开的进程。 proc_close() 函数会等待进程终止，并且返回进程的返回值。如果有
+连接到进程的已经打开的管道，那么需要在调用此函数之前调用 fclose() 函数来关闭管
+道，否则会引发死锁 - 在管道处于打开状态时，子进程将不能退出。
+
+参数
+
+process
+
+    要关闭的由 proc_open() 打开的 resource 。
+
+返回值
+
+返回进程的终止状态码。如果发生错误，将返回 -1。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+Consider the following pseudo code:
+
+$SOME_PROCESS = proc_open(/* something here */);
+...
+$status = proc_get_status($SOME_PROCESS);
+...
+$exitCode = proc_close($SOME_PROCESS);
+
+If the external program has exited on its own before the call to
+proc_get_status, then $exitCode == -1
+
+So consider using:
+$actualExitCode = ($status["running"] ? $exitCode : $status["exitcode"] );
+===============================================================================
+
+From various Internet posts and recent experience, I have observed that you
+cannot rely on proc_close returning the accurate return code of the child
+process. The return code also depends on wether or not you read from the stdout
+/stderr pipes, as my example shows. I work around this by writing the exit code
+to an additional file descriptor.
+
+<?
+$descriptorspec = array(
+       0 => array('pipe', 'r'),  // stdin is a pipe that the child will read
+from
+       1 => array('pipe', 'w'),  // stdout is a pipe that the child will write
+to
+       2 => array('pipe', 'w'), // stderr is a pipe that the child will write
+to
+    );
+    $proc = @proc_open("/bin/ls -l /etc/passwd", $descriptorspec, $pipes);
+    fclose($pipes[0]);
+    $output = array();
+    while (!feof($pipes[1])) array_push($output, rtrim(fgets($pipes[1],1024),"\
+n"));
+    fclose($pipes[1]);
+    while (!feof($pipes[2])) array_push($output, rtrim(fgets($pipes[2],1024),"\
+n"));
+    fclose($pipes[2]);
+    $exit=proc_close($proc);
+    print_r($output);
+    echo "exitcode $exit\n\n";
+
+$descriptorspec = array(
+       0 => array('pipe', 'r'),  // stdin is a pipe that the child will read
+from
+       1 => array('pipe', 'w'),  // stdout is a pipe that the child will write
+to
+       2 => array('pipe', 'w'), // stderr is a pipe that the child will write
+to
+    );
+    $proc = @proc_open("/bin/ls -l /etc/passwd", $descriptorspec, $pipes);
+    fclose($pipes[0]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exit=proc_close($proc);
+    echo "exitcode $exit\n\n";
+
+$descriptorspec = array(
+       0 => array('pipe', 'r'),  // stdin is a pipe that the child will read
+from
+       1 => array('pipe', 'w'),  // stdout is a pipe that the child will write
+to
+       2 => array('pipe', 'w'), // stderr is a pipe that the child will write
+to
+       3 => array('pipe', 'w'), // stderr is a pipe that the child will write
+to
+    );
+    $proc = @proc_open("/bin/ls -l /etc/passwd;echo $? >&3", $descriptorspec,
+$pipes);
+    fclose($pipes[0]);
+    $output = array();
+    //comment next line to get correct exicode
+    while (!feof($pipes[1])) array_push($output, rtrim(fgets($pipes[1],1024),"\
+n"));
+    fclose($pipes[1]);
+    while (!feof($pipes[2])) array_push($output, rtrim(fgets($pipes[2],1024),"\
+n"));
+    fclose($pipes[2]);
+    if (!feof($pipes[3])) $output['exitcode']=rtrim(fgets($pipes[3],5),"\n");
+    fclose($pipes[3]);
+    proc_close($proc);
+    print_r($output);
+?>
+
+Outputs on my system:
+
+Array
+(
+    [0] => -rw-r--r--  1 root root 1460 2005-09-02 09:52 /etc/passwd
+    [1] =>
+    [2] =>
+)
+exitcode -1
+
+exitcode 1
+
+Array
+(
+    [0] => -rw-r--r--  1 root root 1460 2005-09-02 09:52 /etc/passwd
+    [1] =>
+    [2] =>
+    [exitcode] => 0
+)
+===============================================================================
+
+It seems that if you configured --enable-sigchild when you compiled PHP (which
+from my reading is required for you to use Oracle stuff), then return codes
+from proc_close() cannot be trusted.
+
+Using proc_open's Example 1998's code on versions I have of PHP4 (4.4.7) and
+PHP5 (5.2.4), the return code is always "-1".  This is also the only return
+code I can cause by running other shell commands whether they succeed or fail.
+
+I don't see this caveat mentioned anywhere except on this old bug report --
+http://bugs.php.net/bug.php?id=29123
+===============================================================================
+
+Regarding: "Returns the termination status of the process that was run. In case
+of an error then -1 is returned."
+
+This is, at best, misleading. It returns:
+* -1 on error,
+* WEXITSTATUS(status) if WIFEXITED(status) is true, or
+* status if WIFEXITED(status) is false,
+where status is the status parameter of waitpid().
+
+This makes it impossible to differentiate between a relatively normal exit or a
+termination by signal, and reduces the value of the proc_close return code to a
+binary one (ok / something broke).
+
+This can be seen in proc_open_rsrc_dtor() in ext/standard/proc_open.c (PHP
+5.4.44, 5.6.12).
+===============================================================================
+
+Under PHP/4.3.3RC2, in case of two processes
+these function may hangs. Work around is not use
+proc_close, or put it after all fcloses done.
+
+For example, this code hangs.
+
+$ph1 = proc_open("cat",
+array(0=>array("pipe","r"),1=>array("pipe","w")),
+$pipes1);
+$ph2 = proc_open("cat",
+array(0=>array("pipe","r"),1=>array("pipe","w")),
+$pipes2);
+
+fclose($pipes1[0]); fclose($pipes1[1]); proc_close($ph1);
+fclose($pipes2[0]); fclose($pipes2[1]); proc_close($ph2);
+
+This code worked for me:
+
+$ph1 = proc_open("cat",
+array(0=>array("pipe","r"),1=>array("pipe","w")),
+$pipes1);
+$ph2 = proc_open("cat",
+array(0=>array("pipe","r"),1=>array("pipe","w")),
+$pipes2);
+
+fclose($pipes1[0]); fclose($pipes1[1]);
+fclose($pipes2[0]); fclose($pipes2[1]);
+proc_close($ph1); proc_close($ph2);

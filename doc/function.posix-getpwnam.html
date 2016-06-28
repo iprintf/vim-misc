@@ -1,0 +1,259 @@
+
+posix_getpwnam
+
+(PHP 4, PHP 5, PHP 7)
+
+posix_getpwnam — Return info about a user by username
+
+说明
+
+array posix_getpwnam ( string $username )
+
+Returns an array of information about the given user.
+
+参数
+
+username
+
+    An alphanumeric username.
+
+返回值
+
+On success an array with the following elements is returned, else FALSE is
+returned:
+
+                          The user information array
+Element                               Description
+        The name element contains the username of the user. This is a short,
+name    usually less than 16 character "handle" of the user, not the real, full
+        name. This should be the same as the username parameter used when
+        calling the function, and hence redundant.
+        The passwd element contains the user's password in an encrypted format.
+passwd  Often, for example on a system employing "shadow" passwords, an
+        asterisk is returned instead.
+uid     User ID of the user in numeric form.
+gid     The group ID of the user. Use the function posix_getgrgid() to resolve
+        the group name and a list of its members.
+        GECOS is an obsolete term that refers to the finger information field
+        on a Honeywell batch processing system. The field, however, lives on,
+gecos   and its contents have been formalized by POSIX. The field contains a
+        comma separated list containing the user's full name, office phone,
+        office number, and home phone number. On most systems, only the user's
+        full name is available.
+dir     This element contains the absolute path to the home directory of the
+        user.
+shell   The shell element contains the absolute path to the executable of the
+        user's default shell.
+
+范例
+
+Example #1 Example use of posix_getpwnam()
+
+<?php
+
+$userinfo = posix_getpwnam("tom");
+
+print_r($userinfo);
+?>
+
+以上例程的输出类似于：
+
+Array
+(
+    [name]    => tom
+    [passwd]  => x
+    [uid]     => 10000
+    [gid]     => 42
+    [gecos]   => "tom,,,"
+    [dir]     => "/home/tom"
+    [shell]   => "/bin/bash"
+)
+
+参见
+
+  • posix_getpwuid() - Return info about a user by user id
+  • POSIX man page GETPWNAM(3)
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+If you need to validate a *real* unix password on a system using shadowed
+passwords, the posix_getpwnam() function in PHP won't work (as mentioned, 'x',
+or '*', will be in the password field).
+
+I have a need to verify a user/pass within PHP (using SSL!).  I don't know if
+this is the best way, but it's what I'm doing at the moment (works well!).
+
+First, you need some help from the OS.  I wrote a tiny C utility that does the
+shadow look-up for me... It requires root access to read /etc/shadow.  So after
+you compile (gcc -O2 -s -o spasswd -lcrypt spasswd.c), you need to either use
+sudo to run it, or
+
+# chown root spasswd && chmod u+s spasswd
+
+To code that I'm using to authenticate a user/pass from PHP looks like:
+
+function Authenticate($realm)
+{
+global $PHP_AUTH_USER;
+global $PHP_AUTH_PW;
+
+if(!isset($PHP_AUTH_USER))
+{
+  header("WWW-Authenticate: Basic realm=\"$realm\"");
+  header("HTTP/1.0 401 Unauthorized");
+
+  return false;
+}
+else
+{
+  if(($fh = popen("/usr/sbin/spasswd", "w")))
+  {
+   fputs($fh, "$PHP_AUTH_USER $PHP_AUTH_PW");
+   $r = pclose($fh);
+
+   if(!$r)
+    return true;
+  }
+}
+
+header("WWW-Authenticate: Basic realm=\"$realm\"");
+header("HTTP/1.0 401 Unauthorized");
+
+return false;
+}
+
+The C source for spasswd.c:
+
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <crypt.h>
+#include <shadow.h>
+
+static char salt[12], user[128], pass[128];
+
+void die(void)
+{
+memset(salt, '\0', 12);
+memset(user, '\0', 128);
+memset(pass, '\0', 128);
+}
+
+int main(int argc, char *argv[])
+{
+struct spwd *passwd;
+
+atexit(die); die();
+
+if(fscanf(stdin, "%127s %127s", user, pass) != 2)
+  return 1;
+
+if(!(passwd = getspnam(user)))
+  return 1;
+
+strncpy(salt, passwd->sp_pwdp, 11);
+strncpy(pass, crypt(pass, salt), 127);
+
+if(!strncmp(pass, passwd->sp_pwdp, 127))
+  return 0;
+
+return 1;
+}
+
+Hope this helps someone...
+===============================================================================
+
+Oh I forgot the following:
+
+to change a Users password via PHP,
+you can use the following (under Linux with installed Samba):
+
+exec('echo -e "'.$oldpassword.'\n'.$newpassword.'\n'.$newpassword.'
+"|smbpasswd -U'.$user.' -s')
+
+The exec-command returns ""
+if an error occured (then see the error_log of the web-server)
+or a message "The password has been changed".
+
+Good luck.
+Baumg rtner
+===============================================================================
+
+Hello, I've tried another, more easier way to check passwords than checking it
+to a pop3-server. If you are running a samba-server or a Windows PDC, so you
+can try to connect with the username/password you want to check to the netlogon
+of this server:
+
+if (exec('echo "exit"|smbclient //server/netlogon -U'.$user.' '.$pass)=="") {
+... }
+
+If the username/password doesn't match, then the exec-command under LINUX
+returns an error.
+
+Good luck
+Baumg rtner
+===============================================================================
+
+If you are running a pop3-daemon, so you can do authentification on pop3 by
+using fsockopen :-) and checking whether it returns +OK or -ERR
+===============================================================================
+
+For those of you who are writing daemons with PHP and are one for security.
+This function will not return any info if you have called PHP's chroot()
+function.
+
+Took me a few minutes why it wouldn't find the user it was searching for.
+===============================================================================
+
+Given a non-existent username, this function returns a boolean FALSE.
+===============================================================================
+
+To check passwords on a Unix-box, look at the mod_auth_external module for
+Apache, it uses external programs to do the real job. The server won't ever
+read the encrypted password.
+
+One of them, pwauth, can be configured to use PAM or whatever is used on your
+system. Users that can run this program are configured at compile time. And
+this program can be called from PHP with exec(...).
+===============================================================================
+
+I needed to get access to the user information to do login/validation via an
+SSL connection and encountered the same problem with receiving '*' in the
+password field.  After checking the documentation on posix_getpwnam, I saw a
+previous solution involving coding a C program.  This was a bit bulky for me so
+I came up with my own solution.
+
+Variations on this theme can probably be done to make the solution more
+programmer/reader friendly, but the way I did it accomplished the task that I
+needed to do.
+
+IF the information you need to get from posix_getpwnam comes from a host
+participating in an NIS network, you can accomplish the same thing with the
+following command:
+
+
+$autharray = split(":",`ypmatch $USER passwd`);
+
+
+(pretty long explanation for such a short solution huh?)
+
+You'll have to get at the fields by their index number ($autharray[0],
+$autharray[1], ...) using this method.
+
+To create an associative array that is plug-in compatible with the
+posix_getpwnam function,  you'll probably need to use the 'list' specifier to
+do the assignments.
+
+I hope this helps someone.
+
+--S
+===============================================================================
+
+User and group functions do not work on recent Redhat systems since these
+functions are based on /etc/group file but new redhat does not put group
+members' list into this file. Instead you need to examine /etc/passwd file and
+find members of a group by checking group id.

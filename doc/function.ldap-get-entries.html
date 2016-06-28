@@ -1,0 +1,387 @@
+
+ldap_get_entries
+
+(PHP 4, PHP 5, PHP 7)
+
+ldap_get_entries — Get all result entries
+
+说明
+
+array ldap_get_entries ( resource $link_identifier , resource
+$result_identifier )
+
+Reads multiple entries from the given result, and then reading the attributes
+and multiple values.
+
+参数
+
+link_identifier
+
+    An LDAP link identifier, returned by ldap_connect().
+
+result_identifier
+
+返回值
+
+Returns a complete result information in a multi-dimensional array on success
+and FALSE on error.
+
+The structure of the array is as follows. The attribute index is converted to
+lowercase. (Attributes are case-insensitive for directory servers, but not when
+used as array indices.)
+
+return_value["count"] = number of entries in the result
+return_value[0] : refers to the details of first entry
+
+return_value[i]["dn"] =  DN of the ith entry in the result
+
+return_value[i]["count"] = number of attributes in ith entry
+return_value[i][j] = NAME of the jth attribute in the ith entry in the result
+
+return_value[i]["attribute"]["count"] = number of values for
+                                        attribute in ith entry
+return_value[i]["attribute"][j] = jth value of attribute in ith entry
+
+参见
+
+  • ldap_first_entry() - Return first result id
+  • ldap_next_entry() - Get next result entry
+
+
+User Contributed Notes 17 notes
+
+===============================================================================
+
+It has been mentioned in the comments below, but the <?php ldap_get_entries(
+$connection,$result) ?> always makes all attributes into lower-case. I found
+out the hard way that if I'm running an ldap query against the corporate AD and
+then want to display some results, nothing is actually displayed unless the
+attribute names area in lower-case.
+
+Example:
+
+<?php
+// connect to AD
+include('ad_con.php');
+// limit attributes we want to look for
+$attributes_ad = array("displayName","description","cn","givenName","sn","mail"
+,"co","mobile","company","displayName");
+// define base
+$base ="";
+
+// in my script I search based on e-mail, $email variable is passed from the
+form
+$result = ldap_search($conn, $base, "mail=$email*", $attributes_ad) or die (
+"Error in search
+        query");
+
+// put search results into the array ($conn variable is defined in the included
+'ad_con.php')
+$info = ldap_get_entries($conn, $result);
+
+//Now, to display the results we want:
+for ($i=0; $i<$info["count"]; $i++)
+    {
+    // to show the attribute displayName (note the case!)
+    echo $info[$i]["displayname"][0]
+   
+    }
+
+?>
+===============================================================================
+
+I find the ["count"] items in these arrays highly annoying, so I made a
+function to remove them recursively:
+
+function rCountRemover($arr) {
+  foreach($arr as $key=>$val) {
+    # (int)0 == "count", so we need to use ===
+    if($key === "count")
+      unset($arr[$key]);
+    elseif(is_array($val))
+      $arr[$key] = rCountRemover($arr[$key]);
+  }
+  return $arr;
+}
+===============================================================================
+
+If you're dealing with Active Directory and need to get values like
+'lastlogon', 'pwdlastset' or similar, you'll notice that AD gives the values as
+Windows FILETIME timestamps. That means, the values are 100-nanosecond units
+passed since 1.1.1600 00:00:00.
+
+To convert these to unix timestamps which PHP's date functions understand, one
+easy way would be the following :
+
+function win_filetime_to_timestamp ($filetime) {
+
+  $win_secs = substr($filetime,0,strlen($filetime)-7); // divide by 10 000 000
+to get seconds
+  $unix_timestamp = ($win_secs - 11644473600); // 1.1.1600 -> 1.1.1970
+difference in seconds
+  return $unix_timestamp;
+}
+===============================================================================
+
+Looks like there is a limit on returned objects - only 1000 items are placed in
+the array
+===============================================================================
+
+Recursive form of markus' function so it can take directly the result of
+ldap_get_entries :
+<?php
+function cleanUpEntry( $entry ) {
+  $retEntry = array();
+  for ( $i = 0; $i < $entry['count']; $i++ ) {
+    if (is_array($entry[$i])) {
+      $subtree = $entry[$i];
+      //This condition should be superfluous so just take the recursive call
+      //adapted to your situation in order to increase perf.
+      if ( ! empty($subtree['dn']) and ! isset($retEntry[$subtree['dn']])) {
+        $retEntry[$subtree['dn']] = cleanUpEntry($subtree);
+      }
+      else {
+        $retEntry[] = cleanUpEntry($subtree);
+      }
+    }
+    else {
+      $attribute = $entry[$i];
+      if ( $entry[$attribute]['count'] == 1 ) {
+        $retEntry[$attribute] = $entry[$attribute][0];
+      } else {
+        for ( $j = 0; $j < $entry[$attribute]['count']; $j++ ) {
+          $retEntry[$attribute][] = $entry[$attribute][$j];
+        }
+      }
+    }
+  }
+  return $retEntry;
+}
+?>
+
+Result is of the form :
+array(256) {
+  ["uid=doe,ou=People,dc=example,dc=net"]=>
+  array(3) {
+    ["uid"]=>
+    string(4) "doe"
+    ["cn"]=>
+    string(14) "John Doe"
+    ["telephonenumber"]=>
+    string(4) "1234"
+  }
+  ["uid=foo,ou=People,dc=example,dc=net"]=>
+  ...
+===============================================================================
+
+When you like to get the entry from LDAP in the same style as ldap_add(), then
+you can use the following function to convert this entry.
+
+<?php
+/**
+* Take an LDAP and make an associative array from it.
+*
+* This function takes an LDAP entry in the ldap_get_entries() style and
+* converts it to an associative array like ldap_add() needs.
+*
+* @param array $entry is the entry that should be converted.
+*
+* @return array is the converted entry.
+*/
+function cleanUpEntry( $entry ) {
+    $retEntry = array();
+    for ( $i = 0; $i < $entry['count']; $i++ ) {
+        $attribute = $entry[$i];
+        if ( $entry[$attribute]['count'] == 1 ) {
+            $retEntry[$attribute] = $entry[$attribute][0];
+        } else {
+            for ( $j = 0; $j < $entry[$attribute]['count']; $j++ ) {
+                $retEntry[$attribute][] = $entry[$attribute][$j];
+            }
+        }
+    }
+    return $retEntry;
+}
+?>
+===============================================================================
+
+Helmuts programming example is incorrect.
+
+PHP arrays start from zero, so your first entry is $entry[0] and your last
+entry is $entry[$entry["count"] - 1].
+
+$entry[$entry["count"]] will never exist, thus his usage of is_null.
+
+Helmuts usage of is_null is not elegant, its just poor understanding of arrays.
+
+Save some confusion and remove Helmuts entry and this one.
+===============================================================================
+
+Another way of ignoring the last null entry would be to subtract one from the
+iteration count like this:
+
+for($i = 0; $i < count($result_array) - 1; $i++)
+{
+     ...
+}
+
+Helmut's method is far more elegant on its own but what I do is combine the
+above with the null test that he suggested. It may seem like overkill, but
+better safe than sorry.
+===============================================================================
+
+I have found that ldap_get_entries() function doesn't handle binary data
+correctly.  I had to write my own using ldap_get_values_len().
+
+// will use ldap_get_values_len() instead and build the array
+// note: it's similar with the array returned by
+// ldap_get_entries() except it has no "count" elements
+$i=0;
+$entry = ldap_first_entry($this->conn, $this->srchRslt);
+do {
+     $attributes = ldap_get_attributes($this->conn, $entry);
+     for($j=0; $j<$attributes['count']; $j++) {
+        $values = ldap_get_values_len($this->conn, $entry,$attributes[$j]);
+        $this->rawData[$i][$attributes[$j]] = $values;
+     }         
+     $i++;               
+    }
+while ($entry = ldap_next_entry($this->conn, $entry));
+//we're done
+return ($this->rawData);
+===============================================================================
+
+Actually, the fact that ldap_get_entries returns attribute names as lowercase
+is really annoying, because ldap_get_attributes apparently does not.  This is
+really annoying, especially when having arrays of attribute names and having to
+worry about which call was used to retrieve entries from LDAP.
+===============================================================================
+
+In response to the first message ldap_get_entries, I think there is some
+confusion with the dynamic typing of php.
+
+If the result is a string doing $foo[0] will return the first character of the
+string.
+
+In the case of an array $foo[0] will return the entire first element.
+
+Its not to do with the 'dn' in particular, rather the fact that the dn is a
+scalar value (ie a string) rather than an array, and the indexing works
+differently in either case.
+
+For debugging purposes I would recommend using something like :
+
+$value = is_array($foo) ? $foo[0] : $foo; 
+
+or
+
+$value = is_array($foo) ? implode($foo, $delimiter) : $foo;
+===============================================================================
+
+Note: ldap_get_entries returns true even if no results are found, like this:
+
+echo $entries=ldap_get_entries(...);
+
+will print Array.
+
+You have to check for number of row in the Array like this:
+
+if($entries["count"]==0) return false;
+
+Hope this helped someone...
+===============================================================================
+
+Just a note: an multidemnsional array is like an array with in an array.... you
+have myArray[2]-> can refer to something like dc=americas,dc=icm,dc=org
+
+Basically you have more elements that are buried with in one element of the
+parent array[], myArray[2]
+
+So, thats why you see myArray[1]["dn"][0] ... pulling out the first element in
+myArray[1] and rollover the first element in it.
+===============================================================================
+
+If you loop over the entries, like
+$entries = ldap_get_entries( $ds, $sr );
+watch out!
+you have to check with is_null the last entry
+because you will get one entry more than the search found,
+but the last one will be null
+so you are safe if you do:
+for ( $i = 0; $i < count( $entries ); $i++ ) {
+    if ( is_null( $entries[ $i ] ) ) continue;
+    ...
+}
+===============================================================================
+
+Some code I put together. Maybe yall can benefit from it.
+
+<?php
+function search_results($info) {
+  foreach ($info as $inf) {
+    if (is_array($inf)) {
+      foreach ($inf as $key => $in) {
+        if ((count($inf[$key]) - 1) > 0) {
+          if (is_array($in)) {
+            unset($inf[$key]["count"]);
+          }
+          $results[$key] = $inf[$key];
+        }
+      }
+    }
+  }
+  $results["dn"] = explode(',', $info[0]["dn"]);
+  return $results;
+}
+
+$user = "asohn";
+
+$ds = ldap_connect("ldap://DOMAIN.net");
+if ($ds) {
+  $r = ldap_bind($ds);
+  $sr = ldap_search($ds, "ou=customers,dc=DOMAIN,dc=net", "uid=".$user);
+  $info = ldap_get_entries($ds, $sr);
+ 
+  echo $info["count"]." Search Result(s) for \"".$user."\"\n";
+ 
+  $results = search_results($info);
+  foreach ($results as $key => $result) {
+    echo "  ".$key."\n";
+    if (is_array($result)){
+      foreach($result as $res){
+        echo "    ".$res."\n";
+      }
+    }
+  }
+  ldap_close($ds);
+}
+?>
+===============================================================================
+
+Note that ldap_get_entries return an associative array with the attributes in
+lower case.  So for example the givenName ldap attribute is associated with
+$ldap[0]["givenname"][0] (for the first given name for the first result) this
+is a little confusing at first.
+===============================================================================
+
+Hope this could help a bit others to print attribute and values on the same
+line. This is basic code of course
+
+<?php
+
+$ldap_con = ldap_connect($ldap_server) or die("Could not connect to server.
+Error is " . ldap_error($ldap_con));
+$ldap_bd = ldap_bind($ldap_con, $root_dn, $root_pw) or die("Could not bind to
+server. Error is " .ldap_error($ldap_con));
+$result = ldap_search($ldap_con, $personnel_base, "(uid=*)") or die ("Error in
+query");
+
+$data = ldap_get_entries($ldap_con, $result);
+
+for ($i=0; $i<=$data["count"];$i++) {
+        for ($j=0;$j<=$data[$i]["count"];$j++){
+        echo $data[$i][$j].": ".$data[$i][$data[$i][$j]][0]."\n";
+        }
+}
+ldap_close($ldap_con);
+?>

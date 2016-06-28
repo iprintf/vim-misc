@@ -1,0 +1,363 @@
+
+socket_connect
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+socket_connect — 开启一个套接字连接
+
+说明
+
+bool socket_connect ( resource $socket , string $address [, int $port = 0 ] )
+
+用 socket_create() 创建的有效的套接字资源来连接到 address 。
+
+参数
+
+socket
+
+address
+
+    如果参数 socket 是 AF_INET ，那么参数 address 则可以是一个点分四组表示法（
+    例如 127.0.0.1 ）的 IPv4 地址；如果支持 IPv6 并且 socket 是 AF_INET6，那么
+    address 也可以是有效的 IPv6 地址（例如 ::1）；如果套接字类型为 AF_UNIX ，那
+    么 address 也可以是一个Unix 套接字。
+
+port
+
+    参数 port 仅仅用于 AF_INET 和 AF_INET6 套接字连接的时候，并且是在此情况下是
+    需要强制说明连接对应的远程服务器上的端口号。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。错误代码会传入 socket_last_error() ，
+如果将此参数传入 socket_strerror() 则可以得到错误的文字说明。
+
+    Note:
+
+    If the socket is non-blocking then this function returns FALSE with an
+    error Operation now in progress.
+
+参见
+
+  • socket_bind() - 给套接字绑定名字
+  • socket_listen() - Listens for a connection on a socket
+  • socket_create() - 创建一个套接字（通讯节点）
+  • socket_last_error() - Returns the last error on the socket
+  • socket_strerror() - Return a string describing a socket error
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+If you're using non-blocking, be sure not to turn it on until after you
+connect, otherwise you will get the mesasge:
+
+PHP Warning:  socket_connect() unable to connect [115]: Operation now in
+progress in file.php on line 123
+
+and socket_connect() will return false (even though it will connect).
+===============================================================================
+
+man page for connect :
+EINPROGRESS
+The socket is non-blocking and the connection cannot be completed immediately. 
+It is possible to select(2) or poll(2) for completion by selecting the socket
+for writing. After select indicates  writability,  use  getsockopt(2)  to read
+the SO_ERROR option at level SOL_SOCKET to determine whether connect completed
+successfully (SO_ERROR is zero) or unsuccessfully (SO_ERROR is one of the usual
+error codes listed here, explaining the reason for the failure).
+
+use socket_getoption($socket,SOL_SOCKET,SO_ERROR) . If you get value 115, it is
+connecting. If you get value different than 115 and 0, that means that an error
+has occured (see what error with socket_strerror()).
+
+However, I don't know how does that works under Windows, maybe it wont work at
+all. It is supposed to work under Linux (man pages said that).
+===============================================================================
+
+It seems that timeout values can be specified by setting the SO_SNDTIMEO option
+before calling socket_connect():
+
+<?php
+socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, array('sec' => $seconds, 
+'usec' => $milliseconds));
+socket_connect($socket, $address, $port)//...
+?>
+===============================================================================
+
+Hi there!
+
+For the TCP connections: socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+In case you're having problems in socket_connect() with socket_strerror() =
+"Permission denied", you may be having a SELinux config issue.
+
+Check if SELinux is enabled:
+# /usr/sbin/sestatus -v
+In case it is, you can just type the command:
+# setsebool httpd_can_network_connect=1
+
+That's it... I read you had to reboot, but I didn't and it worked fine anyway.
+More info, you may check:
+http://arkiv.netbsd.se/?ml=squirrelmail-users&a=2005-11&t=1523021
+===============================================================================
+
+This will give you a simple port-checker.
+
+Note that on production-machines, you might want to alter the error
+reporting-level,
+since unsuccessful connects will give you a "No connection could be made
+because
+the target machine actively refused it"-error in the log.
+
+Under Windows, make sure you enable the php_sockets.dll extension in your
+php.ini.
+
+<?php 
+  $address=$_SERVER['REMOTE_ADDR'];
+ 
+  if (isset($_REQUEST['port']) and
+      (!strlen($_REQUEST['port'])==0))
+    $port=$_REQUEST['port'];
+  else
+    unset($port);
+   
+  if (isset($port) and
+      ($socket=socket_create(AF_INET, SOCK_STREAM, SOL_TCP)) and
+      (socket_connect($socket, $address, $port)))
+    {
+      $text="Connection successful on IP $address, port $port";
+      socket_close($socket);
+    }
+  else
+    $text="Unable to connect<pre>".socket_strerror(socket_last_error())."</pre>
+";
+   
+  echo "<html><head></head><body>".
+       $text.
+       "</body></html>";
+?>
+
+Greetz,
+
+Peter.
+===============================================================================
+
+rbarnes' tip is helpful, but I found that I needed to add a check for
+SOCKET_EISCONN in the while loop:
+
+    ...
+    $error = socket_last_error();
+
+    if ($error == SOCKET_EISCONN) {
+        $connected = true;
+        break;
+    }
+    ...
+
+At least on Mac OS X 10.5.
+===============================================================================
+
+here's how you can implement timeouts with the socket functions.
+
+this example works for blocking sockets but will work for both blocking and
+nonblocking with minor modifications. first call to connect in nonblocking mode
+returns 115 EINPROGRESS, additional calls return 114 EALREADY if the connection
+has not already failed or succeeded. once the connection succeeds, the socket
+resource will be returned.
+
+<?
+    $host = "127.0.0.1";
+    $port = "80";
+    $timeout = 15;  //timeout in seconds
+
+    $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP)
+      or die("Unable to create socket\n");
+
+    socket_set_nonblock($socket)
+      or die("Unable to set nonblock on socket\n");
+
+    $time = time();
+    while (!@socket_connect($socket, $host, $port))
+    {
+      $err = socket_last_error($socket);
+      if ($err == 115 || $err == 114)
+      {
+        if ((time() - $time) >= $timeout)
+        {
+          socket_close($socket);
+          die("Connection timed out.\n");
+        }
+        sleep(1);
+        continue;
+      }
+      die(socket_strerror($err) . "\n");
+    }
+
+    socket_set_block($this->socket)
+      or die("Unable to set block on socket\n");
+?>
+===============================================================================
+
+This will print the banner from a true 'telnet' server (router, switch, host,
+etc).
+
+$socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+socket_connect($socket, '127.0.0.1', 23);
+
+while (TRUE) {
+        $r = array($socket);
+        $c = socket_select($r, $w = NULL, $e = NULL, 5);
+
+        foreach ($r as $read_socket) {
+                if ($r = negotiate($read_socket)) {
+                        var_dump($r);
+                        exit;
+                }
+        }
+}
+
+function negotiate ($socket) {
+        socket_recv($socket, $buffer, 1024, 0);
+
+        for ($chr = 0; $chr < strlen($buffer); $chr++) {
+                if ($buffer[$chr] == chr(255)) {
+
+                        $send = (isset($send) ? $send . $buffer[$chr] : $buffer
+[$chr]);
+
+                        $chr++;
+                        if (in_array($buffer[$chr], array(chr(251), chr(252))))
+$send .= chr(254);
+                        if (in_array($buffer[$chr], array(chr(253), chr(254))))
+$send .= chr(252);
+
+                        $chr++;
+                        $send .= $buffer[$chr];
+                } else {
+                        break;
+                }
+        }
+
+        if (isset($send)) socket_send($socket, $send, strlen($send), 0);
+        if ($chr - 1 < strlen($buffer)) return substr($buffer, $chr);
+
+}
+===============================================================================
+
+UDP sockets can be "connected", the subsystem will simply remember the
+destination. socket_getpeername() will also work. No data is sent upon UDP
+"connection".
+
+<?php
+$socket = socket_create(AF_INET,SOCK_DGRAM,SOL_UDP);
+socket_connect($socket,'127.0.0.1',1);
+socket_getpeername($socket,$name,$port);
+echo "{$name}:{$port}\n"; // 127.0.0.1:1
+var_dump(socket_send($socket,'foo',3,0)); // int(3)
+var_dump(socket_last_error($socket)); // int(0)
+?>
+===============================================================================
+
+Here is an example of a non-blocking connect which should perform quite a bit
+faster than the one posted by Seymour below:
+
+<?php
+function msConnectSocket($remote, $port, $timeout = 30) {
+        # this works whether $remote is a hostname or IP
+        $ip = "";
+        if( !preg_match('/^\d+\.\d+\.\d+\.\d+$/', $remote) ) {
+            $ip = gethostbyname($remote);
+            if ($ip == $remote) {
+                $this->errstr = "Error Connecting Socket: Unknown host";
+                return NULL;
+            }
+        } else $ip = $remote;
+
+        if (!($this->_SOCK = @socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
+            $this->errstr = "Error Creating Socket: ".socket_strerror(
+socket_last_error());
+            return NULL;
+        }
+
+        socket_set_nonblock($this->_SOCK);
+
+        $error = NULL;
+        $attempts = 0;
+        $timeout *= 1000;  // adjust because we sleeping in 1 millisecond
+increments
+        $connected;
+        while (!($connected = @socket_connect($this->_SOCK, $remote, $port+0))
+&& $attempts++ < $timeout) {
+            $error = socket_last_error();
+            if ($error != SOCKET_EINPROGRESS && $error != SOCKET_EALREADY) {
+                $this->errstr = "Error Connecting Socket: ".socket_strerror(
+$error);
+                socket_close($this->_SOCK);
+                return NULL;
+            }
+            usleep(1000);
+        }
+
+        if (!$connected) {
+            $this->errstr = "Error Connecting Socket: Connect Timed Out After 
+$timeout seconds. ".socket_strerror(socket_last_error());
+            socket_close($this->_SOCK);
+            return NULL;
+        }
+       
+        socket_set_block($this->_SOCK);
+
+        return 1;     
+}
+?>
+===============================================================================
+
+In reply to the function socket_raw_connect posted by "net_del at freemail dot
+ru". In the function you give a return value and afterwords you try to close
+the connection. That won't ever work. I think you want to alter your code ;-)
+===============================================================================
+
+Note that as of PHP5.3 it is not possible to send IPv6 multicast to link-local
+addresses, because socket_connect() is just a trimmed-down version of connect()
+and does not support passing sin6_scope_id - the scope ID is required when
+sending packets to ff02::1 (all-nodes), for example.
+At first I thought I needed to bind the socket to the device using
+SO_BINDTODEVICE option (undefined constant in PHP - use numeric value 25), but
+it makes no difference, only requires root privileges to produce no usable
+results.
+Also, if you think you are sending multicast packets to link local addresses
+just because socket_sendto() returns a positive number of bytes, you might be
+wrong - just returning success does not mean that packets are sent over any
+link at all. In my test case I was sending to ff02::1, I could detect no
+errors, but Wireshark showed no packets. They end up in void.
+This is irrelevant to the handling of local reception sockets, so UDP listeners
+should still work as usual with IPv6/UDP. You might want to resort to C for
+implementing multicasters, though.
+===============================================================================
+
+I had the same problem with the timeout, and i applied this solution.
+
+It works only on linux PHP, i make a ping to the ip before connect the
+socket.....
+
+<?php
+$address = gethostbyname ($ip);
+        $command = "ping -c 1 " . $address; 
+        $r = exec($command); 
+          if ($r[0]=="r")
+          {       
+            $socket = socket_create (AF_INET, SOCK_STREAM, 0);
+            if ($socket < 0) {
+                echo "socket_create() failed: reason: " . socket_strerror (
+$socket) . "\n";
+            } else {
+                echo "OK.\n";
+            }
+?>
+===============================================================================
+
+This probably sounds like common sense, but it is something nobody i asked
+thought of... you can't bind the socket to localhost, you must bind it to
+either the IP your router assigns you, or your public IP address. If you bind
+to localhost, it will give an invalid resource error.

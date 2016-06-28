@@ -1,0 +1,353 @@
+
+pcntl_wait
+
+(PHP 5, PHP 7)
+
+pcntl_wait — 等待或返回fork的子进程状态
+
+说明
+
+int pcntl_wait ( int &$status [, int $options = 0 ] )
+
+wait函数刮起当前进程的执行直到一个子进程退出或接收到一个信号要求中断当前进程或
+调用一个信号处理函数。如果一个子进程在调用此函数时已经退出（俗称僵尸进程），此
+函数立刻返回。子进程使用的所有系统资源将被释放。关于wait在您系统上工作的详细规
+范请查看您系统的wait（2）手册。
+
+    Note:
+
+    这个函数等同于以-1作为参数pid 的值并且没有options参数来调用pcntl_waitpid()
+    函数。
+
+参数
+
+status
+
+    pcntl_wait()将会存储状态信息到status 参数上，这个通过status参数返回的状态信
+    息可以用以下函数 pcntl_wifexited(), pcntl_wifstopped(), pcntl_wifsignaled()
+    , pcntl_wexitstatus(), pcntl_wtermsig()以及 pcntl_wstopsig()获取其具体的值
+    。
+
+options
+
+    如果您的操作系统（多数BSD类系统）允许使用wait3，您可以提供可选的options 参
+    数。如果这个参数没有提供，wait将会被用作系统调用。如果wait3不可用，提供参数
+    options不会有任何效果。options的值可以是0 或者以下两个常量或两个常量“或运算
+    ”结果（即两个常量代表意义都有效）。
+
+                   options可用值
+    WNOHANG   如果没有子进程退出立刻返回。
+    WUNTRACED 子进程已经退出并且其状态未报告时返回。
+
+返回值
+
+pcntl_wait()返回退出的子进程进程号，发生错误时返回-1,如果提供了 WNOHANG作为
+option（wait3可用的系统）并且没有可用子进程时返回0。
+
+参见
+
+  • pcntl_fork() - 在当前进程当前位置产生分支（子进程）。译注：fork是创建了一个
+    子进程，父进程和子进程都从fork的位置开始向下继续执行，不同的是父进程执行过
+    程中，得到的fork返回值为子进程号，而子进程得到的是0。
+  • pcntl_signal() - 安装一个信号处理器
+  • pcntl_wifexited() - 检查状态代码是否代表一个正常的退出。
+  • pcntl_wifstopped() - 检查子进程当前是否已经停止
+  • pcntl_wifsignaled() - 检查子进程状态码是否代表由于某个信号而中断
+  • pcntl_wexitstatus() - 返回一个中断的子进程的返回代码
+  • pcntl_wtermsig() - 返回导致子进程中断的信号
+  • pcntl_wstopsig() - 返回导致子进程停止的信号
+  • pcntl_waitpid() - 等待或返回fork的子进程状态
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+I was unable to get pcntl_wait or pcntl_waitpid to terminate when I had an
+active signal handler.  I then noticed the post below from gaylord at 100days
+dot de, however I'm a little confused by that post as I found the exact
+opposite to be true.  The default value of the third parameter of pcntl_signal
+(the restart_syscalls parameter) is true and this seems to cause the wait to
+continue when the signal arrives.  In order to prevent this I had to expressly
+set it to false.  That is:
+
+pcntl_signal(SIGTERM, 'my_handler_function', false);
+===============================================================================
+
+pcntl_wait will not terminate on signals if you have a PHP signal handler
+activated (pcntl_signal).
+This is unless the signal handler was activated with 3rd parameter=true.
+
+Example:
+<?php
+declare(ticks=1);
+pcntl_signal(SIGTERM, "myHandler");
+$pid=pcntl_wait($status);
+?>
+
+This will not terminate on SIGTERM sent to the process, because "wait" will be
+restarted after php recieves the signal. The signal handler "myHandler" will
+not be called unless pcntl_wait terminates for some other reason.
+
+Change to:
+<?php
+declare(ticks=1);
+pcntl_signal(SIGTERM, "myHandler", true);
+$pid=pcntl_wait($status);
+?>
+
+Now the pcntl_wait terminates when a signal comes in and "myHandler" will be
+called on SIGTERM. (Make sure to put the wait in a loop though, because it will
+now not only terminate when a child exits but also when a signal arrives. Test
+for $pid>0 to detect a exit message from a child)
+(thanks to Andrey for helping me debugging this)
+===============================================================================
+
+This a simple multi process application where you can choose
+the maximun process that can run at the same time.
+This is useful when you need to limit the fork of process.
+When the MAXPROCESS is reached the program wait on pcntl_wait()
+
+<?php
+
+DEFINE(MAXPROCESS,25);
+
+for ($i=0;$i<100;$i++){
+    $pid = pcntl_fork();
+   
+    if ($pid == -1) {
+       die("could not fork");
+    } elseif ($pid) {
+                echo "I'm the Parent $i\n";
+        $execute++;
+        if ($execute>=MAXPROCESS){
+            pcntl_wait($status);
+            $execute--;
+        }
+    } else {
+       echo "I am the child, $i pid = $pid \n";
+       sleep(rand(1,3));
+       echo "Bye Bye from $i\n";       
+       exit;
+    }
+}
+?>
+===============================================================================
+
+Using pcntl_fork() can be a little tricky in some situations.  For fast jobs, a
+child can finish processing before the parent process has executed some code
+related to the launching of the process.  The parent can receive a signal
+before it's ready to handle the child process' status.  To handle this
+scenario, I add an id to a "queue" of processes in the signal handler that need
+to be cleaned up if the parent process is not yet ready to handle them.
+
+<?php
+declare(ticks=1);
+//A very basic job daemon that you can extend to your needs. 
+class JobDaemon{
+
+    public $maxProcesses = 25;
+    protected $jobsStarted = 0;
+    protected $currentJobs = array();
+    protected $signalQueue=array();   
+    protected $parentPID;
+   
+    public function __construct(){
+        echo "constructed \n";
+        $this->parentPID = getmypid();
+        pcntl_signal(SIGCHLD, array($this, "childSignalHandler"));
+    }
+   
+    /**
+    * Run the Daemon
+    */
+    public function run(){
+        echo "Running \n";
+        for($i=0; $i<10000; $i++){
+            $jobID = rand(0,10000000000000);
+            $launched = $this->launchJob($jobID);
+        }
+       
+        //Wait for child processes to finish before exiting here
+        while(count($this->currentJobs)){
+            echo "Waiting for current jobs to finish... \n";
+            sleep(1);
+        }
+    }
+   
+    /**
+    * Launch a job from the job queue
+    */
+    protected function launchJob($jobID){
+        $pid = pcntl_fork();
+        if($pid == -1){
+            //Problem launching the job
+            error_log('Could not launch new job, exiting');
+            return false;
+        }
+        else if ($pid){
+            // Parent process
+            // Sometimes you can receive a signal to the childSignalHandler
+function before this code executes if
+            // the child script executes quickly enough!
+            //
+            $this->currentJobs[$pid] = $jobID;
+           
+            // In the event that a signal for this pid was caught before we get
+here, it will be in our signalQueue array
+            // So let's go ahead and process it now as if we'd just received
+the signal
+            if(isset($this->signalQueue[$pid])){
+                echo "found $pid in the signal queue, processing it now \n";
+                $this->childSignalHandler(SIGCHLD, $pid, $this->signalQueue[
+$pid]);
+                unset($this->signalQueue[$pid]);
+            }
+        }
+        else{
+            //Forked child, do your deeds....
+            $exitStatus = 0; //Error code if you need to or whatever
+            echo "Doing something fun in pid ".getmypid()."\n";
+            exit($exitStatus);
+        }
+        return true;
+    }
+   
+    public function childSignalHandler($signo, $pid=null, $status=null){
+       
+        //If no pid is provided, that means we're getting the signal from the
+system.  Let's figure out
+        //which child process ended
+        if(!$pid){
+            $pid = pcntl_waitpid(-1, $status, WNOHANG);
+        }
+       
+        //Make sure we get all of the exited children
+        while($pid > 0){
+            if($pid && isset($this->currentJobs[$pid])){
+                $exitCode = pcntl_wexitstatus($status);
+                if($exitCode != 0){
+                    echo "$pid exited with status ".$exitCode."\n";
+                }
+                unset($this->currentJobs[$pid]);
+            }
+            else if($pid){
+                //Oh no, our job has finished before this parent process could
+even note that it had been launched!
+                //Let's make note of it and handle it when the parent process
+is ready for it
+                echo "..... Adding $pid to the signal queue ..... \n";
+                $this->signalQueue[$pid] = $status;
+            }
+            $pid = pcntl_waitpid(-1, $status, WNOHANG);
+        }
+        return true;
+    }
+}
+===============================================================================
+
+Oops, I stripped just a little much from the job daemon code in the previous
+comment.  You'll want to add a little line before the ->launchJob() method is
+called:
+
+<?php
+
+while(count($this->currentJobs) >= $this->maxProcesses){
+    echo "Maximum children allowed, waiting...\n";
+    sleep(1);
+}
+===============================================================================
+
+The code before isnt working for me cause the children are correctly started
+but not refreshed after they died. So keep in mind to use this instead and use
+the signal handler to know when a child exits to know when you have to start a
+new one. I added a few lines to the posting from {andy at cbeyond dot net}
+cause his post wasnt working for me as well (PHP5.1). Same effect like the one
+below.
+
+<?php
+declare(ticks = 1);
+
+$max=5;
+$child=0;
+
+// function for signal handler
+function sig_handler($signo) {
+  global $child;
+  switch ($signo) {
+   case SIGCHLD:
+     echo "SIGCHLD received\n";
+     $child--;
+  }
+}
+
+// install signal handler for dead kids
+pcntl_signal(SIGCHLD, "sig_handler");
+
+while (1){
+       $child++;
+       $pid=pcntl_fork();
+      
+       if ($pid == -1) {
+               die("could not fork");
+       } else if ($pid) {
+              
+               // we are the parent
+               if ( $child >= $max ){
+                   pcntl_wait($status);
+                   $child++;
+               }
+       } else {
+               // we are the child
+               echo "\t Starting new child | now we de have $child child
+processes\n";
+               // presumably doing something interesting
+               sleep(rand(3,5));
+               exit;
+       }
+}
+?>
+===============================================================================
+
+Below is a simple example of forking some children and timing the total
+duration (useful for stress tests).
+
+<?php
+
+$isParent    = true;
+$children    = array();
+$start        = microtime( true);
+
+/* Fork you!
+* (Sorry, I had to)
+*/
+$ceiling = $CONCURRENCY - 1;
+
+for ( $i = 0; (( $i < $ceiling) && ( $isParent)); $i++) {
+    $pid = pcntl_fork();
+    if ( $pid === 0) {
+        $isParent = false;
+       
+    } elseif ( $pid != -1) {
+        $children[] = $pid;
+       
+    }
+
+}
+
+/* Process body */
+echo "Do stuff here\n";
+
+/* Cleanup */
+if ( $isParent) {
+    $status = null;
+    while ( count( $children)) {
+        pcntl_wait( $status);
+        array_pop( $children);
+    }
+   
+    echo "Completed in " . ( microtime( true) - $start) . " seconds.\n";
+   
+}
+
+?>

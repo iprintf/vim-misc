@@ -1,0 +1,1068 @@
+
+imagecopymerge
+
+(PHP 4 >= 4.0.1, PHP 5, PHP 7)
+
+imagecopymerge — 拷贝并合并图像的一部分
+
+说明
+
+bool imagecopymerge ( resource $dst_im , resource $src_im , int $dst_x , int
+$dst_y , int $src_x , int $src_y , int $src_w , int $src_h , int $pct )
+
+将 src_im 图像中坐标从 src_x，src_y 开始，宽度为 src_w，高度为 src_h 的一部分拷
+贝到 dst_im 图像中坐标为 dst_x 和 dst_y 的位置上。两图像将根据 pct 来决定合并程
+度，其值范围从 0 到 100。当 pct = 0 时，实际上什么也没做，当为 100 时对于调色板
+图像本函数和 imagecopy() 完全一样，它对真彩色图像实现了 alpha 透明。
+
+    Note:
+
+    本函数是 PHP 4.0.6 新加的。
+
+
+User Contributed Notes 25 notes
+
+===============================================================================
+
+I've just checked PHP's issue tracker and a core developer says that this
+function was never meant to support alpha channel! and they refused to commit
+the provided patch! so ridicules
+Anyway i tried rodrigo's workaround and it worked quite well, thanks rodrigo
+for sharing it.
+I came up with another idea which is much faster than his solution, (it may
+need a little bit more memory)
+
+Hope it helps someone.
+
+<?php
+/**
+* PNG ALPHA CHANNEL SUPPORT for imagecopymerge();
+* by Sina Salek
+*
+* Bugfix by Ralph Voigt (bug which causes it
+* to work only for $src_x = $src_y = 0.
+* Also, inverting opacity is not necessary.)
+* 08-JAN-2011
+*
+**/
+    function imagecopymerge_alpha($dst_im, $src_im, $dst_x, $dst_y, $src_x, 
+$src_y, $src_w, $src_h, $pct){
+        // creating a cut resource
+        $cut = imagecreatetruecolor($src_w, $src_h);
+
+        // copying relevant section from background to the cut resource
+        imagecopy($cut, $dst_im, 0, 0, $dst_x, $dst_y, $src_w, $src_h);
+       
+        // copying relevant section from watermark to the cut resource
+        imagecopy($cut, $src_im, 0, 0, $src_x, $src_y, $src_w, $src_h);
+       
+        // insert cut resource to destination image
+        imagecopymerge($dst_im, $cut, $dst_x, $dst_y, 0, 0, $src_w, $src_h, 
+$pct);
+    }
+
+?>
+===============================================================================
+
+imagecopymerge PHP function helped me to create a fast method that replaces one
+color by another in true color images.
+
+Beforehand for this purpose I had to loop over all the pixels of an image and
+replace color pixel by pixel using imagecolorat and imagesetpixel; this method
+is really slow for large images.
+
+So here is the fast one:
+
+<?php
+
+function replaceColorInImage ($image, $old_r, $old_g, $old_b, $new_r, $new_g, 
+$new_b)
+{
+    imagecolortransparent ($image, imagecolorallocate ($image, $old_r, $old_g, 
+$old_b));
+   
+    $w = imagesx ($image);
+    $h = imagesy ($image);
+   
+    $resImage = imagecreatetruecolor ($w, $h);
+   
+    imagefill ($resImage, 0, 0, imagecolorallocate ($resImage, $new_r, $new_g, 
+$new_b));
+   
+    imagecopymerge ($resImage, $image, 0, 0, 0, 0, $w, $h, 100);
+   
+    return $resImage;
+}
+
+?>
+===============================================================================
+
+Building upon backglancer's and stefan's posts below, the following script will
+lay a 24-bit PNG watermark over any image.
+
+To prepare a 24-bit watermark, I recommend creating a white logo or text over a
+transparent background in Photoshop.  Save this as a 24-bit PNG via 'Save for
+the Web...'.  Be sure to set the transparency of the logo layer in Photoshop
+itself.  30-40% is a good setting.
+
+Once the assets are prepared, throw the full or relative server paths at the
+watermark function below:
+
+/******************************************************************/
+
+function watermark($sourcefile, $watermarkfile) {
+ 
+    #
+    # $sourcefile = Filename of the picture to be watermarked.
+    # $watermarkfile = Filename of the 24-bit PNG watermark file.
+    #
+   
+    //Get the resource ids of the pictures
+    $watermarkfile_id = imagecreatefrompng($watermarkfile);
+   
+    imageAlphaBlending($watermarkfile_id, false);
+    imageSaveAlpha($watermarkfile_id, true);
+
+    $fileType = strtolower(substr($sourcefile, strlen($sourcefile)-3));
+
+    switch($fileType) {
+        case('gif'):
+            $sourcefile_id = imagecreatefromgif($sourcefile);
+            break;
+           
+        case('png'):
+            $sourcefile_id = imagecreatefrompng($sourcefile);
+            break;
+           
+        default:
+            $sourcefile_id = imagecreatefromjpeg($sourcefile);
+    }
+
+    //Get the sizes of both pix  
+  $sourcefile_width=imageSX($sourcefile_id);
+  $sourcefile_height=imageSY($sourcefile_id);
+  $watermarkfile_width=imageSX($watermarkfile_id);
+  $watermarkfile_height=imageSY($watermarkfile_id);
+
+    $dest_x = ( $sourcefile_width / 2 ) - ( $watermarkfile_width / 2 );
+    $dest_y = ( $sourcefile_height / 2 ) - ( $watermarkfile_height / 2 );
+   
+    // if a gif, we have to upsample it to a truecolor image
+    if($fileType == 'gif') {
+        // create an empty truecolor container
+        $tempimage = imagecreatetruecolor($sourcefile_width,
+                                                                           
+$sourcefile_height);
+       
+        // copy the 8-bit gif into the truecolor image
+        imagecopy($tempimage, $sourcefile_id, 0, 0, 0, 0,
+                            $sourcefile_width, $sourcefile_height);
+       
+        // copy the source_id int
+        $sourcefile_id = $tempimage;
+    }
+
+    imagecopy($sourcefile_id, $watermarkfile_id, $dest_x, $dest_y, 0, 0,
+                        $watermarkfile_width, $watermarkfile_height);
+
+    //Create a jpeg out of the modified picture
+    switch($fileType) {
+   
+        // remember we don't need gif any more, so we use only png or jpeg.
+        // See the upsaple code immediately above to see how we handle gifs
+        case('png'):
+            header("Content-type: image/png");
+            imagepng ($sourcefile_id);
+            break;
+           
+        default:
+            header("Content-type: image/jpg");
+            imagejpeg ($sourcefile_id);
+    }          
+ 
+    imagedestroy($sourcefile_id);
+    imagedestroy($watermarkfile_id);
+   
+}
+===============================================================================
+
+Check your header... He is false...
+
+<?php
+header("Content-Type: image/png");
+?>
+===============================================================================
+
+A few corrections to the code supplied by nick at prient:
+
+$iTemplate should be $iBackground
+$iWorking should be $iSource
+
+After fixing those two I found the script really useful, thanks!
+===============================================================================
+
+<?php
+/**
+* PNG ALPHA CHANNEL SUPPORT for imagecopymerge();
+* This is a function like imagecopymerge but it handle alpha channel well!!!
+**/
+
+// A fix to get a function like imagecopymerge WITH ALPHA SUPPORT
+// Main script by aiden dot mail at freemail dot hu
+// Transformed to imagecopymerge_alpha() by rodrigo dot polo at gmail dot com
+function imagecopymerge_alpha($dst_im, $src_im, $dst_x, $dst_y, $src_x, $src_y,
+$src_w, $src_h, $pct){
+    if(!isset($pct)){
+        return false;
+    }
+    $pct /= 100;
+    // Get image width and height
+    $w = imagesx( $src_im );
+    $h = imagesy( $src_im );
+    // Turn alpha blending off
+    imagealphablending( $src_im, false );
+    // Find the most opaque pixel in the image (the one with the smallest alpha
+value)
+    $minalpha = 127;
+    for( $x = 0; $x < $w; $x++ )
+    for( $y = 0; $y < $h; $y++ ){
+        $alpha = ( imagecolorat( $src_im, $x, $y ) >> 24 ) & 0xFF;
+        if( $alpha < $minalpha ){
+            $minalpha = $alpha;
+        }
+    }
+    //loop through image pixels and modify alpha for each
+    for( $x = 0; $x < $w; $x++ ){
+        for( $y = 0; $y < $h; $y++ ){
+            //get current alpha value (represents the TANSPARENCY!)
+            $colorxy = imagecolorat( $src_im, $x, $y );
+            $alpha = ( $colorxy >> 24 ) & 0xFF;
+            //calculate new alpha
+            if( $minalpha !== 127 ){
+                $alpha = 127 + 127 * $pct * ( $alpha - 127 ) / ( 127 - 
+$minalpha );
+            } else {
+                $alpha += 127 * $pct;
+            }
+            //get the color index with new alpha
+            $alphacolorxy = imagecolorallocatealpha( $src_im, ( $colorxy >> 16 
+) & 0xFF, ( $colorxy >> 8 ) & 0xFF, $colorxy & 0xFF, $alpha );
+            //set pixel with the new color + opacity
+            if( !imagesetpixel( $src_im, $x, $y, $alphacolorxy ) ){
+                return false;
+            }
+        }
+    }
+    // The image copy
+    imagecopy($dst_im, $src_im, $dst_x, $dst_y, $src_x, $src_y, $src_w, $src_h
+);
+}
+
+// USAGE EXAMPLE:
+$img_a = imagecreatefrompng('image1.png');
+$img_b = imagecreatefrompng('wm2.png');
+
+// SAME COMMANDS:
+imagecopymerge_alpha($img_a, $img_b, 10, 10, 0, 0, imagesx($img_b), imagesy(
+$img_b),50);
+
+// OUTPUT IMAGE:
+header("Content-Type: image/png");
+imagesavealpha($img_a, true);
+imagepng($img_a, NULL);
+?>
+===============================================================================
+
+I was about to kill myself....
+any one of you trying to merge a SEMI transparent png...
+use imagecopy   :)
+<?
+$flag = imagecreatefrompng('flags/images/flagWhiteFill.png');
+$mask = imagecreatefrompng('flags/images/flag_transparent.png');
+
+imagealphablending($flag, 1);
+imagealphablending($mask, 1);
+
+imagecopy($flag, $mask, 0,0,0,0,25,43);
+
+Header("Content-type: image/jpeg");
+imagepng($flag);
+?>
+
+ImageSaveAlpha(resource, bool);   made the transparent color - not
+transparent... dunno why :)
+===============================================================================
+
+Anyone wanting to create a reflecion of an image. Simple process that copies,
+line by line, from the bottom of the image, a given number of pixels. Each line
+gets gradually more transparent. Outputs PNG to screen.
+
+This is pretty hot-coded - all four input variables (input image, reflection
+height, starting transparency, gap between image and reflection) are set
+manually here.
+
+<?php
+    $in = imagecreatefromjpeg('C:\test.jpg');
+    $reflection_strength = 120;        //    starting transparency (0-127, 0
+being opaque)
+    $reflection_height = 40;        //     height of reflection in pixels
+    $gap = 10;                        //    gap between image and reflection
+   
+    $orig_height = imagesy($in);                                //    store
+height of original image
+    $orig_width = imagesx($in);                                    //    store
+height of original image
+    $output_height = $orig_height + $reflection_height + $gap;    //   
+calculate height of output image
+   
+    // create new image to use for output. fill with transparency. ALPHA
+BLENDING MUST BE FALSE
+    $out = imagecreatetruecolor($orig_width, $output_height);
+    imagealphablending($out, false);
+    $bg = imagecolortransparent($out, imagecolorallocatealpha($out, 255, 255, 
+255, 127));
+    imagefill($out, 0, 0, $bg);
+    imagefilledrectangle($out, 0, 0, imagesx($in), imagesy($in), $bg1);
+   
+    // copy original image onto new one, leaving space underneath for
+reflection and 'gap'
+    imagecopyresampled ( $out , $in , 0, 0, 0, 0, imagesx($in), imagesy($in), 
+imagesx($in), imagesy($in));
+
+     // create new single-line image to act as buffer while applying
+transparency
+    $reflection_section = imagecreatetruecolor(imagesx($in), 1);
+    imagealphablending($reflection_section, false);
+    $bg1 = imagecolortransparent($reflection_section, imagecolorallocatealpha(
+$reflection_section, 255, 255, 255, 127));
+    imagefill($reflection_section, 0, 0, $bg1);
+
+    // 1. copy each line individually, starting at the 'bottom' of the image,
+working upwards.
+    // 2. set transparency to vary between reflection_strength and 127
+    // 3. copy line back to mirrored position in original
+    for ($y = 0; $y<$reflection_height;$y++)
+    {   
+        $t = ((127-$reflection_strength) + ($reflection_strength*($y/
+$reflection_height)));
+        imagecopy($reflection_section, $out, 0, 0, 0, imagesy($in)  - $y, 
+imagesx($in), 1);
+        imagefilter($reflection_section, IMG_FILTER_COLORIZE, 0, 0, 0, $t);
+        imagecopyresized($out, $reflection_section, $a, imagesy($in) + $y + 
+$gap, 0, 0, imagesx($in) - (2*$a), 1, imagesx($in), 1);
+    }
+   
+    // output image to view
+    header('Content-type: image/png');
+    imagesavealpha($out,true);
+    imagepng($out);
+?>
+===============================================================================
+
+I needed to draw a "pointer" image over a map, but had some problems with png
+image transparency.
+So I created a png image with white background (not transparent) and merged it
+on my map, after defining white color as transparent:
+
+<?php
+
+$src_file = 'source.jpg';
+list($src_w, $src_h, $src_t, $src_a) = getimagesize($src_file);
+
+$ptr_file = 'pointer.png'; // must have no transparency, but white background
+list($ptr_w, $ptr_h, $ptr_t, $ptr_a) = getimagesize($ptr_file);
+
+// destination image dimensions:
+$dst_w = 400;
+$dst_h = 200;
+
+// pointer position:
+$ptr_x = 195;
+$ptr_y = 70;
+
+$srcImage = imageCreateFromJpeg($src_file) or die ('failed imageCreateFromJpg'
+);
+$dstImage = imageCreateTrueColor($dst_w, $dst_h) or die ('failed
+imageCreateTrueColor');
+
+imageCopyResampled($dstImage, $srcImage, 0, 0, 0, 0, $dst_w, $dst_h, $src_w, 
+$src_h) or die ('failed imageCopyResampled');
+
+$ptrImage = imageCreateFromPng($ptr_file) or die ('failed imageCreateFromPng');
+
+$ptr_white = imageColorAllocate($ptrImage,255,255,255);
+imageColorTransparent($ptrImage,$ptr_white);
+
+imageCopyMerge($dstImage, $ptrImage, $ptr_x, $ptr_y, 0, 0, $ptr_w, $ptr_h, 100)
+or die ('failed imageCopyMerge');
+
+imageJpeg($dstImage,'',100) or die ('failed imageJpeg');
+
+imageDestroy($srcImage) or die ('failed imageDestroy(1)');
+imageDestroy($dstImage) or die ('failed imageDestroy(2)');
+imageDestroy($ptrImage) or die ('failed imageDestroy(3)');
+
+?>
+===============================================================================
+
+This example shows how to use imageCopyMerge to create a water mark function
+with four random positions (the corners).
+
+<?php
+function waterMark($fileInHD, $wmFile, $transparency = 50, $jpegQuality = 90, 
+$margin = 5) {
+
+$wmImg   = imageCreateFromGIF($wmFile);
+$jpegImg = imageCreateFromJPEG($fileInHD);
+
+// Water mark random position
+$wmX = (bool)rand(0,1) ? $margin : (imageSX($jpegImg) - imageSX($wmImg)) - 
+$margin;
+$wmY = (bool)rand(0,1) ? $margin : (imageSY($jpegImg) - imageSY($wmImg)) - 
+$margin;
+
+// Water mark process
+imageCopyMerge($jpegImg, $wmImg, $wmX, $wmY, 0, 0, imageSX($wmImg), imageSY(
+$wmImg), $transparency);
+
+// Overwriting image
+ImageJPEG($jpegImg, $fileInHD, $jpegQuality);
+}
+
+waterMark('myImage.jpg','waterMark.gif');
+
+?>
+
+HTH.
+
+Javier Tac n.
+===============================================================================
+
+This function is intended to serve as an example for the
+"imageCopyMerge"-"ImageCopyResized", "ImageColorTransparent" functions.
+I hope it will help.
+This function pick an image, square cut it resampled at the size requested and
+finishing merge the result with another one to obtain a circular image result.
+I have a problem to obtain an thumbnail that respect the colors and at the same
+time where cutted in a circular form, I hope this solution can gives you a clue
+to obtain a free form images, I use this one also to create multicutted images.
+
+<?php
+$generalsrc="$image"; //the image to resample, resize and iconaize
+$final_thumbwidth ="125";
+$final_thumbheight ="125";
+
+$abc = imagecreatefromjpeg("$generalsrc");
+$def = imagecreatetruecolor($final_thumbwidth, $final_thumbheight);
+$src_mx = round((imagesx($abc) / 2)-"0.1"); // middle x point of the image
+$src_my = round((imagesy($abc) / 2)-"0.1"); // middle y point of the image
+$src_x = ($src_mx * 2);
+$src_y = ($src_my * 2);
+$src_sq = ($src_x >= $src_y)?$src_y:$src_x; //used to define the best size for
+a square cut of the image
+$pl = ($src_x >= $src_y)?"1":"2"; //define if the image is portait or landscape
+$strt_pntx = ($pl=="1")?round(($src_my / 2)-"0. 1"):"0";  //defines the x start
+point
+$strt_pnty = ($pl=="2")?round(($src_mx / 2)-"0. 1"):"0";  //defines the y start
+point
+
+imagecopyresized($def, $abc, 0, 0, $strt_pntx, $strt_pnty, $final_thumbwidth, 
+$final_thumbheight, $src_sq, $src_sq);
+
+$overlay_img = imagecreatefromPNG("circle_125.png"); //NOTE use png for this
+$src_w = "ImageSX($overlay_img)";
+$src_h  = "ImageSY($overlay_img)";
+
+$can_img = imagecreatetruecolor($src_w, $src_h);
+
+$black = ImageColorAllocate ($overlay_img, 0, 0, 0);
+
+ImageColorTransparent($overlay_img , $black);
+
+imagecopy($can_img, $def, 0,0,0,0, $src_w, $src_h);
+imagecopymerge($can_img, $overlay_img , 0,0,0,0, ImageSX($overlay_img), ImageSY
+($overlay_img),100); //Imagecopy won't work, you must used imagecopymerge
+
+ImageJPEG($can_img,"merge_$generalsrc",100);
+
+imagedestroy($overlay_img);
+imagedestroy($can_img);
+ImageDestroy($abc);
+ImageDestroy($def);
+
+print "<HTML><HEAD><TITLE>test</TITLE></HEAD><BODY>
+original:<hr><img src=\"$generalsrc\" width=\"300\"><br><br><br>new:<hr><img
+src=\"merge_$generalsrc\">
+<br>width = $src_x
+<br>height = $src_y
+<br>mdlw = $src_mx
+<br>mdlh = $src_my
+<br>sqr = $src_sq
+<br>pl = $pl
+<br>start point x = $strt_pntx
+<br>start point y = $strt_pnty
+</BODY></HTML>";
+?>
+===============================================================================
+
+in addition to stefan's posting:
+
+i found that if you use imagecopymerge with png-24 files with an alpha channel,
+it doesn't work use imagecopy instead.
+it seems that imagecopymerge doesn't respect the alpha channel the way it
+should (a bug??).
+
+some sample code here to place an image (image.png) on a backgroundcolor or
+backgroundimage.
+
+<?php
+
+$im = "image.png";
+$bg = "ffddee";     // hex representation of the color (i.e. #ffffff for white)
+$out = "png";       // or "jpg" for jpg file output
+// $backgroundfile = "";  // optional backgroundfile if you don't want to use a
+color
+
+//
+// function to convert hex colorcode to decimal
+//
+
+function colordecode($hex){
+
+   $code[r] = hexdec(substr($hex, 0 ,2));
+   $code[g] = hexdec(substr($hex, 2 ,2));
+   $code[b] = hexdec(substr($hex, 4 ,2));
+
+   return $code;
+
+} // end func colordecode
+
+// create the resource id
+$image_id = imageCreateFromPNG($im);
+
+// get image size
+$im_X = ImageSX($image_id);
+$im_Y = ImageSY($image_id);
+
+// create a truecolor background image of the right size
+// or use a background image like this
+// $backgroundimage = imageCreateFromPNG($backgroundfile);
+$backgroundimage = imagecreatetruecolor($im_X, $im_Y);
+
+// get the desired backgroundcolor:
+// don't use this if you want to use a background image
+$code = colordecode($bg);
+$backgroundcolor = ImageColorAllocate($backgroundimage, $code[r], $code[g], 
+$code[b]);
+ImageFilledRectangle($backgroundimage, 0, 0, $im_X, $im_Y, $backgroundcolor);
+
+// merge the two together with alphablending on!
+ImageAlphaBlending($backgroundimage, true);
+imagecopy($backgroundimage, $image_id, 0, 0, 0, 0, $im_X, $im_Y);
+
+// output the image:
+if($output == "jpg"){
+   Header( "Content-type: image/jpeg");
+   ImageJPEG($backgroundimage);
+   }
+   else{
+       Header( "Content-type: image/png");
+       ImagePNG($backgroundimage);
+       }
+
+// destroy the memory
+ImageDestroy($backgroundimage);
+ImageDestroy($image_id);
+?>
+===============================================================================
+
+TO merge two images with alpha - use a brush to draw a zero length line in the
+centre of the target image, using the src img as the brush img. The code
+probably explains it better:
+
+<?php
+$src = imagecreatefromstring(file_get_contents("location of src"));
+$dest = imagecreatefromstring(file_get_contents("location of dest"));
+
+// Set the brush
+imagesetbrush($dest, $src);
+// Draw a couple of brushes, each overlaying each
+imageline($dest, imagesx($dest) / 2, imagesy($dest) / 2, imagesx($dest) / 2, 
+imagesy($dest) / 2, IMG_COLOR_BRUSHED);
+
+header('Content-Type: image/png');
+imagepng($dest);
+?>
+
+This is simple and has reasonable performance.
+===============================================================================
+
+If you need to merge 2 png's (or  presumably 2 gifs) with different color
+palettes, I have found this is the function to use.  Just set pct to 99, and
+you are rocking.  With pct set to 100, or imagecopy for that matter, the
+palette seems to go wonky.  (It probably just uses the palette of the source
+image. but don't quote me on that).
+===============================================================================
+
+Task: Rotate a large image, then reduce it in size and place it on a small
+background (i.e. as an Inset).
+
+Problem: If you resize the image first, the rotation becomes hugely aliased... 
+So, it makes sense to rotate it first, then shrink it.
+Unfortunately, when you resample the image, you lose the background color (at
+least, some of it may change), so you can no longer set transparancy as you
+require.  If instead you resize the image (rather than resample), again, the
+aliasing looks bad.
+
+Solution:  Resize the background - make it bigger.  Then add the original
+(large) inset, and resize the whole thing back to normal.
+
+<?php
+/* We will shrink the inset to 25% */
+$resizePercentage = 0.25;
+
+/* Load a source image and a background */
+$iSource = ImageCreateFromJpeg($source_file);
+$iBackground = ImageCreateFromJpeg($background_file);
+
+/* Do something here, such a rotate, skew etc */
+...
+/* Assume $iSource is still the image we want to insert onto the background */
+
+/* Set the background color to be transparent */
+$cBackground = ImageColorClosest($iSource, 255, 0, 255);
+ImageColorTransparent($iSource, $cBackground);
+
+/* Resize the background - make it huge */
+$iBackground = ImageResize($iTemplate, ImageSX($iBackground ) / 
+$resizePercentage, ImageSY($iBackground ) / $resizePercentage);
+/* Place the image on the background - all full size, so no aliasing issues */
+ImageCopyMerge($iBackground , $iSource,
+    ((ImageSX($iBackground ) - ImageSX($iSource)) / 2),
+    ((ImageSY($iBackground ) - ImageSY($iSource)) / 2) - 25, 0, 0, ImageSX(
+$iWorking), ImageSY($iSource), 100);
+/* Shrink the combined image... no issues with transparancy! */
+$iBackground = ImageResize($iTemplate, ImageSX($iBackground ) * 
+$resizePercentage, ImageSY($iBackground ) * $resizePercentage);
+
+/* Output the image as a PNG */
+header("Content-Type: image/png");
+ImagePng($iBackground);
+exit();
+
+function ImageResize($pImage, $t_width, $t_height) {
+  // Target image
+  $iCanvas = @ImageCreateTrueColor($t_width, $t_height);
+  // Source dimensions
+  $s_width = ImageSX($pImage);
+  $s_height = ImageSY($pImage);
+  // Copy image
+  ImageCopyResampled($iCanvas, $pImage, 0, 0, 0, 0, $t_width, $t_height, 
+$s_width, $s_height);
+  // Return image
+  return $iCanvas;
+}
+?>
+===============================================================================
+
+This function is intended to serve as an example for the
+"imageCopyMerge"-function.
+I hope it will help some of the less experienced php-coders here.
+I wrote it to mark objects of a real estate broker as "sold" by copying the
+"sold"-picture right into the picture of the house.
+
+<?php
+
+//$sourcefile = Filename of the picture into that $insertfile will be inserted.
+//$insertfile = Filename of the picture that is to be inserted into
+$sourcefile.
+//$targetfile = Filename of the modified picture.
+//$transition = Intensity of the transition (in percent)
+//$pos          = Position where $insertfile will be inserted in $sourcefile
+//                0 = middle
+//                1 = top left
+//                2 = top right
+//                3 = bottom right
+//                4 = bottom left
+//                5 = top middle
+//                6 = middle right
+//                7 = bottom middle
+//                8 = middle left
+//
+//
+function mergePix($sourcefile,$insertfile, $targetfile, $pos=0,$transition=50)
+{
+   
+//Get the resource id s of the pictures
+    $insertfile_id = imageCreateFromJPEG($insertfile);
+    $sourcefile_id = imageCreateFromJPEG($sourcefile);
+
+//Get the sizes of both pix   
+    $sourcefile_width=imageSX($sourcefile_id);
+    $sourcefile_height=imageSY($sourcefile_id);
+    $insertfile_width=imageSX($insertfile_id);
+    $insertfile_height=imageSY($insertfile_id);
+
+//middle
+    if( $pos == 0 )
+    {
+        $dest_x = ( $sourcefile_width / 2 ) - ( $insertfile_width / 2 );
+        $dest_y = ( $sourcefile_height / 2 ) - ( $insertfile_height / 2 );
+    }
+
+//top left
+    if( $pos == 1 )
+    {
+        $dest_x = 0;
+        $dest_y = 0;
+    }
+
+//top right
+    if( $pos == 2 )
+    {
+        $dest_x = $sourcefile_width - $insertfile_width;
+        $dest_y = 0;
+    }
+
+//bottom right
+    if( $pos == 3 )
+    {
+        $dest_x = $sourcefile_width - $insertfile_width;
+        $dest_y = $sourcefile_height - $insertfile_height;
+    }
+
+//bottom left   
+    if( $pos == 4 )
+    {
+        $dest_x = 0;
+        $dest_y = $sourcefile_height - $insertfile_height;
+    }
+
+//top middle
+    if( $pos == 5 )
+    {
+        $dest_x = ( ( $sourcefile_width - $insertfile_width ) / 2 );
+        $dest_y = 0;
+    }
+
+//middle right
+    if( $pos == 6 )
+    {
+        $dest_x = $sourcefile_width - $insertfile_width;
+        $dest_y = ( $sourcefile_height / 2 ) - ( $insertfile_height / 2 );
+    }
+       
+//bottom middle   
+    if( $pos == 7 )
+    {
+        $dest_x = ( ( $sourcefile_width - $insertfile_width ) / 2 );
+        $dest_y = $sourcefile_height - $insertfile_height;
+    }
+
+//middle left
+    if( $pos == 8 )
+    {
+        $dest_x = 0;
+        $dest_y = ( $sourcefile_height / 2 ) - ( $insertfile_height / 2 );
+    }
+   
+//The main thing : merge the two pix   
+    imageCopyMerge($sourcefile_id, $insertfile_id,$dest_x,$dest_y,0,0,
+$insertfile_width,$insertfile_height,$transition);
+
+//Create a jpeg out of the modified picture
+    imagejpeg ($sourcefile_id,"$targetfile");
+   
+}
+===============================================================================
+
+Hi
+i wrote this script to add a watermark image into the bottom right a larger
+image. Its very basic i know but its all i need for now. It also is an easy
+function for noobs to grasp. It just takes an two image types as arguments
+
+for example
+$image = imagecreatefromjpeg("FILELOCATION");
+$insert = imagecreatefrompng("WATERMARKFILELOCATION");
+$image = image_overlap($image, $insert);
+
+function image_overlap($background, $foreground){
+   $insertWidth = imagesx($foreground);
+   $insertHeight = imagesy($foreground);
+
+   $imageWidth = imagesx($background);
+   $imageHeight = imagesy($background);
+
+   $overlapX = $imageWidth-$insertWidth-5;
+   $overlapY = $imageHeight-$insertHeight-5;
+               imagecolortransparent($foreground,
+imagecolorat($foreground,0,0));                imagecopymerge
+($background,$foreground,
+$overlapX,$overlapY,0,0,$insertWidth,$insertHeight,100);   return $background;
+    }
+
+It doesnt smooth the edges between the two images but it works easily.
+===============================================================================
+
+Yep, that worked a charm.
+
+Since imageCopyMergeGray() is identical, it works just as well for that.
+
+If you want to convert an image to greyscale, use imageCopyMergeGray() with the
+same image as source and destination, set the pict to 0, et voila!
+===============================================================================
+
+First you need make 0~9 gif format images and background image.
+
+<?php
+/*
+make random image number check
+20050524 by ascent WebAQ.com
+*/
+
+$rands = rand(1000,9999);
+
+session_start();
+$_SESSION['random_image_number_check'] = $rands;
+
+$bg = './random_image_bg.jpg';
+$numimgp = './random_image_number_%d.gif';
+
+$numimg1 = sprintf($numimgp,substr($rands,0,1));
+$numimg2 = sprintf($numimgp,substr($rands,1,1));
+$numimg3 = sprintf($numimgp,substr($rands,2,1));
+$numimg4 = sprintf($numimgp,substr($rands,3,1));
+$ys1 = rand(-4,4);
+$ys2 = rand(-4,4);
+$ys3 = rand(-4,4);
+$ys4 = rand(-4,4);
+
+$bgImg = imageCreateFromJPEG($bg);
+$nmImg1 = imageCreateFromGIF($numimg1);
+$nmImg2 = imageCreateFromGIF($numimg2);
+$nmImg3 = imageCreateFromGIF($numimg3);
+$nmImg4 = imageCreateFromGIF($numimg4);
+imageCopyMerge($bgImg, $nmImg1, 10, $ys1, 0, 0, 20, 30, 50);
+imageCopyMerge($bgImg, $nmImg2, 30, $ys2, 0, 0, 20, 30, 50);
+imageCopyMerge($bgImg, $nmImg3, 50, $ys3, 0, 0, 20, 30, 50);
+imageCopyMerge($bgImg, $nmImg4, 70, $ys4, 0, 0, 20, 30, 50);
+header("Content-type: image/jpg");
+ImageJPEG($bgImg,"",100);
+imagedestroy($bgImg);
+imagedestroy($nmImg1);
+imagedestroy($nmImg2);
+imagedestroy($nmImg3);
+imagedestroy($nmImg4);
+?>
+
+enjoy!
+===============================================================================
+
+This is what I use for merging two images while respecting the alpha channel
+(formulas are taken from the wikipedia article on alpha compositing; they're
+not too pretty as I didn't really try to make them look so, but instead just
+work and make sense when checked out months from now), with a quirk - an
+additional parameter (that defaults to NULL to be ignored) to manually specify
+a "transparent" color, which won't be copied over from the source to the
+destination. In comparison to the other implementation here, only one pass over
+$src_im is done, but more calculations are performed:
+
+<?php
+function imagecopymerge_alpha($dst_im, $src_im, $dst_x, $dst_y, $src_x, $src_y,
+$src_w, $src_h, $pct, $trans = NULL)
+{
+  $dst_w = imagesx($dst_im);
+  $dst_h = imagesy($dst_im);
+
+  // bounds checking
+  $src_x = max($src_x, 0);
+  $src_y = max($src_y, 0);
+  $dst_x = max($dst_x, 0);
+  $dst_y = max($dst_y, 0);
+  if ($dst_x + $src_w > $dst_w)
+    $src_w = $dst_w - $dst_x;
+  if ($dst_y + $src_h > $dst_h)
+    $src_h = $dst_h - $dst_y;
+
+  for($x_offset = 0; $x_offset < $src_w; $x_offset++)
+    for($y_offset = 0; $y_offset < $src_h; $y_offset++)
+    {
+      // get source & dest color
+      $srccolor = imagecolorsforindex($src_im, imagecolorat($src_im, $src_x + 
+$x_offset, $src_y + $y_offset));
+      $dstcolor = imagecolorsforindex($dst_im, imagecolorat($dst_im, $dst_x + 
+$x_offset, $dst_y + $y_offset));
+
+      // apply transparency
+      if (is_null($trans) || ($srccolor !== $trans))
+      {
+        $src_a = $srccolor['alpha'] * $pct / 100;
+        // blend
+        $src_a = 127 - $src_a;
+        $dst_a = 127 - $dstcolor['alpha'];
+        $dst_r = ($srccolor['red'] * $src_a + $dstcolor['red'] * $dst_a * (127 
+- $src_a) / 127) / 127;
+        $dst_g = ($srccolor['green'] * $src_a + $dstcolor['green'] * $dst_a * (
+127 - $src_a) / 127) / 127;
+        $dst_b = ($srccolor['blue'] * $src_a + $dstcolor['blue'] * $dst_a * (
+127 - $src_a) / 127) / 127;
+        $dst_a = 127 - ($src_a + $dst_a * (127 - $src_a) / 127);
+        $color = imagecolorallocatealpha($dst_im, $dst_r, $dst_g, $dst_b, 
+$dst_a);
+        // paint
+        if (!imagesetpixel($dst_im, $dst_x + $x_offset, $dst_y + $y_offset, 
+$color))
+          return false;
+        imagecolordeallocate($dst_im, $color);
+      }
+    }
+  return true;
+}
+
+// use it like this (identical to imagecopymerge)
+function imagecopymerge_alpha($dst_im, $src_im, $dst_x, $dst_y, $src_x, $src_y,
+$src_w, $src_h, $pct)
+// or this
+function imagecopymerge_alpha($dst_im, $src_im, $dst_x, $dst_y, $src_x, $src_y,
+$src_w, $src_h, $pct, array('red' => 1, 'green' => 2, 'blue' => 3, 'alpha' =>4
+))
+?>
+===============================================================================
+
+Add logo on image script.
+<?php
+/**
+* Put logo on low right jpeg image
+* used stefan's script for position
+**/
+$logo_file = "logo.png";
+$image_file = "img.jpg";
+$targetfile = "img2.jpg";
+$photo = imagecreatefromjpeg($image_file);
+$fotoW = imagesx($photo);
+$fotoH = imagesy($photo);
+$logoImage = imagecreatefrompng($logo_file);
+$logoW = imagesx($logoImage);
+$logoH = imagesy($logoImage);
+$photoFrame = imagecreatetruecolor($fotoW,$fotoH);
+$dest_x = $fotoW - $logoW;
+$dest_y = $fotoH - $logoH;
+imagecopyresampled($photoFrame, $photo, 0, 0, 0, 0, $fotoW, $fotoH, $fotoW, 
+$fotoH);
+imagecopy($photoFrame, $logoImage, $dest_x, $dest_y, 0, 0, $logoW, $logoH);
+imagejpeg($photoFrame, $targetfile); 
+echo '<img src="'.$targetfile.'" />';
+?>
+===============================================================================
+
+The following function creates mask of a true color image for a given color.
+Beforehand for creating an image mask I used to loop over all image pixels and
+check their color using imagecolorat and copy if the color matches with
+imagesetpixel. This was very slow for large images, so the following code
+improves the process.
+
+<?php
+
+    function getOppositeColor ($color)
+    {
+        return (
+                    ( (255 - ($color >> 16) & 0xFF) << 16 ) +
+                    ( (255 - ($color >> 8  ) & 0xFF) << 8  ) +
+                    ( (255 - ($color         ) & 0xFF)         )
+                );
+    }
+
+    function createImageMask (&$image, $color)
+    {
+        $w = imagesx ($image);
+        $h = imagesy ($image);
+       
+        $tmpImage = imagecreatetruecolor ($w, $h);
+
+        imagecopy ($tmpImage, $image, 0, 0, 0, 0, $w, $h);
+
+        imagefilter ($image, IMG_FILTER_NEGATE);
+
+        imagecolortransparent ($image, getOppositeColor ($color));
+       
+        imagecopymerge ($tmpImage, $image, 0, 0, 0, 0, $w, $h, 50);
+
+        imagedestroy ($image);
+       
+        $image = $tmpImage;       
+    }
+
+?>
+
+So for example, if we have a photo and we specify color = (255, 0, 0), i.e.
+red, the result will be image of the same size with red pixels everywhere the
+original photo was red and grey pixels exerywhere else.
+===============================================================================
+
+Some highly amusing stuff: This code appears normal and is a way to cut out
+slices of an image randomly.
+
+<?php
+header("Content-Type: image/jpeg");
+$width=837;
+$height=771;
+$origim = imagecreatefromjpeg("theimage.jpeg"); /* Attempt to open */
+$imagetodisplay=imagecreate($width, $height);
+
+for($i=0;$i<=100;$i++)
+{
+$xPos=rand(0,$width-9);
+$yPos=rand(0,$height-9);
+imagecopy($imagetodisplay, $origim, $xPos, $yPos , $xPos, $yPos , 10  , 10);
+}
+
+imagejpeg($imagetodisplay);
+imagedestroy($imagetodisplay);
+imagedestroy($origim);
+?>
+
+Try running this however and an omitted detail adds to the fun. Since the first
+colour that is defined is taken to be the background colour, we have a random
+colour selected from $origim as the background colour for $imagetodisplay, but
+this random colour is weighted according to the background image. It was a
+surprise (I thought the bg would be black) but I am now keeping it as it looks
+good.
+===============================================================================
+
+I found on the internet about a thousand copies of this "imageCopyMerge" script
+of Stefan.
+
+Most of them had a  copyright notice of the copyist added, but none of them had
+added what a starting user of PHP scripting really needs: The lines to be used
+in a HTML page, where the result of the script will be visible:
+
+<?php
+$sourcefile = "ORIGFILE.jpg";
+$insertfile = "watermark.jpg";
+$targetfile = "foto.jpg";
+$transition = 30;
+$pos=7;
+require("watermark.php");
+mergePix($sourcefile, $insertfile, $targetfile, $pos, $transition);
+echo "<img src=\"$targetfile\">";
+?>
+
+I was so lucky to get these lines from someone on the internet, after I posted
+my question all over the world.
+Most other people that replied, referred to the bookstore. But I had first read
+halve the (this) PHP manual, and had not found it.
+
+Just a suggestion, but I know it will help many people getting started with
+PHP: When you put your scripts here, why not add those few lines needed to
+incorporate it into a HTML page?
+===============================================================================
+
+you need to stream the image out after processing ...something like
+
+<?php
+
+// All of your existing code
+
+imagepng($image);
+
+?>

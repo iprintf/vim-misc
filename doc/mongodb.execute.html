@@ -1,0 +1,190 @@
+
+MongoDB::execute
+
+(PECL mongo >=0.9.3)
+
+MongoDB::execute — 在数据库服务器上运行JavaScript
+
+说明
+
+public array MongoDB::execute ( mixed $code [, array $args = array() ] )
+
+MongoDB服务器运行着一个JavaScript引擎。这个方法允许在服务器上执行任意JavaScript
+代码。如果你想要利用较少资源处理大量集合，或者在服务器上处理一些结果集以减少网
+络传输，那么这个方法会游泳。
+
+在服务器运行JavaScript代码会创建一个写锁定，这意味着它锁定了其他操作的执行。在
+运行一段耗时较长的代码之前，请考虑到这一点。
+
+这是一个数据库指令的包装，它简单的说相当于：
+<?php
+
+public function execute($code, $args) {
+    return $this->command(array('$eval' => $code, 'args' => $args));
+}
+
+?>
+
+如果所执行的代码只有一个语句，且只有一行，MongoDB隐含一个return语句。这允许一些
+直观的行为，比如下面的例子返回"foo"：
+
+<?php
+
+$db->execute('"foo";');
+
+?>
+
+但是下面这两个例子返回NULL:
+
+<?php
+
+$db->execute('"bar"; "foo";'); // 多个语句
+
+$db->execute('db.foo.count(
+);'); // 多行
+
+?>
+
+为了防止意外的行为，最好不要依赖MongoDB决定你的返回值。而是明确的提供一个return
+语句。上面的例子中，可以把代码改为：
+
+<?php
+
+$db->execute('"bar"; return "foo";');
+
+$db->execute('return db.foo.count(
+);');
+
+?>
+
+这样第一个语句会返回"foo"，第二个语句会返回"foo"集合的长度。
+
+参数
+
+code
+
+    MongoCode或要执行的字符串
+
+args
+
+    给code的参数。
+
+返回值
+
+返回执行结果
+
+范例
+
+Example #1 简单的 MongoDB::execute() 实例
+
+<?php
+
+$response = $db->execute("function() { return 'Hello, world!'; }");
+echo $response['retval'];
+
+?>
+
+以上例程的输出类似于：
+
+
+Hello, world!
+
+Example #2 带参数的 MongoDB::execute() 实例
+
+可选的参数将被传递给JavaScrip函数
+
+<?php
+
+$response = $db->execute("function(greeting, name) 
+{ return greeting+', '+name+'!'; }", array("Good bye", "Joe"));
+echo $response['retval'];
+
+?>
+
+以上例程的输出类似于：
+
+
+Good bye, Joe!
+
+Example #3 作用域实例
+
+如果使用 MongoCode 对象代替字符串作为第一个参数。可以传递一个作用域到将要执行的
+JavaScript中。
+
+<?php
+
+$func = 
+    "function(greeting, name) { ".
+        "return greeting+', '+name+', says '+greeter;".
+    "}";
+$scope = array("greeter" => "Fred");
+
+$code = new MongoCode($func, $scope);
+
+$response = $db->execute($code, array("Goodbye", "Joe"));
+echo $response['retval'];
+
+?>
+
+以上例程的输出类似于：
+
+
+Goodbye, Joe, says Fred
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+$m = new MongoClient();
+        $db = $m->test;
+      
+        $inset = "db.getCollection('foo').insert({'name':'nanhe','age':30});";
+        $response = $db->execute($inset);
+        print_r($response); //Array ( [retval] => [ok] => 1 )
+      
+        $response = $m->test->execute("db.getCollection('foo').insert
+({'name':'happy','age':18});");
+        print_r($response); //Array ( [retval] => [ok] => 1 )
+       
+        $response = $m->test->execute("db.foo.insert
+({'name':'prince','age':16});");
+        print_r($response); //Array ( [retval] => [ok] => 1 )
+       
+        $response= $m->test->execute("return db.foo.count();");
+        print_r($response); //Array ( [retval] => 3 [ok] => 1 )
+       
+        $response= $m->test->execute("return db.foo.findOne();");
+        print_r($response); //Array ( [retval] => Array ( [_id] => MongoId
+Object ( [$id] => 5287ccbe60e2eac9a0e2f1c6 ) [name] => nanhe [age] => 30 ) [ok]
+=> 1 )
+       
+        /*
+         * If you want use find function then use toArray because The find()
+function returns a cursor, which can't be returned from JavaScript.
+         */
+        $response= $m->test->execute("return db.foo.find().toArray();");
+        print_r($response); //[$id] => 5287cd2260e2eac9a0e2f1ca ) [name] =>
+happy [age] => 18 ) [2] => Array ( [_id] => MongoId Object ( [$id] =>
+5287cd2260e2eac9a0e2f1cb ) [name] => prince [age] => 16 ) [3] => Array ( [_id]
+=> MongoId Object ( [$id] => 5287cdea60e2eac9a0e2f1cc ) [name] => nanhe [age]
+=> 30 ) [4] => Array ( [_id] => MongoId Object ( [$id] =>
+5287cdea60e2eac9a0e2f1cd ) [name] => happy [age] => 18 ) [5] => Array ( [_id]
+=> MongoId Object ( [$id] => 5287cdea60e2eac9a0e2f1ce ) [name] => prince [age]
+=> 16 ) ) [ok] => 1 )
+      
+        $response= $m->test->execute("return db.foo.find
+({'name':'nanhe'}).toArray();");
+        print_r($response); //Array ( [retval] => Array ( [0] => Array ( [_id]
+=> MongoId Object ( [$id] => 5287ce9b60e2eac9a0e2f1d2 ) [name] => nanhe [age]
+=> 30 ) ) [ok] => 1 )
+        // $id value will be different in your case
+===============================================================================
+
+In 1.7.2, a nolock option was added to eval. To use nolock you have to use the
+command interface directly:
+
+db.runCommand({$eval: function() {return 42;}, nolock: true})
+
+or with args
+
+db.runCommand({$eval: function(x,y) {return x*y;}, args: [6,7], nolock: true})

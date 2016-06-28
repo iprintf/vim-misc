@@ -1,0 +1,398 @@
+
+mysqli_result::fetch_field_direct
+
+mysqli_fetch_field_direct
+
+(PHP 5, PHP 7)
+
+mysqli_result::fetch_field_direct -- mysqli_fetch_field_direct — Fetch
+meta-data for a single field
+
+说明
+
+面向对象风格
+
+object mysqli_result::fetch_field_direct ( int $fieldnr )
+
+过程化风格
+
+object mysqli_fetch_field_direct ( mysqli_result $result , int $fieldnr )
+
+Returns an object which contains field definition information from the
+specified result set.
+
+参数
+
+result
+
+    仅以过程化样式：由 mysqli_query()，mysqli_store_result() 或 
+    mysqli_use_result()返回的结果集标识。
+
+fieldnr
+
+    The field number. This value must be in the range from 0 to number of
+    fields - 1.
+
+返回值
+
+Returns an object which contains field definition information or FALSE if no
+field information for specified fieldnr is available.
+
+                            Object attributes
+Attribute                            Description
+name       The name of the column
+orgname    Original column name if an alias was specified
+table      The name of the table this field belongs to (if not calculated)
+orgtable   Original table name if an alias was specified
+def        The default value for this field, represented as a string
+max_length The maximum width of the field for the result set.
+length     The width of the field, as specified in the table definition.
+charsetnr  The character set number for the field.
+flags      An integer representing the bit-flags for the field.
+type       The data type used for this field
+decimals   The number of decimals used (for numeric fields)
+
+范例
+
+Example #1 面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query = "SELECT Name, SurfaceArea from Country ORDER BY Name LIMIT 5";
+
+if ($result = $mysqli->query($query)) {
+
+    /* Get field information for column 'SurfaceArea' */
+    $finfo = $result->fetch_field_direct(1);
+
+    printf("Name:     %s\n", $finfo->name);
+    printf("Table:    %s\n", $finfo->table);
+    printf("max. Len: %d\n", $finfo->max_length);
+    printf("Flags:    %d\n", $finfo->flags);
+    printf("Type:     %d\n", $finfo->type);
+
+    $result->close();
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+Example #2 过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query = "SELECT Name, SurfaceArea from Country ORDER BY Name LIMIT 5";
+
+if ($result = mysqli_query($link, $query)) {
+
+    /* Get field information for column 'SurfaceArea' */
+    $finfo = mysqli_fetch_field_direct($result, 1);
+
+    printf("Name:     %s\n", $finfo->name);
+    printf("Table:    %s\n", $finfo->table);
+    printf("max. Len: %d\n", $finfo->max_length);
+    printf("Flags:    %d\n", $finfo->flags);
+    printf("Type:     %d\n", $finfo->type);
+
+    mysqli_free_result($result);
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Name:     SurfaceArea
+Table:    Country
+max. Len: 10
+Flags:    32769
+Type:     4
+
+参见
+
+  • mysqli_num_fields() - Get the number of fields in a result
+  • mysqli_fetch_field() - Returns the next field in the result set
+  • mysqli_fetch_fields() - Returns an array of objects representing the fields
+    in a result set
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+Here's a bigger list of data types.  I got this by creating every type I could
+and calling fetch_fields():
+
+<?php
+$mysql_data_type_hash = array(
+    1=>'tinyint',
+    2=>'smallint',
+    3=>'int',
+    4=>'float',
+    5=>'double',
+    7=>'timestamp',
+    8=>'bigint',
+    9=>'mediumint',
+    10=>'date',
+    11=>'time',
+    12=>'datetime',
+    13=>'year',
+    16=>'bit',
+    //252 is currently mapped to all text and blob types (MySQL 5.0.51a)
+    253=>'varchar',
+    254=>'char',
+    246=>'decimal'
+);
+?>
+===============================================================================
+
+Here are two methods for converting the 'type' and 'flags' attributes to text
+for debugging purposes. They both use the predefined MYSQLI_ constants to
+generate the text.
+
+<?php
+
+public static function h_type2txt($type_id)
+{
+    static $types;
+
+    if (!isset($types))
+    {
+        $types = array();
+        $constants = get_defined_constants(true);
+        foreach ($constants['mysqli'] as $c => $n) if (preg_match('/^
+MYSQLI_TYPE_(.*)/', $c, $m)) $types[$n] = $m[1];
+    }
+
+    return array_key_exists($type_id, $types)? $types[$type_id] : NULL;
+}
+
+public static function h_flags2txt($flags_num)
+{
+    static $flags;
+
+    if (!isset($flags))
+    {
+        $flags = array();
+        $constants = get_defined_constants(true);
+        foreach ($constants['mysqli'] as $c => $n) if (preg_match('/MYSQLI_(.*)
+_FLAG$/', $c, $m)) if (!array_key_exists($n, $flags)) $flags[$n] = $m[1];
+    }
+
+    $result = array();
+    foreach ($flags as $n => $t) if ($flags_num & $n) $result[] = $t;
+    return implode(' ', $result);
+}
+
+?>
+===============================================================================
+
+This may be obvious, but the constants for the field types are already defined
+in PHP, and can be found in the documentation at: http://php.net/manual/en/
+mysqli.constants.php
+===============================================================================
+
+Warning!
+This function is not only more memory consuming than expected but the
+consumption also depends on the size of the result set. So if you realy only
+want to get your field_names you might want to append " LIMIT 1" or use
+mysqli->unbuffered_query() to save yourself from a memory bloat.
+===============================================================================
+
+Beware of the fact that the ->def property NEVER gets filled with the correct
+default field value, so it's totally USELESS.
+
+This happens NOT for a bug in php (so don't go filling in a bug report), but
+happens BY DESIGN, since the MySQL C API call doesn't fill in this value,
+unless you call the mysql_list_fields() function, which Php doesn't.
+
+See here for reference.
+http://dev.mysql.com/doc/refman/5.0/en/c-api-datatypes.html
+
+Also, be aware that if you're using a query which contains subqueries, the
+primary key/autoincrement flags do NOT get passed along, even if the field
+you're looking at is the primary autoincrement key of the master table:
+
+SELECT * from (SELECT id from areas) AS subareas
+
+and you'll find primary key and autoinc flags off on id field, even if id was
+the primary autoinc key of areas table.
+
+This also is by design, i think, since it's supposed that if we're using a
+subquery then the primary key/autoinc stuff might have no sense at all, since
+in the result set we can compose fileds from many different tables.
+
+Hoping this is useful, bye!
+===============================================================================
+
+According to
+http://www.redferni.uklinux.net/mysql/MySQL-Protocol.html
+
+Data type values are:
+
+DECIMAL           0       ENUM           247
+TINY              1       SET            248
+SHORT             2       TINY_BLOB      249
+LONG              3       MEDIUM_BLOB    250
+FLOAT             4       LONG_BLOB      251
+DOUBLE            5       BLOB           252
+NULL              6       VAR_STRING     253
+TIMESTAMP         7       STRING         254
+LONGLONG          8       GEOMETRY       255
+INT24             9
+DATE             10
+TIME             11
+DATETIME         12
+YEAR             13
+NEWDATE          14
+
+Note that this is not tested and does not contain
+all the values noted by deluxmozart
+===============================================================================
+
+According to
+dev.mysql.com/sources/doxygen/mysql-5.1/mysql__com_8h-source.html
+the flag bits are:
+
+NOT_NULL_FLAG          1         /* Field can't be NULL */
+PRI_KEY_FLAG           2         /* Field is part of a primary key */
+UNIQUE_KEY_FLAG        4         /* Field is part of a unique key */
+MULTIPLE_KEY_FLAG      8         /* Field is part of a key */
+BLOB_FLAG             16         /* Field is a blob */
+UNSIGNED_FLAG         32         /* Field is unsigned */
+ZEROFILL_FLAG         64         /* Field is zerofill */
+BINARY_FLAG          128         /* Field is binary   */
+ENUM_FLAG            256         /* field is an enum */
+AUTO_INCREMENT_FLAG  512         /* field is a autoincrement field */
+TIMESTAMP_FLAG      1024         /* Field is a timestamp */
+===============================================================================
+
+note that
+"SELECT <timestamp-field>, ..."
+will return the field with type 7 (timestamp) but with content like "2010-07-14
+14:35:08". the point being it is a string.
+
+"SELECT <timestamp-field> + 0, ..."
+returns a type 5 (double) but while a number, is not seconds since epoch, but a
+number in MySQL's "YYYYMMDDHHMMSS" format, in this example:
+20100714143508
+
+(PHP 5.2.12)
+===============================================================================
+
+Here are some Numbers of Datatypes. I searched for it but i didn't find a list,
+where the datatypes of the numbers are listed.
+
+so first I can give this:
+
+    3    -    Int
+    10    -    Date
+    246    -    Decimal
+    252    -     text
+    253    -    VarChar
+    254    -    Boolean
+===============================================================================
+
+You can find all available data types here:
+https://php.net/manual/ru/mysqli.constants.php
+(search "MYSQLI_TYPE_" in your browser)
+===============================================================================
+
+I wrote a simple class to get info about fields.
+Try it!
+
+<?php
+            class MysqlFieldsInfo implements Iterator
+            {
+               
+                private $result;
+                private $position;
+                private $row;
+               
+               
+                function __construct($result){
+                    $this->result = $result;
+                    $this->position = 0;
+                    $this->rewind();    // W $results wewnętrzny wskaźnik może
+być przesunięty więc powracamy do początku
+                }
+               
+                public function current(){
+                    return $this->row;
+                }
+               
+                public function next(){
+                    $this->position++;
+                    $this->row = $this->result->fetch_field();   
+                }
+               
+                public function valid(){
+                    return (boolean) $this->row;
+                }
+               
+                public function key(){
+                    return $this->position;
+                }
+               
+                public function rewind(){
+                    $this->position = 0;
+                    $this->result->field_seek(0);
+                    $this->next();
+                }
+               
+                //    This function show data in table
+                public function export(){
+                   
+                    echo '<table id="db_table_info">';
+                    echo '<tr>
+                                                <th>Name</th>
+                                                <th>Orgname</th>
+                                                <th>Table</th>
+                                                <th>Orgtable</th>
+                                                <th>Def</th>
+                                                 <th>Max_length</th>
+                                                 <th>Length</th>
+                                                 <th>Charsetnr</th>
+                                                 <th>Flags</th>
+                                                 <th>Type</th>
+                                                  <th>Decimals</th>
+                                          </tr>';
+                    while($this->valid()){
+                        echo '<tr>';
+                        printf("\n\t<td>%s</td>\n", $this->current()->name);
+                        printf("\t<td>%s</td>\n", $this->current()->orgname);
+                        printf("\t<td>%s</td>\n", $this->current()->orgtable);
+                        printf("\t<td>%s</td>\n", $this->current()->def);
+                        printf("\t<td>%s</td>\n", $this->current()->max_length
+);
+                        printf("\t<td>%s</td>\n", $this->current()->length);
+                        printf("\t<td>%s</td>\n", $this->current()->charsetnr);
+                        printf("\t<td>%s</td>\n", $this->current()->flags);
+                        printf("\t<td>%s</td>\n", $this->current()->type);
+                        printf("\t<td>%s</td>\n", $this->current()->decimals);
+
+                        echo '</tr>';       
+           
+                        $this->next();
+                    }
+                   
+                    echo '</table>';
+                }
+            }
+?>

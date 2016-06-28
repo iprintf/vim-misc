@@ -1,0 +1,101 @@
+
+mysql_unbuffered_query
+
+(PHP 4 >= 4.0.6, PHP 5)
+
+mysql_unbuffered_query — 向 MySQL 发送一条 SQL 查询，并不获取和缓存结果的行
+
+说明
+
+resource mysql_unbuffered_query ( string $query [, resource $link_identifier ]
+)
+
+mysql_unbuffered_query() 向 MySQL 发送一条 SQL 查询 query，但不像 mysql_query()
+那样自动获取并缓存结果集。一方面，这在处理很大的结果集时会节省可观的内存。另一
+方面，可以在获取第一行后立即对结果集进行操作，而不用等到整个 SQL 语句都执行完毕
+。当使用多个数据库连接时，必须指定可选参数 link_identifier。
+
+    Note:
+
+    mysql_unbuffered_query() 的好处是有代价的：在 mysql_unbuffered_query() 返回
+    的结果集之上不能使用 mysql_num_rows() 和 mysql_data_seek()。此外在向 MySQL
+    发送一条新的 SQL 查询之前，必须提取掉所有未缓存的 SQL 查询所产生的结果行。
+
+参见 mysql_query()。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+You are NOT required to read all rows from the resultset when using unbuffered
+query, you may opt out at any time and use mysql_free_result. Imagine looking
+at 1 million row when the first 50 suffice? Just free the result and you are
+good to go again.
+===============================================================================
+
+Don't let the two hands confuse you, these are both advantages (they should
+really be on the same hand):
+
+On the one hand, this saves a considerable amount of memory with SQL queries
+that produce large result sets.
+
+On the other hand, you can start working on the result set immediately ...
+===============================================================================
+
+If using optimized MyISAM tables I guess there is a big advantage with this
+function as it is possible to do selects and inserts on the same time as long
+as no rows in the table gets updated.
+===============================================================================
+
+You are absolutely required to retrieve all rows in the result set (option 'a'
+in the first comment). If you fail to do so, PHP will do so for you, and will
+emit a NOTICE warning you of the fact. From the MySQL API, "Furthermore, you
+must retrieve all the rows even if you determine in mid-retrieval that you've
+found the information you were looking for. ".
+
+Also note that if you are using this function, you should be quick about
+processing the result set, or you will tie up the MySQL server (other threads
+will be unable to write to the tables you are reading from).
+
+If you want to be able to 'abort' mid result-set or if you want to do lengthy
+processing on the results, you are misunderstanding the purpose of this
+function.
+
+Also note that UPDATE queries etc return no result set, so this function is
+only useful for SELECT etc.
+===============================================================================
+
+Regarding bailing on a really large result, while doing an unbuffered query,
+there _is_ a way to do this: kill the thread and exit your processing loop. 
+This, of course, requires having a separate database link.  Something like
+below does the trick:
+
+<?php
+// a db link for queries
+$lh  = mysql_connect( 'server', 'uname', 'pword' );
+// and a controller link
+$clh = mysql_connect( 'server', 'uname', 'pword', true );
+
+if ( mysql_select_db ( 'big_database', $lh ) )
+{
+  $began  =  time();
+  $tout   = 60 * 5; // five minute limit
+  $qry    = "SELECT * FROM my_bigass_table";
+  $rh     = mysql_unbuffered_query( $qry, $lh );
+  $thread = mysql_thread_id ( $lh );
+  while ( $res = mysql_fetch_row( $rh ) )
+  {
+    /* do what you need to do
+     * ...
+     * ...
+     */
+    if ( ( time() - $began ) > $tout )
+    {
+      // this is taking too long
+      mysql_query( "KILL $thread", $clh );
+      break;
+    }
+  }
+}
+?>

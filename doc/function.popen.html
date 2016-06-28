@@ -1,0 +1,611 @@
+
+popen
+
+(PHP 4, PHP 5, PHP 7)
+
+popen — 打开进程文件指针
+
+说明
+
+resource popen ( string $command , string $mode )
+
+打开一个指向进程的管道，该进程由派生给定的 command 命令执行而产生。
+
+参数
+
+command
+
+    命令。
+
+mode
+
+    模式。
+
+返回值
+
+返回一个和 fopen() 所返回的相同的文件指针，只不过它是单向的（只能用于读或写）并
+且必须用 pclose() 来关闭。此指针可以用于 fgets()，fgetss() 和 fwrite()。当模式
+为 'r'，返回的文件指针等于命里的 STDOUT，当模式为 'w'，返回的文件指针等于命令的
+STDIN。
+
+如果出错返回 FALSE。
+
+范例
+
+Example #1 popen() 例子
+
+<?php
+$handle = popen("/bin/ls", "r");
+?>
+
+如果未找到要执行的命令，会返回一个合法的资源。这看上去很怪，但有道理。它允许访
+问 shell 返回的任何错误信息：
+
+Example #2 popen() 例子
+
+<?php
+error_reporting(E_ALL);
+
+/* 加入重定向以得到标准错误输出 stderr。 */
+$handle = popen('/path/to/executable 2>&1', 'r');
+echo "'$handle'; " . gettype($handle) . "\n";
+$read = fread($handle, 2096);
+echo $read;
+pclose($handle);
+?>
+
+注释
+
+    Note:
+
+    如果需要双向支持，使用 proc_open()。
+
+    Note: 安全模式启用时，可仅可用 safe_mode_exec_dir 执行文件。实际上，现在不
+    允许在到可执行的路径中存在 .. 组件。
+
+Warning
+
+安全模式启用时，命令字符串会被 escapeshellcmd() 转换。因此，echo y | echo x 会
+变成 echo y \| echo x。
+
+参见
+
+  • pclose() - 关闭进程文件指针
+  • fopen() - 打开文件或者 URL
+  • proc_open() - 执行一个命令，并且打开用来输入/输出的文件指针。
+
+
+User Contributed Notes 21 notes
+
+===============================================================================
+
+If, on windows, you need to start a batch file that needs administrator
+privileges, then you can make a shortcut to the batch file, click properties,
+check to on "run as administrator" on one of the property pages, and then
+double-click the shortcut once (to initialize that "run as administrator"
+business).
+
+using popen("/path/to/shortcut.lnk") will then run your batch file with
+administrator privileges.
+
+handy for when you want to use cli php to do some long running tasks and that
+php-cli needs to use sessions..
+===============================================================================
+
+If you want to download files from a linux server with a filesize bigger than
+2GB you can use the following:
+
+<?php
+function serveFile( $file , $as ){
+    header( 'Expires: Mon, 1 Apr 1974 05:00:00 GMT' );
+    header( 'Pragma: no-cache' );
+    header( 'Cache-Control: must-revalidate, post-check=0, pre-check=0' );
+    header( 'Content-Description: File Download' );
+    header( 'Content-Type: application/octet-stream' );
+    header( 'Content-Length: '.trim(`stat -c%s "$file"`) );
+    header( 'Content-Disposition: attachment; filename="'. $as .'"' );
+    header( 'Content-Transfer-Encoding: binary' );
+    //@readfile( $file );
+
+    flush();
+    $fp = popen("tail -c ".trim(`stat -c%s "$file"`)." ".$file.' 2>&1', "r");
+    while(!feof($fp))
+    {
+        // send the current file part to the browser
+        print fread($fp, 1024);
+        // flush the content to the browser
+        flush();
+    }
+    fclose($fp);
+}
+?>
+===============================================================================
+
+If you try to execute a command under Windows the PHP script normally waits
+until the process has been terminated. Executing long-term processes pauses a
+PHP script even if you don't want to wait for the end of the process.
+
+It wasn't easy to find this beautiful example how to start a process under
+Windows without waiting for its termination:
+
+<?php
+$commandString = 'start /b c:\\programToRun.exe -attachment "c:\\temp\
+file1.txt"';
+pclose(popen($commandString, 'r'));
+?>
+===============================================================================
+
+There is a simple way to start a process in the background but still find out
+what the process result is. I combined the information from some users below
+with some of my own coming up with the following:
+
+<?php
+$bat_filename = "C:\\my_bat_file.bat";
+$bat_log_filename = "C:\\my_bat_file_bat.log";
+$bat_file = fopen($bat_filename, "w");
+if($bat_file) {
+    fwrite($bat_file, "@echo off"."\n");
+    fwrite($bat_file, "echo Starting proces >> ".$bat_log_filename."\n");
+    fwrite($bat_file, "php c:\\my_php_process.php >> ".$bat_log_filename."\n");
+    fwrite($bat_file, "echo End proces >> ".$bat_log_filename."\n");
+    fwrite($bat_file, "EXIT"."\n");
+    fclose($bat_file);
+}
+           
+//
+// Start the process in the background
+//
+$exe = "start /b ".$bat_filename;
+if( pclose(popen($exe, 'r')) ) {
+    return true;
+}
+return false;
+?>
+
+In my case the file names of the .bat and .log files weren't always the same,
+so I needed a dynamic way to create the .bat file. The output from the php
+command is saved to the log file with the >> command. All prints and errors are
+stored there. At a later time you can open the log file and see what happened.
+===============================================================================
+
+Note, when using this with a batch file in windows, you must put an "exit" at
+the end of your batch file or you will get a new cmd.exe stuck in your process
+list every time you execute the page.
+===============================================================================
+
+Here is a nice little script for monitoring your http access log.
+
+<?php
+
+$handle = popen("tail -f /etc/httpd/logs/access.log 2>&1", 'r');
+while(!feof($handle)) {
+    $buffer = fgets($handle);
+    echo "$buffer<br/>\n";
+    ob_flush();
+    flush();
+}
+pclose($handle);
+
+?>
+
+----
+www.eviltree.co.uk
+www.solidsites.co.uk
+www.mongbong.com
+===============================================================================
+
+If you want to fork a process under windows, this is the function to use.  I
+created a batch file called runcmd.bat with the following line
+
+start %1 %2 %3 %4
+
+then I have the folowing function
+
+<?php
+define('RUNCMDPATH', 'c:\\htdocs\\nonwebspace\\runcmd.bat');
+
+function runCmd($cmd) {
+    $externalProcess=popen(RUNCMDPATH.' '.$cmd, 'r');
+    pclose($externalProcess);
+}   
+?>
+
+with this, doing something like
+
+<?php runCmd('php.exe printWorkOrder.php 3498'); ?>
+will launch php.exe outside of apache and allow the script calling the runCmd()
+function to continue without waiting for the command line process to return. 
+The process will run under the same user account that Apache (or whatever
+webserver you're running) is running under, so make sure it has permissions to
+do whatever you need to do.  Also, make sure that the batch file has enough %n
+s in order to pass all the command line variables that you might need to pass.
+
+Special thanks to kicken from the devshed forums for coming up with the idea.
+===============================================================================
+
+If you are running in a chroot'ed environment on Debian "Squeeze", this command
+won't work; there is a problem with the kernel code that popen() eventually
+calls.
+
+Note that pecl makes heavy use of this command, so if you are running in this
+environment you will need to install the pecl extension from source instead.
+===============================================================================
+
+As a side note to the code provided by anonymous at anon dot com:
+
+  $cmd = "php longscript.php";
+
+  function execInBackground($cmd) { 
+    if (substr(php_uname(), 0, 7) == "Windows"){
+        pclose(popen("start /B ". $cmd, "r"));
+    } else {
+        exec($cmd . " > /dev/null &");  
+    }
+  }
+
+I had a problem where Windows would close the call too fast before the entire
+script was interpreted, but I didn't want my main script to hang until it would
+be fully loaded.
+
+As a workaround, I called a tiny .php script which would then call the larger
+script.
+
+myfile.php:
+<?php
+  $cmd = "php timewrapper.php";
+
+  function execInBackground($cmd) { 
+    if (substr(php_uname(), 0, 7) == "Windows"){
+        pclose(popen("start /B ". $cmd, "r"));
+    } else {
+        exec($cmd . " > /dev/null &");  
+    }
+  }
+?>
+
+timewrapper.php:
+<?php
+  $cmd = "php longscript.php";
+  $timer = popen("start /B ". $cmd, "r");
+  sleep(30);
+  pclose($timer);
+?>
+
+This way my main script would continue to run without having to pause, while
+the tiny script pauses while it loads the larger file.
+===============================================================================
+
+Truncated output from ps command?
+
+The solution lies in the way ps displays it's info
+specifically the -w option which:
+'uses 132 columns to display information,
+instead of the default which is your window size.'....
+somehow with fgets in php that results in 74 characters
+regardless off the init length parameter
+
+a bit of code:
+
+<?php
+echo '<table width="99%"><tr><td>cron</td></tr>' . "\n";
+$fp=popen("/bin/ps -waux","r");
+while (!feof($fp)) {
+    $buffer = fgets($fp, 4096);
+    $croninf .= '<tr><td>' . $buffer . '</td></tr>' . "\n";
+}
+pclose($fp);
+echo $croninf;
+echo '</table><br><br>' . "\n";
+?>
+
+Ciao,
+
+Rene =<>=
+===============================================================================
+
+Care needs to be taken in the case of long running child processes. Say you
+want to run tail -f /var/log/messages or in my case burn dvds. If you have a
+busy wait, Apache2 can sit towards 100%cpu and steadily grow memory. In my case
+I crashed the server after about an hour and 90% of the dvd burned. During that
+time apache had consumed a gig of swap.
+
+Offending code - don't copy:
+
+<?php
+        $ThisCommand = sprintf("%s %s",COMMAND,$ThisFile);
+        $fp=popen($ThisCommand,"r");
+        while (!feof($fp)) {
+                set_time_limit (20);
+                $results = fgets($fp, 4096);
+                if (strlen($results) == 0) {
+                   // stop the browser timing out
+                   echo " ";
+                   flush();
+                } else {
+                   $tok = strtok($results, "\n");
+                   while ($tok !== false) {
+                        echo htmlentities(sprintf("%s\n",$tok))."<br/>";
+                        flush();
+                        $tok = strtok("\n");
+                   }
+                }
+        }
+        pclose($fp);
+?>
+
+to go from zero memory and 100% cpu  to negligible memory and negligible cpu
+add a sleep.
+
+<?php
+        while (!feof($fp)) {
+                set_time_limit (20);
+                $results = fgets($fp, 256);
+                if (strlen($results) == 0) {
+                   // stop the browser timing out
+                   echo " ";
+                   flush();
+                } else {
+                   $tok = strtok($results, "\n");
+                   while ($tok !== false) {
+                        echo htmlentities(sprintf("%s\n",$tok))."<br/>";
+                        flush();
+                        $tok = strtok("\n");
+                   }
+                }
+                // avoid a busy wait
+                sleep(1);
+
+        }
+?>
+
+I think the continued banging of the space to keep the browser awake triggered
+some issues in apache.
+===============================================================================
+
+Yet another workaround for not having bidirectional pipes in php.
+
+<?php
+$Cmd =
+"bc 2>&1 << END\n" .
+"100+221\n" .
+"1+3*3\n" .
+"quit\n" .
+"END\n";
+
+$fp = popen($Cmd, 'r');
+$read = fread($fp, 1024);
+echo $read;
+pclose($fp);
+?>
+===============================================================================
+
+From the popen linux programmers manual:
+
+"The  command  argument  is  a pointer to a null-terminated string containing a
+shell command line.  This  command  is passed  to  /bin/sh  using the -c flag."
+
+Since php uses this popen function, you need to be sure /bin/sh exists. This
+file may not exist in chroot()ed environments.
+===============================================================================
+
+I noticed that some of the examples above seem to advocate passing unencrypted
+data to gpg via the pipe shell escape, in the absence of a bi-directional popen
+(on some OSes).
+
+The approach I've taken is similar to:
+
+<?php
+  $prefix = 'example';
+  $command = '/usr/local/bin/gpg --encrypt --armor --no-tty --batch
+--no-secmem-warning --recipient "joe.soap@example.com"';
+  $tmpfile = tempnam('/tmp', $prefix);
+  $pipe = popen("$command 2>&1 >$tmpfile", 'w');
+  if (!$pipe) {
+    unlink($tmpfile);
+  } else {
+    fwrite($pipe, $plaintxt, strlen($plaintxt));
+    pclose($pipe);
+    $fd = fopen($tmpfile, "rb");
+    $output = fread($fd, filesize($tmpfile));
+    fclose($fd);
+    unlink($tmpfile);
+  }
+  return $output;
+?>
+
+This means that unencrypted information is not passed via a (potentially
+readable) shell command, and only encrypted information gets stored on disc.
+===============================================================================
+
+Here is a workaround for not having bidirectional pipes in php.
+
+If you have bidirectional pipe support, don't bother with this.
+
+The trick here is to send the input on the command line to the target
+application.  In particular I wanted to use openssl without using temp files or
+named pipes.  This solution should also be thread/process safe.
+
+This does work on Linux (RedHat 7).
+
+<?php
+function filterThroughCmd($input, $commandLine) {
+  $pipe = popen("echo \"$input\"|$commandLine" , 'r');
+  if (!$pipe) {
+    print "pipe failed.";
+    return "";
+  }
+  $output = '';
+  while(!feof($pipe)) {
+    $output .= fread($pipe, 1024);
+  }
+  pclose($pipe);
+  return $output;
+}
+
+# example:
+print filterThroughCmd("hello", "cat");
+# Piping to cat has the effect of echoing your input.
+?>
+===============================================================================
+
+The below code works for both way processing ;) Have fun folks
+
+<?php
+    system("mkfifo pipeout");
+   $pipe = popen("./nwserver -module Chapter1E > pipeout","w");
+   $pipeout = fopen("pipeout", "r");
+   while ($s = fgets($pipeout,1024)) {
+    echo $s;
+   }
+
+?>
+===============================================================================
+
+<?php
+// The above import function can be easily extended using
+// /usr/local/bin/xls2csv (part of catdoc ) and popen
+// to read excell files directly.
+// In our particular application the first line was the file heading.
+function importxls($file,$head=true,$throwfirst=true,$delim=",",$len=1000) {
+   $return = false;
+   $handle = popen("/usr/local/bin/xls2csv $file", "r");
+// or die if not there.
+   if ($throwfirst) {
+       $throw = fgetcsv($handle, $len, $delim);
+   }
+   if ($head) {
+       $header = fgetcsv($handle, $len, $delim);
+   }
+   while (($data = fgetcsv($handle, $len, $delim)) !== FALSE) {
+       if ($head AND isset($header)) {
+           foreach ($header as $key=>$heading) {
+               $row[$heading]=(isset($data[$key])) ? $data[$key] : '';
+               print "<li>". $heading ."=>" . $row[$heading]."</li>";
+           }
+           $return[]=$row;
+       } else {
+           $return[]=$data;
+       }
+   }
+   fclose($handle);
+   return $return;
+}
+?>
+===============================================================================
+
+I should say, my host uses a modified form of safe mode, so I don't know if
+that might have caused a problem with "popen" as opposed to "proc_open".  With
+safe mode enabled, all words following the initial command string are treated
+as a single argument. Thus, echo y | echo x becomes echo "y | echo x". 
+[Because of this,] LinixDude010's srcipt did not work for me.  Seems wrong to
+read and write with popen, according to the manual.
+
+The script produced pgp text, but there was something wrong with the text and I
+could not decode it.
+
+This replacement script, using proc_open, which can read and write, DOES work:
+
+<?php
+function pgp_encrypt($keyring_location, $public_key_id, $plain_text) {
+  $encrypted_text='';
+  $key_id = EscapeShellArg($public_key_id);
+  putenv("PGPPATH=$keyring_location");
+
+  // encrypt the message
+  $descriptorspec = array(
+    0 => array("pipe", "r"),  // stdin
+    1 => array("pipe", "w"),  // stdout
+    2 => array("pipe", "w")   // stderr ?? instead of a file
+  );
+  $process = proc_open("pgpe -r $key_id -af", $descriptorspec, $pipes);
+  if (is_resource($process)) {
+    fwrite($pipes[0], $plain_text);
+    fclose($pipes[0]);
+    while($s= fgets($pipes[1], 1024)) {
+          // read from the pipe
+          $encrypted_text .= $s;
+    }
+    fclose($pipes[1]);
+    // optional:
+    while($s= fgets($pipes[2], 1024)) {
+      $encrypted_text.= "\n<p>Error: $s</p>\n";
+    }
+    fclose($pipes[2]);
+  }
+  return $encrypted_text;
+}
+
+$message = pgp_encrypt("/home/username/.pgp", "to@domain.com", "dummy text to
+be encrypted");
+print nl2br($message);
+
+?>
+===============================================================================
+
+I had all kinds of trouble encrypting a message with PGP, but I finanlly got it
+to work.  The trick was to 'chmod o+r pubring.pkr' so that the apache server
+could read the public keys!!!  Then, this function worked fine:
+
+<?PHP
+function pgp_encrypt($keyring_location, $public_key_id, $plain_text) {
+
+        $key_id = EscapeShellArg($public_key_id);
+        putenv("PGPPATH=$keyring_location");
+
+        // encrypt the message
+        $pipe = popen("pgpe -r $key_id -af", "r");              
+        fwrite($pipe, $plain_text);
+        $encrypted_text = '';
+        while($s = fgets($pipe, 1024)) {
+                // read from the pipe
+                $encrypted_text .= $s;
+        }
+        pclose($pipe);
+
+        return $encrypted_text;
+}
+
+$message = pgp_encrypt("/home/username/.pgp", "to@domain.com", "dummy text to
+be encrypted");
+print nl2br($message);
+
+?>
+===============================================================================
+
+Note that you *have* to do a read on the handle before you can feof(), even if
+the command outputs nothing! So..
+
+<?php
+$f=popen("sleep 2","r");
+while (!feof($f)) {}
+pclose($f);
+print "done";
+?>
+
+will never finish.
+===============================================================================
+
+ive tried using popen using bidirectional pipes without working for obvious
+reasons, but i managed to create a simple script that managed to take care of
+the problem.  This example is for gpg encryption.
+
+<?php
+   $message = "this is the text to encrypt with gpg";
+   $sendto = 'Dummy Key <another@fake.email>';
+
+   system("mkfifo pipein");
+   system("mkfifo pipeout");
+   system("gpg --encrypt -a -r '$sendto' > pipeout < pipein &");
+   $fo = fopen("pipeout", "r");
+   $fi = fopen("pipein", "w");
+   fwrite($fi, $message, strlen($message));
+   fclose($fi);
+   while (!feof($fo)) {
+      $buf .= fread($fo, 1024);
+   }
+   echo $buf;
+   unlink("pipein");
+   unlink("pipeout");
+?>
+
+If anyone has a better way of doing this I would love to see it.

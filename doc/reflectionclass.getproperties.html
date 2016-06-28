@@ -1,0 +1,301 @@
+
+ReflectionClass::getProperties
+
+(PHP 5, PHP 7)
+
+ReflectionClass::getProperties — 获取一组属性
+
+说明
+
+public array ReflectionClass::getProperties ([ int $filter ] )
+
+获取反射过的属性。
+
+参数
+
+filter
+
+    可选的过滤器，过滤为所需类型的属性。它使用 ReflectionProperty 常量来配置，
+    默认获取所有类型的属性。
+
+返回值
+
+ReflectionProperty 对象的数组。
+
+范例
+
+Example #1 ReflectionClass::getProperties() 过滤例子
+
+这个例子延时了可选 filter 参数的用法，例子里实际上忽略了私有属性。
+
+<?php
+class Foo {
+    public    $foo  = 1;
+    protected $bar  = 2;
+    private   $baz  = 3;
+}
+
+$foo = new Foo();
+
+$reflect = new ReflectionClass($foo);
+$props   = $reflect->getProperties(ReflectionProperty::IS_PUBLIC | 
+ReflectionProperty::IS_PROTECTED);
+
+foreach ($props as $prop) {
+    print $prop->getName() . "\n";
+}
+
+var_dump($props);
+
+?>
+
+以上例程的输出类似于：
+
+foo
+bar
+array(2) {
+  [0]=>
+  object(ReflectionProperty)#3 (2) {
+    ["name"]=>
+    string(3) "foo"
+    ["class"]=>
+    string(3) "Foo"
+  }
+  [1]=>
+  object(ReflectionProperty)#4 (2) {
+    ["name"]=>
+    string(3) "bar"
+    ["class"]=>
+    string(3) "Foo"
+  }
+}
+
+参见
+
+  • ReflectionClass::getProperty() - 获取类的一个属性的 ReflectionProperty
+  • ReflectionProperty
+  • ReflectionProperty 修饰符常量
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Some may find this useful.
+
+<?php
+/**
+* Recursive function to get an associative array of class properties by
+property name => ReflectionProperty() object
+* including inherited ones from extended classes
+* @param string $className Class name
+* @param string $types Any combination of <b>public, private, protected, static
+</b>
+* @return array
+*/
+function getClassProperties($className, $types='public'){
+    $ref = new ReflectionClass($className);
+    $props = $ref->getProperties();
+    $props_arr = array();
+    foreach($props as $prop){
+        $f = $prop->getName();
+       
+        if($prop->isPublic() and (stripos($types, 'public') === FALSE))
+continue;
+        if($prop->isPrivate() and (stripos($types, 'private') === FALSE))
+continue;
+        if($prop->isProtected() and (stripos($types, 'protected') === FALSE))
+continue;
+        if($prop->isStatic() and (stripos($types, 'static') === FALSE))
+continue;
+       
+        $props_arr[$f] = $prop;
+    }
+    if($parentClass = $ref->getParentClass()){
+        $parent_props_arr = getClassProperties($parentClass->getName());//
+RECURSION
+        if(count($parent_props_arr) > 0)
+            $props_arr = array_merge($parent_props_arr, $props_arr);
+    }
+    return $props_arr;
+}
+
+//USAGE
+
+class A{
+  public $a1;
+   
+    function abc(){
+        //do something
+    }
+}
+
+class AA extends A{
+    public $a2;
+   
+    function edf(){
+        //do something
+    }
+}
+
+class AAA extends AA{
+  //may not have extra properties, but may have extra methods
+    function ghi(){
+        //ok
+    }
+}
+
+//$ref = new ReflectionClass('AAA'); $props = $ref->getProperties();//This will
+get no properties!
+$props_arr = getClassProperties('AAA', 'public');//Use this
+var_dump($props_arr);
+/*
+OUTPUT on PHP5.2.6:
+array
+  'a1' =>
+    object(ReflectionProperty)[4]
+      public 'name' => string 'a1' (length=2)
+      public 'class' => string 'AAA' (length=3)
+  'a2' =>
+    object(ReflectionProperty)[3]
+      public 'name' => string 'a2' (length=2)
+      public 'class' => string 'AAA' (length=3)
+
+*/
+
+?>
+===============================================================================
+
+The code in the first example actually does get inherited properties with at
+least php 5.5.9 . I don't know if / when this behavior changed.
+
+Here is the output:
+    array(2) {
+     [0] =>
+     class ReflectionProperty#2 (2) {
+       public $name =>
+       string(2) "a2"
+       public $class =>
+       string(2) "AA"
+     }
+     [1] =>
+     class ReflectionProperty#3 (2) {
+       public $name =>
+       string(2) "a1"
+       public $class =>
+       string(1) "A"
+     }
+    }
+===============================================================================
+
+It appears the filter parameter accepts a long value that is one of
+ReflectionProperty::IS_STATIC, ReflectionProperty::IS_PUBLIC,
+ReflectionProperty::IS_PROTECTED, or ReflectionProperty::IS_PRIVATE as a way to
+limit the returned properties.  Flags may be combined by adding them together.
+
+Example:
+
+<?php
+class Foo {
+  public $alpha = 1;
+  protected $beta = 2;
+  private $gamma = 3;
+
+  public function listProperties() {
+    $reflect = new ReflectionObject($this);
+    foreach ($reflect->getProperties(ReflectionProperty::IS_PUBLIC + 
+ReflectionProperty::IS_PROTECTED) as $prop) {
+      print $prop->getName() . "\n";
+    }
+  }
+}
+
+$foo = new Foo();
+$foo->listProperties();
+?>
+
+will output:
+
+  alpha
+  beta
+===============================================================================
+
+It should be noted that the 'filter' parameter in the getProperties(filter)
+method is expected to be of type long.  Not sure why, but it doesn't function
+as a way of passing in a string to fetch a subset of properties by string
+match.
+===============================================================================
+
+With PHP 5.3 protected or private properties are easy to access with
+setAccessible(). However, it's sometimes needed (e.g. Unit Tests) and here is a
+workaround for getValue():
+
+<?php
+
+$class = new ReflectionClass('SomeClass');
+$props = $class->getProperties();
+// $propsStatic = $class->getStaticProperties();
+
+$myPrivatePropertyValue = $props['aPrivateProperty'];
+
+?>
+
+Note that it wont work if you access the property directly with getProperty().
+===============================================================================
+
+Looks like you can access public, protected, private variables by casting the
+object to an array (useful for Unit Testing).  However casting to an array
+still won't allow you access to protected and private static variables.
+
+In PHP 5.3.0+ use ReflectionProperty::setAccessable(true);
+
+<?php
+
+echo "PHP Version: ".phpversion()."\n";
+
+class Foo {
+    public    $foo  = 'public';
+    protected $bar  = 'protected';
+    private   $baz  = 'private';
+
+    public static    $sfoo  = 'public static';
+    protected static $sbar  = 'protected static';
+    private static   $sbaz  = 'private static';
+
+    const COO = 'const';
+
+}
+
+$obj = new Foo;
+
+$arr = (array)$obj;
+
+print_r($arr);
+
+echo "Accessing Public Static: ".Foo::$sfoo."\n";
+// echo Foo::$sbar."\n"; // Fatal error: Cannot access protected property
+Foo::$sbar
+// echo Foo::$sbaz."\n"; // Fatal error: Cannot access private property
+Foo::$sbaz
+echo "Accessing Constant: ".Foo::COO."\n";
+?>
+
+PHP Version: 5.2.12
+Array
+(
+    [foo] => public
+    [*bar] => protected
+    [Foobaz] => private
+)
+Accessing Public Static: public static
+Accessing Constant: const
+
+PHP Version: 5.1.6
+Array
+(
+    [foo] => public
+    [*bar] => protected
+    [Foobaz] => private
+)
+Accessing Public Static: public static
+Accessing Constant: const

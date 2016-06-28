@@ -1,0 +1,2426 @@
+
+imagettfbbox
+
+(PHP 4, PHP 5, PHP 7)
+
+imagettfbbox — 取得使用 TrueType 字体的文本的范围
+
+说明
+
+array imagettfbbox ( float $size , float $angle , string $fontfile , string
+$text )
+
+本函数计算并返回一个包围着 TrueType 文本范围的虚拟方框的像素大小。
+
+size
+    像素单位的字体大小。
+angle
+    text 将被度量的角度大小。
+fontfile
+    TrueType 字体文件的文件名（可以是 URL）。根据 PHP 所使用的 GD 库版本，可能
+    尝试搜索那些不是以 '/' 开头的文件名并加上 '.ttf' 的后缀并搜索库定义的字体路
+    径。
+text
+    要度量的字符串。
+
+imagettfbbox() 返回一个含有 8 个单元的数组表示了文本外框的四个角：
+
+0 左下角 X 位置
+1 左下角 Y 位置
+2 右下角 X 位置
+3 右下角 Y 位置
+4 右上角 X 位置
+5 右上角 Y 位置
+6 左上角 X 位置
+7 左上角 Y 位置
+
+这些点是相对于文本的而和角度无关，因此“左上角”指的是以水平方向看文字时其左上角
+。
+
+本函数同时需要 GD 库和 FreeType 库。
+
+参见 imagettftext()。
+
+
+User Contributed Notes 63 notes
+
+===============================================================================
+
+Please note that as imageTTFBbox and imageTTFText functions return an array of
+coordinates which could be negative numbers care must be taken with height and
+width calculations.
+
+The rigth way to do that is to use the abs() function:
+
+for an horizontal text:
+
+$box = @imageTTFBbox($size,0,$font,$text);
+$width = abs($box[4] - $box[0]);
+$height = abs($box[5] - $box[1]);
+
+Then to center your text at ($x,$y) position the code should be like that:
+
+$x -= $width/2;
+$y += $heigth/2;
+
+imageTTFText($img,$size,0,$x,$y,$color,$font,$text);
+
+this because (0,0) page origin is topleft page corner and (0,0) text origin is
+lower-left readable text corner.
+
+Hope this help.
+===============================================================================
+
+Very CLEAR version of func., with example....
+
+<?php
+
+function calculateTextBox($text,$fontFile,$fontSize,$fontAngle) {
+    /************
+    simple function that calculates the *exact* bounding box (single pixel
+precision).
+    The function returns an associative array with these keys:
+    left, top:  coordinates you will pass to imagettftext
+    width, height: dimension of the image you have to create
+    *************/
+    $rect = imagettfbbox($fontSize,$fontAngle,$fontFile,$text);
+    $minX = min(array($rect[0],$rect[2],$rect[4],$rect[6]));
+    $maxX = max(array($rect[0],$rect[2],$rect[4],$rect[6]));
+    $minY = min(array($rect[1],$rect[3],$rect[5],$rect[7]));
+    $maxY = max(array($rect[1],$rect[3],$rect[5],$rect[7]));
+   
+    return array(
+     "left"   => abs($minX) - 1,
+     "top"    => abs($minY) - 1,
+     "width"  => $maxX - $minX,
+     "height" => $maxY - $minY,
+     "box"    => $rect
+    );
+}
+
+// Example usage - gif image output
+
+$text_string    = "Hullo World";
+$font_ttf        = "./fonts/arial.ttf";
+$font_size        = 22;
+$text_angle        = 0;
+$text_padding    = 10; // Img padding - around text
+
+$the_box        = calculateTextBox($text_string, $font_ttf, $font_size, 
+$text_angle);
+
+$imgWidth    = $the_box["width"] + $text_padding;
+$imgHeight    = $the_box["height"] + $text_padding;
+
+$image = imagecreate($imgWidth,$imgHeight);
+imagefill($image, imagecolorallocate($image,200,200,200));
+
+$color = imagecolorallocate($image,0,0,0);
+imagettftext($image,
+    $font_size,
+    $text_angle,
+    $the_box["left"] + ($imgWidth / 2) - ($the_box["width"] / 2),
+    $the_box["top"] + ($imgHeight / 2) - ($the_box["height"] / 2),
+    $color,
+    $font_ttf,
+    $text_string);
+
+header("Content-Type: image/gif");
+imagegif($image);
+imagedestroy($image);
+
+?>
+
+[ remember: No spaces before or after the <?php ... ?> tag, because of header()
+call, you Roast! ]
+===============================================================================
+
+This is a function which reformats a text string into a text block of a given
+width.
+Usefull when you have a long single line string and want to fit it into a fixed
+width but don't care about it's height
+
+<?php
+function makeTextBlock($text, $fontfile, $fontsize, $width)
+{   
+    $words = explode(' ', $text);
+    $lines = array($words[0]);
+    $currentLine = 0;
+    for($i = 1; $i < count($words); $i++)
+    {
+        $lineSize = imagettfbbox($fontsize, 0, $fontfile, $lines[$currentLine]
+. ' ' . $words[$i]);
+        if($lineSize[2] - $lineSize[0] < $width)
+        {
+            $lines[$currentLine] .= ' ' . $words[$i];
+        }
+        else
+        {
+            $currentLine++;
+            $lines[$currentLine] = $words[$i];
+        }
+    }
+   
+    return implode("\n", $lines);
+}
+?>
+===============================================================================
+
+It seems to be worth pointing out that the "points" unit GD2 is using
+corresponds to 96 dpi, as defined in gd.h:
+#define GD_RESOLUTION           96      /* pixels per inch */
+
+So if you want to translate the bbox back to font points, you need to multiply
+all coordinates by 72/96 = 3/4.
+===============================================================================
+
+I wrote a simple function that calculates the *exact* bounding box (single
+pixel precision).
+The function returns an associative array with these keys:
+left, top:  coordinates you will pass to imagettftext
+width, height: dimension of the image you have to create
+
+<?php
+function calculateTextBox($font_size, $font_angle, $font_file, $text) {
+  $box   = imagettfbbox($font_size, $font_angle, $font_file, $text);
+  if( !$box )
+    return false;
+  $min_x = min( array($box[0], $box[2], $box[4], $box[6]) );
+  $max_x = max( array($box[0], $box[2], $box[4], $box[6]) );
+  $min_y = min( array($box[1], $box[3], $box[5], $box[7]) );
+  $max_y = max( array($box[1], $box[3], $box[5], $box[7]) );
+  $width  = ( $max_x - $min_x );
+  $height = ( $max_y - $min_y );
+  $left   = abs( $min_x ) + $width;
+  $top    = abs( $min_y ) + $height;
+  // to calculate the exact bounding box i write the text in a large image
+  $img     = @imagecreatetruecolor( $width << 2, $height << 2 );
+  $white   =  imagecolorallocate( $img, 255, 255, 255 );
+  $black   =  imagecolorallocate( $img, 0, 0, 0 );
+  imagefilledrectangle($img, 0, 0, imagesx($img), imagesy($img), $black);
+  // for sure the text is completely in the image!
+  imagettftext( $img, $font_size,
+                $font_angle, $left, $top,
+                $white, $font_file, $text);
+  // start scanning (0=> black => empty)
+  $rleft  = $w4 = $width<<2;
+  $rright = 0;
+  $rbottom   = 0;
+  $rtop = $h4 = $height<<2;
+  for( $x = 0; $x < $w4; $x++ )
+    for( $y = 0; $y < $h4; $y++ )
+      if( imagecolorat( $img, $x, $y ) ){
+        $rleft   = min( $rleft, $x );
+        $rright  = max( $rright, $x );
+        $rtop    = min( $rtop, $y );
+        $rbottom = max( $rbottom, $y );
+      }
+  // destroy img and serve the result
+  imagedestroy( $img );
+  return array( "left"   => $left - $rleft,
+                "top"    => $top  - $rtop,
+                "width"  => $rright - $rleft + 1,
+                "height" => $rbottom - $rtop + 1 );
+}
+?>
+===============================================================================
+
+If you're looking for easy text alignment, you need to use the imagettfbbox()
+command. When given the correct parameters, it will return the boundaries of
+your to-be-made text field in an array, which will allow you to calculate the x
+and y coordinate that you need to use for centering or aligning your text.
+
+A horizontal centering example:
+
+<?php
+
+$tb = imagettfbbox(17, 0, 'airlock.ttf', 'Hello world!');
+
+?>
+
+$tb would contain:
+
+Array
+(
+    [0] => 0 // lower left X coordinate
+    [1] => -1 // lower left Y coordinate
+    [2] => 198 // lower right X coordinate
+    [3] => -1 // lower right Y coordinate
+    [4] => 198 // upper right X coordinate
+    [5] => -20 // upper right Y coordinate
+    [6] => 0 // upper left X coordinate
+    [7] => -20 // upper left Y coordinate
+)
+
+For horizontal alignment, we need to substract the "text box's" width { $tb[2]
+or $tb[4] } from the image's width and then substract by two.
+
+Saying you have a 200px wide image, you could do something like this:
+
+<?php
+
+$x = ceil((200 - $tb[2]) / 2); // lower left X coordinate for text
+imagettftext($im, 17, 0, $x, $y, $tc, 'airlock.ttf', 'Hello world!'); // write
+text to image
+
+?>
+
+This'll give you perfect horizontal center alignment for your text, give or
+take 1 pixel. Have fun!
+===============================================================================
+
+Please note that the 3rd argument is really a "path".
+<?php
+imagettfbbox(10, 0, 'arial.ttf', 'Hello, World!');  // will result in "Warning:
+imagettfbbox(): Could not find/open font in ...php on line ..."
+?>
+
+use instead something like this:
+<?php imagettfbbox(10, 0, './arial.ttf', 'Hello, World!'); ?>
+or
+<?php imagettfbbox(10, 0, getcwd().'/arial.ttf', 'Hello, World!'); ?>
+===============================================================================
+
+The returned array order is like this:
+-----------------------------
+| X:4  Y:5      | X:   Y:7        |
+-----------------------------
+| X:0  Y:1      | X:2  Y:3       |
+-----------------------------
+
+eg:
+4 for the upper left X
+5 for the upper left Y and so on.
+===============================================================================
+
+measure bg image size, wrap text to fit image width
+
+<?php
+$mx = imagesx($main_img);
+$my = imagesy($main_img);
+
+//TEXT VARS/////////
+$main_text = ;
+$main_text_size = ;
+$main_text_x = ($mx/2);
+
+$main_text_color = imagecolorallocate($main_img, $main_text_red, 
+$main_text_green, $main_text_blue);
+$words = explode(' ', $main_text);
+$lines = array($words[0]);
+$currentLine = 0;
+    for($i = 1; $i < count($words); $i++)
+    {
+        $lineSize = imagettfbbox($main_text_size, 0, $mt_f, $lines[$currentLine
+] . ' ' . $words[$i]);
+        if($lineSize[2] - $lineSize[0] < $mx)
+        {
+            $lines[$currentLine] .= ' ' . $words[$i];
+        }
+        else
+        {
+            $currentLine++;
+            $lines[$currentLine] = $words[$i];
+        }
+    }
+$line_count = 1;
+// Loop through the lines and place them on the image
+foreach ($lines as $line)
+{
+    $line_box = imagettfbbox($main_text_size, 0, $mt_f, "$line");
+    $line_width = $line_box[0]+$line_box[2];
+    $line_height = $line_box[1]-$line_box[7];
+    $line_margin = ($mx-$line_width)/2;
+    $line_y = (($line_height+12) * $line_count);
+    imagettftext($main_img, $main_t_s, 0, $line_margin, $line_y, 
+$main_text_color, $mt_f, $line);
+
+    // Increment Y so the next line is below the previous line
+    $line_count ++;
+}
+?>
+===============================================================================
+
+For mixed text drawing on image, height given by this function is useless and
+leads to text's hip-hops over the baseline .
+
+I will use just this:
+<?php
+$size = 12;//font height
+$font = 'Arial';// your font
+$char = 'Test';
+$char = 'With W';
+$char = 'without w but with p and y and q';
+
+    $rect = imagettfbbox($size, 0, $font, $char);
+
+    $image_height =abs( $rect[7] );//do no respect bottom margin
+    $imw = $rect[2] - $rect[0]; //as usual
+    $bx = abs( $rect[ 0 ] ); // X offset
+    $by = $size * 1.25; // Y offset - we will use const LINEHEIGHT
+?>
+===============================================================================
+
+As many of you know, this function is bugged in several versions of PHP. It
+should return the coordinates relative to the baseline of the font. So if your
+text includes characters like g and p then the bounding box should extend below
+zero on the Y axis, however it doesn't. This is a problem because imagettftext
+() positions text using the baseline, so all your text will be misaligned.
+
+My solution is to create an image of the desired font and font-size using all
+ascii characters with imagettfbbox() and imagettftext(). The height of this
+image is used as the height for the real image.
+
+I then analyse the image to get the vertical offset of the text (the background
+color should be $baseColor)
+<?php
+function getYOffset($image, $baseColor) {
+    for($y = 0; $y < $this->height(); $y++)
+        for($x = 0; $x < $this->width(); $x++)
+            if (imagecolorat($image, $x, $y) !== $baseColor)
+                return $y; }
+?>
+
+This offset can be used as the baseline for the font (for this font-size). You
+can use a similar trick for the horizontal offset, but that changes depending
+on the first character.
+===============================================================================
+
+I have been testing this function for a while now and have come up with many of
+the same issues that other people have touched upon.  Not being able to
+calculate the width of the text correctly.  Or if a solution is found then it
+won't work with a hanging letter or a negative start letter like 'j'.
+
+Like Ralph I also wanted to draw a box around some text and this would require
+me being pixel perfect with the font.  The trouble is I did not know which font
+would be used or which size.  This led me to come up with a solution which I am
+sharing below.
+
+<?php
+function imagettfbboxextended($size, $angle, $fontfile, $text) {
+    /*this function extends imagettfbbox and includes within the returned array
+    the actual text width and height as well as the x and y coordinates the
+    text should be drawn from to render correctly.  This currently only works
+    for an angle of zero and corrects the issue of hanging letters e.g. jpqg*/
+    $bbox = imagettfbbox($size, $angle, $fontfile, $text);
+
+    //calculate x baseline
+    if($bbox[0] >= -1) {
+        $bbox['x'] = abs($bbox[0] + 1) * -1;
+    } else {
+        //$bbox['x'] = 0;
+        $bbox['x'] = abs($bbox[0] + 2);
+    }
+
+    //calculate actual text width
+    $bbox['width'] = abs($bbox[2] - $bbox[0]);
+    if($bbox[0] < -1) {
+        $bbox['width'] = abs($bbox[2]) + abs($bbox[0]) - 1;
+    }
+
+    //calculate y baseline
+    $bbox['y'] = abs($bbox[5] + 1);
+
+    //calculate actual text height
+    $bbox['height'] = abs($bbox[7]) - abs($bbox[1]);
+    if($bbox[3] > 0) {
+        $bbox['height'] = abs($bbox[7] - $bbox[1]) - 1;
+    }
+
+    return $bbox;
+}
+?>
+
+The function above gives the correct x and y coordinates that the text should
+be drawn from and also gives the actual image width and height.  This has been
+tested with various fonts and sizes ranging from 6 up to 144 points.  Some of
+the output will appear to be incorrect and have an extra pixel on the right,
+using verdana at size 144 and outputting the character 'Q' for example.  This
+is not an error as this is part of the anti-aliasing of the font output.
+
+Example Usage:
+<?php
+$font = 'c:\windows\fonts\verdana.ttf';
+$font_size = 144;
+$text = 'jÜyZgQ';
+$bbox = imagettfbboxextended($font_size, 0, $font, $text);
+?>
+
+Return Values:
+Array
+(
+    [0] => -8
+    [1] => 40
+    [2] => 715
+    [3] => 40
+    [4] => 715
+    [5] => -177
+    [6] => -8
+    [7] => -177
+    [x] => 6
+    [width] => 722
+    [y] => 176
+    [height] => 216
+)
+
+Further notes can be found here along with images of the output of the function
+http://mikeleigh.com/links/imagettfbbox
+===============================================================================
+
+Here is a function that lets you write a string with your own "font tracking"
+level (the amount of pixels separating each character).  It uses imagettfbbox
+to determine the width of each character, so it doesn't discriminate against
+the skinnier of characters.  For this example, let $t = the amount of distance
+in pixels you want to separate each character from its neighbors.
+
+<?php
+function ImageTTFTextWithTracking($im, $size, $angle, $t, $x, $y, $color, $font
+, $text) {
+    $numchar = strlen($text);
+    for($i = 0; $i < $numchar; $i++) {
+        # Assign character
+        $char[$i] = substr($text, $i, 1);
+
+        # Write character
+        imagettftext($im, $size, $angle, ($x + $w + ($i * $t)), $y, $color, 
+$font, $char[$i]);
+       
+        # Get width of character
+        $width = imagettfbbox($size, $angle, $font, $char[$i]);
+        $w = $w + $width[2];
+    }
+}
+?>
+
+Be aware that it currently does not work for angles other than the 0 default (I
+have no need for that).
+===============================================================================
+
+Finally managed to make a fixed version of imagettfbbox().
+All angles returns correct values.
+Except that imagettftext() returns different trackings (space between each
+character) when rotating.
+
+<?php
+    // Set some test variables
+    $font = "d://www//tahoma.ttf";
+    $text = "Finally, I can center rotated text!";
+    $size = 20;
+    $angle = 20;
+
+    // Create an image and fill the background with lightgray
+    $image = imagecreatetruecolor(500, 400);
+    imagefill($image, 0, 0, hexdec("dddddd"));
+
+    // Make a cross to make it easier to analyze
+    imageline($image, 0, 0, imagesx($image), imagesy($image), hexdec("000000"
+));
+    imageline($image, imagesx($image), 0, 0, imagesy($image), hexdec("000000"
+));
+
+    // Run a fixed version of imagettfbbox()
+    $bbox = imagettfbbox_fixed($size, $angle, $font, $text);
+
+    // Make some text and center the text on the image.
+    // imagettftext() pivot is on lower left
+    imagettftext($image, $size, $angle, imagesx($image) / 2 - $bbox['width'] / 
+2, imagesy($image) / 2 + $bbox['height'] / 2, hexdec("0000ff"), $font, $text);
+
+    // Show the image
+    imagepng($image);
+
+    function imagettfbbox_fixed($size, $angle, $font, $text)
+    {
+        // Get the boundingbox from imagettfbbox(), which is correct when angle
+is 0
+        $bbox = imagettfbbox($size, 0, $font, $text);
+
+        // Rotate the boundingbox
+        $angle = pi() * 2 - $angle * pi() * 2 / 360;
+        for ($i=0; $i<4; $i++)
+        {
+            $x = $bbox[$i * 2];
+            $y = $bbox[$i * 2 + 1];
+            $bbox[$i * 2] = cos($angle) * $x - sin($angle) * $y;
+            $bbox[$i * 2 + 1] = sin($angle) * $x + cos($angle) * $y;
+        }
+
+        // Variables which tells the correct width and height
+        $bbox['width'] = $bbox[0] + $bbox[4];
+        $bbox['height'] = $bbox[1] - $bbox[5];
+
+        return $bbox;
+    }
+?>
+===============================================================================
+
+a little something to replace in blackbart tip :
+
+// start scanning (0=> black => empty)
+  $rleft  = $w4 = $width<<2;
+  $rright = 0;
+  $rbottom   = 0;
+  $rtop = $h4 = $height<<2;
+  for( $x = 0; $x < $w4; $x++ )
+    for( $y = 0; $y < $h4; $y++ )
+      if( imagecolorat( $img, $x, $y ) ){
+        $rleft   = min( $rleft, $x );
+        $rright  = max( $rright, $x );
+        $rtop    = min( $rtop, $y );
+        $rbottom = max( $rbottom, $y );
+      }
+
+with
+
+// start scanning (0=> black => empty)
+  $break = false;
+  $rleft  = $w4 = $width<<2;
+  $rright = 0;
+  $rbottom   = 0;
+  $rtop = $h4 = $height<<2;
+  // scanning from left to right, breaking when a pixel is found, to scan from
+the other side : avoid scanning all pixels !
+  for($x=0; $x<$w4; $x++){
+    for($y=0; $y<$h4; $y++)
+      if(imagecolorat($img,$x,$y)){
+        $rtop = min($rtop, $y); $rleft = min($rleft, $x);
+        $break = true; break;
+      }
+    if($break) break;
+  }
+  // scanning from right to left, breaking when a pixel is found
+  for($x=($w4-1); $x>$rleft; $x--){
+    for($y=0; $y<$h4; $y++)
+      if(imagecolorat($img,$x,$y)){
+          $rright = max($rright, $x); $rbottom = max($rbottom, $y);
+        $break = true; break;
+      }
+    if($break) break;
+  }
+//... //
+
+it may be even better to check if the picture is portrait or landscape, to
+start the loops from left-right(landscape) or top-bottom (portrait)
+===============================================================================
+
+I found a simple solution that was working for me:
+
+<?php
+    if(!isset($_GET['size'])) $_GET['size'] = 44;
+    if(!isset($_GET['text'])) $_GET['text'] = "Hello, world!";
+
+    $size = imagettfbbox($_GET['size'], 0, "ARIAL", $_GET['text']);
+    $xsize = abs($size[0]) + abs($size[2]);
+    $ysize = abs($size[5]) + abs($size[1]);
+
+    $image = imagecreate($xsize, $ysize);
+    $blue = imagecolorallocate($image, 0, 0, 255);
+    $white = ImageColorAllocate($image, 255,255,255);
+    imagettftext($image, $_GET['size'], 0, abs($size[0]), abs($size[5]), $white
+, "ARIAL", $_GET['text']);
+
+    header("content-type: image/png");
+    imagepng($image);
+    imagedestroy($image);
+?>
+
+Here is the link with a examples:
+http://www.tuxradar.com/practicalphp/11/2/6#null
+===============================================================================
+
+It should be noted that the bounding box coordinates returned by this function
+are inaccurate - bug reports about this have been open for 5 years, so expect
+this will likely never be fixed.
+
+More information here:
+
+https://gist.github.com/mindplay-dk/4429153
+===============================================================================
+
+Automatic line breaks: This simple function is able automatically create line
+breaks if you want to write a text on an image. All you have to specify is a
+maximum length.
+
+<?php
+function write_multiline_text($image, $font_size, $color, $font, $text, 
+$start_x, $start_y, $max_width)
+{
+        //split the string
+        //build new string word for word
+        //check everytime you add a word if string still fits
+        //otherwise, remove last word, post current string and start fresh on a
+new line
+        $words = explode(" ", $text);
+        $string = "";
+        $tmp_string = "";
+       
+        for($i = 0; $i < count($words); $i++)
+        {
+            $tmp_string .= $words[$i]." ";
+           
+            //check size of string
+            $dim = imagettfbbox($font_size, 0, $font, $tmp_string);
+           
+            if($dim[4] < $max_width)
+            {
+                $string = $tmp_string;
+            } else {
+                $i--;
+                $tmp_string = "";
+                imagettftext($image, 11, 0, $start_x, $start_y, $color, $font, 
+$string);
+               
+                $string = "";
+                $start_y += 22; //change this to adjust line-height.
+Additionally you could use the information from the "dim" array to
+automatically figure out how much you have to "move down"
+            }
+        }
+                               
+        imagettftext($image, 11, 0, $start_x, $start_y, $color, $font, $string
+); //"draws" the rest of the string
+?>
+===============================================================================
+
+I could in no way reproduce this function's example if I was to use any
+accented letter.
+
+Replacing imagecreatetruecolor by imagecreate worked correctly with accents.
+===============================================================================
+
+I want to output a bounding box of a text as an image straightly. I did like
+this:
+
+<?php
+
+$text = "<?php echo \"hello, world\"; ?>";
+$font = "./arial.ttf";
+$size = "60";
+
+$bbox = imagettfbbox($size, 0, $font, $text);
+
+$width = abs($bbox[2] - $bbox[0]);
+$height = abs($bbox[7] - $bbox[1]);
+
+$image = imagecreatetruecolor($width, $height);
+
+$bgcolor = imagecolorallocate($image, 255, 255, 255);
+$color = imagecolorallocate($image, 0, 0, 0);
+
+$x = $bbox[0] + ($width / 2) - ($bbox[4] / 2);
+$y = $bbox[1] + ($height / 2) - ($bbox[5] / 2);
+
+imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $bgcolor);
+imagettftext($image, $size, 0, $x, $y, $color, $font, $text);
+
+$last_pixel= imagecolorat($image, 0, 0);
+
+for ($j = 0; $j < $height; $j++)
+{
+    for ($i = 0; $i < $width; $i++)
+    {
+        if (isset($blank_left) && $i >= $blank_left)
+        {
+            break;
+        }
+
+        if (imagecolorat($image, $i, $j) !== $last_pixel)
+        {
+            if (!isset($blank_top))
+            {
+                $blank_top = $j;
+            }
+            $blank_left = $i;
+            break;
+        }
+
+        $last_pixel = imagecolorat($image, $i, $j);
+    }
+}
+
+$x -= $blank_left;
+$y -= $blank_top;
+
+imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $bgcolor);
+imagettftext($image, $size, 0, $x, $y, $color, $font, $text);
+
+header('Content-type: image/png');
+imagepng($image);
+imagedestroy($image);
+
+?>
+===============================================================================
+
+If $fontfile is a Windows UNC path, it *must* start with //SERVER rather than \
+\SERVER:
+
+<?php
+imagettfbbox(10, 0, '\\\\server\\path\\file.ttf', 'Hello, World!'); // Warning:
+imagettfbbox() [http://es.php.net/function.imagettfbbox]: Could not find/open
+font
+?>
+===============================================================================
+
+My solution to below-baseline characters is to simply apply a smaller angle and
+some padding when calculating your boundaries, so the function thinks your text
+goes below baseline. For example:
+
+<?php
+// GET BOUNDS OF TEXT
+$bounds = imagettfbbox($size*1.05, $angle-3, $font, $text);
+?>
+===============================================================================
+
+SIMPLE OVERLOADED FUNCTION: Adds TTF Center and Right Alignment to co ordintate
+points.
+Correctly demonstrates the use of the bouning box TTF function and the array of
+coordinates that it returns.
+
+After obtaining values and adjusting based on a set of values [L, C, R], it
+uses simple math based of the length of the text to move it from the origin (x
+= 0 )
+
+<?php
+function imagettftextalign($image, $size, $angle, $x, $y, $color, $font, $text,
+$alignment='L')
+{
+
+   //check width of the text
+   $bbox = imagettfbbox ($size, $angle, $font, $text);
+   $textWidth = $bbox[2] - $bbox[0];
+   switch ($alignment) {
+       case "R":
+           $x -= $textWidth;
+           break;
+       case "C":
+           $x -= $textWidth / 2;
+           break;
+   }
+
+   //write text
+   imagettftext ($image, $size, $angle, $x, $y, $color, $font, $text);
+
+}
+?>
+===============================================================================
+
+I was viewing the code for calculate the box of a text for a given font but I
+do not found one that works fine with different angles from zero, so I have
+made a function simpler than above:
+
+<?php
+
+function calculateTextBox($text,$fontFile,$fontSize,$fontAngle) {
+  $rect = imagettfbbox($fontSize,$fontAngle,$fontFile,$text);
+ 
+  $minX = min(array($rect[0],$rect[2],$rect[4],$rect[6]));
+  $maxX = max(array($rect[0],$rect[2],$rect[4],$rect[6]));
+  $minY = min(array($rect[1],$rect[3],$rect[5],$rect[7]));
+  $maxY = max(array($rect[1],$rect[3],$rect[5],$rect[7]));
+
+  return array(
+    "left"   => abs($minX),
+    "top"    => abs($minY),
+    "width"  => $maxX - $minX,
+    "height" => $maxY - $minY,
+    "box"    => $rect
+  );
+}
+
+?>
+
+With this function you can center an angled string in any image:
+
+<?php
+
+  $mystring = "Hello world!";
+
+  $imgWidth = 300;
+  $imgHeight = 150; 
+
+  $image = imagecreate($imgWidth,$imgHeight);
+  imagefill($image,imagecolorallocate($image,200,200,200));
+
+  $box = calculateTextBox($mystring,"./Verdana.ttf",15,45);
+  $color = imagecolorallocate($image,0,0,0);
+  imagettftext($image,
+               15,
+               45,
+               $box["left"] + ($imgWidth / 2) - ($box["width"] / 2),
+               $box["top"] + ($imgHeight / 2) - ($box["height"] / 2),
+               $color,
+               "./Verdana.ttf",
+               $mystring);
+
+  header("Content-Type: image/x-png");
+  imagepng($im);
+  imagedestroy($im);
+
+?>
+===============================================================================
+
+I worked out a script that allows the transfer of alphanumeric data to be
+placed on an image. The HTML feature is img src and the php feature is
+imagettftext. This simple code will increment from 1 to 3 on images.
+
+code:
+
+<?php
+//ImageCall.php -- This script will call a script to produce the image.
+for($next = 1;$next < 4; $next++){
+print "Image $next:<br>";
+print "<img src = 'Image.php?\$text=$next'>";
+print "<br><br>";
+}
+?>
+
+<?php
+//Image.php -- This script creates a square image and places the text on it.
+
+// image size and color
+$im = ImageCreate(77,77);
+$color1 = ImageColorAllocate($im,0x66,0xCC,0x00);
+$color2 = ImageColorAllocate($im,0x33,0x66,0x00);
+$color3 = ImageColorAllocate($im,0x00,0x99,0x00);
+$color4 = ImageColorAllocate($im,0x3D,0x3D,0x3D);
+
+// image creation
+ImageFilledRectangle($im,1,1,76,76,$color1);
+ImageFilledpolygon($im, array (76,1,1,76,76,76),3,$color2);
+ImageFilledRectangle($im,5,5,72,72,$color3);
+
+// determine numeric center of image
+$size = ImageTTFBBox(45,0,'impact',$_GET['$text']);
+$X = (77 - (abs($size[2]- $size[0])))/2;
+$Y = ((77 - (abs($size[5] - $size[3])))/2 + (abs($size[5] - $size[3])));
+
+//places numeric information on image
+ImageTTFText($im,45,0,($X-1),$Y,$color4,'impact',$_GET['$text']);
+
+//returns completed image to calling script
+Header('Content-Type: image/png');
+Imagepng($im);
+
+?>
+===============================================================================
+
+To get the height for a line of text, I've found it useful to do:
+
+<?php
+
+$bbox = imagettfbbox($size, 0, $ttf, " \n "); // space, newline, space
+
+$height = $bbox[3] - $bbox[5];
+
+?>
+
+I hope this helps. Before, I used the string "Tj", but that sometimes fell
+short, especially for crazy fonts.
+===============================================================================
+
+the imagettfbbox and imagettftext quirks are:
+
+1. imagettfbbox and imagettftext have the same return value and both of them
+are wrong for angle not equal to zero.
+2. imagettfbbox returns the correct bounding box when angle is zero.
+3. the bounding box has a coordinate system that the x gets bigger from left to
+right and y gets bigger from top to bottom.
+4. the "base point" used in imagettftext is the origin in the bounding box
+coordinate system.
+5. when the angle is other than 0, it is actually rotated in the coordinate
+system with respect to the base point. so if we know the bounding box
+coordinate when angle is zero, we can get the new bounding box coordinate by
+doing the rotation by math equations manually.
+6. to have pixel level accuracy, we should also be aware of another thing.
+suppose the axis is like this: |_|_|_|, the bounding box coordinate uses point
+on the vertical line while image function uses point on the horizontal line, so
+there is a 1 pixel difference you should take care of.
+
+The following snippet creates minimal images containing a letter of different
+font and rotation angle. This is especially useful in captcha scripts.
+
+<?php
+
+function create_font_image( $size, $angle, $font, $char )
+{
+    $rect = imagettfbbox( $size, 0, $font, $char );
+    if( 0 == $angle ) {
+        $imh = $rect[1] - $rect[7];
+        $imw = $rect[2] - $rect[0];
+        $bx = -1 - $rect[0];
+        $by = -1 - $rect[7];
+    } else {
+        $rad = deg2rad( $angle );
+        $sin = sin( $rad );
+        $cos = cos( $rad );
+        if( $angle > 0 ) {
+            $tmp = $rect[6] * $cos + $rect[7] * $sin;
+            $bx = -1 - round( $tmp );
+            $imw = round( $rect[2] * $cos + $rect[3] * $sin - $tmp );
+            $tmp = $rect[5] * $cos - $rect[4] * $sin;
+            $by = -1 - round( $tmp );
+            $imh = round( $rect[1] * $cos - $rect[0] * $sin - $tmp );
+        } else {
+            $tmp = $rect[0] * $cos + $rect[1] * $sin;
+            $bx = -1 - round( $tmp );
+            $imw = round( $rect[4] * $cos + $rect[5] * $sin - $tmp );
+            $tmp = $rect[7] * $cos - $rect[6] * $sin;
+            $by = -1 - round( $tmp );
+            $imh = round( $rect[3] * $cos - $rect[2] * $sin - $tmp );
+        }
+    }
+    $im = imagecreatetruecolor( $imw, $imh );
+    imagefill( $im, 0, 0, imagecolorallocate( $im, 255, 0, 255 ) );
+    imagettftext( $im, $size, $angle, $bx, $by, imagecolorallocate( $im, 0, 0, 
+0 ), $font, $char );
+    imagegif( $im, trim( $font, './' ) . ord( $char ) . $angle . '.gif' );
+    imagedestroy( $im );
+}
+
+$chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+$angles = array( -30, -20, -10, 0, 10, 20, 30 );
+$fonts = array( './latinwide.ttf', './verdana.ttf', './times.ttf', './
+broadway.ttf' );
+foreach( $angles as $angle )
+    foreach( $fonts as $font )
+        for( $i = 0; $i < strlen( $chars ); ++$i )
+            create_font_image( 100, $angle, $font, $chars[$i] );
+?>
+===============================================================================
+
+I still got problems trying to rotate imagettftext using imagettfbbox.
+
+It's position calculation is mostly wrong. So i tried to rotate ttftext with
+IMAGEROTATE.
+
+As a special the result is in black fontcolor and transparent background.
+
+Hope it helps sombody (thanks for function convertBoundingBox, reading below)
+
+<?
+function ImgText($text,$fontsize,$font,$angle){
+$im = '';
+    if($text){
+        if(!$fontsize || $fontsize < 1) $fontsize = 12;
+        if(!$font) $font = "fonts/arial.ttf";
+        $bbox = imagettfbbox($fontsize, 0, $font, $text);
+        $size=convertBoundingBox($bbox);
+        $im = ImageCreatetruecolor($size['width'],$size['height']);
+
+        $white = ImageColorAllocate($im, 255, 255, 255);
+        $black = ImageColorAllocate($im, 0,0,0);
+       
+        imagefill ($im, 0, 0, $white );
+        imagettftext($im, $fontsize, 0, $size['xOffset'], $size['yOffset'],
+$black, $font, $text);
+        $im = imagerotate( $im,$angle, $white);
+        imagecolortransparent ($im,$white);
+    }else{
+        // No text
+    }
+}
+?>
+===============================================================================
+
+Apparently the bounding box returned by imagettftext and imagettfbbox is not
+the same, and it appears as though imagettftext does a better job at
+calculating the actual bounding box (maybe because it has to render every
+character and it then finds out really everywhere it rendered).
+
+So, you can create a dummy image render the text to it and get a better box.
+Here is an example function:
+<?php
+function better_imagettfbbox($size, $angle, $font, $text) {
+  $dummy = imagecreate(1, 1);
+  $black = imagecolorallocate($dummy, 0, 0, 0);
+  $bbox = imagettftext($dummy, $size, $angle, 0, 0, $black, $font, $text);
+  imagedestroy($dummy);
+  return $bbox;
+}
+?>
+If you use this a lot, it would be better to keep one dummy image instead of
+continually creating and destroying images.
+===============================================================================
+
+Several comments show that the output of this function is often not what is
+expected, especially when the text is rotated.
+
+For those of you who'd like a visual representation of what is happening to the
+bounding box as the text is rotated, take a look here:
+
+http://ruquay.com/sandbox/imagettf/
+===============================================================================
+
+An improvement to the convertBoundingBox function. The previous function was
+completely wrong. My confusion came from characters like "1" and "_" that are
+rendered to the right or below the basepoint (in the font I'm using). I ended
+up using mike at mikeleigh dot com's function with a fix for these characters,
+and a "belowBasepoint" value.
+<?php
+function convertBoundingBox ($bbox) {
+    if ($bbox[0] >= -1)
+        $xOffset = -abs($bbox[0] + 1);
+    else
+        $xOffset = abs($bbox[0] + 2);
+    $width = abs($bbox[2] - $bbox[0]);
+    if ($bbox[0] < -1) $width = abs($bbox[2]) + abs($bbox[0]) - 1;
+    $yOffset = abs($bbox[5] + 1);
+    if ($bbox[5] >= -1) $yOffset = -$yOffset; // Fixed characters below the
+baseline.
+    $height = abs($bbox[7]) - abs($bbox[1]);
+    if ($bbox[3] > 0) $height = abs($bbox[7] - $bbox[1]) - 1;
+    return array(
+        'width' => $width,
+        'height' => $height,
+        'xOffset' => $xOffset, // Using xCoord + xOffset with imagettftext puts
+the left most pixel of the text at xCoord.
+        'yOffset' => $yOffset, // Using yCoord + yOffset with imagettftext puts
+the top most pixel of the text at yCoord.
+        'belowBasepoint' => max(0, $bbox[1])
+    );
+}
+?>
+===============================================================================
+
+It took me some time to make full use of imagettfbbox. Hopefully the following
+function makes it much easier to use for others.
+
+<?php
+function convertBoundingBox ($bbox) {
+    if ($bbox[0] >= -1)
+        $leftOfBasepoint = -abs($bbox[0] + 1);
+    else
+        $leftOfBasepoint = abs($bbox[0] + 2);
+    $rightOfBasepoint = abs($bbox[2] - $bbox[0]);
+    if ($bbox[0] < -1) $rightOfBasepoint = abs($bbox[2]) + abs($bbox[0]) - 1;
+    $aboveBasepoint = abs($bbox[5] + 1);
+    $height = abs($bbox[7]) - abs($bbox[1]);
+    if ($bbox[3] > 0) $height = abs($bbox[7] - $bbox[1]) - 1;
+    $width = $leftOfBasepoint + $rightOfBasepoint;
+    $belowBasepoint = $height - $aboveBasepoint;
+    return array(
+        'width' => $width,
+        'height' => $height,
+        'leftOfBasepoint' => $leftOfBasepoint,
+        'rightOfBasepoint' => $rightOfBasepoint,
+        'aboveBasepoint' => $aboveBasepoint,
+        'belowBasepoint' => $belowBasepoint
+    );
+}
+?>
+
+Thanks goes to mike at mikeleigh dot com for providing the core of this
+function.
+
+Remember, the basepoint is the x, y coords you use to draw text with
+imagettftext. A useful thing to do is take a string like...
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234567890
+...and use the "aboveBasepoint" value for the height of your font. Now you can
+draw lines and use "the height of your font * leading" as the distance between
+lines of text, where leading is a number like 1.45 (for 45% leading).
+===============================================================================
+
+This script shows you side by side the difference between a font rendered at a
+certain size and the same font rendered at some multiple of that size and then
+scaled down by the same multiple. It seems to help small sizes and affects
+large ones less. This script lets you see if it is worth implementing for your
+situation. Included is the great "imagettfbboxextended" function by mike at
+mikeleigh dot com below.
+
+$size = 30;
+$factor = 16;
+
+$smallSize = imagettfbboxextended($size, 0, "fonts/MPlantin.ttf", "The quick
+brown fox jumps over the lazy dog.");
+$smallWidth = $smallSize['width'];
+$smallHeight = $smallSize['height'];
+$canvas = imagecreatetruecolor($smallWidth + 20, $smallHeight * 2 + 20);
+imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+imagettftext($canvas, $size, 0, 10 + $smallSize['x'], 10 + $smallSize['y'],
+imagecolorallocate($canvas, 0, 0, 0), "fonts/MPlantin.ttf", "The quick brown
+fox jumps over the lazy dog.");
+
+$largeSize = imagettfbboxextended($size * $factor, 0, "fonts/MPlantin.ttf",
+"The quick brown fox jumps over the lazy dog.");
+$largeWidth = $largeSize['width'];
+$largeHeight = $largeSize['height'];
+$temp = imagecreatetruecolor($largeWidth, $largeHeight);
+imagefill($temp, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+imagettftext($temp, $size * $factor, 0, $largeSize['x'], $largeSize['y'],
+imagecolorallocate($temp, 0, 0, 0), "fonts/MPlantin.ttf", "The quick brown fox
+jumps over the lazy dog.");
+imagecopyresampled($canvas, $temp, 10 + $smallSize['x'], 10 + $smallSize['y'] +
+10, 0, 0, $smallWidth, $smallHeight, $largeWidth, $largeHeight);
+imagepng($temp, "temp.png");
+
+imagepng($canvas, "test.png");
+
+function imagettfbboxextended($size, $angle, $fontfile, $text) {
+    /*this function extends imagettfbbox and includes within the returned array
+    the actual text width and height as well as the x and y coordinates the
+    text should be drawn from to render correctly.  This currently only works
+    for an angle of zero and corrects the issue of hanging letters e.g. jpqg*/
+    $bbox = imagettfbbox($size, $angle, $fontfile, $text);
+
+    //calculate x baseline
+    if($bbox[0] >= -1) {
+        $bbox['x'] = abs($bbox[0] + 1) * -1;
+    } else {
+        //$bbox['x'] = 0;
+        $bbox['x'] = abs($bbox[0] + 2);
+    }
+
+    //calculate actual text width
+    $bbox['width'] = abs($bbox[2] - $bbox[0]);
+    if($bbox[0] < -1) {
+        $bbox['width'] = abs($bbox[2]) + abs($bbox[0]) - 1;
+    }
+
+    //calculate y baseline
+    $bbox['y'] = abs($bbox[5] + 1);
+
+    //calculate actual text height
+    $bbox['height'] = abs($bbox[7]) - abs($bbox[1]);
+    if($bbox[3] > 0) {
+        $bbox['height'] = abs($bbox[7] - $bbox[1]) - 1;
+    }
+
+    return $bbox;
+}
+===============================================================================
+
+Ralph Bolton commented about the difference in calculating the bounding box
+size vs. aligning text base line.
+
+The workaround for this issue is to calculate the difference in height between
+a character going below baseline and one above the baseline. This is likely
+going to vary from font to font, so I'd suggest something like this:
+
+<?php
+
+function fontBaselineOffset($font, $fontSize)
+{
+//this should be above baseline
+$test2="H";
+//some of these additional letters should go below it
+$test3="Hjgqp";
+
+//get the dimension for these two:
+
+$box2 = imageTTFBbox($fontSize,0,$font,$test2);
+$box3 = imageTTFBbox($fontSize,0,$font,$test3);
+
+//return the offset value
+
+return  abs((abs($box2[5]) + abs($box2[1])) - (abs($box3[5]) + abs($box3[1])));
+
+}
+?>
+
+This is not perfect yet. You should define a range of allowed characters that
+can go below baseline, compare them to the ones actually found in your string
+and use them instead of the string $test3 used in the example function above.
+This should avoid problems with letters that go further below baseline than the
+others (e.g. there could be a difference between 'g' and 'p')
+===============================================================================
+
+There's a bit of an annoyance with measuring font sizes and drawing boxes
+around text. When fonts are measured using ImageTTFbbox, the correct vertical
+height is returned. That is, the measurement of the phrase "Hanging" will be
+from the top of the "H" to the bottom of the "g".
+
+The problem is that functions like imageTTFtext align with the "line" of the
+text - that is, in the phrase "Hanging", the alignment is below the "H", not
+the bottom of the "g". That means that if you draw a rectangle behind your
+text, it'll be incorrectly aligned because the hanging "g" will be outside the
+box.
+
+For example, this doesn't work as you might expect (because the "g" hangs below
+the box):
+<?php
+// Get the size of the font box
+$textbox = imageTTFBbox($size, 0, $font, 'Hanging');
+$textwidth = abs($textbox[4] - $textbox[0]);
+$textheight = abs($textbox[5] - $textbox[1]);
+
+// Now draw a rectangle on the image
+$colour = ImageColorAllocate($im, 100, 100, 100);
+imagefilledrectangle($im, $x, $y - $textheight, $x + $textwidth, $y, $colour );
+
+// Now draw the text
+$black = ImageColorAllocate($im, 0, 0, 0);
+ImageTTFText($image['resource'], $size, 0, $x, $y, $black, $font, 'Hanging');
+?>
+It also seems that the rectangle in the above example is located 1 pixel to the
+left of the text.
+
+I haven't found a way to resolve this problem correctly. Instead, I have
+enlarged the rectangle and then put the text into it. I don't think this will
+work absolutely correctly for all fonts, so it's not exactly a perfect
+solution. However, it's better than nothing! Here is a snippet of it:
+<?php
+$enlargex = $textwidth * 0.08;
+$enlargey = $textheight * 0.1;
+$enlargey2 = $textheight * 0.5;
+
+// Now draw a rectangle on the image
+$colour = ImageColorAllocate($im, 100, 100, 100);
+imagefilledrectangle($im, $x - $enlargex, $y - $textheight - $enlargey, $x + 
+$textwidth + $enlargex, $y + $enlarge2, $colour );
+?>
+===============================================================================
+
+Warning:
+james.logsdon's function has a few flaws in copying my own function. Though he
+did a great job in making an overall nicer looking function it does have a few
+flaws.
+
+His function does not allow for long words (longer then the width) linebreaks
+(harder then it looks) and has a non-pixel perfect location.
+
+The problem with the imagettfbbox function is that different letters give a
+different x/y top-left coordinate. At least it looks that way for the eye. I
+'solved' this by putting a space in front of every line and then offset the
+text by the width of that space.
+
+So, although some things of my function seem useless they do serve an important
+purpose.
+===============================================================================
+
+I've modified Nimja's function a little. It doesn't support line-breaks (didn't
+need it in my script), but it's easy enough to add in.
+
+<?php
+
+function imageWordWrapBBox ( $Text, $Width = 650, $FontSize = 10, $Font = './
+fonts/arial.ttf' )
+{
+    $Words = split ( ' ', $Text );
+    $Lines = array ( );
+    $Line  = '';
+
+    foreach ( $Words as $Word )
+    {
+        $Box  = imagettfbbox ( $FontSize, 0, $Font, $Line . $Word );
+        $Size = $Box[4] - $Box[0];
+        if ( $Size > $Width )
+        {
+            $Lines[] = trim ( $Line );
+            $Line    = '';
+        }
+        $Line .= $Word . ' ';
+    }
+    $Lines[] = trim ( $Line );
+
+    $Dimensions = imagettfbbox ( $FontSize, 0, $Font, 'AJLMYabdfghjklpqry019`@$
+^&*(,' );
+    $lineHeight = $Dimensions[1] - $Dimensions[5];
+
+    return array ( $lineHeight, $Lines, $lineHeight * count ( $Lines ) );
+}
+
+function imageWordWrap ( $Text, $Width, $Color, $X = 0, $Y = 0, $FontSize = 10,
+$Font = './fonts/arial.ttf' )
+{
+    $Data = $this->imageWordWrapBBox ( $Text, $Width, $FontSize, $Font );
+
+    foreach ( $Data[1] as $Key => $Line )
+    {
+        $locX = $X;
+        $locY = $Y + ( $Key * $Data[0] );
+        imagettftext ( $this->Image, $FontSize, 0, $locX, $locY, $Color, $Font,
+$Line );
+    }
+
+    return $Data;
+}
+?>
+===============================================================================
+
+Neither Greg's or Henrik N's code worked for me.
+
+I figured out that imagettfbbox gives the size (coordinates) of the whole
+letter (ie. with the hang on 'g' or 'j'). So it was only a matter of finding
+the correct index of coordinates in the array.
+
+Note: This doesn't work on Times New Roman Italic's 'f' for some reason.
+
+<?php
+
+    $size = imagettfbbox($fontsize, 0, $font, $text);
+    $dx = abs($size[2]-$size[0]);
+    $dy = abs($size[5]-$size[3]);
+
+    ImageTTFText($im, $fontsize, 0, abs($size[6]), abs($size[5]), $txtcolor, 
+$font, $text);
+
+?>
+===============================================================================
+
+Tried Greg's code below, but it didn't quite work for me. This did, however:
+
+<?php
+
+$size = imagettfbbox($fontSize, 0, $font, $text);
+$width = $size[2] + $size[0];
+$height = abs($size[1]) + abs($size[7]);
+
+$image = imagecreatetruecolor($width, $height);
+
+imagettftext($image, $fontSize, 0, 0, abs($size[5]), $black, $font, $text);
+
+?>
+===============================================================================
+
+Have a problem with imagettfbbox cutting off the hang of letters such as 'g' or
+'j'??
+
+After days trying to figure this thing out, I finally cracked it:
+
+  $size = imagettfbbox($s,0,$font,$text);
+  $dx=abs($size[0])+abs($size[2]);
+  $dy=abs($size[1])+abs($size[7]);
+
+  ImageTTFText($im, $s, 0, $dx-abs($size[0]), $dy-abs($size[1]), $black, $font,
+$text);
+
+The key is the abs commands - you must account for the negative numbers in the
+original imagettfbbox, and if you have any, take them away from the location at
+the end when the text is displayed:
+
+you need to start the x and y at a (possibly) negative number, not 0,0 as I had
+thought.
+
+Hope that helps someone..
+===============================================================================
+
+My previous function had 2 bugs which are now fixed:
+* Align is now pixel perfect, no longer dependant on the first character.
+Solved by putting a space " " in front of every rendered line, making the
+basepoint at the exact same place every time.
+* X Y Coordinates are no longer the base-point, but the perfect top/left
+coordinates. This made my life designing a LOT easier.
+
+Features:
+* Newline support! (both Windows and Linux)
+* Paragraph support, no newlines are ignored, not even empty ones. So empty
+lines are properly supported.
+* True top/left x/y coordinates instead of TTF basepoint.(at least as close as
+possible).
+* Align function for Left, Center and Right
+* Support for words that are longer then the supported width.
+
+<?php
+//A function for pixel precise text Wrapping
+function imageTextWrapped(&$img, $x, $y, $width, $font, $color, $text, 
+$textSize, $align="l") {
+    //Recalculate X and Y to have the proper top/left coordinates instead of
+TTF base-point
+    $y += $textSize;
+    $dimensions = imagettfbbox($textSize, 0, $font, " "); //use a custom string
+to get a fixed height.
+    $x -= $dimensions[4]-$dimensions[0];
+
+    $text = str_replace ("\r", '', $text); //Remove windows line-breaks
+    $srcLines = split ("\n", $text); //Split text into "lines"
+    $dstLines = Array(); // The destination lines array.
+    foreach ($srcLines as $currentL) {
+        $line = '';
+        $words = split (" ", $currentL); //Split line into words.
+        foreach ($words as $word) {
+            $dimensions = imagettfbbox($textSize, 0, $font, $line.$word);
+            $lineWidth = $dimensions[4] - $dimensions[0]; // get the length of
+this line, if the word is to be included
+            if ($lineWidth > $width && !empty($line) ) { // check if it is too
+big if the word was added, if so, then move on.
+                $dstLines[] = ' '.trim($line); //Add the line like it was
+without spaces.
+                $line = '';
+            }
+            $line .= $word.' ';
+        }
+        $dstLines[] =  ' '.trim($line); //Add the line when the line ends.
+    }
+    //Calculate lineheight by common characters.
+    $dimensions = imagettfbbox($textSize, 0, $font, "MXQJPmxqjp123"); //use a
+custom string to get a fixed height.
+    $lineHeight = $dimensions[1] - $dimensions[5]; // get the heightof this
+line
+
+    $align = strtolower(substr($align,0,1)); //Takes the first letter and
+converts to lower string. Support for Left, left and l etc.
+    foreach ($dstLines as $nr => $line) {
+        if ($align != "l") {
+            $dimensions = imagettfbbox($textSize, 0, $font, $line);
+            $lineWidth = $dimensions[4] - $dimensions[0]; // get the length of
+this line
+            if ($align == "r") { //If the align is Right
+                $locX = $x + $width - $lineWidth;
+            } else { //If the align is Center
+                $locX = $x + ($width/2) - ($lineWidth/2);
+            }
+        } else { //if the align is Left
+            $locX = $x;
+        }
+        $locY = $y + ($nr * $lineHeight);
+        //Print the line.
+        imagettftext($img, $textSize, 0, $locX, $locY, $color, $font, $line);
+    }       
+}
+
+?>
+===============================================================================
+
+Another function for centered text string.
+What it does: Generate a truecolor .png image of a text string. The image will
+be just large enough encompass the text and a 2 px border and the text will be
+centered in it.
+
+It is called from any other page like so...
+<img src="linkImg.php?text=php.net is great&border=out" /> // Text with #&+"'\
+<> will need to be escaped, but I've found spaces don't cause errors. I haven't
+tested this with any other languages.
+
+The following code is the file named linkImg.php
+The file was not designed to have anything else here with it, and the open and
+close php tags should the the very first and very last characters of the page
+respectively, as outside whitespace can be a little evil sometimes.
+<?php
+//Obtain text and border via GET
+//Border can be out, in, or flat
+$text = $_GET['text'];
+$border = $_GET['border'];
+
+  $font = "fontpath"; //(str) "fonts/sasquatchlives.ttf"
+  $fontsize = font size; //(int) pixels in GD 1, or points in GD 2
+
+//Register box
+$box = imagettfbbox ($fontsize, 0, $font, $text);
+//Find out the width and height of the text box
+$textW = $box[2] - $box[0];
+$textH= $box[3]-$box[5];
+//Add padding
+$paddingx = 10;
+$paddingy = 10;
+//Set image dimentions
+$width = $textW+$paddingx;
+$height= $textH+$paddingy;
+
+//Bottom left corner of text
+$textx = $paddingx/2;
+$texty = $height - $paddingy/2;
+
+//Shadow offset (pixels)
+$shadoffx = 1;
+$shadoffy = 1;
+
+//Create the image
+$img = imagecreatetruecolor($width,$height);
+//Define some colors
+$white = imagecolorallocate($img,255,255,255);
+$black = imagecolorallocate($img,0,0,0);
+$lightgrey = imagecolorallocate($img,200,200,200);
+$grey = imagecolorallocate($img,100,100,100);
+//Define Text (fg) and background (bg) colors
+$bgcol = imagecolorallocate($img,192,213,196); //Celadon (light pastel green)
+$fgcol = imagecolorallocate($img,243,104,88); //Peach
+// Fill image with background color
+imagefill($img,0,0,$bgcol);
+
+//Write Shadow
+imagettftext($img, $fontsize, 0, $textx+$shadoffx, $texty+$shadoffy, $grey, 
+$font, $text);
+
+//Write Text
+imagettftext($img, $fontsize, 0, $textx, $texty, $fgcol, $font, $text);
+
+//Bordering
+
+   //Embossed border (button-looking)
+if ($border == "out")
+  {
+   imageline ($img,0,0,$width,0,$white);imageline ($img,0,0,0,$height,$white);
+   imageline ($img,1,1,$width,1,$lightgrey);imageline ($img,1,1,1,$height-1,
+$lightgrey);
+   imageline ($img,0,$height-1,$width-1,$height-1,$black);imageline ($img,
+$width-1,$height-1,$width-1,0,$black);
+   imageline ($img,2,$height-2,$width-2,$height-2,$grey);imageline ($img,$width
+-2,$height-2,$width-2,2,$grey);
+
+  }
+    //Flat border
+if ($border == "flat")
+  {
+   imageline ($img,0,0,$width,0,$white);imageline ($img,0,0,0,$height,$white);
+   imageline ($img,1,1,$width,1,$grey);imageline ($img,1,1,1,$height-1,$grey);
+   imageline ($img,0,$height-1,$width-1,$height-1,$white);imageline ($img,
+$width-1,$height-1,$width-1,0,$white);
+   imageline ($img,2,$height-2,$width-2,$height-2,$grey);imageline ($img,$width
+-2,$height-2,$width-2,2,$grey);
+  }
+
+    //Engraved border (pushed button)
+if ($border == "in")
+  {
+   imageline ($img,0,0,$width,0,$black);imageline ($img,0,0,0,$height,$black);
+   imageline ($img,1,1,$width,1,$grey);imageline ($img,1,1,1,$height-1,$grey);
+   imageline ($img,0,$height-1,$width-1,$height-1,$white);imageline ($img,
+$width-1,$height-1,$width-1,0,$white);
+   imageline ($img,2,$height-2,$width-2,$height-2,$lightgrey);imageline ($img,
+$width-2,$height-2,$width-2,2,$lightgrey);
+  }
+
+// Header info
+header("Content-type: image/png");
+//Sends the image
+imagepng($img);
+imagedestroy($img);
+?>
+
+Hope this helps someone!
+-Patrick-
+===============================================================================
+
+I have revised my mb_wordwrap function to fix 2 major bugs: cannot handle line
+break and infinite loop while handling very very long long long single byte
+word.
+
+<?php
+function mb_wordwrap($txt,$font,$size,$width) {
+    $pointer = 0; // Current character position pointer
+    $this_line_start = 0; // Starting character position of current line
+    $this_line_strlen = 1; // How long is the current line
+    $single_byte_stack = ""; // Variable for storing single byte word
+    $sbs_line_width = 0; // Pixel width of the Single byte word
+    $this_is_cr = FALSE; // Check if the character is new line code (ASCII=10)
+    $result_lines = array(); // Array for storing the return result
+   
+    while ($pointer < mb_strlen($txt)) {
+        $this_char = mb_substr($txt,$pointer,1);
+        if (ord($this_char[0])==10) $this_is_cr = TRUE; // Check if it is a new
+line
+        // Check current line width
+        $tmp_line = mb_substr($txt, $this_line_start, $this_line_strlen);
+        $tmp_line_bbox = imagettfbbox($size,0,$font,$tmp_line);
+        $this_line_width = $tmp_line_bbox[2]-$tmp_line_bbox[0];
+       
+        // Prevent to cut off english word at the end of line
+        // if this character is a alphanumeric character or open bracket, put
+it into stack
+        if (is_alphanumeric($this_char, $single_byte_stack)) $single_byte_stack
+.= $this_char;
+        // Check the width of single byte words
+        if ($single_byte_stack != "") {
+            $tmp_line_bbox = imagettfbbox($size,0,$font,$single_byte_stack);
+            $sbs_line_width = $tmp_line_bbox[2]-$tmp_line_bbox[0];
+        }
+       
+        if ($this_is_cr || $this_line_width > $width || $sbs_line_width >= 
+$width) {
+            // If last word is alphanumeric, put it to next line rather then
+cut it off
+            if ($single_byte_stack != "" && is_alphanumeric($this_char, 
+$single_byte_stack) && $sbs_line_width < $width) {
+                $stack_len = mb_strlen($single_byte_stack);
+                $this_line_strlen = $this_line_strlen - $stack_len + 1;
+                $pointer = $pointer - $stack_len + 1;
+            }
+            // Move the current line to result array and reset all counter
+            $result_lines[] = mb_substr($txt, $this_line_start, 
+$this_line_strlen-1);
+            if ($this_is_cr) { $pointer++; $this_is_cr=FALSE; }
+            if ($sbs_line_width >= $width) $sbs_line_width = 0;
+            $this_line_start = $pointer;
+            $this_line_strlen = 1;
+            $single_byte_stack = "";
+        } else {
+            if (!is_alphanumeric($this_char, $single_byte_stack)) {
+                $single_byte_stack = ""; // Clear stack if met multibyte
+character and not line end
+            }
+            $this_line_strlen++;
+            $pointer++;
+        }
+    }
+    // Move remained word to result
+    $result_lines[] = mb_substr($txt, $this_line_start);
+   
+    return $result_lines;
+}
+
+function is_alphanumeric($character, $stack) {
+    if (
+                (ord($character)>=48 && ord($character)<=57) ||
+                (ord($character)>=65 && ord($character)<=91) ||
+                (ord($character)>=97 && ord($character)<=123) ||
+                ord($character)==40 ||
+                ord($character)==60 ||
+                ($stack=="" && (ord($character)==34 || ord($character)==39))
+            ) return TRUE;
+            else return FALSE;
+}
+?>
+===============================================================================
+
+see http://php.rinet.ru/manual/ru/function.imagettftext.php#57416
+
+function ByteCount($s) {
+    $has_mbstring = extension_loaded('mbstring') ||@dl
+(PHP_SHLIB_PREFIX.'mbstring.'.PHP_SHLIB_SUFFIX);
+    $has_mb_shadow = (int) ini_get('mbstring.func_overload');
+   
+    if ($has_mbstring && ($has_mb_shadow & 2) ) {
+       $size = mb_strlen($s,'latin1');
+    } else {
+       $size = strlen($s);
+    }
+    return $size;
+}
+
+function foxy_utf8_to_nce($s) {
+  $utf = "$s";
+ 
+  $max_count = 5; // flag-bits in $max_mark ( 1111 1000 == 5 times 1)
+  $max_mark = 248; // marker for a (theoretical ;-)) 5-byte-char and mask for a
+4-byte-char;
+
+  $html = '';
+  $ByteCount = ByteCount($utf);
+  for($str_pos = 0; $str_pos < $ByteCount; $str_pos++) {
+    $old_chr = $utf{$str_pos};
+    $old_val = ord($old_chr);
+    $new_val = 0;
+
+    $utf8_marker = 0;
+
+    // skip non-utf-8-chars
+    if ($old_val > 127) {
+      $mark = $max_mark;
+      for ($byte_ctr = $max_count; $byte_ctr > 2; $byte_ctr--) {
+        // actual byte is utf-8-marker?
+        if (($old_val & $mark) == (($mark << 1) & 255)) {
+          $utf8_marker = $byte_ctr - 1;
+          break;
+        }
+        $mark = ($mark << 1) & 255;
+      }
+    }
+   
+    // marker found: collect following bytes
+    if ($utf8_marker > 1 and isset($utf{$str_pos + 1})) {
+      $str_off = 0;
+      $new_val = $old_val & (127 >> $utf8_marker);
+      for($byte_ctr = $utf8_marker; $byte_ctr > 1; $byte_ctr--) {
+        // check if following chars are UTF8 additional data blocks
+        // UTF8 and ord() > 127
+        if( (ord($utf{$str_pos + 1}) & 192) == 128 ) {
+          $new_val = $new_val << 6;
+          $str_off++;
+          // no need for Addition, bitwise OR is sufficient
+          // 63: more UTF8-bytes; 0011 1111
+          $new_val = $new_val | ( ord( $utf{$str_pos + $str_off} ) & 63 );
+        }
+        // no UTF8, but ord() > 127
+        // nevertheless convert first char to NCE
+        else {
+          $new_val = $old_val;
+        }
+      }
+      // build NCE-Code
+      $html .= '&#'.$new_val.';';
+      // Skip additional UTF-8-Bytes
+      $str_pos = $str_pos + $str_off;
+    } else {
+      $html .= chr($old_val);
+      //$new_val = $old_val;
+    }
+  }
+  return $html;
+}
+===============================================================================
+
+Most of functions shared here seems only work with western language and is not
+suitable for multibyte characters (like Chinese). I have written a function
+using mb_string functions to match the need of multibyte character word
+wrapping.
+
+I also added some machanism so that English word won't be cut off at the end of
+line. Of couse you must use unicode string on GD.
+
+function mb_wordwrap($txt,$font,$size,$width) {
+    $pointer = 0;
+    $this_line_start = 0;
+    $this_line_strlen = 1;
+    $single_byte_stack = "";
+    $result_lines = array();
+    while ($pointer <= mb_strlen($txt)) {
+        $this_char = mb_substr($txt,$pointer,1);
+        $tmp_line = mb_substr($txt, $this_line_start, $this_line_strlen);
+        $tmp_line_bbox = imagettfbbox($size,0,$font,$tmp_line);
+        $this_line_width = $tmp_line_bbox[2]-$tmp_line_bbox[0];
+        if ($this_line_width > $width) {
+            // If last word is alphanumeric, put it to next line rather then
+cut it off
+            if ($single_byte_stack != "") {
+                $stack_len = mb_strlen($single_byte_stack);
+                $this_line_strlen -= $stack_len;
+                $pointer -= $stack_len;
+            }
+            $result_lines[] = mb_substr($txt, $this_line_start,
+$this_line_strlen-1);
+            $this_line_start = $pointer;
+            $this_line_strlen = 1;
+            $single_byte_stack = "";
+        } else {
+            // Prevent to cut off english word at the end of line
+            // if this character is a alphanumeric character or open bracket,
+put it into stack
+            if (
+                (ord($this_char)>=48 && ord($this_char)<=57) ||
+                (ord($this_char)>=65 && ord($this_char)<=91) ||
+                (ord($this_char)>=97 && ord($this_char)<=123) ||
+                ord($this_char)==40 ||
+                ord($this_char)==60 ||
+                ($single_byte_stack=="" && (ord($this_char)==34 || ord
+($this_char)==39))
+            ) $single_byte_stack .= $this_char;
+            else $single_byte_stack = ""; // Clear stack if met multibyte
+character and not line end
+            $this_line_strlen++;
+            $pointer++;
+        }
+    }
+    // Move remained word to result
+    $result_lines[] = mb_substr($txt, $this_line_start);
+   
+    return $result_lines;
+}
+===============================================================================
+
+TTF character charmap page
+Could use some help in reading ttf file
+so that unused rectangle chars are filtered out of the charmap
+see
+http://www.phpenabled.com/ttf_fontlist/
+fontlist.php?font=Phones_NormalA.ttf
+===============================================================================
+
+I would like to post a small modification to the imageprintWordWrapped() posted
+below also.
+
+The following code causes each line to start with a space, which results in the
+incorrect alignment of text:
+
+$line .= ' '.$words[0]; // add the word to the current sentence
+
+A (quick) fix for this problem:
+
+$line .= ($line != '' ? ' ' : '').$words[0]; // add the word to the current
+sentence
+===============================================================================
+
+I would modify the last function imageprintWordWrapped() posted below. When it
+says:
+
+// do the actual printing
+$i = 0;
+
+$i should be equal to 1, because if $top is greater than 0, the imagettftext()
+call will not work for the first element in the $lines array ($top +
+lineHeight*$i) == $top when $i=0!
+
+imagettftext($image, $textSize, 0, $leftStart, $top + $lineHeight * $i, $color,
+$font, $line);
+$i++;
+
+To sum up, replace
+
+// do the actual printing
+$i = 0;
+
+with:
+// do the actual printing
+$i = 1;
+
+Cheers,
+Marcelo
+===============================================================================
+
+Just for the sake of consistency, I turned Miles' function into one that takes
+a $right value rather than a $maxWidth value. This makes it like all the other
+image* functions.
+<?php
+function imageprintWordWrapped(&$image, $top, $left, $right, $font, $color, 
+$text, $textSize, $halign="left") {
+   $maxWidth = $right - $left ;    //the trivial change
+   $words = explode(' ', strip_tags($text)); // split the text into an array of
+single words
+   $line = '';
+   while (count($words) > 0) {
+       $dimensions = imagettfbbox($textSize, 0, $font, $line.' '.$words[0]);
+       $lineWidth = $dimensions[2] - $dimensions[0]; // get the length of this
+line, if the word is to be included
+       if ($lineWidth > $maxWidth) { // if this makes the text wider that
+anticipated
+           $lines[] = $line; // add the line to the others
+           $line = ''; // empty it (the word will be added outside the loop)
+       }
+       $line .= ' '.$words[0]; // add the word to the current sentence
+       $words = array_slice($words, 1); // remove the word from the array
+   }
+   if ($line != '') { $lines[] = $line; } // add the last line to the others,
+if it isn't empty
+   $lineHeight = $dimensions[1] - $dimensions[7]; // the height of a single
+line
+   $height = count($lines) * $lineHeight; // the height of all the lines total
+   // do the actual printing
+   $i = 0;
+   //print_R($widths);
+   foreach ($lines as $line) {
+       if($halign=="center") {
+           //figure out width of line
+           $dimensions = imagettfbbox($textSize, 0, $font, $line);
+           $lineWidth = $dimensions[2] - $dimensions[0];
+           //figure out where the center is.
+           $center=floor($maxWidth/2 + $left);
+           $leftStart=$center-$lineWidth/2;
+       } else if ($halign=="right") {
+           //figure out width of line
+           $dimensions = imagettfbbox($textSize, 0, $font, $line);
+           $lineWidth = $dimensions[2] - $dimensions[0];
+           $leftStart=$left+$maxWidth-$lineWidth;
+       } else {
+           $leftStart=$left;
+       }  
+       imagettftext($image, $textSize, 0, $leftStart, $top + $lineHeight * $i, 
+$color, $font, $line);
+       $i++;
+   }
+   return $height;
+}
+?>
+===============================================================================
+
+Here is a slight modification to the function posted below that vegard posted
+that allows for left, right or center alignment within the text boxes. 
+
+$halign has a default of left.  center, and right can also be put in.
+
+<?php
+function printWordWrapped(&$image, $top, $left, $maxWidth, $font, $color, $text
+, $textSize, $halign="left") {
+    $words = explode(' ', strip_tags($text)); // split the text into an array
+of single words
+    $line = '';
+    while (count($words) > 0) {
+        $dimensions = imagettfbbox($textSize, 0, $font, $line.' '.$words[0]);
+        $lineWidth = $dimensions[2] - $dimensions[0]; // get the length of this
+line, if the word is to be included
+        if ($lineWidth > $maxWidth) { // if this makes the text wider that
+anticipated
+            $lines[] = $line; // add the line to the others
+            $line = ''; // empty it (the word will be added outside the loop)
+        }
+        $line .= ' '.$words[0]; // add the word to the current sentence
+        $words = array_slice($words, 1); // remove the word from the array
+    }
+    if ($line != '') { $lines[] = $line; } // add the last line to the others,
+if it isn't empty
+    $lineHeight = $dimensions[1] - $dimensions[7]; // the height of a single
+line
+    $height = count($lines) * $lineHeight; // the height of all the lines total
+    // do the actual printing
+    $i = 0;
+    //print_R($widths);
+    foreach ($lines as $line) {
+        if($halign=="center") {
+            //figure out width of line
+            $dimensions = imagettfbbox($textSize, 0, $font, $line);
+            $lineWidth = $dimensions[2] - $dimensions[0];
+            //figure out where the center is.
+            $center=floor($maxWidth/2 + $left);
+            $leftStart=$center-$lineWidth/2;
+        } else if ($halign=="right") {
+            //figure out width of line
+            $dimensions = imagettfbbox($textSize, 0, $font, $line);
+            $lineWidth = $dimensions[2] - $dimensions[0];
+            $leftStart=$left+$maxWidth-$lineWidth;
+        } else {
+            $leftStart=$left;
+        }   
+        imagettftext($image, $textSize, 0, $leftStart, $top + $lineHeight * $i,
+$color, $font, $line);
+        $i++;
+    }
+    return $height;
+}
+?>
+===============================================================================
+
+according function by jtopland at hive dot no
+08-Feb-2004 03:26
+
+soukhinov at mail dot ru was right, the function doesn't work with 180 . By the
+way it was a intresting way to trasform the angle to radian. Change the
+calculation of the angle to the following:  $angle = $angle/ 180 * pi();
+The function to calc. the points is correct. Sorry to say this, but the cal. of
+the height and width is incorrect. I used the version from LB (11-Feb-2004
+08:55)
+
+    /**
+     * return width and height, offset [left, top] of a ttf character
+     * @param string $font : the font file
+     * @param string $text : the character
+     * @param int $size : the font size
+     * @param int $angle : the angle
+     * @access private
+     * @return array  of the width and height, left and top.
+     **/
+    function _getCharacterSize($font, $text, $size, $angle)
+    {
+         // Get the boundingbox from imagettfbbox(), which is correct when
+angle is 0
+         $bbox = imagettfbbox($size, 0, $font, $text);
+
+         // Rotate the boundingbox
+         $angle = $angle/ 180 * pi();
+         for ($i=0; $i<4; $i++)
+         {
+                 $x = $bbox[$i * 2];
+                 $y = $bbox[$i * 2 + 1];
+                 $bbox[$i * 2] = cos($angle) * $x - sin($angle) * $y;  // X
+                 $bbox[$i * 2 + 1] = sin($angle) * $x + cos($angle) * $y; // Y
+         }
+         // Variables which tells the correct width and height
+        $bbox["left"] = 0- min($bbox[0],$bbox[2],$bbox[4],$bbox[6]);
+        $bbox["top"] = 0- min($bbox[1],$bbox[3],$bbox[5],$bbox[7]);
+        $bbox["width"] = max($bbox[0],$bbox[2],$bbox[4],$bbox[6]) -  min($bbox
+[0],$bbox[2],$bbox[4],$bbox[6]);
+        $bbox["height"] = max($bbox[1],$bbox[3],$bbox[5],$bbox[7]) - min($bbox
+[1],$bbox[3],$bbox[5],$bbox[7]);
+       
+        return $bbox;
+    }
+===============================================================================
+
+Pretty trivial, but still might save someone some trouble: on my system (Debian
+Linux), the absolute path to the font file had to be specified. I tried it
+relative to the current webpage and that did not work.
+===============================================================================
+
+Here is a function that wordwraps text you want to print, allows to specify
+where the text should be printed, what the maximum width should be, and returns
+the height used.
+
+<?php
+        function printWordWrapped(&$image, $top, $left, $maxWidth, $font, 
+$color, $text, $textSize) {
+                $words = explode(' ', strip_tags($text)); // split the text
+into an array of single words
+                $line = '';
+                while (count($words) > 0) {
+                        $dimensions = imagettfbbox($textSize, 0, $font, $line.'
+'.$words[0]);
+                        $lineWidth = $dimensions[2] - $dimensions[0]; // get
+the length of this line, if the word is to be included
+                        if ($lineWidth > $maxWidth) { // if this makes the text
+wider that anticipated
+                                $lines[] = $line; // add the line to the others
+                                $line = ''; // empty it (the word will be added
+outside the loop)
+                                }
+                        $line .= ' '.$words[0]; // add the word to the current
+sentence
+                        $words = array_slice($words, 1); // remove the word
+from the array
+                        }
+                if ($line != '') { $lines[] = $line; } // add the last line to
+the others, if it isn't empty
+                $lineHeight = $dimensions[1] - $dimensions[7]; // the height of
+a single line
+                $height = count($lines) * $lineHeight; // the height of all the
+lines total
+                // do the actual printing
+                $i = 0;
+                foreach ($lines as $line) {
+                        imagettftext($image, $textSize, 0, $left, $top + 
+$lineHeight * $i, $color, $font, $line);
+                        $i++;
+                        }
+                return $height;
+                }
+
+?>
+===============================================================================
+
+I have tryed all of fixes
+The David Eder's fix is the only working fix.
+The "jtopland at hive dot no"s fix is good enough, but it not working with
+angle = 180 degrees.
+===============================================================================
+
+Here is a function which moves the center of text's bounding
+box to a given pivot point (px,py) and rotates text about
+that point.
+<?php
+$width=500;
+$height=400;
+$fontpath = 'c:/windows/fonts/arial.ttf';
+$text = 'Finally, I have a roated text box';
+$fontsize = 20;
+$angle = 30.0;
+// create an image and fill the background with lightgray
+$image = imagecreatetruecolor($width,$height);
+imagefill($image, 0, 0, 0xDDDDDD);
+// bounding box
+$bbox = imagettfbbox($fontsize, 0, $fontpath, $text);
+// baseline point for drawing non-rotated text.
+$x0=  $bbox[6];
+$y0=-$bbox[7];
+// fixes bounding box w.r.t. image coordinate.
+$bbox[5]=-$bbox[5]+$bbox[1];
+$bbox[7]=-$bbox[7]+$bbox[3];
+$bbox[1]=0;
+$bbox[3]=0;
+// get the size of image.
+$sx=imagesx($image);
+$sy=imagesy($image);
+// center of bounding box (xc,yc);
+$xc=($bbox[0]+$bbox[2])/2.0;
+$yc=($bbox[1]+$bbox[7])/2.0;
+// rotation angle in radian
+$rad=$angle*pi()/180.0;
+$sa=sin($rad);
+$ca=cos($rad);
+$x1=$x0-$xc;
+$y1=$y0-$yc;
+//pivot point(here, we take the center of image)
+$px=$sx/2.0;
+$py=$sy/2.0;
+// new baseline point for rotated text.
+$x2= intval( $x1*$ca+$y1*$sa+$px+0.5);
+$y2= intval(-$x1*$sa+$y1*$ca+$py+0.5);
+
+imagettftext($image,$fontsize,$angle,$x2,$y2,0xFF,$fontpath,$text);
+// draw rotated bounding box;
+rotbbox($bbox,$angle,$px,$py);  
+for($i=0;$i<4;$i++){
+   $x0=$bbox[2*$i+0];
+   $y0=$bbox[2*$i+1];
+   $j=$i+1;
+   if($j==4) $j=0;
+   $x1=$bbox[2*$j+0];
+   $y1=$bbox[2*$j+1];
+   imageline($image,$x0,$y0,$x1,$y1,0xFF0000);
+}
+// Show the image
+imagepng($image);
+
+function rotbbox(&$bbox,$angle,$px,$py){
+     $xc=($bbox[0]+$bbox[2])/2.0;
+     $yc=($bbox[1]+$bbox[7])/2.0;
+     $rad=$angle*pi()/180.0;
+     $sa=sin($rad);
+     $ca=cos($rad);
+     for ($i=0;$i<4;$i++){
+         $x=$bbox[$i*2+0]-$xc;
+         $y=$bbox[$i*2+1]-$yc;
+         $bbox[$i*2+0]= intval( $ca*$x+$sa*$y+$px+0.5);
+         $bbox[$i*2+1]= intval(-$sa*$x+$ca*$y+$py+0.5);
+     }
+}
+?>
+===============================================================================
+
+I took Magicaltux's word wrap procedure and modified it in two ways.  I changed
+the order of processing so that the string plotting function is called only
+once for each word instead of for every character.  And I wrote the results to
+a string scalar instead of a string array, with embedded breaks <br> at line
+ends.  It should run pretty fast.  Mine breaks only on spaces, but hyphens
+could easily be added.
+
+I'm new to PHP so I apologize for my idiosyncratic formatting conventions.
+<?
+function myWordWrap($txt,$font,$size,$width)
+{
+    /*
+        word-wrapper.  gets bounding box sizes for each word in a string, then
+        strings words together up to desired width. calls strpos and
+        imagettfbbox only once per word - so very fast.
+        this version reconcatenates the words with a <br> character where
+        the line break should be.
+    */
+    $txt.=" "; // guaranteed to find end of line
+    $spaces=array();
+    $wids=array();
+    $i=0;
+    while(true)
+    {
+        $j=strpos(substr($txt,$i)," ");
+        if(!($j===false))
+        {
+            $spaces[]=$j+$i;
+            $bbox=imagettfbbox($size,0,$font,substr($txt,$i,$j+1));
+            $left=($bbox[0]>$bbox[6])?$bbox[6]:$bbox[0];
+            $right=($bbox[2]>$bbox[4])?$bbox[2]:$bbox[4];
+            $wids[]=$right-$left;
+            $i=$j+$i+1;
+        }
+        else     break;
+    }
+    $lastspace=-1;
+    $cum=0;
+    $t2="";
+    for($i=0;$i<count($spaces);$i++)
+    {
+        if((($cum>0)&&($cum+$wids[$i])>$width)) // time for a line break
+        {
+            $t2.="<br>";
+            $cum=0;
+            $i--;
+        }
+        else
+        {
+            // we'll always get at least one word (even if too wide) thanks to
+            // ($cum>0) test above
+            $t2.=substr($txt,$lastspace+1,$spaces[$i]-$lastspace);
+            $cum+=$wids[$i];
+            $lastspace=$spaces[$i];
+        }
+    }
+    return $t2;
+}
+?>
+===============================================================================
+
+the oliver dot martin at onemail dot fixbbox function is just lacking a small
+thing:
+the coordonates for top and left have to be the opposite, because the
+imagettftext x and y coordonates are calculated from the top left of the image
+and set the bottom left of the first character.
+
+The correct function is:
+function fixbbox($bbox)
+{
+  $tmp_bbox["left"] = min($bbox[0],$bbox[2],$bbox[4],$bbox[6]);
+  $tmp_bbox["top"] = min($bbox[1],$bbox[3],$bbox[5],$bbox[7]);
+  $tmp_bbox["width"] = max($bbox[0],$bbox[2],$bbox[4],$bbox[6]) -
+    min($bbox[0],$bbox[2],$bbox[4],$bbox[6]) + 1;
+  $tmp_bbox["height"] = max($bbox[1],$bbox[3],$bbox[5],$bbox[7]) - min($bbox
+[1],$bbox[3],$bbox[5],$bbox[7]);
+
+  $tmp_bbox["left"] = 0 - $tmp_bbox["left"];
+  $tmp_bbox["top"] = 0 - $tmp_bbox["top"];
+  return $tmp_bbox;
+}
+
+And it works for any rotated text.
+===============================================================================
+
+As "oliver dot martin at onemail dot at" noted above, imagettfbbox() does not
+work correctly in php 4.3.4.  To remedy this, I've written a short function
+that uses trig to calculate the bounding box from rotating a non-rotated piece
+of text.
+
+Hopefully, this comment will be obsolete soon, but for now, ...
+
+function imagettfbbox_t($size, $angle, $fontfile, $text)
+{
+  // compute size with a zero angle
+  $coords = imagettfbbox($size, 0, $fontfile, $text);
+
+  // convert angle to radians
+  $a = $angle * M_PI / 180;
+
+  // compute some usefull values
+  $ca = cos($a);
+  $sa = sin($a);
+  $ret = array();
+
+  // perform transformations
+  for($i = 0; $i < 7; $i += 2)
+  {
+    $ret[$i] = round($coords[$i] * $ca + $coords[$i+1] * $sa);
+    $ret[$i+1] = round($coords[$i+1] * $ca - $coords[$i] * $sa);
+  }
+  return $ret;
+}
+===============================================================================
+
+The original fixbox function by <php at deathz0rz dot homeunix dot net> doesn't
+work when the text is rotated, as it assumes that the upper left corner of the
+text is also the upper left corner of the bounding box. Same goes for the lower
+right corner. Here is my corrected version of it:
+
+<?
+function fixbbox($bbox)
+{
+    $tmp_bbox["left"] = min($bbox[0],$bbox[2],$bbox[4],$bbox[6]);
+    $tmp_bbox["top"] = min($bbox[1],$bbox[3],$bbox[5],$bbox[7]);
+    $tmp_bbox["width"] = max($bbox[0],$bbox[2],$bbox[4],$bbox[6]) - min($bbox
+[0],$bbox[2],$bbox[4],$bbox[6]);
+    $tmp_bbox["height"] = max($bbox[1],$bbox[3],$bbox[5],$bbox[7]) - min($bbox
+[1],$bbox[3],$bbox[5],$bbox[7]);
+   
+    return $tmp_bbox;
+}
+?>
+
+However, be aware that this might not be very useful, as gd-2.0.8 introduces a
+bug which renders the results of imagettfbbox() useless when the text is
+rotated. This is still not fixed in the the php-4.3.4 bundled version (2.0.15
+compatible).
+===============================================================================
+
+One use of this function is to do some WordWrap =p
+
+I wrote a little function to make a basic wordwrap : it returns an array with
+each line in a row.
+
+You just have to display each row on a different line (calling many times
+imagettftext) to get a good result.
+The character ^ is assumed as a linebreak.
+
+<?php
+
+function im_wordwrap($txt,$font,$size,$width) {
+    $sep=array(' ','-'); // separators
+    $res=array();
+    $buf='';
+    // main function loop
+    for($i=0;$i<strlen($txt);$i++) {
+        $l=$txt{$i};
+        if ($l=='^') {
+            $res[]=$buf;
+            $buf='';
+            continue;
+        }
+        $t=$buf.$l;
+        $bbox=imagettfbbox($size,0,$font,$t);
+        $left=($bbox[0]>$bbox[6])?$bbox[6]:$bbox[0]; // determine most far
+points
+        $right=($bbox[2]>$bbox[4])?$bbox[2]:$bbox[4]; // idem
+        $w=$right-$left; // get total width
+        if ($w>$width) {
+            if ($buf=='') return false; // FATAL: 1 letter is smallest than the
+pixel width - avoid infinite loop
+            // we can assume that everything present in $buf currently is
+inside our limits
+            // find a separator in string
+            $fp=false;
+            foreach($sep as $s) {
+                $p=strrpos($buf,$s);
+                if (($p!==false) and ($p>$fp)) $fp=$p;
+            }
+            if ($fp===false) {
+                // let's break here !
+                $res[]=$buf;
+                $buf='';
+                $i--; // dececrase $i to retry this letter
+                continue;
+            }
+            // $fp+1 -> we put the separator char at the end of the prev. line
+=p
+            $res[]=substr($buf,0,$fp+1);
+            $buf=substr($buf,$fp+1);
+            $i--;
+            continue;
+        }
+        $buf.=$l;
+    }
+    if ($buf!='') $res[]=$buf;
+    return $res;
+}
+?>
+===============================================================================
+
+The array this function returns is very strange, at least, i think so... So i
+created this function that 'fixes' the bounding box array into some
+human-understandable format
+
+<?php
+function fixbbox($bbox)
+{
+    $xcorr=0-$bbox[6]; //northwest X
+    $ycorr=0-$bbox[7]; //northwest Y
+    $tmp_bbox['left']=$bbox[6]+$xcorr;
+    $tmp_bbox['top']=$bbox[7]+$ycorr;
+    $tmp_bbox['width']=$bbox[2]+$xcorr;
+    $tmp_bbox['height']=$bbox[3]+$ycorr;
+   
+    return $tmp_bbox;
+}
+?>
+===============================================================================
+
+There seems to be a little confusion regarding the font coordinate system. 
+PHP's TTF functions will make more sense after you understand the principals of
+font creation.  This guy wrote a really good overview...
+http://pfaedit.sourceforge.net/overview.html
+===============================================================================
+
+This is a completely rewritten function of "printWordWrapped" because it lacked
+a few important features. First of all, it started too high with it's text,
+which was easily fixed. And it has the annoying 'feature' of adding a space in
+front of every line. Not ideal.
+
+But secondly, and more importantly, it didn't support long words or linebreaks.
+This is all fixed. And I rewrote it for cleaner code.
+
+Please note that with the current code you could easily make a vertical align
+as well if you wanted to. I have not done this myself since it did not fit my
+own needs (and I'm slightly lazy)
+
+Enjoy:
+
+<?php
+function imageTextWrapped(&$img, $x, $y, $width, $font, $color, $text, 
+$textSize, $align="l") {
+    $y += $fontSize; //Correct place for the fonts.
+    $text = str_replace ("\\r", '', $text); //Remove windows line-breaks
+    $srcLines = split ("\\n", $text); //Split text into "lines"
+    $dstLines = Array(); // The destination lines array.
+    foreach ($srcLines as $currentL) {
+        $line = '';
+        $words = split (" ", $currentL); //Split line into words.
+        foreach ($words as $word) {
+            $dimensions = imagettfbbox($textSize, 0, $font, $line.' '.$word);
+            $lineWidth = $dimensions[4] - $dimensions[0]; // get the length of
+this line, if the word is to be included
+            if ($lineWidth > $width && !empty($line) ) { // check if it is too
+big if the word was added, if so, then move on.
+                $dstLines[] = trim($line); //Add the line like it was without
+spaces.
+                $line = '';
+            }
+            $line .= $word.' ';
+        }
+        $dstLines[] =  trim($line); //Add the line when the line ends.
+    }
+    //Calculate lineheight by common characters.
+    $dimensions = imagettfbbox($textSize, 0, $font, "MXQJPmxqjp123"); //use a
+custom string to get a fixed height.
+    $lineHeight = $dimensions[1] - $dimensions[5]; // get the heightof this
+line
+
+    $align = strtolower(substr($align,0,1)); //Takes the first letter and
+converts to lower string. Support for Left, left and l etc.
+    foreach ($dstLines as $nr => $line) {
+        if ($align != "l") {
+            $dimensions = imagettfbbox($textSize, 0, $font, $line);
+            $lineWidth = $dimensions[4] - $dimensions[0]; // get the length of
+this line
+            if ($align == "r") { //If the align is Right
+                $locX = $x + $width - $lineWidth;
+            } else { //If the align is Center
+                $locX = $x + ($width/2) - ($lineWidth/2);
+            }
+        } else { //if the align is Left
+            $locX = $x;
+        }
+        $locY = $y + ($nr * $lineHeight);
+        //Print the line.
+        imagettftext($img, $textSize, 0, $locX, $locY, $color, $font, $line);
+    }       
+}
+?>

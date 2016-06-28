@@ -1,0 +1,2092 @@
+
+ip2long
+
+(PHP 4, PHP 5, PHP 7)
+
+ip2long — 将一个IPV4的字符串互联网协议转换成数字格式
+
+说明
+
+int ip2long ( string $ip_address )
+
+方法ip2long() 产生一个IPV4的互联网地址从互联网标准的格式(点字符串)表示。
+
+ip2long() 还可以与非完整IP进行工作。阅读 » http://publibn.boulder.ibm.com/
+doc_link/en_US/a_doc_lib/libs/commtrf2/inet_addr.htm 获得更多信息。
+
+参数
+
+ip_address
+
+    一个标准格式的地址。
+
+返回值
+
+返回IP地址转换后的数字或 FALSE 如果 ip_address 是无效的。
+
+更新日志
+
+ 版本                                    说明
+5.2.10 再此之前的版本, ip2long() 有时会返回即使这不是一个IPV4的标准地址的数字地
+       址。
+
+范例
+
+Example #1 ip2long() 例子
+
+<?php
+$ip = gethostbyname('www.example.com');
+$out = "The following URLs are equivalent:<br />\n";
+$out .= 'http://www.example.com/, http://' . $ip . '/, and http://' . sprintf(
+"%u", ip2long($ip)) . "/<br />\n";
+echo $out;
+?>
+
+Example #2 显示IP地址
+
+第二个例子说明打印一个转换后的地址使用 printf() 在PHP4和PHP5的功能:
+
+<?php
+$ip   = gethostbyname('www.example.com');
+$long = ip2long($ip);
+
+if ($long == -1 || $long === FALSE) {
+    echo 'Invalid IP, please try again';
+} else {
+    echo $ip   . "\n";           // 192.0.34.166
+    echo $long . "\n";           // -1073732954
+    printf("%u\n", ip2long($ip)); // 3221234342
+}
+?>
+
+注释
+
+    Note:
+
+    因为PHP的 integer 类型是有符号，并且有许多的IP地址讲导致在32位系统的情况下
+    为复数，你需要使用 "%u" 进行转换通过 sprintf() 或 printf() 得到的字符串来表
+    示无符号的IP地址。
+
+    Note:
+
+    ip2long() 将返回 FALSE 在IP是 255.255.255.255 的情况，版本为 PHP 5 <=
+    5.0.2. 在修复后 PHP 5.0.3 会返回 -1 (与PHP4相同).
+
+参见
+
+  • long2ip() - Converts an long integer address into a string in (IPv4)
+    Internet standard dotted format
+  • sprintf() - Return a formatted string
+
+
+User Contributed Notes 65 notes
+
+===============================================================================
+
+A quick method to convert a netmask (ex: 255.255.255.240) to a cidr mask (ex: /
+28):
+
+<?php
+function mask2cidr($mask){
+  $long = ip2long($mask);
+  $base = ip2long('255.255.255.255');
+  return 32-log(($long ^ $base)+1,2);
+
+  /* xor-ing will give you the inverse mask,
+      log base 2 of that +1 will return the number
+      of bits that are off in the mask and subtracting
+      from 32 gets you the cidr notation */
+       
+}
+?>
+===============================================================================
+
+Hi,
+based on examples above I have mixed class IPFilter with netMatch function wich
+gives me complete class for IP4 check including CIDR IP format:
+
+<?php
+class IP4Filter {
+
+    private static $_IP_TYPE_SINGLE = 'single';
+    private static $_IP_TYPE_WILDCARD = 'wildcard';
+    private static $_IP_TYPE_MASK = 'mask';
+    private static $_IP_TYPE_CIDR = 'CIDR';
+    private static $_IP_TYPE_SECTION = 'section';
+    private $_allowed_ips = array();
+
+    public function __construct($allowed_ips) {
+        $this->_allowed_ips = $allowed_ips;
+    }
+
+    public function check($ip, $allowed_ips = null) {
+        $allowed_ips = $allowed_ips ? $allowed_ips : $this->_allowed_ips;
+
+        foreach ($allowed_ips as $allowed_ip) {
+            $type = $this->_judge_ip_type($allowed_ip);
+            $sub_rst = call_user_func(array($this, '_sub_checker_' . $type), 
+$allowed_ip, $ip);
+
+            if ($sub_rst) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function _judge_ip_type($ip) {
+        if (strpos($ip, '*')) {
+            return self :: $_IP_TYPE_WILDCARD;
+        }
+
+        if (strpos($ip, '/')) {
+            $tmp = explode('/', $ip);
+            if (strpos($tmp[1], '.')) {
+                return self :: $_IP_TYPE_MASK;
+            } else {
+                return self :: $_IP_TYPE_CIDR;
+            }
+        }
+
+        if (strpos($ip, '-')) {
+            return self :: $_IP_TYPE_SECTION;
+        }
+
+        if (ip2long($ip)) {
+            return self :: $_IP_TYPE_SINGLE;
+        }
+
+        return false;
+    }
+
+    private function _sub_checker_single($allowed_ip, $ip) {
+        return (ip2long($allowed_ip) == ip2long($ip));
+    }
+
+    private function _sub_checker_wildcard($allowed_ip, $ip) {
+        $allowed_ip_arr = explode('.', $allowed_ip);
+        $ip_arr = explode('.', $ip);
+        for ($i = 0; $i < count($allowed_ip_arr); $i++) {
+            if ($allowed_ip_arr[$i] == '*') {
+                return true;
+            } else {
+                if (false == ($allowed_ip_arr[$i] == $ip_arr[$i])) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    private function _sub_checker_mask($allowed_ip, $ip) {
+        list($allowed_ip_ip, $allowed_ip_mask) = explode('/', $allowed_ip);
+        $begin = (ip2long($allowed_ip_ip) & ip2long($allowed_ip_mask)) + 1;
+        $end = (ip2long($allowed_ip_ip) | (~ ip2long($allowed_ip_mask))) + 1;
+        $ip = ip2long($ip);
+        return ($ip >= $begin && $ip <= $end);
+    }
+
+    private function _sub_checker_section($allowed_ip, $ip) {
+        list($begin, $end) = explode('-', $allowed_ip);
+        $begin = ip2long($begin);
+        $end = ip2long($end);
+        $ip = ip2long($ip);
+        return ($ip >= $begin && $ip <= $end);
+    }
+
+    private function _sub_checker_CIDR($CIDR, $IP) {
+        list ($net, $mask) = explode('/', $CIDR);
+        return ( ip2long($IP) & ~((1 << (32 - $mask)) - 1) ) == ip2long($net);
+    }
+
+}
+?>
+
+For me this code works great, so I wanna thank to all You guys!!!
+===============================================================================
+
+To nate, who advises that there is no reason to use an unsigned version of the
+IP in a MySQL DB:
+
+I think it would depend on your application, but personally, I find it useful
+to store IP's as unsigneds since MySQL has 2 native functions, INET_ATON() and
+INET_NTOA(), which work the same as ip2long()/long2ip() _except_ that they
+generate the unsigned counterpart. So if you want, you could do:
+
+-- IANA Class-B reserved/private
+SELECT * FROM `servers`
+WHERE `ip` >= INET_ATON('192.168.0.0')
+AND `ip` <= INET_ATON('192.168.255.255');
+
+In my current application, I find it easier to use the MySQL built-ins than the
+PHP counter-parts.
+
+In case you're curious as to the names ATON and NTOA:
+
+ATON = address to number aka. ip2long
+NTOA = number to address aka. long2ip
+===============================================================================
+
+The following function ipToHex will take an IP (v4 or v6 formatted) and if it
+is valid, will return a 32 byte hex string representing that address.  Requires
+php >= 5.2 as it uses the filter_var function.
+
+<?php
+
+function ipToHex($ipAddress) {
+    $hex = '';
+    if(strpos($ipAddress, ',') !== false) {
+        $splitIp = explode(',', $ipAddress);
+        $ipAddress = trim($splitIp[0]);
+    }
+    $isIpV6 = false;
+    $isIpV4 = false;
+    if(filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false)
+{
+        $isIpV6 = true;
+    }
+    else if(filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== 
+false) {
+        $isIpV4 = true;
+    }
+    if(!$isIpV4 && !$isIpV6) {
+        return false;
+    }
+    // IPv4 format
+    if($isIpV4) {
+        $parts = explode('.', $ipAddress);
+        for($i = 0; $i < 4; $i++) {
+            $parts[$i] = str_pad(dechex($parts[$i]), 2, '0', STR_PAD_LEFT);
+        }
+        $ipAddress = '::'.$parts[0].$parts[1].':'.$parts[2].$parts[3];
+        $hex = join('', $parts);
+    }
+    // IPv6 format
+    else {
+        $parts = explode(':', $ipAddress);
+        // If this is mixed IPv6/IPv4, convert end to IPv6 value
+        if(filter_var($parts[count($parts) - 1], FILTER_VALIDATE_IP, 
+FILTER_FLAG_IPV4) !== false) {
+            $partsV4 = explode('.', $parts[count($parts) - 1]);
+            for($i = 0; $i < 4; $i++) {
+                $partsV4[$i] = str_pad(dechex($partsV4[$i]), 2, '0', 
+STR_PAD_LEFT);
+            }
+            $parts[count($parts) - 1] = $partsV4[0].$partsV4[1];
+            $parts[] = $partsV4[2].$partsV4[3];
+        }
+        $numMissing = 8 - count($parts);
+        $expandedParts = array();
+        $expansionDone = false;
+        foreach($parts as $part) {
+            if(!$expansionDone && $part == '') {
+                for($i = 0; $i <= $numMissing; $i++) {
+                    $expandedParts[] = '0000';
+                }
+                $expansionDone = true;
+            }
+            else {
+                $expandedParts[] = $part;
+            }
+        }
+        foreach($expandedParts as &$part) {
+            $part = str_pad($part, 4, '0', STR_PAD_LEFT);
+        }
+        $ipAddress = join(':', $expandedParts);
+        $hex = join('', $expandedParts);
+    }
+    // Validate the final IP
+    if(!filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+    return strtolower(str_pad($hex, 32, '0', STR_PAD_LEFT));
+}
+$ips = array(
+    '::192.168.0.2',
+    '0:0:0:0:0:0:192.168.0.2',
+    '192.168.0.2',
+    '::C0A8:2',
+    '0:0:0:0:0:0:C0A8:2'
+);
+$finals = array();
+foreach($ips as $ip) {
+    $finals[] = ipToHex($ip);
+}
+var_dump($finals);
+
+?>
+===============================================================================
+
+Convert IP to unsigned long
+
+<?php
+//$strIP  :   IP in String-format
+//$lngIP  :   IP in unsigned long
+
+if (($lngIP=ip2long($strIP)) < 0){ $lngIP += 4294967296 ;}
+
+                                                       // ADD 2^32
+
+thats all.
+?>
+===============================================================================
+
+Here some working ip2long6 and long2ip6 functions - keep in mind that this
+needs php gmp-lib:
+
+<?php
+
+$ipv6 = "2001:4860:a005::68";
+
+function ip2long6($ipv6) {
+  $ip_n = inet_pton($ipv6);
+  $bits = 15; // 16 x 8 bit = 128bit
+  while ($bits >= 0) {
+    $bin = sprintf("%08b",(ord($ip_n[$bits])));
+    $ipv6long = $bin.$ipv6long;
+    $bits--;
+  }
+  return gmp_strval(gmp_init($ipv6long,2),10);
+}
+
+function long2ip6($ipv6long) {
+
+  $bin = gmp_strval(gmp_init($ipv6long,10),2);
+  if (strlen($bin) < 128) {
+    $pad = 128 - strlen($bin);
+    for ($i = 1; $i <= $pad; $i++) {
+    $bin = "0".$bin;
+    }
+  }
+  $bits = 0;
+  while ($bits <= 7) {
+    $bin_part = substr($bin,($bits*16),16);
+    $ipv6 .= dechex(bindec($bin_part)).":";
+    $bits++;
+  }
+  // compress
+
+  return inet_ntop(inet_pton(substr($ipv6,0,-1)));
+}
+
+print $ipv6long =  ip2long6($ipv6)."\n";
+print $ipv6 = long2ip6($ipv6long)."\n";
+
+?>
+
+outputs:
+
+42541956150894553250710573749450571880
+2001:4860:a005::68
+===============================================================================
+
+In 32bits systems, you cannot convert ipv6 to long, but you can convert ip2bin
+and bin2ip
+
+This function converts ipv4 and ipv6, returns false if ip is not valid
+
+<?php
+function ip2bin($ip)
+{
+    if(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false)
+        return base_convert(ip2long($ip),10,2);
+    if(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false)
+        return false;
+    if(($ip_n = inet_pton($ip)) === false) return false;
+    $bits = 15; // 16 x 8 bit = 128bit (ipv6)
+    while ($bits >= 0)
+    {
+        $bin = sprintf("%08b",(ord($ip_n[$bits])));
+        $ipbin = $bin.$ipbin;
+        $bits--;
+    }
+    return $ipbin;
+}
+
+function bin2ip($bin)
+{
+   if(strlen($bin) <= 32) // 32bits (ipv4)
+       return long2ip(base_convert($bin,2,10));
+   if(strlen($bin) != 128)
+       return false;
+   $pad = 128 - strlen($bin);
+   for ($i = 1; $i <= $pad; $i++)
+   {
+       $bin = "0".$bin;
+   }
+   $bits = 0;
+   while ($bits <= 7)
+   {
+       $bin_part = substr($bin,($bits*16),16);
+       $ipv6 .= dechex(bindec($bin_part)).":";
+       $bits++;
+   }
+   return inet_ntop(inet_pton(substr($ipv6,0,-1)));
+}
+?>
+===============================================================================
+
+To get the network adress out of the broadcast adress and netmask just to an
+AND on it:
+
+<?php
+// simple example
+$bcast = ip2long("192.168.178.255");
+$smask = ip2long("255.255.255.0");
+$nmask = $bcast & $smask;
+echo long2ip($nmask); // Will give 192.168.178.0
+?>
+
+With this example you are able to check if a given host is in your own local
+net or not (on linux):
+
+<?php
+/**
+* Check if a client IP is in our Server subnet
+*
+* @param string $client_ip
+* @param string $server_ip
+* @return boolean
+*/
+function clientInSameSubnet($client_ip=false,$server_ip=false) {
+    if (!$client_ip)
+        $client_ip = $_SERVER['REMOTE_ADDR'];
+    if (!$server_ip)
+        $server_ip = $_SERVER['SERVER_ADDR'];
+    // Extract broadcast and netmask from ifconfig
+    if (!($p = popen("ifconfig","r"))) return false;
+    $out = "";
+    while(!feof($p))
+        $out .= fread($p,1024);
+    fclose($p);
+    // This is because the php.net comment function does not
+    // allow long lines.
+    $match  = "/^.*".$server_ip;
+    $match .= ".*Bcast:(\d{1,3}\.\d{1,3}i\.\d{1,3}\.\d{1,3}).*";
+    $match .= "Mask:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/im";
+    if (!preg_match($match,$out,$regs))
+        return false;
+    $bcast = ip2long($regs[1]);
+    $smask = ip2long($regs[2]);
+    $ipadr = ip2long($client_ip);
+    $nmask = $bcast & $smask;
+    return (($ipadr & $smask) == ($nmask & $smask));
+}
+?>
+===============================================================================
+
+I wanted to build on what kaputt and spinyn contributed in a way that I think
+is a little more intuitive (e.g., let sprintf do all the binary conversion and
+padding, and let substr_compare do the trimming and comparing):
+
+<?php
+function ip_in_network($ip, $net_addr, $net_mask){
+    if($net_mask <= 0){ return false; }
+        $ip_binary_string = sprintf("%032b",ip2long($ip));
+        $net_binary_string = sprintf("%032b",ip2long($net_addr));
+        return (substr_compare($ip_binary_string,$net_binary_string,0,$net_mask
+) === 0);
+}
+
+ip_in_network("192.168.2.1","192.168.2.0",24); //true
+ip_in_network("192.168.6.93","192.168.0.0",16); //true
+ip_in_network("1.6.6.6","128.168.2.0",1); //false
+?>
+===============================================================================
+
+Keep in mind that storing IP addresses inside of your database as integers
+(rather than 15 character strings in decimal format, or 8 character strings in
+hex format) is hundreds of times faster.
+
+Take the typical case of a MySQL database doing a search for an IP address on
+thousands (or millions!) of rows; you're either doing a string compare for each
+entry, or an integer equation. If you do your indexes correctly, your lookups
+should be literally 100x faster using an INT rather than a VARCHAR.
+
+Also note that an integer doesn't need to be escaped when passed to a database.
+:)
+===============================================================================
+
+here is netMatch function which is the fastest I could wrote, I hope developers
+will include native function soon...
+
+<?php
+function netMatch ($CIDR,$IP) {
+    list ($net, $mask) = explode ('/', $CIDR);
+    return ( ip2long ($IP) & ~((1 << (32 - $mask)) - 1) ) == ip2long ($net);
+}
+?>
+===============================================================================
+
+As pointed out by others, this function's return value is not consistent on 32
+and 64-bit platforms.
+
+Your best bet for consistent behavior across 32/64-bit platforms (and Windows)
+is the lowest common denominator: force the return value of ip2long() into a
+signed 32-bit integer, e.g.:
+
+    var_dump(unpack('l', pack('l', ip2long('255.255.255.0'))));
+
+This looks idiotic, but it gives you a consistent signed integer value on all
+platforms.
+
+(the arguments to both pack() and unpack() are the lower-case letter "L", not
+the number "1", in case it looks that way on your screen...)
+===============================================================================
+
+Unfortunately sprintf('%u', ...) is low and returns string representation of
+integer value instead of integer.
+Here is a function I use to convert IP to mySQL-compatible signed integer:
+
+function ip2int($ip) {
+  if (!$r = ip2long($ip)) return 0; // we want 0 instead of false, even in case
+of bad IP
+  if ($r > 2147483647)
+      $r-= 4294967296;
+  return $r; // ok
+}
+===============================================================================
+
+Another function for matching $_SERVER['REMOTE_ADDR'] against CIDR.
+<?php
+function matchCIDR($addr, $cidr) {
+    list($ip, $mask) = explode('/', $cidr);
+    $mask = 0xffffffff << (32 - $mask);
+    return ((ip2long($addr) & $mask) == (ip2long($ip) & $mask));
+}
+?>
+===============================================================================
+
+<?php
+function CalculateIPRange($iprange)
+{
+    // Daevid Vincent [daevid@daevid.com] 10.13.03
+    //  This function will return an array of either a negative error code
+    //  or all possible IP addresses in the given range.
+    //  format is NNN.NNN.NNN.NNN - NNN.NNN.NNN.NNN  (spaces are okay)
+
+    $temp = preg_split("/-/",$iprange, -1, PREG_SPLIT_NO_EMPTY);
+    $QRange1 = $temp[0];
+    $QRange2 = $temp[1];
+
+    if ($QRange2 == "") return array($QRange1); //special case, they didn't put
+a second quad parameter
+
+    //basic error handling to see if it is generally a valid IP in the form
+N.N.N.N
+    if ( preg_match("/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/",$QRange1) != 1 )
+return array(-1);
+    if ( preg_match("/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/",$QRange2) != 1 )
+return array(-1);
+
+    $quad1 = explode(".",$QRange1);
+    $quad2 = explode(".",$QRange2);
+
+    reset ($quad1);
+    while (list ($key, $val) = each ($quad1))
+    {
+         $quad1[$key] = intval($val);
+         if ($quad1[$key] < 0 || $quad1[$key] > 255) return array(-2);
+    }
+    reset ($quad2);
+    while (list ($key, $val) = each ($quad2))
+    {
+         $quad2[$key] = intval($val);
+         if ($quad2[$key] < 0 || $quad2[$key] > 255) return array(-2);
+    }
+
+    $startIP_long = sprintf("%u",ip2long($QRange1));
+    $endIP_long = sprintf("%u",ip2long($QRange2));
+    $difference = $endIP_long - $startIP_long;
+    //echo "startIP_long = ".$startIP_long." and endIP_long = ".$endIP_long."
+difference = ".$difference."<BR>";
+
+    $ip = array();
+    $k = 0;
+    for ($i = $startIP_long; $i <= $endIP_long; $i++)
+    {
+        $temp = long2ip($i);
+       
+        //this is a total hack. there must be a better way.
+        $thisQuad = explode(".",$temp);
+        if ($thisQuad[3] > 0 && $thisQuad[3] < 255)
+            $ip[$k++] = $temp;
+    }
+
+    return $ip;
+} //CalculateIPRange()
+?>
+===============================================================================
+
+<?php
+
+/**
+  *
+  *get the first ip and last ip from cidr(network id and mask length)
+  * i will integrate this function into "Rong Framework" :)
+  * @author admin@wudimei.com
+  * @param string $cidr 56.15.0.6/16 , [network id]/[mask length]
+  * @return array $ipArray = array( 0 =>"first ip of the network", 1=>"last ip
+of the network" );
+  *                         Each element of $ipArray's type is long int,use
+long2ip( $ipArray[0] ) to convert it into ip string.
+  * example:
+  * list( $long_startIp , $long_endIp) = getIpRange( "56.15.0.6/16" );
+  * echo "start ip:" . long2ip( $long_startIp );
+  * echo "<br />";
+  * echo "end ip:" . long2ip( $long_endIp );
+  */
+
+  function getIpRang(  $cidr) {
+
+   list($ip, $mask) = explode('/', $cidr);
+
+   $maskBinStr =str_repeat("1", $mask ) . str_repeat("0", 32-$mask );      //
+net mask binary string
+   $inverseMaskBinStr = str_repeat("0", $mask ) . str_repeat("1",  32-$mask ); 
+//inverse mask
+  
+   $ipLong = ip2long( $ip );
+   $ipMaskLong = bindec( $maskBinStr );
+   $inverseIpMaskLong = bindec( $inverseMaskBinStr );
+   $netWork = $ipLong & $ipMaskLong; 
+
+   $start = $netWork+1;//去掉网络号 ,ignore network ID(eg: 192.168.1.0)
+ 
+   $end = ($netWork | $inverseIpMaskLong) -1 ; //去掉广播地址 ignore brocast IP
+(eg: 192.168.1.255)
+   return array( $start, $end );
+}
+?>
+===============================================================================
+
+I would just like to try and clear up simply that if storing IPV4 addresses in
+an SQL database you should use an unsigned int (4 bytes).
+
+The easiest way to do this in PHP is to use sprintf():
+
+<?php
+$dottedFormatAddress = '127.0.0.1';
+$ipv4address = sprintf("%u", ip2long($dottedFormatAddress));
+?>
+
+Primary reasons are it's compatible with database functions like MySQL's
+INET_ATON & INET_NTOA (which also use unsigned int's), it's efficient,  and
+it's the most common format used by IP lookup databases.
+===============================================================================
+
+Be aware when you're running 64bit system, ip2long will result 64 bit integer
+which doesn't fit in MySQL INT, you can use BIGINT or INT UNSIGNED because on
+64bit systems ip2long will never return negative integer. See also https://
+bugs.php.net/bug.php?id=54338
+===============================================================================
+
+I've write an IPFilter class to check if a ip is in given ips.
+
+<?php
+class IPFilter
+{
+    private static $_IP_TYPE_SINGLE = 'single';
+    private static $_IP_TYPE_WILDCARD = 'wildcard';
+    private static $_IP_TYPE_MASK = 'mask';
+    private static $_IP_TYPE_SECTION = 'section';
+    private $_allowed_ips = array();
+
+    public function __construct($allowed_ips)
+    {
+        $this -> _allowed_ips = $allowed_ips;
+    }
+
+    public function check($ip, $allowed_ips = null)
+    {
+        $allowed_ips = $allowed_ips ? $allowed_ips : $this->_allowed_ips;
+
+        foreach($allowed_ips as $allowed_ip)
+        {
+            $type = $this -> _judge_ip_type($allowed_ip);
+            $sub_rst = call_user_func(array($this,'_sub_checker_' . $type), 
+$allowed_ip, $ip);
+
+            if ($sub_rst)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function _judge_ip_type($ip)
+    {
+        if (strpos($ip, '*'))
+        {
+            return self :: $_IP_TYPE_WILDCARD;
+        }
+
+        if (strpos($ip, '/'))
+        {
+            return self :: $_IP_TYPE_MASK;
+        }
+
+        if (strpos($ip, '-'))
+        {
+            return self :: $_IP_TYPE_SECTION;
+        }
+
+        if (ip2long($ip))
+        {
+            return self :: $_IP_TYPE_SINGLE;
+        }
+
+        return false;
+    }
+
+    private function _sub_checker_single($allowed_ip, $ip)
+    {
+        return (ip2long($allowed_ip) == ip2long($ip));
+    }
+
+    private function _sub_checker_wildcard($allowed_ip, $ip)
+    {
+        $allowed_ip_arr = explode('.', $allowed_ip);
+        $ip_arr = explode('.', $ip);
+        for($i = 0;$i < count($allowed_ip_arr);$i++)
+        {
+            if ($allowed_ip_arr[$i] == '*')
+            {
+                return true;
+            }
+            else
+            {
+                if (false == ($allowed_ip_arr[$i] == $ip_arr[$i]))
+                {
+                    return false;
+                }
+            }
+        }
+    }
+
+    private function _sub_checker_mask($allowed_ip, $ip)
+    {
+        list($allowed_ip_ip, $allowed_ip_mask) = explode('/', $allowed_ip);
+        $begin = (ip2long($allowed_ip_ip) &ip2long($allowed_ip_mask)) + 1;
+        $end = (ip2long($allowed_ip_ip) | (~ip2long($allowed_ip_mask))) + 1;
+        $ip = ip2long($ip);
+        return ($ip >= $begin && $ip <= $end);
+    }
+
+    private function _sub_checker_section($allowed_ip, $ip)
+    {
+        list($begin, $end) = explode('-', $allowed_ip);
+        $begin = ip2long($begin);
+        $end = ip2long($end);
+        $ip = ip2long($ip);
+        return ($ip >= $begin && $ip <= $end);
+    }
+}
+?>
+
+useage:
+<?php
+$filter = new IPFilter(
+    array(
+        '127.0.0.1',
+        '172.0.0.*',
+        '173.0.*.*',
+        '126.1.0.0/255.255.0.0',
+        '125.0.0.1-125.0.0.9',
+));
+$filter -> check('126.1.0.2');
+?>
+===============================================================================
+
+The manual states that "ip2long() will also work with non-complete IP
+addresses", however this is system-dependant so cannot be relied upon. For
+example, on my system ip2long() will return FALSE for incomplete addresses:
+
+<?php
+var_dump(ip2long("255.255")); // bool(false)
+?>
+
+This is because ip2long will use inet_pton if available, which does not support
+non-complete addresses. If inet_pton is not available on your system, inet_addr
+will be used and incomplete addresses will work as stated.
+===============================================================================
+
+I wrote something on the different ways to get an IP and convert it using
+ip2long(), the different ways to store an IP or an IP range in MySQL, and the
+different ways to query for the IP(s). Maybe something useful for others?
+
+http://strictcoder.blogspot.com/2009_08_01_archive.html
+Title: Query For An IP In A Database
+
+Regards,
+Joshua K Roberson
+===============================================================================
+
+Just want to add a comment to kaputt's valuable contribution to the task of
+matching hosts to ip ranges, efficiently.  The script works fine if the binary
+representation of the ip involves no leading zeros.  Unfortunately, the way
+decbin() seems to work, leading zeros in the binary representation of the first
+ip quad get dropped.  That is a serious matter if you're trying to match all
+possible candidates in the checklist.  In those cases the leading zeros need to
+be added back to get accurate matches for values in the first quad between
+0-127 (or the binary equivalent, 0-01111111).
+
+The solution I came up with to address this issue was the following function:
+
+<?php
+function addLeadingZero($ip) {
+   if (($result = (32 - strlen($ip))) > 0)
+      return str_repeat("0", $result).$ip;
+}
+?>
+===============================================================================
+
+Hi,
+Please find below a little function I wrote for handling IP addresses as
+unsigned integers.
+This function will take an IP address or IP number in ANY FORMAT (that I can
+think of) and will return it's decimal unsigned equivalent, as a string.
+
+<?php
+function myip2long($ip){
+    if (is_numeric($ip)){
+        return sprintf("%u", floatval($ip));
+    } else {
+        return sprintf("%u", floatval(ip2long($ip)));
+    }
+}
+?>
+
+Here is is in action:
+
+<?php
+$ip['DottedQuadDec'] = "192.168.255.109";
+$ip['PosIntStr']     = "3232300909";
+$ip['NegIntStr']     = "-1062666387";
+$ip['PosInt']        = 3232300909;
+$ip['NegInt']        = -1062666387;
+$ip['DottedQuadHex'] = "0xc0.0xA8.0xFF.0x6D";
+$ip['DottedQuadOct'] = "0300.0250.0377.0155";
+$ip['HexIntStr']     = "0xC0A8FF6D";
+$ip['HexInt']        = 0xC0A8FF6D;
+
+printf("\n% 16s : % 20s => % 11s => % 16s","Input Type","Input Value",
+"Converted","Converted Back");
+echo "\n    ------------------------------------------------------------------"
+;
+foreach ($ip as $type => $value){
+    $ipnum = myip2long($value);
+    printf("\n% 16s : % 20s => % 11s => % 16s",$type,$value,$ipnum,long2ip(
+$ipnum));
+}
+?>
+===============================================================================
+
+I had a problem with calling this function with REMOTE_ADDR on my lighttpd web
+server. Turned out that IPv6 was installed on this server, so even though
+REMOTE_ADDR was an IPv4 address, it was being formatted using IPv6's IPv4
+compatibility mode. For example, 10.0.0.1 was becoming ::ffff:10.0.0.1, which
+caused iplong to report the address as invalid instead of parsing it correctly.
+
+The correct fix would of course be to update my infrastructure so that it's
+properly IPv6-compatible; but in the context of my particular situation, this
+would involve a lot of re-engineering. So in the meantime, I worked around the
+issue using this quick and dirty hack:
+
+<?php
+    $ip = htmlspecialchars($_SERVER['REMOTE_ADDR']);
+    if (strpos($ip, '::') === 0) {
+        $ip = substr($ip, strrpos($ip, ':')+1);
+    }
+    $host = ip2long($ip);
+?>
+
+Ugly but functional.
+===============================================================================
+
+In using a combination of jbothe's code below and some of the "$mask =
+0xFFFFFFFF << (32 - $bits)" type code, I ran into an error with some later
+calculations on a 64 bit machine.
+
+Keep in mind that when you're analyzing numbers meant to be treated as 32 bits
+wide (such as IP addresses), you may want to truncate them. Without relying on
+other libraries, it was simple enough to follow any calculations that may end
+with different results on a 64 bit machine with " & 0xFFFFFFFF"
+
+Though in many cases, it seems like it might be simpler to just use "~0 << ..."
+for initial shifting to create the network mask instead of "0xFFFFFFFF << ...".
+I don't know that it guarantees further operations to work as expected though.
+===============================================================================
+
+@ samb057 at gmail dot com
+
+This function will not return a correct bigint.
+
+base_convert() is limited to the double type,
+which usually counts 64bits and not 128 like an IPv6 address.
+
+For example:
+
+FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF
+
+will __NOT__ be converted to 128^2 -1
+
+You should use a bigint lib's multiplication function,
+with decimal shifting factors defined as string constants (much faster than
+recalculating them every time).
+Grab 8 short integers (the 16bits between the ':' with base_convert
+($hex,16,10)) and shift the 7 higher ones with a bigint_multiplication.
+
+Of course you can also do it with less bigint ops using 32bit integers, but
+then you should create them this way (additionally 'sprintf' for making an
+uint32 string):
+$uint32= sprintf('%u',intval(base_convert($hex,16,10)));
+
+Finally, "bigint_add" the shifted ones to the least (unshifted) significant
+interger string and be happy
+
+PS: I'm working on an IPv4/6 tool class with raw (also endianness), 6/4
+compatibility and validation methods,
+I'll post it here as soon as it's finished and tested.
+===============================================================================
+
+A somewhat more efficient alternative to convert the signed integer return by
+ip2long:
+
+$float = ((ip2long($ip) & 0x7FFFFFFF) + 0x80000000);
+===============================================================================
+
+I wrote a small function to validate a netmask (We have a form where the
+netmask of a given server is entered in, and I wanted to make sure it was
+valid). Hope this is useful.
+
+<?php
+// Netmask Validator //
+function checkNetmask($ip) {
+if (!ip2long($ip)) {
+  return false;
+} elseif(strlen(decbin(ip2long($ip))) != 32 && ip2long($ip) != 0) {
+  return false;
+} elseif(ereg('01',decbin(ip2long($ip))) || !ereg('0',decbin(ip2long($ip)))) {
+  return false;
+} else {
+  return true;
+}
+}
+?>
+===============================================================================
+
+Here's a simple IP address match checking function.
+
+It takes 3 arguments: ip address to check (after ip2long), ip address to check
+against (after ip2long), and mask to check against (integer 0-32).
+
+Just make sure you perform ip2long on the ip addresses before inputting them to
+the function.
+
+<?php
+function match_ip($check_ip, $match_ip, $match_mask = 32)
+    {
+        for ($i = 0 ; $i < $match_mask ; $i++)
+            {
+                $n = pow(2, 31 - $i) ;
+                if (($n & $check_ip) != ($n & $match_ip))
+                    {
+                        return FALSE ;
+                    }
+            }
+           
+        return TRUE ;
+    }
+?>
+
+I've been looking for a function like this for a while, i hope it helps
+someone.
+===============================================================================
+
+Below is a merged form of all various notes, and a better (and correct) network
+matching function.
+
+<?php
+
+function net_match($network, $ip) {
+      // determines if a network in the form of 192.168.17.1/16 or
+      // 127.0.0.1/255.255.255.255 or 10.0.0.1 matches a given ip
+      $ip_arr = explode('/', $network);
+      $network_long = ip2long($ip_arr[0]);
+
+      $x = ip2long($ip_arr[1]);
+      $mask =  long2ip($x) == $ip_arr[1] ? $x : 0xffffffff << (32 - $ip_arr[1
+]);
+      $ip_long = ip2long($ip);
+
+      // echo ">".$ip_arr[1]."> ".decbin($mask)."\n";
+      return ($ip_long & $mask) == ($network_long & $mask);
+}
+
+echo net_match('192.168.17.1/16', '192.168.15.1')."\n"; // returns true
+echo net_match('127.0.0.1/255.255.255.255', '127.0.0.2')."\n"; // returns false
+echo net_match('10.0.0.1', '10.0.0.1')."\n"; // returns true
+
+?>
+===============================================================================
+
+Note: ip2long and long2ip do not function as the c linux functions inet_addr
+and inet_ntoa. They store the long in reverse byte order (little endian vs big
+endian i guess).
+For example you send 10.0.0.1 to inet_ntoa you take the long from the result
+and you pass it to long2ip  you get 1.0.0.10. You won't run into this issue
+unless you use a database both from c linux programs and php scripts.
+
+My first idea was to reverse the long, but unfortunatley the long was stored as
+unsigned and i got a lot of problems doing calculations with it (some
+operations would work well others not; probably it was stored as float i do not
+know for sure...)
+
+So my solution was
+
+<?php
+function str_rev_ip($str)
+{
+    $ar=explode(".",$str);
+    return "$ar[3].$ar[2].$ar[1].$ar[0]";
+}
+?>
+
+and i take the result from inet_ntoa and parse it as str_rev_ip(long2ip($var))
+===============================================================================
+
+a little function to make a range in this form:
+0.0.0.1/0.0.0.255          ==> 0.0.0.1/255
+0.0.0.1/255.255.255.255    ==> 0.0.0.1/255.255.255.255
+
+<?php
+$primo = "62.4.32.0";
+$ultimo = "62.4.63.255";
+echo do_range($primo,$ultimo); //Example
+
+function do_range($primo,$ultimo) {
+list($a,$b,$c,$d)=explode(".",$primo);
+list($e,$f,$g,$h)=explode(".",$ultimo);
+if ($a !== $e) return "$primo/$ultimo";
+else {
+    if ($b !== $f) return "$primo/$f.$g.$h";
+    else{
+        if ($c !== $g) return "$primo/$g.$h";
+        else {
+            if ($d !== $h) return "$primo/$h";
+            else return -1; //error
+            }
+        }
+    }
+}
+?>
+Please write me if you have any suggestion
+===============================================================================
+
+remixing mediator's function further:
+<?php
+function matchCIDR($addr, $cidr) {
+  list($ip, $mask) = explode('/', $cidr);
+  return (ip2long($addr) >> (32 - $mask) == ip2long($ip) >> (32 - mask));
+}
+?>
+===============================================================================
+
+I re-wrote the functions from jbothe at hotmail dot com as a little exercise in
+OO and added a couple of extra functions.
+
+<?php
+
+//--------------
+// IPv4 class
+class ipv4
+{
+  var $address;
+  var $netbits;
+
+   //--------------
+  // Create new class
+  function ipv4($address,$netbits)
+  {
+    $this->address = $address;
+    $this->netbits = $netbits;
+  }
+
+   //--------------
+  // Return the IP address
+  function address() { return ($this->address); }
+
+   //--------------
+  // Return the netbits
+  function netbits() { return ($this->netbits); }
+
+   //--------------
+  // Return the netmask
+  function netmask()
+  {
+    return (long2ip(ip2long("255.255.255.255")
+           << (32-$this->netbits)));
+  }
+
+   //--------------
+  // Return the network that the address sits in
+  function network()
+  {
+    return (long2ip((ip2long($this->address))
+           & (ip2long($this->netmask()))));
+  }
+
+   //--------------
+  // Return the broadcast that the address sits in
+  function broadcast()
+  {
+    return (long2ip(ip2long($this->network())
+           | (~(ip2long($this->netmask())))));
+  }
+
+   //--------------
+  // Return the inverse mask of the netmask
+  function inverse()
+  {
+    return (long2ip(~(ip2long("255.255.255.255")
+           << (32-$this->netbits))));
+  }
+
+}
+
+  $ip = new ipv4("192.168.2.1",24);
+  print "Address: $ip->address()\n";
+  print "Netbits: $ip->netbits()\n";
+  print "Netmask: $ip->netmask()\n";
+  print "Inverse: $ip->inverse()\n";
+  print "Network: $ip->network()\n";
+  print "Broadcast: $ip->broadcast()\n";
+?>
+===============================================================================
+
+If you want to validate IPs using this function, please be careful:
+The function filter_var should be used instead for validating IPs.
+
+<?php
+$ip = '192.168.0355.24';
+var_dump(ip2long($ip) !== false); // true (expected false)
+var_dump(filter_var($ip, FILTER_VALIDATE_IP) !== false); // false
+
+$ip = '192.168.355.24';
+var_dump(ip2long($ip) !== false); // false
+var_dump(filter_var($ip, FILTER_VALIDATE_IP) !== false); // false
+?>
+===============================================================================
+
+Universal ip4/ip6
+
+<?php
+// encoded --
+function encode_ip ($ip)
+{
+    $d = explode('.', $ip);
+    if (count($d) == 4) return sprintf('%02x%02x%02x%02x', $d[0], $d[1], $d[2],
+$d[3]);
+
+    $d = explode(':', preg_replace('/(^:)|(:$)/', '', $ip));
+    $res = '';
+    foreach ($d as $x)
+        $res .= sprintf('%0'. ($x == '' ? (9 - count($d)) * 4 : 4) .'s', $x);
+    return $res;
+}
+
+// decoded
+function decode_ip($int_ip)
+{
+    function hexhex($value) { return dechex(hexdec($value)); };
+
+    if (strlen($int_ip) == 32) {
+        $int_ip = substr(chunk_split($int_ip, 4, ':'), 0, 39);
+        $int_ip = ':'. implode(':', array_map("hexhex", explode(':',$int_ip)))
+.':';
+        preg_match_all("/(:0)+/", $int_ip, $zeros);
+        if (count($zeros[0]) > 0) {
+            $match = '';
+            foreach($zeros[0] as $zero)
+                if (strlen($zero) > strlen($match))
+                    $match = $zero;
+            $int_ip = preg_replace('/'. $match .'/', ':', $int_ip, 1);
+        }
+        return preg_replace('/(^:([^:]))|(([^:]):$)/', '$2$4', $int_ip);
+    }
+    $hexipbang = explode('.', chunk_split($int_ip, 2, '.'));
+    return hexdec($hexipbang[0]). '.' . hexdec($hexipbang[1]) . '.' . hexdec(
+$hexipbang[2]) . '.' . hexdec($hexipbang[3]);
+}
+?>
+
+DB:
+`user_ip` varchar(32) DEFAULT NULL
+===============================================================================
+
+Here's a function I whipped up today to deduce some important network
+information given a hostname (or its IP address) and its subnet mask:
+
+<?php
+function find_net($host,$mask) {
+   ### Function to determine network characteristics
+   ### $host = IP address or hostname of target host (string)
+   ### $mask = Subnet mask of host in dotted decimal (string)
+   ### returns array with
+   ###   "cidr"      => host and mask in CIDR notation
+   ###   "network"   => network address
+   ###   "broadcast" => broadcast address
+   ###
+   ### Example: find_net("192.168.37.215","255.255.255.224")
+   ### returns:
+   ###    "cidr"      => 192.168.37.215/27
+   ###    "network"   => 192.168.37.192
+   ###    "broadcast" => 192.168.37.223
+   ###
+
+   $bits=strpos(decbin(ip2long($mask)),"0");
+   $net["cidr"]=gethostbyname($host)."/".$bits;
+
+   $net["network"]=long2ip(bindec(decbin(ip2long(gethostbyname($host))) & 
+decbin(ip2long($mask))));
+
+   $binhost=str_pad(decbin(ip2long(gethostbyname($host))),32,"0",STR_PAD_LEFT);
+   $binmask=str_pad(decbin(ip2long($mask)),32,"0",STR_PAD_LEFT);
+   for ($i=0; $i<32; $i++) {
+      if (substr($binhost,$i,1)=="1" || substr($binmask,$i,1)=="0") {
+         $broadcast.="1";
+      }  else {
+         $broadcast.="0";
+      }
+   }
+   $net["broadcast"]=long2ip(bindec($broadcast));
+
+   return $net;
+}
+?>
+===============================================================================
+
+Another CIDR function, but with sanity check:
+<?php
+function mask2prefix($mask)
+{
+    if (($long = ip2long($mask)) === false)
+        return false;
+    for ($prefix = 0; $long & 0x80000000; ++$prefix, $long <<= 1) {}
+    if ($long != 0)
+        return false;
+    return $prefix;
+}
+?>
+===============================================================================
+
+to Anonymous @ 29-Aug-2008 10:19
+
+If you're speaking about efficiency, there's no absolute right / wrong as it
+all depends on the user's needs, specs and requirements.
+
+But from what I'm coming from , this method served me well,  I've used this to
+match 2 network ends of approx 2700++ something unique VRFs (Nortel Shasta) and
+yes, each VRF is a virtualized firewall that consists of at least 20 different
+network objects (some could have couple of hundreds). Not to mention that these
+, still have to be compared with another hundreds of contivity boxes and each
+box have a range of around 1-600 vpn peers (to add more complexity, each peer
+has around 1-50 network ranges).
+
+So, if you do the math, the number of permutations that need to be calculated,
+is indeed quite complex. I could get the whole result somewhere in around 50-65
+secs tops.
+
+Had I used a php function to crunch those data the result would have been
+longer.
+===============================================================================
+
+A common way to express IP addresses and subnet masks is to use what is refered
+to as slash notation.  Instead of writing out:
+IP = 192.168.100.2
+Subnet Mask = 255.255.240.0
+Writing out "192.168.100.2/20" is much shorter.
+
+If you are looking for a way to convert a subnet mask into it's slash notation
+counterpart, here is a single line of code that can perform this task.
+
+<?php
+$slash_notation = strlen(preg_replace("/0/", "", decbin(ip2long($subnet_mask
+))));
+?>
+
+For example...
+A subnet mask of 255.255.240.0 expressed in binary looks like this:
+11111111111111111111000000000000
+This gives us a slash notation of 20 which is simply counting the number of 1's
+in the masks binary representation.
+
+Here is a function that uses this code to return an IP address and subnet mask
+in slash notation.
+
+<?php
+function slash_notation($ip, $mask) {
+  return $ip."/".strlen(preg_replace("/0/", "", decbin(ip2long($mask))));
+}
+?>
+
+calling slash_notation("192.168.100.2", "255.255.255.0"); will return
+"192.168.100.2/24".
+
+Hope this is of use to some of you out there.
+===============================================================================
+
+Just to save you some time.
+
+Beware that octets in IP address are being treated as numbers. So, '10.0.0.11'
+is not equal to '10.0.0.011'. '011' is octal number (base 8), so it converts to
+'9'. You can even go further and see that '10.0.0.0xa' also works (equals to
+'10.0.0.16').
+
+This is not PHP issue, though.
+===============================================================================
+
+Here is a modified version of the code posted by legetz81 (AT) yahoo (dot) com.
+It handles the shorter, and more common, notation: "189.128/11".
+
+<?php
+
+$ip_addr_cidr = "192.168.37.215/27";
+cidr($ip_addr_cidr);
+
+function cidr($ip_addr_cidr) {
+
+$ip_arr = explode('/', $ip_addr_cidr);
+
+$dotcount = substr_count($ip_arr[0], ".");
+$padding = str_repeat(".0", 3 - $dotcount);
+$ip_arr[0].=$padding;
+
+$bin = '';
+for($i=1;$i<=32;$i++) {
+   $bin .= $ip_arr[1] >= $i ? '1' : '0';
+}
+$ip_arr[1] = bindec($bin);
+
+$ip = ip2long($ip_arr[0]);
+$nm = ip2long($ip_arr[1]);
+$nw = ($ip & $nm);
+$bc = $nw | (~$nm);
+
+echo "Number of Hosts:    " . ($bc - $nw - 1) . "\n";
+echo "Host Range:        " . long2ip($nw + 1) . " -> " . long2ip($bc - 1)  . "\
+n";
+
+/*
+This will produce:
+Number of Hosts:    30
+Host Range:        192.168.37.193 -> 192.168.37.222
+*/
+
+}
+
+?>
+===============================================================================
+
+<?php
+if (!function_exists("ip2long"))
+{
+function ip2long($ip)
+{
+$ip = explode(".",$ip);
+if (!is_numeric(join(NULL,$ip)) or count($ip) != 4) {return false;}
+else {return $ip[3]+256*$ip[2]+256*256*$ip[1]+256*256*256*$ip[0];}
+}
+}
+?>
+===============================================================================
+
+The following script will print out subnet statistics when you supply the IP
+Address and Subnet Mask. Usefull to calculate the broadcast address and network
+address as well as the number of hosts and the range of IP addresses in the
+subnet.
+
+#!/usr/local/bin/php
+<?php
+   $ip_addr = "172.14.1.57";
+   $subnet_mask = "255.255.255.0";
+
+   $ip = ip2long($ip_addr);
+   $nm = ip2long($subnet_mask);
+   $nw = ($ip & $nm);
+   $bc = $nw | (~$nm);
+
+   echo "IP Address:         " . long2ip($ip) . "\n";
+   echo "Subnet Mask:        " . long2ip($nm) . "\n";
+   echo "Network Address:    " . long2ip($nw) . "\n";
+   echo "Broadcast Address:  " . long2ip($bc) . "\n";
+   echo "Number of Hosts:    " . ($bc - $nw - 1) . "\n";
+   echo "Host Range:         " . long2ip($nw + 1) . " -> " . long2ip($bc - 1) 
+. "\n";
+?>
+
+Produces the output:
+
+IP Address:         172.14.1.57
+Subnet Mask:        255.255.255.0
+Network Address:    172.14.1.0
+Broadcast Address:  172.14.1.255
+Number of Hosts:    254
+Host Range:         172.14.1.1 -> 172.14.1.254
+===============================================================================
+
+If you want to get the interface of an IP, based on the local route table, use
+this.
+
+<?php
+function GetIfaceforIP($user_ip)
+{
+    $route = "/bin/netstat -rn";
+
+    exec($route, $aoutput);
+    foreach($aoutput as $key => $line)
+    {
+        if($key > 1)
+        {
+            $line = ereg_replace("[[:space:]]+",",",$line);
+            list($network, $gateway, $mask, $flags, $mss, $window, $irtt, 
+$iface) = explode(",", $line)
+            if((ip2long($user_ip) & ip2long($mask)) == ip2long($network))
+            {
+                return $iface;
+            }
+        }
+    }
+}
+?>
+===============================================================================
+
+@Teguh Iskanto
+
+Hi,
+
+Your solution requires you to store the IP addresses and masks as strings, and
+also to store the subnet mask being used by your hosts.  This is very
+inefficient.
+
+If you stored your network addresses as unsigned Integers, and your masks as
+TinyInts (i.e. a value between 0 & 32), you could instead do this:
+
+select * from networks WHERE inet_aton('10.20.251.130') between `ipnumber` AND
+(`ipnumber` + (POW(2,(32-`mask`)))-1);
+
+Obviously this can be made quicker on very high load systems by storing the
+broadcast address in the table instead of calculating it on the fly:
+
+select * from networks WHERE inet_aton('10.20.251.130') between `ipnumber` AND
+`broadcast`;
+
+Nick
+===============================================================================
+
+A quick way to find which IP address belong to which network , *without* even
+creating a single PHP function (pure SQL)
+
+Scenario :
+- I have one table that has a list of host ip addresses
+- I have another table that list all the networks' addresses
+- I need to find which host belongs to which network
+
+nodes table
++-------------+-----------------+-------+
+| ip          | mask            | name  |
++-------------+-----------------+-------+
+| 192.168.1.1 | 255.255.255.0   | node1 |
+| 192.168.1.1 | 255.255.255.252 | node2 |
+| 192.168.2.1 | 255.255.255.252 | node3 |
++-------------+-----------------+-------+
+
+network1 table
++-------------+---------------+------+
+| ipaddr      | netmask       | name |
++-------------+---------------+------+
+| 192.168.1.0 | 255.255.255.0 | net1 |
+| 192.168.2.0 | 255.255.255.0 | net2 |
+| 192.168.3.0 | 255.255.255.0 | net3 |
+| 192.168.4.0 | 255.255.255.0 | net4 |
++-------------+---------------+------+
+
+Solution 1 - with PHP ( Long ... ) :
+1. create a PHP function that will calculate and compare IP address with the
+network
+2. extract data from the table nodes, calculate the IP with its mask using a
+PHP function to get the network address
+3.  do the same with table network1
+4. compare result 2 and result 3 , once finished put them into an array to be
+presented as an HTML
+5. done
+
+Solution 2 - With SQL ( Very Very Fast & Short ) :
+1. create sql with 'inet_aton' function + table joins
+2. extract the data from sql outputs
+3. done
+
+how :
+SQL :
+select a.name as host_name,
+a.ip as host_ip,
+b.name as net_name
+from nodes a, network1 b
+where (inet_aton(a.ip) & inet_aton(a.mask) = inet_aton(b.ipaddr) & inet_aton
+(b.netmask));
+
+Results :
+Voilla ...
++-----------+-------------+----------+
+| host_name | host_ip     | net_name |
++-----------+-------------+----------+
+| node1     | 192.168.1.1 | net1     |
+| node2     | 192.168.1.1 | net1     |
+| node3     | 192.168.2.1 | net2     |
++-----------+-------------+----------+
+
+Hope this helps
+===============================================================================
+
+The code examples explain why printing needs a casting, but beware that also
+calculations are performed with signed integers. In my case, the result of
+(ip2long('130.89.0.1') >> 24) was supposed to be 130, but the actual result was
+-126
+===============================================================================
+
+The things that this function do is:
+
+Structure of function:
+
+<?php
+
+$ip = getenv(REMOTE_ADDR);
+$numbers=explode (".",$ip);
+$code=($numbers[0] * 16777216) + ($numbers[1] * 65536) + ($numbers[2] * 256) +
+($numbers[3]);
+//$code is the final variant
+
+?>
+
+that is similar to do this:
+
+<?php
+
+$ip = getenv(REMOTE_ADDR);
+$code=ip2long($ip);
+//$code is the final variant
+
+?>
+===============================================================================
+
+Thanks to sealbreaker for the conversion method. I'd seen <?php (ip2long($ip) &
+0x7FFFFFFF) + 0x80000000 ?> before, but noticed it didn't work on all ips.
+You've discovered why. :)
+
+In case anyone is wondering what sealbreaker means by obtaining an "integer
+value", s/he means an unsigned int, vs the signed version ip2long provides.
+Well, technically this conversion will sometimes give you a float since php's
+integer type is signed.
+
+The good news is that long2ip will correctly handle converting these signed
+versions back into ips.
+
+So, to get an unsigned version of an ip (ie, always >= 0):
+
+<?php
+
+$ip = '127.0.0.1';
+
+// may return a php int or float
+$signed = substr($ip, 0, 3) > 127 ? ((ip2long($ip) & 0x7FFFFFFF) + 0x80000000)
+: ip2long($ip);
+
+// will return a string version
+$signed2 = sprintf('%u', ip2long($ip));
+
+var_dump($signed, $signed2, long2ip($signed), long2ip($signed2));
+
+?>
+
+P.S.: If you're storing IPs in MySQL, there is NO POINT in converting to these
+unsigned values to place in an INT UNSIGNED column. Just use an INT SIGNED
+column, and directly use the result from ip2long. The only reason you should
+really need to force your ip2long result into its unsigned version is if you
+need to compare them with another source that uses unsigned (ie: some IP
+database lookup utils use unsigned).
+===============================================================================
+
+As a note : if you are using (PHP 4, PHP 5) and are looking to get the integer
+value of an IP address, i have found that the following works flawlessly for
+converting to and from IPv4 and it's integer equivalent. I must give credit
+elsewhere for this portion of the code (ip2long($ip) & 0x7FFFFFFF) +
+0x80000000). I looked but was unable to find the comment where it was included.
+
+$ip = "127.0.0.0"; // as an example
+
+$integer_ip = (substr($ip, 0, 3) > 127) ? ((ip2long($ip) & 0x7FFFFFFF) +
+0x80000000) : ip2long($ip);
+
+echo $integer_ip; // integer value of IP address
+echo long2ip($integer_ip); // convert to an IPv4 formatted address
+-----------------------
+Results are as follows:
+-----------------------
+2130706432
+127.0.0.0
+-----------------------
+255.255.255.255 (converts to) 4294967295 (and back to) 255.255.255.255
+209.65.0.0 (converts to) 3510697984 (and back to) 209.65.0.0
+12.0.0.0 (converts to) 201326592 (and back to) 12.0.0.0
+1.0.0.0 (converts to) 16777216 (and back to) 1.0.0.0
+===============================================================================
+
+NOTE: ip2long() should NOT be used for CIDR calculation.
+Instead, you should use something like the following:
+
+<?php
+        /* get the base and the bits from the ban in the database */
+        list($base, $bits) = explode('/', $CIDR);
+
+        /* now split it up into it's classes */
+        list($a, $b, $c, $d) = explode('.', $base);
+
+        /* now do some bit shfiting/switching to convert to ints */
+        $i = ($a << 24) + ($b << 16) + ($c << 8) + $d;
+        $mask = $bits == 0 ? 0 : (~0 << (32 - $bits));
+
+        /* here's our lowest int */
+        $low = $i & $mask;
+
+        /* here's our highest int */
+        $high = $i | (~$mask & 0xFFFFFFFF);
+
+        /* now split the ip were checking against up into classes */
+        list($a, $b, $c, $d) = explode('.', $iptocheck);
+
+        /* now convert the ip we're checking against to an int */
+        $check = ($a << 24) + ($b << 16) + ($c << 8) + $d;
+
+        /* if the ip is within the range, including
+      highest/lowest values, then it's witin the CIDR range */
+        if ($check >= $low && $check <= $high)
+            return 1;
+       else
+            return 0;
+?>
+
+This means that you should check to see if the IP
+address is of the correct format each time.
+===============================================================================
+
+I made one tiny change to Stephane's routine below when I had problems with
+spaces in an IP range.  I moved the trim function before the ip2long call.
+
+Thanks Stephane!
+
+Dirk.
+
+<?php
+function netMatch($network, $ip) {
+
+   $network=trim($network);
+   $ip = trim($ip);
+
+   $d = strpos($network,"-");
+   if ($d===false) {
+       $ip_arr = explode('/', $network);
+ 
+       if (!preg_match("@\d*\.\d*\.\d*\.\d*@",$ip_arr[0],$matches)){
+           $ip_arr[0].=".0";    // Alternate form 194.1.4/24
+       }
+
+       $network_long = ip2long($ip_arr[0]);
+       $x = ip2long($ip_arr[1]);
+         
+       $mask = long2ip($x) == $ip_arr[1] ? $x : (0xffffffff << (32 - $ip_arr[1
+]));
+       $ip_long = ip2long($ip);
+ 
+       return ($ip_long & $mask) == ($network_long & $mask);
+   }
+   else {
+       $from = ip2long(trim(substr($network,0,$d)));
+       $to = ip2long(trim(substr($network,$d+1)));
+
+       $ip = ip2long($ip);
+       return ($ip>=$from and $ip<=$to);
+   }
+}
+?>
+===============================================================================
+
+Here is a script that will calculate host range and number of hosts with a
+given ip address CIDR notation (modified code which was posted by phl AT
+cyways.com):
+
+<?php
+$ip_addr_cidr = "192.168.37.215/27";
+$ip_arr = explode('/', $ip_addr_cidr);
+
+$bin = '';
+for($i=1;$i<=32;$i++) {
+    $bin .= $ip_arr[1] >= $i ? '1' : '0';
+}
+$ip_arr[1] = bindec($bin);
+
+$ip = ip2long($ip_arr[0]);
+$nm = ip2long($ip_arr[1]);
+$nw = ($ip & $nm);
+$bc = $nw | (~$nm);
+
+echo "Number of Hosts:    " . ($bc - $nw - 1) . "\n";
+echo "Host Range:         " . long2ip($nw + 1) . " -> " . long2ip($bc - 1)  . "
+\n";
+?>
+
+This will produce:
+Number of Hosts:    30
+Host Range:         192.168.37.193 -> 192.168.37.222
+===============================================================================
+
+A quick and efficient way to compare two IPs with a given mask:
+
+<?php
+function ipmatch ($ip1, $ip2, $mask) {
+  if ((ip2long($ip1) & ~(pow(2, 32-$mask)-1)) == (ip2long($ip2) & ~(pow(2, 32-
+$mask)-1))) return true;
+  else return false;
+}
+?>
+
+Here's an application of it that selects the best IP given the choice of a
+(possibly private or invalid) forwarded address or a (possibly proxy) apparent
+address:
+
+<?php
+$a = $_SERVER['HTTP_X_FORWARDED_FOR'];
+if ($a == '' || ipmatch($a, "10.0.0.0", 8) || ipmatch($a, "172.16.0.0", 12) || 
+ipmatch($a, "192.168.0.0", 16) || ipmatch($a, "255.255.255.255", 32)) $ip = 
+$_SERVER['REMOTE_ADDR'];
+else $ip = $a;
+?>
+
+Or use it to ban people:
+
+<?php
+$banned_ip = '135.23.12.3';
+if (ipmatch($ip, $banned_ip, 32)) die('BANNED!');
+?>
+
+The bitwise comparison the function uses can be done in SQL to do ban matches
+right in your database.
+===============================================================================
+
+Here is a function that tells you if an ip address is in a CIDR range. However,
+the CIDR argument can be an array of CIDRs. This was created from other
+matchCIDR functions in the user notes.
+
+<?php
+function matchCIDR($addr, $cidr) {
+
+        // $addr should be an ip address in the format '0.0.0.0'
+        // $cidr should be a string in the format '100/8'
+        //      or an array where each element is in the above format
+
+        $output = false;
+
+        if ( is_array($cidr) ) {
+
+                foreach ( $cidr as $cidrlet ) {
+                        if ( matchCIDR( $addr, $cidrlet) ) {
+                                $output = true;
+                        }
+                }
+
+        } else {
+
+                list($ip, $mask) = explode('/', $cidr);
+
+                $mask = 0xffffffff << (32 - $mask);
+
+                $output = ((ip2long($addr) & $mask) == (ip2long($ip) & $mask));
+
+        }
+
+        return $output;
+}
+?>
+===============================================================================
+
+For PHP5 I had to replace:
+$mask_long= pow(2,32)-pow(2,(32-$ip_arr[1]));
+
+-with-
+
+$mask_long = 0xffffffff << (32 - $ip_arr[1]);
+
+in dzver's IP_Match Function below.
+===============================================================================
+
+Mix of rbsmith's function and pasted above url:
+
+<?php
+// returns 1 if $ip is part of $network
+
+function IP_Match($network, $ip) {
+    $ip_arr = explode("/",$network);
+    $network_long=ip2long($ip_arr[0]);
+
+    $mask_long= pow(2,32)-pow(2,(32-$ip_arr[1]));
+    $ip_long=ip2long($ip);
+ 
+    if (($ip_long & $mask_long) == $network_long) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+// usage
+
+$network="200.100.50.0/23";
+$ip="200.100.51.55";
+$ip2="200.100.52.2";
+
+echo IP_Match($network, $ip); //prints 1
+echo IP_Match($network, $ip2); //prints 0
+?>
+===============================================================================
+
+Yet another word on IP_Match here is the complete functions
+as described by php-net at dreams4net dot com on 08-Aug-2002 09:31
+
+<?php
+# determine if an IP address is within
+# a particular network with mask
+function IP_Match($network, $mask, $ip) {
+    $ip_long=ip2long($ip);
+    $network_long=ip2long($network);
+    $mask_long=ip2long($mask);
+   
+    if (($ip_long & $mask_long) == $network_long) {
+        return true;
+    } else {
+        return false;
+    }
+}
+?>
+
+Thank you, it is simple, fast, and best of all works!
+===============================================================================
+
+Hi all!
+
+I've maded simple script that allow you filter traffic by networks, like if you
+want to deny 192.168.0.0/24
+
+I used ncritten's myip2long function for this.
+
+Sorry for such non-optimized code, but it works enough good =)
+
+file iplist.txt:
+192.168.0.0/24
+172.16.0.0/16
+10.0.0.0/8
+
+<?php
+########### ncritten's function myip2long
+
+function myip2long($ip) {
+   if (is_numeric($ip)) {
+       return sprintf("%u", floatval($ip));
+   } else {
+       return sprintf("%u", floatval(ip2long($ip)));
+   }
+}
+
+########### function to chek ip if it in one of denyied/allowed networks =)
+
+function ipfilter($ip) {
+   $match = 0;
+
+### converting ip address in binary
+   $ip_addr = decbin(myip2long($ip));
+
+### the file wich contains allowed/denyied networks
+   if (fopen("iplist.txt", "r")) {
+       $source = file("iplist.txt");
+
+       foreach ($source as $line) {
+
+### exploding each network to obtaid network address and cidr
+           $network = explode("/", $line);
+           $net_addr = decbin(myip2long($network[0]));
+           $cidr = $network[1];
+
+### and finaly cheking quantity of network bits from left to right wich is
+equal to cidr is equal to the same bits of ip address
+           if (substr($net_addr, 0, $cidr) == substr($ip_addr, 0, $cidr)) {
+               $match = 1;
+               break;
+           }
+       }
+   }
+   return $match;
+}
+
+### this function will return 1 if IP match to some network or 0 if will not
+match
+
+### and finaly the chek will be like this
+
+$user_ip = $_SERVER['REMOTE_ADDR'];
+
+if (ipfilter($user_ip) == 1)  echo "allowed!";
+else echo "deny!";
+
+?>
+
+Good Luck!
+
+P.S. Sorry for my bad english =)
+===============================================================================
+
+<?php
+# m.ozarek
+#
+# Check if given mask is correct. You can check the short format mask
+# like 8,16,24 or long format like 255.255.255.0
+#
+
+function isIpMask($mask){
+   
+    $format = '';
+    if(preg_match("/[0-9]++\.[0-9]++\.[0-9]++\.[0-9]++/",$mask)){
+        $format = "long";
+    }else{
+        if($mask<=30){
+            $format = "short";
+        }else{
+            return false;
+        }
+    }
+    switch($format){
+        case long;
+            $mask = decbin(ip2long($mask));
+        break;
+        case short:
+            $tmp = $mask;
+            for($i=0; $i < $mask ;$i++){
+                $tmp.= 1;
+            }
+            for($j=0; $j < (32 - $mask);$j++){
+                $tmp.= 0;
+            }
+            $mask = $tmp;
+        break;
+    }
+    if(strlen($mask) <= 32){
+        for($i=0;$i<=32 ;$i++){
+            $bit = substr($mask,$i,1);
+            if(($bit - substr($mask,$i+1,1)) < 0){
+                return false;
+            }
+        }
+    }
+    return true;
+}
+# EXAMPLE
+# isIpMask("255.255.255.0") -> return true
+# isIpMask("24") -> return true
+# isIpMask("5.5.5.5") -> return false
+?>
+
+[EDIT BY danbrown AT php DOT net:  Contains a fix provided by (greg AT netops
+DOT gvtc DOT com) on 19-Dec-2005.]
+===============================================================================
+
+Just a little function to check visitor's ip if it is in given range or not (I
+couldn't find anywhere so i improvise):
+
+<?php
+function in_ip_range($ip_one, $ip_two=false){
+    if($ip_two===false){
+        if($ip_one==$_SERVER['REMOTE_ADDR']){
+            $ip=true;
+        }else{
+            $ip=false;
+        }
+    }else{
+        if(ip2long($ip_one)<=ip2long($_SERVER['REMOTE_ADDR']) && ip2long(
+$ip_two)>=ip2long($_SERVER['REMOTE_ADDR'])){
+            $ip=true;
+        }else{
+            $ip=false;
+        }
+    }
+    return $ip;
+}
+//usage
+echo in_ip_range('192.168.0.0','192.168.1.254');
+?>
+===============================================================================
+
+To always get the signed 32bit representation of an ip, I found this
+workaround:
+<?php
+list(, $ip) = unpack('l',pack('l',ip2long('200.200.200.200')));
+?>
+
+In this example, $ip will be -926365496 regardless of a 32 or 64 bit system.
+===============================================================================
+
+Convert an ipv6 address to an base 10 integer
+
+<?php
+function ip2long6($ip)
+    {
+        if (substr_count($ip, '::'))
+            {
+                $ip = str_replace('::', str_repeat(':0000', 8 - substr_count(
+$ip, ':')) . ':', $ip) ;
+            }
+           
+        $ip = explode(':', $ip) ;
+       
+        $r_ip = '' ;
+        foreach ($ip as $v)
+            {
+                $r_ip .= str_pad(base_convert($v, 16, 2), 16, 0, STR_PAD_LEFT)
+;
+            }
+           
+        return base_convert($r_ip, 2, 10) ;
+    }
+?>
+===============================================================================
+
+A simple function to compare two IP addresses against a netmask. Useful if
+you're locking down a web app with an IP address, but can't force the IPs to be
+exactly the same.
+
+<?php
+function ipcompare ($ip1, $ip2, $mask) {
+    $masked1 = ip2long($ip1) & ip2long($mask); // bitwise AND of $ip1 with the
+mask
+    $masked2 = ip2long($ip2) & ip2long($mask); // bitwise AND of $ip2 with the
+mask
+      if ($masked1 == $masked2) return true;
+      else return false;
+}
+?>
+
+Examples:
+
+<?php
+  ipcompare("192.168.1.63","192.168.1.65","255.255.255.0") // true
+  ipcompare("192.168.1.63","192.168.1.65","255.255.255.192") // false
+?>

@@ -1,0 +1,404 @@
+
+memory_get_usage
+
+(PHP 4 >= 4.3.2, PHP 5, PHP 7)
+
+memory_get_usage — 返回分配给 PHP 的内存量
+
+说明
+
+int memory_get_usage ([ bool $real_usage = false ] )
+
+返回当前分配给你的 PHP 脚本的内存量，单位是字节（byte）。
+
+参数
+
+real_usage
+
+    如果设置为 TRUE，获取系统分配的真实内存尺寸。如果未设置或者设置为 FALSE，将
+    是 emalloc() 报告使用的内存量。
+
+返回值
+
+返回内存量字节数。
+
+更新日志
+
+版本                                说明
+5.2.1 不需要在编译时使用 --enable-memory-limit 选项就能够使用这个函数。
+5.2.0 增加了参数 real_usage。
+
+范例
+
+Example #1 一个 memory_get_usage() 例子
+
+<?php
+//这只是个例子，下面的数字取决于你的系统
+
+echo memory_get_usage() . "\n"; // 36640
+
+$a = str_repeat("Hello", 4242);
+
+echo memory_get_usage() . "\n"; // 57960
+
+unset($a);
+
+echo memory_get_usage() . "\n"; // 36744
+
+?>
+
+参见
+
+  • memory_get_peak_usage() - 返回分配给 PHP 内存的峰值
+  • memory_limit
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+To get the memory usage in KB or MB
+
+<?php
+function convert($size)
+{
+    $unit=array('b','kb','mb','gb','tb','pb');
+    return @round($size/pow(1024,($i=floor(log($size,1024)))),2).' '.$unit[$i];
+}
+
+echo convert(memory_get_usage(true)); // 123 kb
+?>
+===============================================================================
+
+To get the memory usage in KB or MB
+
+<?php
+    function echo_memory_usage() {
+        $mem_usage = memory_get_usage(true);
+       
+        if ($mem_usage < 1024)
+            echo $mem_usage." bytes";
+        elseif ($mem_usage < 1048576)
+            echo round($mem_usage/1024,2)." kilobytes";
+        else
+            echo round($mem_usage/1048576,2)." megabytes";
+           
+        echo "<br/>";
+    }
+?>
+===============================================================================
+
+Note, that the official IEC-prefix for kilobyte, megabyte and so on are KiB,
+MiB, TiB and so on.
+
+See http://en.wikipedia.org/wiki/Tebibyte
+
+At first glance this may sound like "What the hell? Everybody knows, that we
+mean 1024 not 1000 and the difference is not too big, so what?". But in about
+10 years, the size of harddisks (and files on them) reaches the petabyte-limit
+and then the difference between PB and PiB is magnificent.
+
+Better to get used to it now. :)
+===============================================================================
+
+[EDIT by danbrown AT php DOT net: This is intended by the author to only be
+used with PHP 4 < 4.3.2.]
+
+I'd just like to point out that although sandeepc at myrealbox dot com's idea
+for displaying the current memory usage is a good one, it's perhaps a bad idea
+to pipe the entire process list through grep. A better performing method would
+be to select only the process we're interested in:
+
+<?php
+$pid = getmypid();
+error_log('MEMORY USAGE (% KB PID ): ' . `ps --pid $pid --no-headers
+-o%mem,rss,pid`);
+?>
+
+True, it's not much of a performance boost, but every bit helps.
+===============================================================================
+
+The method sandeepc at myrealbox dot com posted yields larger memory usage, my
+guess is that it includes all the PHP interpreter/internal code and not just
+the script being run.
+
+1) Use ps command
+MEMORY USAGE (% KB PID ):  0.8 12588 25087 -> about 12MB
+2) Use memory_get_usage()
+int(6041952) -> about 6MB
+===============================================================================
+
+Sometimes, we need all memory to run our task, we do ini_set('memory_limit', 
+-1 ), or maximum value we have.
+
+To avoid stuck of server on long and memory consuming tasks, i wrote this
+check. This is not the same as memory_get_usage() do, but more. It shows
+virtual memory amount, taken by your process. In percents.
+
+<?php
+    function getVirtualMemoryTaken()
+    {
+        $pid = getmypid();
+        $a = `ps -p $pid v | awk 'END{print $9}'`;
+        return $a*1;
+    }
+?>
+
+It works only in linux, tested in Ubuntu 14.
+
+<?php
+    $a = ' ';
+    do {  $a .= $a . $a; }
+    while (getVirtualMemoryTaken() < 20 );
+?>
+===============================================================================
+
+I can confirm that this function triggers a garbage collection. I have a script
+that exceeded 128MB of memory at some point and ended with a fatal error. I was
+confused, because the script dealt with some large files initially, but the
+memory load from that point on should have been marginal, and the error
+occurred at the very end.
+
+Those large files were dealt in a dedicated function and i even used unset() on
+the variable holding the file after the file was written to disk inside that
+function. So the memory should have been cleared twice, first after the unset()
+call, and second once the function ended.
+
+To debug the memory usage, I called memory_get_usage(true) at some points and
+echo-ed the memory allocation. Just by adding a few echos here and there in the
+script, the memory usage never exceeded 1MB overhead (on top of the current
+file size) and the memory error disappeared.
+===============================================================================
+
+not sure how this works internally but I have observed sort of side effects
+here: calling this function apparently triggers PHP's "garbage collector" --
+and frees some memory. I managed to "fix" some savagely coded mess of a web
+application solely by calling this function just before the code that would
+usually throw out-of-memory errors. the php version there was 5.2.10
+===============================================================================
+
+The Win XP / 2003 workaround script will also work with windows 2000 with a few
+slight modifications.
+
+Please note that you'll need the pslist.exe utility from http://
+www.sysinternals.com/Utilities/PsTools.html because win/2000 itself does not
+provide a task list utility.
+
+<?php
+
+function getMemUsage()
+{
+    
+       if (function_exists('memory_get_usage'))
+       {
+           return memory_get_usage();
+       }
+       else if ( substr(PHP_OS,0,3) == 'WIN')
+       {
+           // Windows 2000 workaround
+
+           $output = array();
+           exec('pslist ' . getmypid() , $output);
+           return trim(substr($output[8],38,10));
+       }
+       else
+       {
+           return '<b style="color: red;">no value</b>';
+       }
+}
+?>
+===============================================================================
+
+This is a function that should work for both Windows XP/2003 and most
+distrabutions of UNIX and Mac OS X.
+
+<?php
+if( !function_exists('memory_get_usage') )
+{
+    function memory_get_usage()
+    {
+        //If its Windows
+        //Tested on Win XP Pro SP2. Should work on Win 2003 Server too
+        //Doesn't work for 2000
+        //If you need it to work for 2000 look at http://us2.php.net/manual/en/
+function.memory-get-usage.php#54642
+        if ( substr(PHP_OS,0,3) == 'WIN')
+        {
+               if ( substr( PHP_OS, 0, 3 ) == 'WIN' )
+                {
+                    $output = array();
+                    exec( 'tasklist /FI "PID eq ' . getmypid() . '" /FO LIST', 
+$output );
+       
+                    return preg_replace( '/[\D]/', '', $output[5] ) * 1024;
+                }
+        }else
+        {
+            //We now assume the OS is UNIX
+            //Tested on Mac OS X 10.4.6 and Linux Red Hat Enterprise 4
+            //This should work on most UNIX systems
+            $pid = getmypid();
+            exec("ps -eo%mem,rss,pid | grep $pid", $output);
+            $output = explode("  ", $output[0]);
+            //rss is given in 1024 byte units
+            return $output[1] * 1024;
+        }
+    }
+}
+?>
+===============================================================================
+
+If nothing else in the user notes below works for you, you can get a very
+(VERY) rough estimate of PHP memory usage by outputting the $GLOBALS array,
+stripping it of indentation whitespace, and counting the characters in the
+resulting string.  This method has a very high overhead (to be expected), but
+works on all operating systems, regardless of whether or not they have the
+--enable-memory-limit config option set.  I find that the syntax overhead of
+the print_r() statement roughly accounts for the PHP runtime base memory usage.
+
+The code below is set up to work on all arrays, not just the $GLOBALS array. 
+Keep in mind that outside data referenced by resource IDs, such as database
+results and open file data, is not included in this total.
+
+<?php
+
+function array_size($arr) {
+  ob_start();
+  print_r($arr);
+  $mem = ob_get_contents();
+  ob_end_clean();
+  $mem = preg_replace("/\n +/", "", $mem);
+  $mem = strlen($mem);
+  return $mem;
+}
+
+$memEstimate = array_size($GLOBALS);
+
+?>
+
+Use only if being off to either side by at least 20% is acceptible for your
+purposes.
+===============================================================================
+
+[EDIT by danbrown AT php DOT net: This function will only extend Windows
+versions of PHP where the server has the required third-party software.]
+
+I was unable to get the previous examples working properly and created code
+which works at least for me. Enjoy!
+
+<?php
+// Please note that you'll need the pslist.exe utility from http://
+www.sysinternals.com/Utilities/PsTools.html
+// This is because win/2000 itself does not provide a task list utility.
+//
+function getMemoryUsage() {
+
+// try to use PHP build in function
+if( function_exists('memory_get_usage') ) {
+  return memory_get_usage();
+}
+
+// Try to get Windows memory usage via pslist command
+if ( substr(PHP_OS,0,3) == 'WIN') {
+ 
+  $resultRow = 8;
+  $resultRowItemStartPosition = 34;
+  $resultRowItemLength = 8;
+ 
+  $output = array();
+  exec('pslist -m ' . getmypid() , $output);
+   
+  return trim(substr($output[$resultRow], $resultRowItemStartPosition, 
+$resultRowItemLength)) . ' KB';
+ 
+}
+
+
+// No memory functionality available at all
+return '<b style="color: red;">no value</b>';
+ 
+}
+?>
+===============================================================================
+
+When you need to get the OS, do not use $_SERVER['OS'] or $_ENV['OS'], better
+use PHP_OS constant !
+<?php
+if (substr(PHP_OS,0,3)=='WIN') {
+  // [...]
+}
+?>
+
+You also have other values such as CYGWIN_NT-5.0, Linux, ... this is the best
+way to get system's os (anyone on linux can do an "export OS=windows")
+===============================================================================
+
+Decision a memory_get_usage problem for windows system
+
+Tested OS: Windows XP
+Server: Apache
+
+PHP must be loaded as CGI to get correctly memory usage by Process ID (
+getmypid() ) and with cmd-tools like tasklist.exe
+
+PHP as CGI have your own PID instead constant Apache PID and you get a true
+memory size independed form Apache memory usage.
+
+Configure in httpd.conf of Apache:
+
+1. Comment the line like this:
+LoadModule php4_module "/usr/local/php/sapi/php4apache.dll"
+or
+LoadModule php5_module "/usr/local/php5/php5apache.dll"
+
+2. Add this and edit your path to php:
+<Directory "z:/usr/local/php">
+  Options ExecCGI
+</Directory>
+ScriptAlias "/__php_dir__/" "z:/usr/local/php/"
+Action application/x-httpd-php "/__php_dir__/php.exe"
+
+3. Restart Apache
+
+Use this PHP-code:
+
+<?php
+/**
+* A memory_get_usage() for Windows System, wich compiled without
+--enable-memory-limit
+* PHP must be loaded as CGI
+* Greetings form miteigi nemoto
+* @return string
+*/
+function memory_get_usage_by_tasklist()
+{
+    $output = array();
+    exec( 'tasklist ', $output );
+    foreach ($output as $value)
+    {
+        $ex=explode(" ",$value);
+        $count_ex=count($ex);
+        if (eregi(" ".getmypid()." Console",$value))
+        {
+            $memory_size=$ex[$count_ex-2]." Kb";
+            return $memory_size;
+        }
+    }
+}
+echo memory_get_usage_by_tasklist();
+?>
+===============================================================================
+
+the various memory_get_usage replacements here don't seem to work on Mac OS X
+10.4(Intel)
+
+I got it to work like this...
+
+<?php
+function memory_get_usage()
+{
+     $pid = getmypid();
+     exec("ps -o rss -p $pid", $output);
+     return $output[1] *1024;
+}
+?>

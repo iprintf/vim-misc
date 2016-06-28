@@ -1,0 +1,147 @@
+
+SQLite3::open
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+SQLite3::open — Opens an SQLite database
+
+说明
+
+public void SQLite3::open ( string $filename [, int $flags =
+SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE [, string $encryption_key = null
+]] )
+
+Opens an SQLite 3 Database. If the build includes encryption, then it will
+attempt to use the key.
+
+参数
+
+filename
+
+    Path to the SQLite database, or :memory: to use in-memory database.
+
+flags
+
+    Optional flags used to determine how to open the SQLite database. By
+    default, open uses SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE.
+      □ SQLITE3_OPEN_READONLY: Open the database for reading only.
+
+      □ SQLITE3_OPEN_READWRITE: Open the database for reading and writing.
+
+      □ SQLITE3_OPEN_CREATE: Create the database if it does not exist.
+
+encryption_key
+
+    An optional encryption key used when encrypting and decrypting an SQLite
+    database. If the SQLite encryption module is not installed, this parameter
+    will have no effect.
+
+返回值
+
+没有返回值。
+
+范例
+
+Example #1 SQLite3::open() example
+
+<?php
+/**
+ * Simple example of extending the SQLite3 class and changing the __construct
+ * parameters, then using the open method to initialize the DB.
+ */
+class MyDB extends SQLite3
+{
+    function __construct()
+    {
+        $this->open('mysqlitedb.db');
+    }
+}
+
+$db = new MyDB();
+
+$db->exec('CREATE TABLE foo (bar STRING)');
+$db->exec("INSERT INTO foo (bar) VALUES ('This is a test')");
+
+$result = $db->query('SELECT bar FROM foo');
+var_dump($result->fetchArray());
+?>
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+If you are trying to use the open() method to open multiple database files
+within the same SQLite3 object (which I could not get to work), here is an
+alternative way to do so using special SQLite3 syntax additions to the SQL
+language.  This took some investigation on my part, so hopefully the solution I
+found will help you too.
+
+These are the nice features within SQLite3 that are leveraged:
+* The create statement query for a table is stored within a table called
+"sqlite_master" within the parent database file.
+* SQLite3 supports the "insert into...select * from" SQL syntax for doing
+bulkload-speed inserts into a table - but what if the source and target tables
+are in separate database files?
+* SQLite3 has an "attach [filename] as [reference database name]" which will
+allow multiple database files to be opened and accessible to the same SQLite3
+object.
+
+Assume you have a table called "my_template" in the SQLite3 database file
+"source.db".  You want to make a copy of this table into the database file
+"target.db" and call the table "working_table".
+
+<?php
+//attach the source database file to the bulkload connection object;
+$bulkload_connection = new SQLite3("c:/sqlite3_database_files/source.db");
+
+//retrieve the create statement query for the source table;
+$sourcetbl_create_statement = $bulkload_connection->querySingle("select sql
+from sqlite_master where type='table' and name='my_template'");
+if ($sourcetbl_create_statement===false) exit($bulkload_connection->
+lastErrorMsg());
+
+//build the create statement query for the target table;
+$targettbl_create_statement = str_replace('CREATE TABLE my_template', 'CREATE
+TABLE bulkload.working_table', $sourcetbl_create_statement);
+
+//attach the target database file to the bulkload connection object - and
+reference it as the database called [bulkload];
+$result=$bulkload_connection->exec("attach 'c:/sqlite3_database_files/
+target.db' as bulkload");
+if ($result===false) exit($bulkload_connection->lastErrorMsg());
+
+//issue the query to create the target table within the target database file;
+$result=$bulkload_connection->exec($targettbl_create_statement);
+if ($result===false) exit($bulkload_connection->lastErrorMsg());
+
+//copy the rows from the source table to the target table as quickly as
+possible;
+$result=$bulkload_connection->exec("insert into bulkload.working_table select *
+from my_template");
+if ($result===false) exit($bulkload_connection->lastErrorMsg());
+
+//release the OS file locks on the attached database files;
+$bulkload_connection->close();
+unset($bulkload_connection);
+?>
+===============================================================================
+
+PHP Fatal error:  Class 'SQLite3' not found ...
+
+you are probably running an old version of PHP
+
+PHP 5.2 does not know about SQLite3; only SQLite (v2)
+
+install PHP 5.3
+http://www.macupdate.com/info.php/id/7294/php on Mac OS
+===============================================================================
+
+How to open MY db? I have a problem with it. Always I see:
+
+Deprecated: mysql_connect(): The mysql extension is deprecated and will be
+removed in the future: use mysqli or PDO instead in ....
+
+if I use mysql_connect().
+
+How to use another method?

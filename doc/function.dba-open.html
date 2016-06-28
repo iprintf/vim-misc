@@ -1,0 +1,186 @@
+
+dba_open
+
+(PHP 4, PHP 5, PHP 7)
+
+dba_open — Open database
+
+说明
+
+resource dba_open ( string $path , string $mode [, string $handler [, mixed
+$... ]] )
+
+dba_open() establishes a database instance for path with mode using handler.
+
+参数
+
+path
+
+    Commonly a regular path in your filesystem.
+
+mode
+
+    It is r for read access, w for read/write access to an already existing
+    database, c for read/write access and database creation if it doesn't
+    currently exist, and n for create, truncate and read/write access. The
+    database is created in BTree mode, other modes (like Hash or Queue) are not
+    supported.
+
+    Additionally you can set the database lock method with the next char. Use l
+    to lock the database with a .lck file or d to lock the databasefile itself.
+    It is important that all of your applications do this consistently.
+
+    If you want to test the access and do not want to wait for the lock you can
+    add t as third character. When you are absolutely sure that you do not
+    require database locking you can do so by using - instead of l or d. When
+    none of d, l or - is used, dba will lock on the database file as it would
+    with d.
+
+        Note:
+
+        There can only be one writer for one database file. When you use dba on
+        a web server and more than one request requires write operations they
+        can only be done one after another. Also read during write is not
+        allowed. The dba extension uses locks to prevent this. See the
+        following table:
+
+                                  DBA locking
+        already mode =  mode =  mode =  mode =  mode =  mode =  mode =  mode =
+         open    "rl"    "rlt"   "wl"    "wlt"   "rd"    "rdt"   "wd"    "wdt"
+        not     ok      ok      ok      ok      ok      ok      ok      ok
+        open
+        mode =  ok      ok      wait    false   illegal illegal illegal illegal
+        "rl"
+        mode =  wait    false   wait    false   illegal illegal illegal illegal
+        "wl"
+        mode =  illegal illegal illegal illegal ok      ok      wait    false
+        "rd"
+        mode =  illegal illegal illegal illegal wait    false   wait    false
+        "wd"
+
+          ☆ ok: the second call will be successfull.
+          ☆ wait: the second call waits until dba_close() is called for the
+            first.
+          ☆ false: the second call returns false.
+          ☆ illegal: you must not mix "l" and "d" modifiers for mode parameter.
+
+handler
+
+    The name of the handler which shall be used for accessing path. It is
+    passed all optional parameters given to dba_open() and can act on behalf of
+    them.
+
+返回值
+
+Returns a positive handle on success 或者在失败时返回 FALSE.
+
+更新日志
+
+版本                                    说明
+      It's possible to open database files over network connection. However in
+      cases a socket connection will be used (as with http or ftp) the
+4.3.0 connection will be locked instead of the resource itself. This is
+      important to know since in such cases locking is simply ignored on the
+      resource and other solutions have to be found.
+
+参见
+
+  • dba_popen() - Open database persistently
+  • dba_close() - Close a DBA database
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Here's a simple example to use the dba_open function
+
+<?php
+
+$id = dba_open("/tmp/test.db", "n", "gdbm");
+
+if (!$id) {
+        echo "dba_open failed\n";
+        exit;
+}
+
+dba_replace("key", "This is an example!", $id);
+
+if (dba_exists("key", $id)) {
+        echo dba_fetch("key", $id);
+        dba_delete("key", $id);
+}
+
+dba_close($id);
+?>
+===============================================================================
+
+As of GDBM version 1.8.3, GDBM's underlying open call uses non-blocking calls
+to flock() on systems that have flock().  As a result, calls with "rd" or "wd"
+locking modes will return error ("Can't be reader" or "Can't be writer")
+instead of waiting.  Use "rl" or "wl" instead, to make PHP do its own locking
+external to GDBM.
+===============================================================================
+
+Windows does not support locking the database. You may use $_ENV to determine
+the OS:
+
+$locking = (stripos($_ENV['OS'],'windows') === false ? 'd' : 'l');
+===============================================================================
+
+If you get some strange errors like
+dba_open(): myDbFilename.db : Permission denied
+than you are propably using PHP on a Windoze machine. You have to make sure
+that the following conditions are met:
+
+1) Use an absolute path to your db file. Relative paths will cause problems
+with locking
+2) Specify a locking mode - that's the second character of the mode-argument,
+or else opening a dba-file will cause several notices/warnings etc.
+
+And a final, general note:
+3) Always use the english PHP doc on this site - the translations are often old
+as hell and miss important informations
+
+HTH, Nils.
+===============================================================================
+
+Note the “c” create flag does not work if MySQL was built with the “cdb” DBA
+handler compile option which is common for many distros.  By definition the cdb
+DBA handler is optimized for reading/writing and “no updates are allowed.” 
+
+<?php
+$dbh = dba_open( "./data2/productz", "c", "cdb") or die( "Couldn't open
+Database" );
+?>
+
+instead use
+
+<?php
+$dbh = dba_open( "./data2/productz", "n", "cdb" ) or die( "Couldnt open
+Database" );
+?>
+
+generates this error message in the /var/log/apache2/error.log:
+[Sun Sep 06 04:18:15 2009] [error] [client 192.168.1.125] PHP Warning: 
+dba_open(./data2/productz,c) [<a href='function.dba-open'>function.dba-open</
+a>]: Driver initialization failed for handler: cdb: Update operations are not
+supported in /var/www/projects/testcdb-c.php on line 43
+
+see user contributed comment under dba_handlers() to see which DBA handlers are
+supported by your build of MySQL and note about using “cdb” compiled DBA
+systems:
+
+also see user contributed comment under dba_replace() about incompatibilities
+with cdb DBA handler compiled MySQL systems.
+===============================================================================
+
+Apache doesn't support Berkeley DB Btree, so you can't manipulate use db4 as
+the type of database if you want to do DBM authentication with Apache.
+
+gdbm seemed to work fine though, even though it supposedly using Btree instead
+of hash.  It makes you wonder why Apache would use hash for one dbmtype versus
+btree for another.
+
+So since Apache and PHP don't have options to choose the method for the
+Berkeley DBs, you are out of luck.

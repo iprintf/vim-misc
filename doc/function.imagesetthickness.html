@@ -1,0 +1,253 @@
+
+imagesetthickness
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+imagesetthickness — 设定画线的宽度
+
+说明
+
+bool imagesetthickness ( resource $image , int $thickness )
+
+imagesetthickness() 把画矩形，多边形，椭圆等等时所用的线宽设为 thickness 个像素
+。成功时返回 TRUE，或者在失败时返回 FALSE。
+
+    Note: 此函数需要 GD 2.0.1 或更高版本(推荐 2.0.28 及更高版本)。
+
+参数
+
+image
+
+    由图象创建函数(例如imagecreatetruecolor())返回的图象资源。
+
+thickness
+
+    Thickness, in pixels.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 imagesetthickness() example
+
+<?php
+// Create a 200x100 image
+$im = imagecreatetruecolor(200, 100);
+$white = imagecolorallocate($im, 0xFF, 0xFF, 0xFF);
+$black = imagecolorallocate($im, 0x00, 0x00, 0x00);
+
+// Set the background to be white
+imagefilledrectangle($im, 0, 0, 299, 99, $white);
+
+// Set the line thickness to 5
+imagesetthickness($im, 5);
+
+// Draw the rectangle
+imagerectangle($im, 14, 14, 185, 85, $black);
+
+// Output image to the browser
+header('Content-Type: image/png');
+
+imagepng($im);
+imagedestroy($im);
+?>
+
+以上例程的输出类似于：
+
+Output of example : imagesetthickness()
+
+注释
+
+    Note: 此函数需要 GD 2.0.1 或更高版本(推荐 2.0.28 及更高版本)。
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+thanks circle14,
+
+just change the line & see its solved what we need for ellipse
+
+while ($line < $thickness) {
+        $line++;
+        $elipse_w--;
+        imageellipse($image, $pos_x, $pos_y, $elipse_w, $elipse_h, $color);
+        $elipse_h--;
+    }
+===============================================================================
+
+Note: Also, for me (working under PHP 5.0.2) this function ONLY seems to work
+with imageline...
+===============================================================================
+
+Apparently imagesetthickness doesn't work if antialiasing is set to true.
+===============================================================================
+
+While recently "playing" with GD library for PHP I also encountered the problem
+of imagesetthickness not working with imageellipse.
+
+I think I found a good work around and wanted to share it  with you:
+
+Instead of using
+
+<?php imageellipse($image, $pos_x, $pos_y, $elipse_w, $elipse_h, $color); ?>
+
+I successfully used:
+
+<?php imagearc($image, $pos_x, $pos_y, $elipse_w, $elipse_h, 0, 359.9, $color);
+?>
+
+NOTE: Don't put exactly 360 instead of 359.9 because it seems that the
+implementation makes the test and uses imageellipse instead!
+Below is my Ellipse function that is sensitive to imagesetthickness function
+AND that creates a properly closed ellipse.
+
+<?php
+  function myimageellipse($image, $x, $y, $rx, $ry, $color)
+  {
+    // We don't use imageellipse because the imagesetthickness function has
+    // no effect. So the better workaround is to use imagearc.
+    imagearc($image,$x,$y,$rx,$ry, 0,359,$color);
+
+    // If we stop here, we don't have a properly closed ellipse.
+    // Using imagefill at this point will flood outside the ellipse (actually
+arc).
+
+    // We have to close the arc to make it a real ellipse.
+    $cos359=0.99984769;
+    $sin359=-0.01745240;
+
+    $x1=round($x+$rx/2*$cos359);
+    $y1=round($y+$ry/2*$sin359);
+   
+    $x2=round($x+$rx/2);
+    $y2=round($y);
+
+    // imageline is sensitive to imagesetthickness as well.
+    imageline($image,$x1,$y1,$x2,$y2,$color);
+
+  }
+?>
+===============================================================================
+
+The way that imagesetthickness works with imagerectangle() is pretty strange.
+
+<?php
+imagesetthickness(1);
+imagerectangle($im, 10, 10, 50, 50, $red);
+?>
+
+This will draw a 41x41 square (because gd need the bottom right pixel,
+inclusive. 50 should get replaced by 49). This will "work" like:
+
+<?php
+imageline($im, 10, 10, 10, 50, $red);
+imageline($im, 10, 10, 50, 10, $red);
+imageline($im, 50, 10, 50, 50, $red);
+imageline($im, 10, 50, 50, 50, $red);
+?>
+
+The second example:
+
+<?php
+imagesetthickness(2);
+imagerectangle($im, 10, 10, 50, 50, $red);
+?>
+
+This will draw a 43x43 square because the border (thickness) is set to 2.
+*however* this is not a "regular" border of 2 pixels around the 41x41 original
+square!
+
+On the left and right, there will be a thickness of 3, while there we be a
+thickness of 2.
+
+If you take the imageline example, but set the thickness before to 2, this will
+*almost* do the trick: the left most pixel of the square will not be drawn.
+
+To conclude:
+
+1) do not forget that (width, height) of drawn rectangle is (x2-x1+1, y2-y1+1)
+2) thickness is bad implemented (or at least, the behavior i s not documented)
+on rectangle, as the left/right thickness is not the wanted one.
+3) 4*imageline() should do the trick, but after "patching" the top left pixel.
+===============================================================================
+
+As you can see in the example image, the left and right sides are 1 px wider
+than they should be, this is the case for every width > 1. 
+Wrote this function to fix that bit.. probably not a drop-in replacement
+though. It draws a rectangle *around* the given coordinates, for any width
+line.
+
+<?php
+// draw a $width-wide line AROUND the given coordinates, keeping in mind
+0,0,1,1 yields a 2×2 square
+function imagelinerectangle($img, $x1, $y1, $x2, $y2, $color, $width=1) {
+    imagefilledrectangle($img, $x1-$width, $y1-$width, $x2+$width, $y1-1, 
+$color);
+    imagefilledrectangle($img, $x2+1, $y1-$width, $x2+$width, $y2+$width, 
+$color);
+    imagefilledrectangle($img, $x1-$width, $y2+1, $x2+$width, $y2+$width, 
+$color);
+    imagefilledrectangle($img, $x1-$width, $y1-$width, $x1-1, $y2+$width, 
+$color);
+}
+?>
+===============================================================================
+
+One thing worse to mention is that imagesetthikness() works on the next object
+you draw.
+For ex : you can draw a grid within a grapg with a thickness of 1
+
+by invoking imagesetthickness($image, 1);
+
+... script to draw your grid...
+
+and then invoke imagesetthikness with a draw your graph lines with a thickness
+of 3
+imagesetthickness($image, 3);
+... script to draw your graph lines...
+
+Hope this helps...
+===============================================================================
+
+An easier to manage thickness is, before to draw in the ellipse to play with 2
+ellipse with different color :
+
+<?php
+        imagefilledellipse  ($this->image,60,42,57,57,$drawColor);
+        imagefilledellipse  ($this->image,60,42,45,45,$backColor);
+?>
+
+The first line draw a filled ellipse with the wanted color, and the 2nd one,
+draw an ellipse with the background color from the same center, but is smaller.
+
+The drawback of this method is that you erase everything in the middle of the
+ellipse.
+===============================================================================
+
+Here is a custom function I wrote that addresses the line thickness issues with
+ellipses :
+
+<?php
+function draw_oval ($image, $pos_x, $pos_y, $elipse_width, $elipse_height, 
+$color, $px_thick) {
+    $line = 0;
+    $thickness = $px_thick;
+    $elipse_w = $elipse_width;
+    $elipse_h = $elipse_height;
+    while ($line < $thickness) {
+        imageellipse($image, $pos_x, $pos_y, $elipse_w, $elipse_h, $color);
+        $line++;
+        $elipse_w--;
+        $elipse_h--;
+    }
+}
+?>
+
+I hope you find this useful.
+===============================================================================
+
+There is a known bug. Imagesetthickness is NOT working on ellipse.

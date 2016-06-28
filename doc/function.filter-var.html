@@ -1,0 +1,664 @@
+
+filter_var
+
+(PHP 5 >= 5.2.0, PHP 7)
+
+filter_var — 使用特定的过滤器过滤一个变量
+
+说明
+
+mixed filter_var ( mixed $variable [, int $filter = FILTER_DEFAULT [, mixed
+$options ]] )
+
+参数
+
+variable
+
+    待过滤的变量
+
+filter
+
+    The ID of the filter to apply. The Types of filters manual page lists the
+    available filters.
+
+    If omitted, FILTER_DEFAULT will be used, which is equivalent to
+    FILTER_UNSAFE_RAW. This will result in no filtering taking place by
+    default.
+
+options
+
+    一个选项的关联数组，或者按位区分的标示。如果过滤器接受选项，可以通过数组的
+    "flags" 位去提供这些标示。对于回调型的过滤器，应该传入 callable。这个回调函
+    数必须接受一个参数，即待过滤的值，并且返回一个在过滤/净化后的值。
+
+    <?php
+    // for filters that accept options, use this format
+    $options = array(
+        'options' => array(
+            'default' => 3, // value to return if the filter fails
+            // other options here
+            'min_range' => 0
+        ),
+        'flags' => FILTER_FLAG_ALLOW_OCTAL,
+    );
+    $var = filter_var('0755', FILTER_VALIDATE_INT, $options);
+
+    // for filter that only accept flags, you can pass them directly
+    $var = filter_var('oops', FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+    // for filter that only accept flags, you can also pass as an array
+    $var = filter_var('oops', FILTER_VALIDATE_BOOLEAN,
+                      array('flags' => FILTER_NULL_ON_FAILURE));
+
+    // callback validate filter
+    function foo($value)
+    {
+        // Expected format: Surname, GivenNames
+        if (strpos($value, ", ") === false) return false;
+        list($surname, $givennames) = explode(", ", $value, 2);
+        $empty = (empty($surname) || empty($givennames));
+        $notstrings = (!is_string($surname) || !is_string($givennames));
+        if ($empty || $notstrings) {
+            return false;
+        } else {
+            return $value;
+        }
+    }
+    $var = filter_var('Doe, Jane Sue', FILTER_CALLBACK, array('options' => 
+    'foo'));
+    ?>
+
+返回值
+
+Returns the filtered data, or FALSE if the filter fails.
+
+范例
+
+Example #1 一个 filter_var() 的例子
+
+<?php
+var_dump(filter_var('bob@example.com', FILTER_VALIDATE_EMAIL));
+var_dump(filter_var('http://example.com', FILTER_VALIDATE_URL, 
+FILTER_FLAG_PATH_REQUIRED));
+?>
+
+以上例程会输出：
+
+string(15) "bob@example.com"
+bool(false)
+
+参见
+
+  • filter_var_array() - 获取多个变量并且过滤它们
+  • filter_input() - 通过名称获取特定的外部变量，并且可以通过过滤器处理它
+  • filter_input_array() - 获取一系列外部变量，并且可以通过过滤器处理它们
+  • Types of filters
+  • callback 类型的信息
+
+
+User Contributed Notes 30 notes
+
+===============================================================================
+
+Pay attention that the function will not validate "not latin" domains.
+
+if (filter_var('уникум@из.рф', FILTER_VALIDATE_EMAIL)) {
+    echo 'VALID';
+} else {
+    echo 'NOT VALID';
+}
+===============================================================================
+
+I found some addresses that FILTER_VALIDATE_EMAIL rejects, but RFC5321 permits:
+<?php
+foreach (array(
+        'localpart.ending.with.dot.@example.com',
+        '(comment)localpart@example.com',
+        '"this is v@lid!"@example.com',
+        '"much.more unusual"@example.com',
+        'postbox@com',
+        'admin@mailserver1',
+        '"()<>[]:,;@\\"\\\\!#$%&\'*+-/=?^_`{}| ~.a"@example.org',
+        '" "@example.org',
+    ) as $address) {
+    echo "<p>$address is <b>".(filter_var($address, FILTER_VALIDATE_EMAIL) ? ''
+: 'not')." valid</b></p>";
+}
+?>
+Results:
+
+localpart.ending.with.dot.@example.com is not valid
+(comment)localpart@example.com is not valid
+"this is v@lid!"@example.com is not valid
+"much.more unusual"@example.com is not valid
+postbox@com is not valid
+admin@mailserver1 is not valid
+"()<>[]:,;@\"\\!#$%&'*+-/=?^_`{}| ~.a"@example.org is not valid
+" "@example.org is not valid
+
+The documentation does not saying that FILTER_VALIDATE_EMAIL should pass the
+RFC5321, however you can meet with these examples (especially with the first
+one). So this is a note, not a bug report.
+===============================================================================
+
+FILTER_VALIDATE_URL allows:
+
+filter_var('javascript://comment%0Aalert(1)', FILTER_VALIDATE_URL);
+
+Where the %0A (URL encoded newline), in certain contexts, will split the
+comment from the JS code.
+
+This can result in an XSS vulnerability.
+===============================================================================
+
+And this is also a valid url
+
+http://example.com/"><script>alert(document.cookie)</script>
+===============================================================================
+
+Using the FILTER_CALLBACK requires an array to be passed as the options:
+
+<?php
+function toDash($x){
+   return str_replace("_","-",$x);
+}
+
+echo filter_var("asdf_123",FILTER_CALLBACK,array("options"=>"toDash"));
+// returns 'asdf-123'
+?>
+===============================================================================
+
+Here is how to use multiple flags (for those who learn better by example, like
+me):
+
+<?php
+echo "|asdf".chr(9).chr(128)."_123|";
+echo "\n";
+// "bitwise conjunction" means logic OR / bitwise |
+echo filter_var("|asdf".chr(9).chr(128)."_123\n|" ,FILTER_SANITIZE_STRING, 
+FILTER_FLAG_STRIP_LOW | FILTER_FLAG_STRIP_HIGH);
+
+/*
+Results:
+|asdf    �_123|
+|asdf_123|
+*/
+?>
+===============================================================================
+
+It might be wise to trim or sanitize (FILTER_SANITIZE_EMAIL) your email
+variable before validating to remove spaces:
+filter_var(trim($email), FILTER_VALIDATE_EMAIL)
+===============================================================================
+
+please note FILTER_VALIDATE_URL passes following url
+
+http://example.ee/sdsf"f
+===============================================================================
+
+Here's an actual example of the filter syntax with a flag since there doesn't
+appear to be a one liner for this anywhere:
+
+'hours' => array('filter'=>FILTER_SANITIZE_NUMBER_FLOAT, 'flags' =>
+FILTER_FLAG_ALLOW_FRACTION, 'options'=> '.')
+===============================================================================
+
+It's very likely that you actually want to detect all reserved ranges, not just
+private IPs, and there's another constant for them that should be bitwise-OR'd
+with it.
+<?php
+function is_private_ip($ip) {
+    return !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | 
+FILTER_FLAG_NO_RES_RANGE);
+}
+?>
+===============================================================================
+
+It is important to note that though the data type of the first parameter of the
+function is stated as "mixed", this is only one half of the truth.
+
+While it accepts any data type, the first parameter will always be cast to
+string before being validated or sanitized.
+
+It seems that this function was designed strictly to be used on user input
+strings. For example: from an online-form. When using it for anything other
+than that, you may see issues. So read the documentation very carefully!
+
+Especially note that there is an (to date) unresolved issue (#49510) concerning
+the Boolean filter while using the FILTER_NULL_ON_FAILURE flag. Note that both
+(string) FALSE and FALSE are not recognized as boolean values and will return
+NULL (not FALSE as you might expect).
+
+I thus personally suggest that (to date) the best way to take the filter_var()
+-functions beyond their original purpose (and allow future extension and
+customization) is to wrap them in your own classes. This will allow you to
+work-around unexpected behavior on non-string input and add your custom checks,
+or back-port filters or sanitizers that may be added in later versions of PHP.
+(Especially since PHP currently still lacks filters and sanitizers for some of
+the more exotic HTML5 input types, like "color". Thus there actually is a
+chance that we may see a need for custom filters or backports at some point in
+the future.)
+===============================================================================
+
+"(comment)localpart@example.com"
+is an invalid E-Mail address per RFC5322 (Appendix A.6.3):
+"Also, the comments and white space throughout addresses, dates, and message
+identifiers are all part of the obsolete syntax."
+===============================================================================
+
+Keep in mind that FILTER_VALIDATE_EMAIL will validate the email address
+according to standards.
+However, giving the fact that organizations are free to restrict the forms of
+their own email addresses, using ONLY this filter can you a lot of bounces.
+
+gmail, yahoo, hotmail, aol have special rules
+
+For example :
+<?php
+
+$email_a = '0hot\'mail_check@hotmail.com';
+if (filter_var($email_a, FILTER_VALIDATE_EMAIL)) {
+    echo "This (email_a) email address is considered valid.";
+   //reported as valid
+}
+
+//there can be no  "0hotmail_check@hotmail.com"
+//because hotmail will say "Your email address needs to start with a letter.
+Please try again." even if you remove the '
+?>
+===============================================================================
+
+E-mail validator function that supports IPv6 and checking length.
+This also supports Japanese old feature phone E-mail address by sending second
+argument $strict as FALSE.
+
+<?php
+
+function validate_email($email, $strict = true) {
+    $dot_string = $strict ?
+        '(?:[A-Za-z0-9!#$%&*+=?^_`{|}~\'\\/-]|(?<!\\.|\\A)\\.(?!\\.|@))' :
+        '(?:[A-Za-z0-9!#$%&*+=?^_`{|}~\'\\/.-])'
+    ;
+    $quoted_string = '(?:\\\\\\\\|\\\\"|\\\\?[A-Za-z0-9!#$%&*+=?^_`{|}~()<>[\
+\]:;@,. \'\\/-])';
+    $ipv4_part = '(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])';
+    $ipv6_part = '(?:[A-fa-f0-9]{1,4})';
+    $fqdn_part = '(?:[A-Za-z](?:[A-Za-z0-9-]{0,61}?[A-Za-z0-9])?)';
+    $ipv4 = "(?:(?:{$ipv4_part}\\.){3}{$ipv4_part})";
+    $ipv6 = '(?:' .
+        "(?:(?:{$ipv6_part}:){7}(?:{$ipv6_part}|:))" . '|' .
+        "(?:(?:{$ipv6_part}:){6}(?::{$ipv6_part}|:{$ipv4}|:))" . '|' .
+        "(?:(?:{$ipv6_part}:){5}(?:(?::{$ipv6_part}){1,2}|:{$ipv4}|:))" . '|' .
+        "(?:(?:{$ipv6_part}:){4}(?:(?::{$ipv6_part}){1,3}|(?::{$ipv6_part})?:{
+$ipv4}|:))" . '|' .
+        "(?:(?:{$ipv6_part}:){3}(?:(?::{$ipv6_part}){1,4}|(?::{$ipv6_part})
+{0,2}:{$ipv4}|:))" . '|' .
+        "(?:(?:{$ipv6_part}:){2}(?:(?::{$ipv6_part}){1,5}|(?::{$ipv6_part})
+{0,3}:{$ipv4}|:))" . '|' .
+        "(?:(?:{$ipv6_part}:){1}(?:(?::{$ipv6_part}){1,6}|(?::{$ipv6_part})
+{0,4}:{$ipv4}|:))" . '|' .
+        "(?::(?:(?::{$ipv6_part}){1,7}|(?::{$ipv6_part}){0,5}:{$ipv4}|:))" .
+    ')';
+    $fqdn = "(?:(?:{$fqdn_part}\\.)+?{$fqdn_part})";
+    $local = "({$dot_string}++|(\"){$quoted_string}++\")";
+    $domain = "({$fqdn}|\\[{$ipv4}]|\\[{$ipv6}]|\\[{$fqdn}])";
+    $pattern = "/\\A{$local}@{$domain}\\z/";
+    return preg_match($pattern, $email, $matches) &&
+        (
+            !empty($matches[2]) && !isset($matches[1][66]) && !isset($matches[0
+][256]) ||
+            !isset($matches[1][64]) && !isset($matches[0][254])
+        )
+    ;
+}
+
+?>
+===============================================================================
+
+Here's a simple test using filter_var with FILTER_VALIDATE_URL.
+(If you're using file_get_contents after this you will run into a problem, I
+was using: PHP 5.5.12 (cli))
+
+<?php
+$url = 'a://google.com';
+
+$result = filter_var($url, FILTER_VALIDATE_URL);
+
+if($result){
+    echo 'Valid URL'.PHP_EOL;
+}
+
+var_dump($result);
+?>
+
+The result is:
+Valid URL
+string(14) "a://google.com"
+===============================================================================
+
+FILTER_VALIDATE_URL validates a url like http://www.
+===============================================================================
+
+Some boolean conversions:
+
+<?php
+var_dump(filter_var('oops', FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// NULL
+
+var_dump(filter_var('false', FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// bool(false)
+
+var_dump(filter_var('true', FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// bool(true)
+
+var_dump(filter_var(0, FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// bool(false)
+
+var_dump(filter_var(1, FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// bool(true)
+
+var_dump(filter_var('TRUE', FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// bool(true)
+
+var_dump(filter_var('', FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// bool(false)
+
+var_dump(filter_var('FALSE', FILTER_VALIDATE_BOOLEAN, array('flags' => 
+FILTER_NULL_ON_FAILURE)));
+// bool(false)
+===============================================================================
+
+Many people, myself included, have found that the FILTER_VALIDATE_EMAIL does
+not actually properly work.
+
+Below is a wrapper that I believe validates every legal routable address.
+
+<?php
+
+/*******************************************
+*
+* These are the function
+*
+*  check_username is called by check_email
+*  - it compensates for bugs in the php
+*    filter_var function.
+*  - returns boolean
+*
+*  check_email is the function to use.
+*  First argument is string, address to
+*    check
+*  Second argument is optional boolean,
+*    whether or not to use DNS to validate
+*    the domain name. Defaults to true
+*  Returns boolean
+*
+*/
+
+function check_username($uname) {
+  //Only UTF-8 addresses are legal
+  if (iconv('UTF-8', 'UTF-8', $input) != $input) {
+      return FALSE;
+  }
+  //replace all characters above U+007F with letter U for simplicity of
+checking
+  $uname = preg_replace('/[\x{007F}-\x{FFFF}]/u', 'U', $uname);
+ 
+  //remove comments - only legal in format (comment) at beginning or end of
+username
+  $s[] = '/^\([^\)]*\)/'; $s[] = '/\([^\)]*\)$/';
+  $uname = preg_replace($s, '', $uname);
+  //make sure we have something left
+  if(strlen(trim($uname)) == 0) {
+    return FALSE;
+  }
+  // check for legal dot usage
+  if(substr_count($uname, '..') > 0) {
+    return FALSE;
+  }
+  // convert \\ and \" to an A for simplicity
+  $s[] = '/[\\\][\\\]/';
+  $s[] = '/\\\"/';
+  $uname = preg_replace($s, 'A', $uname);
+  // check for illegal use of quotes
+  if(preg_match('/[^.]+"[^.]+/', $uname)) {
+    return FALSE;
+  }
+  // compensate for characters legal when in quotes
+  $uname = preg_replace_callback('/"(.*)"/', function ($m) {
+    $s[]="/[ \(\),\:;<>@\[\] ]/";
+    return preg_replace($s,'Q',$m[1]);
+    }, $uname);
+  // check what we have left with filter_var
+  return filter_var($uname . '@example.org', FILTER_VALIDATE_EMAIL);
+}
+
+function check_email($email, $dns_check=true) {
+  $array = explode('@', $email);
+  if(count($array) < 2) {
+    return FALSE;
+  }
+  $domain = end($array);
+  array_pop($array);
+  if(function_exists('idn_to_ascii')) {
+    //php filter no workie with unicode characters
+    $domain = idn_to_ascii($domain);
+  }
+  $ipcheck = preg_replace(array('/^\[ipv6\:/i', '/^\[/', '/\]$/'), '', $domain
+);
+  if(filter_var($ipcheck, FILTER_VALIDATE_IP)) {
+    // it's an IP address
+    if(! filter_var($ipcheck, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | 
+FILTER_FLAG_NO_RES_RANGE)) {
+      return FALSE;
+    }
+  } else {
+    // it's a domain name
+    //   php bug - FILTER_VALIDATE_EMAIL doesn't like naked TLD
+    if(! filter_var('user@a.' . $domain, FILTER_VALIDATE_EMAIL)) {
+      return FALSE;
+    }
+    if($dns_check) {
+      if(! dns_get_record($domain)) {
+        return FALSE;
+      }
+    }
+  }
+  //now check legal username
+  return check_username(implode('@', $array));
+}
+?>
+It evaluates the address in two parts, first evaluating the host and if that
+legal it then evaluates the user name.
+
+If there is a DNS problem *and* the default $dns_check value of true is used,
+valid will fail. If it is an international domain name, you have to have the
+php-intl package installed.
+
+Enjoy.
+===============================================================================
+
+Note: filter_var with filter=FILTER_VALIDATE_URL used parse_url function
+===============================================================================
+
+I managed to get this to work with PHP 5.1.6 on CentOS 5 with minor difficulty.
+
+1) Download the PECL filter package
+2) Extract the tarball
+3) phpize the directory
+4) ./configure
+5) make
+6) filter-0.11.0/logical_filters.c:25:31: error: ext/pcre/php_pcre.h: No such
+file or directory
+7) find / -name php_pcre.h
+8) Make sure php-devel is installed
+9) Edit filter-0.11.0/logical_filters.c and replace "ext/pcre/php_pcre.h" with
+the absolute path of php_pcre.h
+10) make
+11) make install
+12) add "extension=filter.so" to php.ini
+13) Restart Apache
+===============================================================================
+
+In the options, "logical disjunction" means "or" - for example:
+filter_var($somestring ,FILTER_SANITIZE_STRING, FILTER_FLAG_STRIP_LOW |
+FILTER_FLAG_STRIP_HIGH);
+===============================================================================
+
+FILTER_VALIDATE_URL does not support internationalized domain name (IDN). Valid
+or not, no domain name with Unicode chars on it will pass validation.
+
+We can circumvent this with a home grown solutions, but C code is C code, so
+I've gone for the code bellow, which builds on filter_var().
+
+<?php
+$res = filter_var ($uri, FILTER_VALIDATE_URL);
+if ($res) return $res;
+// Check if it has unicode chars.
+$l = mb_strlen ($uri);
+if ($l !== strlen ($uri)) {
+    // Replace wide chars by “X”.
+    $s = str_repeat (' ', $l);
+    for ($i = 0; $i < $l; ++$i) {
+        $ch = mb_substr ($uri, $i, 1);
+        $s [$i] = strlen ($ch) > 1 ? 'X' : $ch;
+    }
+    // Re-check now.
+    $res = filter_var ($s, FILTER_VALIDATE_URL);
+    if ($res) {    $uri = $res; return 1;    }
+}
+?>
+
+The logic is simple. A non-ascii char is more than one byte long. We replace
+every one of those chars by "X" and check again.
+
+An alternative will be to punycode the URI before calling filter_var(), but PHP
+lacks native support for punycode. I think my approach is effective. Please
+e-mail me if you think otherwise or see room for improvement.
+===============================================================================
+
+For those looking for private ip checking, there it is:
+<?php
+function is_private_ip($ip)
+{
+     return !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE);
+}
+?>
+===============================================================================
+
+Note that when using FILTER_VALIDATE_INT along with the FILTER_FLAG_ALLOW_HEX
+flag, the string "2f", for example, is not validated successfully, because you
+must use the "0x" prefix, otherwise, it treats the data as base 10.
+
+The range options are also smart enough to recognize when the boundaries are
+exceeded in different bases.
+
+Here's an example:
+
+<?php
+
+$foo = '256';
+$bar = '0x100';
+var_dump(validate_int($foo)); // false, too large
+var_dump(validate_int($bar)); // false, too large
+
+function validate_int($input)
+{
+  return filter_var(
+    $input,
+    FILTER_VALIDATE_INT,
+
+    // We must pass an associative array
+    // to include the range check options.
+    array(
+      'flags'   => FILTER_FLAG_ALLOW_HEX,
+      'options' => array('min_range' => 1, 'max_range' => 0xff)
+    )
+  );
+}
+
+?>
+===============================================================================
+
+One key thing to remember about filtering integers is that the value for the
+option max_range must be less than or equal to the value of PHP_INT_MAX.
+
+filter_var($someVariable, FILTER_VALIDATE_INT, array('options' => array
+('min_range' => 1, 'max_range' => SOME_VALUE_GREATER_THAN_PHP_INT_MAX)));
+
+This will fail even if $someVariable is a valid integer in the expected range.
+
+This can show up when you are attempting to validate a potential key for an
+unsigned MySQL INT type (whose maximum value is 4294967295) on a 32-bit system,
+where the value of PHP_INT_MAX is 2147483647.
+===============================================================================
+
+FILTER_SANITIZE_EMAIL header injection test.
+
+<?php
+$InjString = "\r\n|\n|%0A|%0D|bcc:|to:|cc:|Content-Type:|Mime-Type:|";
+echo filter_var($InjString, FILTER_SANITIZE_EMAIL);
+?>
+
+||%0A|%0D|bcc|to|cc|Content-Type|Mime-Type|
+===============================================================================
+
+And ... if you also want to handle pre-encoded multi-byte international URL's,
+you can include the additional code here:
+
+<?php
+
+// convert multi-byte international url's by stripping multi-byte chars
+$uri = urldecode($uri) . ' ';
+$len = mb_strlen($uri);
+if ($len !== strlen($uri))
+{
+        $convmap = array(0x0, 0x2FFFF, 0, 0xFFFF);
+        $uri = mb_decode_numericentity($uri, $convmap, 'UTF-8');
+}
+$uri = trim($uri);
+
+// now, process pre-encoded MBI's
+$regex = '#&([a-z]{1,2})(?:acute|cedil|circ|grave|lig|orn|ring|slash|th|tilde|
+uml);#i';
+$uri_test = preg_replace($regex, '$1', htmlentities($uri, ENT_QUOTES, 'UTF-8'
+));
+if ($uri_test != '') {$uri = $uri_test;}
+
+?>
+===============================================================================
+
+Here are the other possible flags that you can use:
+http://us3.php.net/manual/hu/ref.filter.php
+===============================================================================
+
+Notice that filter_var with FILTER_VALIDATE_EMAIL does not work if you are
+trying to get a String from an XML document e.g. via xpath.
+
+I often use XML files as configuration files and use a function that returns a
+string from the config file via xpath. While this worked fine before 5.2.11, it
+doesn't anymore (and shouldn't, since it's an XML Element, not a String).
+
+To overcome this problem, $variable can be type-casted:
+
+<?php
+$variable = fancyXmlGetFunction('from');
+filter_var((String) $variable, FILTER_VALIDATE_EMAIL);
+?>
+===============================================================================
+
+How to pass options and flags-
+
+<?php
+$options = array();
+$options['options']['min_range'] = 1;
+$options['options']['max_range'] = 10;
+$options['flags'] = FILTER_FLAG_ALLOW_OCTAL;
+filter_var(3, FILTER_VALIDATE_INT, $options);
+?>

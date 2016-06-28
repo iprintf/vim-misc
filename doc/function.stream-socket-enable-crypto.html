@@ -1,0 +1,172 @@
+
+stream_socket_enable_crypto
+
+(PHP 5 >= 5.1.0, PHP 7)
+
+stream_socket_enable_crypto — Turns encryption on/off on an already connected
+socket
+
+说明
+
+mixed stream_socket_enable_crypto ( resource $stream , bool $enable [, int
+$crypto_type [, resource $session_stream ]] )
+
+Enable or disable encryption on the stream.
+
+Once the crypto settings are established, cryptography can be turned on and off
+dynamically by passing TRUE or FALSE in the enable parameter.
+
+参数
+
+stream
+
+    The stream resource.
+
+enable
+
+    Enable/disable cryptography on the stream.
+
+crypto_type
+
+    Setup encryption on the stream. Valid methods are
+      □ STREAM_CRYPTO_METHOD_SSLv2_CLIENT
+      □ STREAM_CRYPTO_METHOD_SSLv3_CLIENT
+      □ STREAM_CRYPTO_METHOD_SSLv23_CLIENT
+      □ STREAM_CRYPTO_METHOD_TLS_CLIENT
+      □ STREAM_CRYPTO_METHOD_SSLv2_SERVER
+      □ STREAM_CRYPTO_METHOD_SSLv3_SERVER
+      □ STREAM_CRYPTO_METHOD_SSLv23_SERVER
+      □ STREAM_CRYPTO_METHOD_TLS_SERVER
+
+    If omitted, the crypto_type context option on the stream's SSL context will
+    be used instead.
+
+session_stream
+
+    Seed the stream with settings from session_stream.
+
+返回值
+
+Returns TRUE on success, FALSE if negotiation has failed or 0 if there isn't
+enough data and you should try again (only for non-blocking sockets).
+
+更新日志
+
+版本                说明
+5.6.0 The crypto_type is now optional.
+
+范例
+
+Example #1 stream_socket_enable_crypto() example
+
+<?php
+$fp = stream_socket_client("tcp://myproto.example.com:31337", $errno, $errstr, 
+30);
+if (!$fp) {
+    die("Unable to connect: $errstr ($errno)");
+}
+
+/* Turn on encryption for login phase */
+stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_SSLv23_CLIENT);
+fwrite($fp, "USER god\r\n");
+fwrite($fp, "PASS secret\r\n");
+
+/* Turn off encryption for the rest */
+stream_socket_enable_crypto($fp, false);
+
+while ($motd = fgets($fp)) {
+    echo $motd;
+}
+
+fclose($fp);
+?>
+
+以上例程的输出类似于：
+
+参见
+
+  • OpenSSL 函数
+  • 所支持的套接字传输器（Socket Transports）列表
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+As already mentioned above:
+
+stream_socket_enable_crypto is likely to fail/return zero if the socket is in
+non-blocking mode.
+
+You may either wait some seconds until all neccessary data has arrived or
+switch temporary to blocking mode:
+
+<?PHP
+
+  stream_set_blocking ($fd, true);
+  stream_socket_enable_crypto ($fd, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+  stream_set_blocking ($fd, false);
+
+?>
+
+This works very fine for me ;-)
+===============================================================================
+
+Just to avoid letting you search everywhere why your code doesn't work when
+using this function to enable crypto as a server, and when using TLS, you have
+to put the certificate in the "ssl" context, even if you start a TLS, SSLv3,
+etc.. server.
+
+I had some troubles because of that...
+===============================================================================
+
+Constants added in PHP 5.6 :
+
+STREAM_CRYPTO_METHOD_ANY_CLIENT
+STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT
+STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT
+STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
+STREAM_CRYPTO_METHOD_ANY_SERVER
+STREAM_CRYPTO_METHOD_TLSv1_0_SERVER
+STREAM_CRYPTO_METHOD_TLSv1_1_SERVER
+STREAM_CRYPTO_METHOD_TLSv1_2_SERVER
+
+Now, be careful because since PHP 5.6.7, STREAM_CRYPTO_METHOD_TLS_CLIENT (same
+for _SERVER) no longer means any tls version but tls 1.0 only (for "backward
+compatibility"...).
+
+Before PHP 5.6.7 :
+STREAM_CRYPTO_METHOD_SSLv23_CLIENT = STREAM_CRYPTO_METHOD_SSLv2_CLIENT|
+STREAM_CRYPTO_METHOD_SSLv3_CLIENT
+STREAM_CRYPTO_METHOD_TLS_CLIENT = STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT|
+STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT|STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
+
+PHP >= 5.6.7
+STREAM_CRYPTO_METHOD_SSLv23_CLIENT = STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT|
+STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT|STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
+STREAM_CRYPTO_METHOD_TLS_CLIENT = STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT
+
+PHP bug : https://bugs.php.net/bug.php?id=69195
+Commit : https://github.com/php/php-src/commit/
+10bc5fd4c4c8e1dd57bd911b086e9872a56300a0
+
+STREAM_CRYPTO_METHOD_SSLv23_CLIENT is not safe to use because before php 5.6.7,
+it means sslv2 or sslv3. So, you should do this :
+<?php
+$crypto_method = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+
+if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) {
+    $crypto_method |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
+    $crypto_method |= STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT;
+}
+
+stream_socket_enable_crypto($socket, true, $crypto_method);
+?>
+===============================================================================
+
+There is an error in the description of the third argument:
+"If omitted, the crypto_type context option on the stream's SSL context will be
+used instead."
+
+The name of the context option is "crypto_method", NOT "crypto_type" which is
+just the name of the argument.

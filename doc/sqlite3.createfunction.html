@@ -1,0 +1,123 @@
+
+SQLite3::createFunction
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+SQLite3::createFunction — Registers a PHP function for use as an SQL scalar
+function
+
+说明
+
+public bool SQLite3::createFunction ( string $name , mixed $callback [, int
+$argument_count = -1 ] )
+
+Registers a PHP function or user-defined function for use as an SQL scalar
+function for use within SQL statements.
+
+参数
+
+name
+
+    Name of the SQL function to be created or redefined.
+
+callback
+
+    The name of a PHP function or user-defined function to apply as a callback,
+    defining the behavior of the SQL function.
+
+argument_count
+
+    The number of arguments that the SQL function takes. If this parameter is
+    negative, then the SQL function may take any number of arguments.
+
+返回值
+
+Returns TRUE upon successful creation of the function, FALSE on failure.
+
+范例
+
+Example #1 SQLite3::createFunction() example
+
+<?php
+function my_udf_md5($string) {
+    return md5($string);
+}
+
+$db = new SQLite3('mysqlitedb.db');
+$db->createFunction('my_udf_md5', 'my_udf_md5');
+
+var_dump($db->querySingle('SELECT my_udf_md5("test")'));
+?>
+
+以上例程的输出类似于：
+
+string(32) "098f6bcd4621d373cade4e832627b4f6"
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+Since regular expression is not supported by default SQLite, we can create a
+user function to do the job.
+
+<?php
+
+$db = new SQLite3("database.sqlit3", 0666);
+
+// create a function named "preg_match"
+// with the php core function "preg_match"
+if ($db->createFunction("preg_match", "preg_match", 2) === FALSE)
+  exit("Failed creating function\n");
+
+// this query will then works as expected
+$result = $db->query("SELECT * FROM table1 WHERE
+  preg_match('/^(apple|orange)$/', variable1)");
+
+?>
+===============================================================================
+
+In PHP 5.4 there will be a createCollation method to use your custom collation
+method, to be able to sort datasets using unicode, like this:
+
+<?php
+setlocale(LC_COLLATE, 'fr_FR.UTF-8');
+$db->createCollation('PHP_COLLATE', 'strcoll');
+
+$db->query('SELECT * FROM my_table ORDER BY name COLLATE PHP_COLLATE;');
+?>
+
+But until this cool feature becomes available, you'll have to do some tricks,
+like this for french:
+
+<?php
+function sqlite3_to_ascii($str, $charset = 'UTF-8')
+{
+    // Don't process empty strings
+    if (!trim($str))
+        return $str;
+
+    // We only process non-ascii strings
+    if (preg_match('!^[[:ascii:]]+$!', $str))
+        return $str;
+
+    $str = htmlentities($str, ENT_NOQUOTES, $charset);
+
+    $str = preg_replace('#&([A-za-z])(?:acute|cedil|circ|grave|orn|ring|slash|
+th|tilde|uml);#', '\1', $str);
+    $str = preg_replace('#&([A-za-z]{2})(?:lig);#', '\1', $str);
+    $str = preg_replace('#&[^;]+;#', '', $str);
+
+    return $str;
+}
+
+$db->createFunction('to_ascii', 'sqlite3_to_ascii', 1);
+$res = $db->query('SELECT * FROM test ORDER BY to_ascii(text);');
+?>
+
+This will convert non-ascii characters to ascii ones before collation. In fact
+this won't work with non-latin languages, but for latin-languages it's better
+than nothing.
+
+Please note that this will slow down about 1.8 times the query (tested on a
+10.000 rows table).

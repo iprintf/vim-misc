@@ -1,0 +1,339 @@
+
+The SoapServer class
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+简介
+
+The SoapServer class provides a server for the » SOAP 1.1 and » SOAP 1.2
+protocols. It can be used with or without a WSDL service description.
+
+类摘要
+
+SoapServer {
+/* 方法 */
+public void addFunction ( mixed $functions )
+public void addSoapHeader ( SoapHeader $object )
+public __construct ( mixed $wsdl [, array $options ] )
+public void fault ( string $code , string $string [, string $actor [, string
+$details [, string $name ]]] )
+public array getFunctions ( void )
+public void handle ([ string $soap_request ] )
+public void setClass ( string $class_name [, mixed $args [, mixed $... ]] )
+public void setObject ( object $object )
+public void setPersistence ( int $mode )
+public SoapServer ( mixed $wsdl [, array $options ] )
+}
+
+Table of Contents
+
+  • SoapServer::addFunction — 添加一个或多个函数来处理SOAP请求
+  • SoapServer::addSoapHeader — Add a SOAP header to the response
+  • SoapServer::__construct — SoapServer constructor
+  • SoapServer::fault — Issue SoapServer fault indicating an error
+  • SoapServer::getFunctions — Returns list of defined functions
+  • SoapServer::handle — Handles a SOAP request
+  • SoapServer::setClass — Sets the class which handles SOAP requests
+  • SoapServer::setObject — Sets the object which will be used to handle SOAP
+    requests
+  • SoapServer::setPersistence — Sets SoapServer persistence mode
+  • SoapServer::SoapServer — SoapServer constructor
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+While there are plenty of mentions online that SoapServer doesn't support SOAP
+Headers, this isn't true.
+
+In your class, if you declare a function with the name of the header, the
+function will be called when that header is received.
+
+<?php
+class MySoapService {
+  private $user_is_valid;
+
+  function MyHeader($header) {
+    if ((isset($header->Username)) && (isset($header->Password))) {
+      if (ValidateUser($header->Username, $header->Password)) {
+        $user_is_valid = true;
+      }
+    }
+  }
+
+  function MySoapRequest($request) {
+    if ($user_is_valid) {
+      // process request
+    }
+    else {
+      throw new MyFault("MySoapRequest", "User not valid.");
+    }
+  }
+}
+?>
+===============================================================================
+
+I posted in this URL http://softontherocks.blogspot.com/2014/02/
+web-service-soap-con-php.html a full example of a nusoap web service.
+
+There is defined the server and the cliente who calls the web service.
+
+I hope it would be useful for you.
+===============================================================================
+
+SoapServer does not support WSDL with literal/document. I have a class:
+
+<?php
+class My_Soap {
+    /**
+     * Returns Hello World.
+     *
+     * @param string $world
+     * @return string
+     */
+    public function getInterAdmins($world) {
+        return 'hello' . $world;
+    }
+}
+?>
+
+To fix this I had to create proxy class:
+<?php
+class My_Soap_LiteralDocumentProxy {
+   public function __call($methodName, $args) {
+       $soapClass = new My_Soap();
+       $result = call_user_func_array(array($soapClass, $methodName),  $args[0
+]);
+       return array($methodName . 'Result' => $result);
+   }
+}
+?>
+
+Now make sure that the WSDL is created using My_Soap. And that the Server is
+created using My_Soap_LiteralDocumentProxy:
+
+<?php
+
+if (isset($_GET['wsdl'])) {
+    $wsdl = new Zend_Soap_AutoDiscover(); // It generates the WSDL
+    $wsdl->setOperationBodyStyle(array(
+        'use' => 'literal'
+    ));
+    $wsdl->setBindingStyle(array(
+        'style' => 'document'
+    ));
+    $wsdl->setClass('My_Soap');
+    $wsdl->handle();
+} else {
+    $server = new Zend_Soap_Server('http://localhost/something/webservice.php?
+wsdl');
+    $server->setClass('My_Soap_LiteralDocumentProxy');
+    $server->handle();
+}
+
+?>
+===============================================================================
+
+As the SoapServer class lacks the possibility of dealing with SOAP-Headers, my
+following workaround is suitable to my needs when I had to do authentication
+via the SOAP-Headers:
+1. Use a class which handles SOAP requests and let the constructor of this
+class take the sent headers.
+2. Before invoking the SoapServer extract the SOAP-Header from the incoming raw
+data.
+3. When using setClass pass the extracted header to the handling class.
+
+In Your Server-Skript do things like this
+<?php
+$hdr = file_get_contents("php://input");
+if (strpos($hdr,'<s:Header>')===false) {
+    $hdr = null;
+} else {
+    $hdr = explode('<s:Header>',$hdr);
+    $hdr = explode('</s:Header>',$hdr[1]);
+    $hdr = $hdr[0];
+}
+$srv = new SoapServer('Your_wsdl');
+$srv->setClass("ServiceClass",$hdr);
+$srv->handle();
+?>
+
+And the service class is like this:
+<?php
+class ServiceClass {
+    var $IsAuthenticated;
+
+    function __construct($hdr) {
+        $this->IsAuthenticated = false;
+        if ($hdr!=null) {
+            $this->header = simplexml_load_string($hdr);
+            //Your authentication stuff goes here...
+        }
+    }
+   
+    function SomeFunctionOfTheService($a) {
+        if ($this->IsAuthenticated) {
+            //here Your function...
+        }
+    }
+
+}
+?>
+===============================================================================
+
+Do not put a SoapServer and a SoapClient in the same PHP file. This seems to
+cause arbitrary behavior. On the PHP interpreter in Eclipse, everything worked
+fine. Under MAMP, I got an undocumented error. In moving the client from the
+same file as the server, everything worked fine.
+===============================================================================
+
+I was running PHP 5.3.2 and couldn't for the life of me get SOAP headers to
+work, no matter how carefully I built my class/wsdl/client.  What finally fixed
+it was updating to the latest PHP.  No idea if there was a bug somewhere or
+what, but it's never a bad idea to stay current and it might save you weeks of
+frustration!
+===============================================================================
+
+Another simple example for SOAP_SERVER with errorhandling an params and wsdl:
+
+SERVER (soap_all_srv.php):
+
+<?php
+// PEAR::SOAP einbinden
+require_once "SOAP/Server.php";
+$skiptrace =& PEAR::getStaticProperty('PEAR_Error', 'skiptrace');
+$skiptrace = true;
+
+// Service-Class
+class mytimeserv {
+
+  // __dispatch_map
+  public $__dispatch_map = array ();
+ 
+  // In/Out param -> __dispatch_map
+  public function __construct() {
+    $this->__dispatch_map["now"] =
+      array ("in" => array("format" => "string"),
+             "out" => array("time" => "string"));
+  }
+ 
+  // get back __dispatch_map in __dispatch
+  public function __dispatch($methodname) {
+ 
+    if (isset($this->__dispatch_map[$methodname])) {
+      return $this->__dispatch_map[$methodname];
+    }
+   
+    return NULL;
+  }
+ 
+  // servicemthod with parameters
+  function now ($format) {
+ 
+    // formaterror?
+    if (($format == null) || (trim($format) == "")) {
+   
+      // send errormessage
+      return new SOAP_Fault("Kein Parameter angegeben","0815", "Client");
+    }
+   
+    date_default_timezone_set('Europe/Berlin');
+   
+    $time = date ($format);
+   
+    // return SOAP-Obj.
+    return (new SOAP_Value('time','string', $time));
+  }      
+}
+
+// service-class
+$service = new mytimeserv();
+
+// server
+$ss = new SOAP_Server();
+
+// add service with name
+$ss->addObjectMap (&$service,"urn:mytimeserv");
+
+// service or wsdl
+if (isset($_SERVER["REQUEST_METHOD"])&& $_SERVER["REQUEST_METHOD"] == "POST") {
+
+    // postdata -> service
+    $ss->service ($HTTP_RAW_POST_DATA);
+   
+} else {
+
+  // wsdl-param in url
+  if (isset($_SERVER['QUERY_STRING']) && strcasecmp($_SERVER['QUERY_STRING'],
+'wsdl') == 0) {
+   
+    // DISCO_Server for WSDL
+    require_once "SOAP/Disco.php";
+    $disco = new SOAP_DISCO_Server ($ss,"mytimeserv","My Time Service");
+   
+    // set HTML-Header
+    header("Content-type: text/xml");
+   
+    // return wsdl
+    print $disco->getWSDL ();
+  }
+}
+
+?>
+
+CLIENT (soap_all_client.php) (for wsdl: http://example.com/soap_all_srv.php?
+wsdl):
+<?php
+
+require_once "SOAP/Client.php";
+
+// SOAP/WSDL
+$sw = new SOAP_WSDL ("http://example.com/soap_all_srv.php?wsdl");
+
+// Proxy-Obj.
+$proxy = $sw->getProxy ();
+
+// servicemthod
+$erg = $proxy->now ("H:i:s");
+
+// return
+print $erg."\n";
+
+?>
+===============================================================================
+
+If you want to return a custom object array from a nusoap webservice, you have
+to cast the objects to arrays like so:
+
+<?php
+$users = array();
+while($res = $db_obj->fetch_row())
+{
+  $user = new user();
+  $user->Id = $res['id'];
+  $user->Username = $res['username'];
+  $user->Email = $res['email'];
+ 
+  $users[] = (array) $user;
+}
+
+return ($users);
+?>
+===============================================================================
+
+For those (like me) coming from other SOAP frameworks and getting confused:
+
+- A PHP SOAP server application created using the SoapServer class can not be
+used as a standalone SOAP server.
+It needs an HTTP server to receive SOAP requests, which must run a PHP engine
+to execute the PHP SOAP server script as a CGI.
+
+- For this reason, there are no settings in PHP that control the Interface/Port
+under which the SOAP server will wait for requests - it is the HTTP server who
+is responsible for that.
+
+- The "uri" parameter is an "id value", used as the namespace for the SOAP
+response. It is only required if no WSDL file is used (that contains this
+setting), i.e. "wsdl" is set to NULL. It does _not_ control the Hostname/Port
+under which the HTTP server will be reachable for requests.

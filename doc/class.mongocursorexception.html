@@ -1,0 +1,252 @@
+
+The MongoCursorException class
+
+(PECL mongo >= 1.0.0)
+
+简介
+
+Caused by accessing a cursor incorrectly or a error receiving a reply. Note
+that this can be thrown by any database request that receives a reply, not just
+queries. Writes, commands, and any other operation that sends information to
+the database and waits for a response can throw a MongoCursorException. The
+only exception is new MongoClient() (creating a new connection), which will
+only throw MongoConnectionExceptions.
+
+This returns a specific error message to help diagnose the problem and a
+numeric error code associated with the cause of the exception.
+
+For example, suppose you tried to insert two documents with the same _id:
+<?php
+
+try {
+    $collection->insert(array("_id" => 1), array("w" => 1));
+    $collection->insert(array("_id" => 1), array("w" => 1));
+}
+catch (MongoCursorException $e) {
+    echo "error message: ".$e->getMessage()."\n";
+    echo "error code: ".$e->getCode()."\n";
+}
+
+?>
+This would produce output like:
+
+error message: E11000 duplicate key error index: foo.bar.$_id_  dup key: { : 1 }
+error code: 11000
+
+Note that the MongoDB error code (11000) is used for the PHP error code. The
+PHP driver uses the "native" error code wherever possible.
+
+The following is a list of common errors, codes, and causes. Exact errors are
+in italics, errors where the message can vary are described in obliques.
+
+  • cannot modify cursor after beginning iteration
+
+    Code: 0
+
+    You are calling a method that sets up the query after executing the query.
+    Reset the cursor and try again.
+
+    An example:
+    <?php
+
+    try {
+        $cursor = $collection->find();
+        var_dump($cursor->getNext());
+
+        // getNext() queried the database, it's too late to set a limit
+        $cursor->limit(1);
+    }
+    catch (MongoCursorException $e) {
+        echo "error message: ".$e->getMessage()."\n";
+        echo "error code: ".$e->getCode()."\n";
+    }
+
+    // this will work, though:
+    $cursor->getNext();
+    $cursor->reset();
+    $cursor->limit(1);
+
+    ?>
+
+  • Get next batch send errors
+
+    Code: 1
+
+    Could not send the query to the database. Make sure the database is still
+    up and the network is okay.
+
+  • cursor not found
+
+    Code: 2
+
+    The driver was trying to fetch more results from the database, but the
+    database did not have a record of the query. This usually means that the
+    cursor timed out on the server side: after a few minutes of inactivity, the
+    database will kill a cursor (see MongoCursor::immortal() for information on
+    preventing this).
+
+    An example:
+    <?php
+
+    try {
+        $cursor = $collection->find();
+        $cursor->getNext();
+
+        // sleep for 15 minutes
+        sleep(60*15);
+
+        while ($cursor->hasNext()) {
+            $cursor->getNext();
+        }
+    }
+    catch (MongoCursorException $e) {
+        echo "error message: ".$e->getMessage()."\n";
+        echo "error code: ".$e->getCode()."\n";
+    }
+
+    ?>
+
+  • cursor->buf.pos is null
+
+    Code: 3
+
+    This may indicate you are out of RAM or some other extraordinary
+    circumstance.
+
+  • couldn't get response header
+
+    Code: 4
+
+    A common error if the database or network goes down. This means that the
+    driver couldn't get a response from the connection.
+
+  • no db response
+
+    Code: 5
+
+    This may not even be an error, for example, the database command "shutdown"
+    returns no response. However, if you were expecting a response, this means
+    the database didn't give one.
+
+  • bad response length: %d, did the db assert?
+
+    Code: 6
+
+    This means that the database said that its response was less than 0. This
+    error probably indicates a network error or database corruption.
+
+  • incomplete header
+
+    Code: 7
+
+    Highly unusual. Occurs if the database response started out correctly, but
+    broke off in the middle. Probably indicates a network problem.
+
+  • incomplete response
+
+    Code: 8
+
+    Highly unusual. Occurs if the database response started out correctly, but
+    broke off in the middle. Probably indicates a network problem.
+
+  • couldn't find a response
+
+    Code: 9
+
+    If the response was cached and now cannot be located.
+
+  • error getting socket
+
+    Code: 10
+
+    The socket was closed or encountered an error. The driver should
+    automatically reconnect (if possible) on the next operation.
+
+  • couldn't find reply, please try again
+
+    Code: 11
+
+    The driver saves any database responses it cannot immediately match with a
+    request. This exception occurs if the driver has already passed your
+    request's response and cannot find your response in its cache.
+
+  • error getting database response: errstr
+
+    WSA error getting database response: errstr
+
+    "errstr" is an io error reported directly from the C socket subsystem. On
+    Windows, the error message is prefixed with "WSA".
+
+  • Timeout error
+
+    Code: 13
+
+    If there was an error while waiting for a query to complete.
+
+  • couldn't send query: <various>
+
+    Code: 14
+
+    C socket error on send.
+
+  • max number of retries exhausted, couldn't send query
+
+    Code: 19
+
+    The driver will automatically retry "plain" queries (not commands) a couple
+    of times if the first attempt failed for certain reasons. This is to cause
+    fewer exceptions during replica set failover (although you will probably
+    still have to deal with some) and gloss over transient network issues.
+
+    This can also be caused by the driver not being able to reconnect at all to
+    the database (if, for example, the database is unreachable).
+
+    Version 1.2.2+.
+
+Errors passed through by the database
+
+Database errors should always trigger MongoCursorExceptions on queries. Error
+messages and codes are sent directly from the database and you should be able
+to see matching errors in the database log.
+
+A few common database errors are listed below:
+
+  • E11000 duplicate key error index: foo.bar.$X dup key: { /* ... */ }
+
+    Code: 11000
+
+    Database error for duplicate keys.
+
+  • not master
+
+    Codes: 10107, 13435, and 10058
+
+    Not master errors, piped through by the database. ach of these will cause
+    the driver to disconnect and attempt to find a new primary. The actual
+    error you get on failover may not be a "not master" error, depending on
+    when the change in primary occurs.
+
+类摘要
+
+MongoCursorException extends MongoException {
+}
+
+Table of Contents
+
+  • MongoCursorException::getHost — 遇到该错误的服务器的 hostname
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+As all the exceptions are extending the base Exception class, you can get the
+code with the getCode() method:
+
+<?php
+try {
+    $collection->insert($duplicate_document, array('safe' => true));
+} catch (MongoCursorException $e) {
+    printf("Error code is %d.\n", $e->getCode();
+    exit(1);
+}

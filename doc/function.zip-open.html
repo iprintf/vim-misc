@@ -1,0 +1,503 @@
+
+zip_open
+
+(PHP 4 >= 4.1.0, PHP 5 >= 5.2.0, PHP 7, PECL zip >= 1.0.0)
+
+zip_open — 打开ZIP存档文件
+
+说明
+
+resource zip_open ( string $filename )
+
+打开一个新的ZIP归档文件进行读取。
+
+参数
+
+filename
+
+    待打开ZIP归档的文件名。
+
+返回值
+
+成功的时候返回一个资源句柄供函数zip_read() 和 zip_close()后续使用; 如果filename
+文件不存在或者出现其他错误，则会返回相应的错误码。
+
+参见
+
+  • zip_read() - 读取ZIP存档文件中下一项
+  • zip_close() - 关闭一个ZIP档案文件
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Note that the Zip functions return an integer error number in the event of
+error. So:
+
+<?php
+$zip = zip_open($file);
+
+if ($zip) {
+?>
+
+is incorrect. Instead use:
+
+<?php
+$zip = zip_open($file);
+
+if (is_resource($zip)) {
+?>
+===============================================================================
+
+my basic extract zip file function
+
+<?php
+    function ezip($zip, $hedef = '')
+    {
+        $root = $_SERVER['DOCUMENT_ROOT'];
+        $zip = zip_open($root . $zip);
+        while($zip_icerik = zip_read($zip)):
+            $zip_dosya = zip_entry_name($zip_icerik);
+            if(strpos($zip_dosya, '.')):
+                $hedef_yol = $root . $hedef . 'x/'.$zip_dosya;
+                touch($hedef_yol);
+                $yeni_dosya = fopen($hedef_yol, 'w+');
+                fwrite($yeni_dosya, zip_entry_read($zip_icerik));
+                fclose($yeni_dosya);
+            else:
+                @mkdir($root . $hedef . 'x/'.$zip_dosya);
+            endif;
+        endwhile;
+    }
+   
+    ezip('files.zip', 'unzip_files/');
+?>
+===============================================================================
+
+The zip_entry_read above is wrong.  Since the file was opened with popen, you
+have to read the file in chunks, so zip_entry_read should read:
+
+function zip_entry_read(&$res, $nbytes)
+{
+    $contents = '';
+    while (!feof($res['fp'])) {
+        $contents .= fread($res['fp'], 8192);
+    }
+    return $contents;
+}
+
+Otherwise, it was a very useful library.  Thanks!
+===============================================================================
+
+getting a mozilla addon version (a firefox extension, for instance):
+
+<?php
+    function get_addon_version($path)
+    {
+        // open zip
+        $zip = zip_open($path);
+
+            // find entry
+            do {
+                $entry = zip_read($zip);
+            } while ($entry && zip_entry_name($entry) != "install.rdf");
+
+            // open entry
+            zip_entry_open($zip, $entry, "r");
+
+                // read entry
+                $entry_content = zip_entry_read($entry, zip_entry_filesize(
+$entry));
+
+                // position of <em:version>
+                $version_open_pos = strpos($entry_content, "<em:version>");
+
+                // position of </em:version>
+                $version_close_pos = strpos($entry_content, "</em:version>", 
+$version_open_pos);
+
+                // version
+                $version = substr(
+                        $entry_content,
+                        $version_open_pos + strlen("<em:version>"),
+                        $version_close_pos - ($version_open_pos + strlen("
+<em:version>"))
+                );
+
+            // close entry
+            zip_entry_close($entry);
+
+        // close zip
+        zip_close($zip);
+
+        return $version;
+    }
+?>
+===============================================================================
+
+Note, this function ignores custom stream wrappers, like the ones created by
+stream_wrapper_register - which is really too bad.
+===============================================================================
+
+If your PHP installation does not have the zip_open function, and you can't
+install it for whatever reason, you can use these functions instead, if the
+server has access to the "unzip" utility (most Linux systems do).
+So far I have tested these only in Fedora Core 3.
+Use at your own risk.
+
+<?php
+
+function ShellFix($s)
+{
+  return "'".str_replace("'", "'\''", $s)."'";
+}
+
+function zip_open($s)
+{
+  $fp = @fopen($s, 'rb');
+  if(!$fp) return false;
+ 
+  $lines = Array();
+  $cmd = 'unzip -v '.shellfix($s);
+  exec($cmd, $lines);
+ 
+  $contents = Array();
+  $ok=false;
+  foreach($lines as $line) 
+  {
+    if($line[0]=='-') { $ok=!$ok; continue; }
+    if(!$ok) continue;
+   
+    $length = (int)$line;
+    $fn = trim(substr($line,58));
+   
+    $contents[] = Array('name' => $fn, 'length' => $length);
+  }
+ 
+  return
+    Array('fp'       => $fp, 
+          'name'     => $s,
+          'contents' => $contents,
+          'pointer'  => -1);
+}                          
+function zip_read(&$fp)
+{
+  if(!$fp) return false;
+ 
+  $next = $fp['pointer'] + 1;
+  if($next >= count($fp['contents'])) return false;
+
+  $fp['pointer'] = $next;
+  return $fp['contents'][$next];
+}
+function zip_entry_name(&$res)
+{
+  if(!$res) return false;
+  return $res['name'];
+}                          
+function zip_entry_filesize(&$res)
+{
+  if(!$res) return false;
+  return $res['length'];
+}
+function zip_entry_open(&$fp, &$res)
+{
+  if(!$res) return false;
+
+  $cmd = 'unzip -p '.shellfix($fp['name']).' '.shellfix($res['name']);
+ 
+  $res['fp'] = popen($cmd, 'r');
+  return !!$res['fp'];  
+}
+function zip_entry_read(&$res, $nbytes)
+{
+  return fread($res['fp'], $nbytes);
+}
+function zip_entry_close(&$res)
+{
+  fclose($res['fp']);
+  unset($res['fp']);
+}
+function zip_close(&$fp)
+{
+  fclose($fp['fp']);
+}
+?>
+===============================================================================
+
+The zip archive will NOT be saved on disk before ZipArchive::close() is called.
+(ZipArchive::close will be called automatically at the end of the script if you
+don't write that code.)
+
+If you want to delete a file after adding it to the zip archive, you should
+delete it after ZipArchive::close() is called. Otherwise, the file will be
+deleted before actually being added into the archive, which will make your zip
+archive fail to be saved.
+
+<?php
+    $za = new ZipArchive();
+    $za->open('./xc.zip', ZipArchive::CREATE|ZipArchive::OVERWRITE);
+    $file = './notes.txt';
+    if( true === $za->addFile($file)){
+        unlink($file);
+    }
+    if(!$za->close()){
+        echo 'failure.';
+    }
+?>
+===============================================================================
+
+@bisqwit at iki dot fi: If you're using older versions of PHP this skript might
+only read the first 8192 bytes. Great thing, anyway!
+===============================================================================
+
+Some older PHP versions used to return false if zip_open failed, and newer
+versions return the number of error (as integer), so instead of this:
+
+$zip = zip_open($zip_file);
+if ($zip) {
+  // consider zip file opened successfully
+}
+
+use this:
+
+$zip = zip_open($zip_file);
+if (is_resource($zip)) {
+  // consider zip file opened successfully
+}
+
+You may also use this function to get the error message by it's number:
+
+function zipFileErrMsg($errno) {
+  // using constant name as a string to make this function PHP4 compatible
+  $zipFileFunctionsErrors = array(
+    'ZIPARCHIVE::ER_MULTIDISK' => 'Multi-disk zip archives not supported.',
+    'ZIPARCHIVE::ER_RENAME' => 'Renaming temporary file failed.',
+    'ZIPARCHIVE::ER_CLOSE' => 'Closing zip archive failed',
+    'ZIPARCHIVE::ER_SEEK' => 'Seek error',
+    'ZIPARCHIVE::ER_READ' => 'Read error',
+    'ZIPARCHIVE::ER_WRITE' => 'Write error',
+    'ZIPARCHIVE::ER_CRC' => 'CRC error',
+    'ZIPARCHIVE::ER_ZIPCLOSED' => 'Containing zip archive was closed',
+    'ZIPARCHIVE::ER_NOENT' => 'No such file.',
+    'ZIPARCHIVE::ER_EXISTS' => 'File already exists',
+    'ZIPARCHIVE::ER_OPEN' => 'Can\'t open file',
+    'ZIPARCHIVE::ER_TMPOPEN' => 'Failure to create temporary file.',
+    'ZIPARCHIVE::ER_ZLIB' => 'Zlib error',
+    'ZIPARCHIVE::ER_MEMORY' => 'Memory allocation failure',
+    'ZIPARCHIVE::ER_CHANGED' => 'Entry has been changed',
+    'ZIPARCHIVE::ER_COMPNOTSUPP' => 'Compression method not supported.',
+    'ZIPARCHIVE::ER_EOF' => 'Premature EOF',
+    'ZIPARCHIVE::ER_INVAL' => 'Invalid argument',
+    'ZIPARCHIVE::ER_NOZIP' => 'Not a zip archive',
+    'ZIPARCHIVE::ER_INTERNAL' => 'Internal error',
+    'ZIPARCHIVE::ER_INCONS' => 'Zip archive inconsistent',
+    'ZIPARCHIVE::ER_REMOVE' => 'Can\'t remove file',
+    'ZIPARCHIVE::ER_DELETED' => 'Entry has been deleted',
+  );
+  $errmsg = 'unknown';
+  foreach ($zipFileFunctionsErrors as $constName => $errorMessage) {
+    if (defined($constName) and constant($constName) === $errno) {
+      return 'Zip File Function error: '.$errorMessage;
+    }
+  }
+  return 'Zip File Function error: unknown';
+}
+
+$zip = zip_open($zip_file);
+if (!is_resource($zip)) {
+  die(zipFileErrMsg($zip));
+}
+===============================================================================
+
+For bisqwit at iki dot fi solution of alternative functions there's just one
+problem when trying to read the file thats because some bug in fread when
+handling from popen so it just load 8192 bytes here's the function corrected.
+
+<?php
+
+    function zip_entry_read(&$res, $nbytes)
+    {
+     while ($s = fgets($res['fp'],1024)) {
+     $data  .= $s;
+     }
+      return $data;
+    }
+?>
+===============================================================================
+
+Function zip_entry_read() written by "bisqwit at iki dot fi" has to be modified
+to read entire files:
+
+<?php
+function zip_entry_read(&$res, $nbytes) {
+    while (!feof($res['fp'])) {
+        $contents .= fread($res['fp'], $nbytes);
+    }
+    return $contents;
+}
+?>
+===============================================================================
+
+If you want to simply extract a strain of a zip file, then use this func. Maybe
+it helps:
+
+<?php
+/**
+* This method unzips a directory within a zip-archive
+*
+* @author Florian 'x!sign.dll' Wolf
+* @license LGPL v2 or later
+* @link http://www.xsigndll.de
+* @link http://www.clansuite.com
+*/
+
+function extractZip( $zipFile = '', $dirFromZip = '' )
+{   
+    define(DIRECTORY_SEPARATOR, '/');
+
+    $zipDir = getcwd() . DIRECTORY_SEPARATOR;
+    $zip = zip_open($zipDir.$zipFile);
+
+    if ($zip)
+    {
+        while ($zip_entry = zip_read($zip))
+        {
+            $completePath = $zipDir . dirname(zip_entry_name($zip_entry));
+            $completeName = $zipDir . zip_entry_name($zip_entry);
+           
+            // Walk through path to create non existing directories
+            // This won't apply to empty directories ! They are created further
+below
+            if(!file_exists($completePath) && preg_match( '#^' . $dirFromZip .
+'.*#', dirname(zip_entry_name($zip_entry)) ) )
+            {
+                $tmp = '';
+                foreach(explode('/',$completePath) AS $k)
+                {
+                    $tmp .= $k.'/';
+                    if(!file_exists($tmp) )
+                    {
+                        @mkdir($tmp, 0777);
+                    }
+                }
+            }
+           
+            if (zip_entry_open($zip, $zip_entry, "r"))
+            {
+                if( preg_match( '#^' . $dirFromZip .'.*#', dirname(
+zip_entry_name($zip_entry)) ) )
+                {
+                    if ($fd = @fopen($completeName, 'w+'))
+                    {
+                        fwrite($fd, zip_entry_read($zip_entry, 
+zip_entry_filesize($zip_entry)));
+                        fclose($fd);
+                    }
+                    else
+                    {
+                        // We think this was an empty directory
+                        mkdir($completeName, 0777);
+                    }
+                    zip_entry_close($zip_entry);
+                }
+            }
+        }
+        zip_close($zip);
+    }
+    return true;
+}
+
+// The call to exctract a path within the zip file
+extractZip( 'clansuite.zip', 'core/filters' );
+?>
+===============================================================================
+
+See this class to make, read Infos or extract ZIP archive.
+see EasyArchive.class.php on http://ajaxbrowser.free.fr/ to manage like that
+ZIP, GZIP, BZIP and TAR archive.
+
+<?
+$ARCHIVE = new zip;
+
+$ARCHIVE->makeZip('./','./toto.zip'); // make an ZIP archive
+var_export($ARCHIVE->infosZip('./toto.zip'), false); // get infos of this ZIP
+archive (without files content)
+var_export($ARCHIVE->infosZip('./toto.zip')); // get infos of this ZIP archive
+(with files content)
+$ARCHIVE->extractZip('./toto.zip', './1/'); //
+
+class zip
+{
+    public function infosZip ($src, $data=true)
+    {
+        if (($zip = zip_open(realpath($src))))
+        {
+            while (($zip_entry = zip_read($zip)))
+            {
+                $path = zip_entry_name($zip_entry);
+                if (zip_entry_open($zip, $zip_entry, "r"))
+                {
+                    $content[$path] = array (
+                        'Ratio' => zip_entry_filesize($zip_entry) ? round
+(100-zip_entry_compressedsize($zip_entry) / zip_entry_filesize($zip_entry)*100,
+1) : false,
+                        'Size' => zip_entry_compressedsize($zip_entry),
+                        'NormalSize' => zip_entry_filesize($zip_entry));
+                    if ($data)
+                        $content[$path]['Data'] = zip_entry_read($zip_entry,
+zip_entry_filesize($zip_entry));
+                    zip_entry_close($zip_entry);
+                }
+                else
+                    $content[$path] = false;
+            }
+            zip_close($zip);
+            return $content;
+        }
+        return false;
+    }
+    public function extractZip ($src, $dest)
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($src)===true)
+        {
+            $zip->extractTo($dest);
+            $zip->close();
+            return true;
+        }
+        return false;
+    }
+    public function makeZip ($src, $dest)
+    {
+        $zip = new ZipArchive;
+        $src = is_array($src) ? $src : array($src);
+        if ($zip->open($dest, ZipArchive::CREATE) === true)
+        {
+            foreach ($src as $item)
+                if (file_exists($item))
+                    $this->addZipItem($zip, realpath(dirname($item)).'/',
+realpath($item).'/');
+            $zip->close();
+            return true;
+        }
+        return false;
+    }
+    private function addZipItem ($zip, $racine, $dir)
+    {
+        if (is_dir($dir))
+        {
+            $zip->addEmptyDir(str_replace($racine, '', $dir));
+            $lst = scandir($dir);
+                array_shift($lst);
+                array_shift($lst);
+            foreach ($lst as $item)
+                $this->addZipItem($zip, $racine, $dir.$item.(is_dir
+($dir.$item)?'/':''));
+        }
+        elseif (is_file($dir))
+            $zip->addFile($dir, str_replace($racine, '', $dir));
+    }
+}
+?>

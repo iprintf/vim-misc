@@ -1,0 +1,370 @@
+
+ord
+
+(PHP 4, PHP 5, PHP 7)
+
+ord — 返回字符的 ASCII 码值
+
+说明
+
+int ord ( string $string )
+
+返回字符串 string 第一个字符的 ASCII 码值。
+
+该函数是 chr() 的互补函数。
+
+参数
+
+string
+
+    一个字符。
+
+返回值
+
+返回整型的 ASCII 码值。
+
+范例
+
+Example #1 ord() 范例
+
+<?php
+$str = "\n";
+if (ord($str) == 10) {
+    echo "The first character of \$str is a line feed.\n";
+}
+?>
+
+参见
+
+  • chr() - 返回指定的字符
+  • » ASCII 码表
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+As ord() doesn't work with utf-8, and if you do not have access to mb_*
+functions, the following function will work well:
+<?php
+function ordutf8($string, &$offset) {
+    $code = ord(substr($string, $offset,1));
+    if ($code >= 128) {        //otherwise 0xxxxxxx
+        if ($code < 224) $bytesnumber = 2;                //110xxxxx
+        else if ($code < 240) $bytesnumber = 3;        //1110xxxx
+        else if ($code < 248) $bytesnumber = 4;    //11110xxx
+        $codetemp = $code - 192 - ($bytesnumber > 2 ? 32 : 0) - ($bytesnumber >
+3 ? 16 : 0);
+        for ($i = 2; $i <= $bytesnumber; $i++) {
+            $offset ++;
+            $code2 = ord(substr($string, $offset, 1)) - 128;        //10xxxxxx
+            $codetemp = $codetemp*64 + $code2;
+        }
+        $code = $codetemp;
+    }
+    $offset += 1;
+    if ($offset >= strlen($string)) $offset = -1;
+    return $code;
+}
+?>
+$offset is a reference, as it is not easy to split a utf-8 char-by-char. Useful
+to iterate on a string:
+<?php
+$text = "abcàêß€abc";
+$offset = 0;
+while ($offset >= 0) {
+    echo $offset.": ".ordutf8($text, $offset)."\n";
+}
+/* returns:
+0: 97
+1: 98
+2: 99
+3: 224
+5: 234
+7: 223
+9: 8364
+12: 97
+13: 98
+14: 99
+*/
+?>
+Feel free to adapt my code to fit your needs.
+===============================================================================
+
+Regarding character sets, and whether or not this is "ASCII". Firstly, there is
+no such thing as "8-bit ASCII", so if it were ASCII it would only ever return
+integers up to 127. 8-bit ASCII-compatible encodings include the ISO 8859
+family of encodings, which map various common characters to the values from 128
+to 255. UTF-8 is also designed so that characters representable in 7-bit ASCII
+are coded the same; byte values higher than 127 in a UTF-8 string represent the
+beginning of a multi-byte character.
+
+In fact, like most of PHP's string functions, this function isn't doing
+anything to do with character encoding at all - it is just interpreting a
+binary byte from a string as an unsigned integer. That is, ord(chr(200)) will
+always return 200, but what character chr(200) *means* will vary depending on
+what character encoding it is *interpreted* as part of (e.g. during display).
+
+A technically correct description would be "Returns an integer representation
+of the first byte of a string, from 0 to 255. For single-byte encodings such as
+(7-bit) ASCII and the ISO 8859 family, this will correspond to the first
+character, and will be the position of that character in the encoding's mapping
+table. For multi-byte encodings, such as UTF-8 or UTF-16, the byte may not
+represent a complete character."
+
+The link to asciitable.com should also be replaced by one which explains what
+character encoding it is displaying, as "Extended ASCII" is an ambiguous and
+misleading name.
+===============================================================================
+
+I found I wanted to sanitize a string for certain ASCII/ANSI characters, but to
+leave unicode alone. Since ord() breaks on processing unicode, I drew these two
+functions up to help with a saniziter which looked at ordinal values. (Finding
+"pack" and "unpack" was much better than my own powers-of-256 code.)
+
+<?php
+
+/*
+    By Darien Hager, Jan 2007... Use however you wish, but please
+    please give credit in source comments.
+   
+    Change "UTF-8" to whichever encoding you are expecting to use.
+*/
+function ords_to_unistr($ords, $encoding = 'UTF-8'){
+    // Turns an array of ordinal values into a string of unicode characters
+    $str = '';
+    for($i = 0; $i < sizeof($ords); $i++){
+        // Pack this number into a 4-byte string
+        // (Or multiple one-byte strings, depending on context.)               
+        $v = $ords[$i];
+        $str .= pack("N",$v);
+    }
+    $str = mb_convert_encoding($str,$encoding,"UCS-4BE");
+    return($str);           
+}
+
+function unistr_to_ords($str, $encoding = 'UTF-8'){       
+    // Turns a string of unicode characters into an array of ordinal values,
+    // Even if some of those characters are multibyte.
+    $str = mb_convert_encoding($str,"UCS-4BE",$encoding);
+    $ords = array();
+   
+    // Visit each unicode character
+    for($i = 0; $i < mb_strlen($str,"UCS-4BE"); $i++){       
+        // Now we have 4 bytes. Find their total
+        // numeric value.
+        $s2 = mb_substr($str,$i,1,"UCS-4BE");                   
+        $val = unpack("N",$s2);           
+        $ords[] = $val[1];               
+    }       
+    return($ords);
+}
+
+?>
+===============================================================================
+
+I've found that variant with
+unpack('N', mb_convert_encoding($c, 'UCS-4BE', 'UTF-8'));
+is VERY-VERY slow.
+Remember this when process strings longer than 1K.
+===============================================================================
+
+I did not found a unicode/multibyte capable 'ord' function, so...
+
+<?php
+function uniord($u) {
+    $k = mb_convert_encoding($u, 'UCS-2LE', 'UTF-8');
+    $k1 = ord(substr($k, 0, 1));
+    $k2 = ord(substr($k, 1, 1));
+    return $k2 * 256 + $k1;
+}
+?>
+===============================================================================
+
+return the chars as a sql char() string
+
+<?php
+function AsciiToInt($char){
+$success = "";
+    if(strlen($char) == 1)
+        return "char(".ord($char).")";
+    else{
+        for($i = 0; $i < strlen($char); $i++){
+            if($i == strlen($char) - 1)
+                $success = $success.ord($char[$i]);
+            else
+                $success = $success.ord($char[$i]).",";
+        }
+        return "char(".$success.")";
+    }
+}
+echo AsciiToInt("<br>");//outputs char(60,98,114,62)
+?>
+===============================================================================
+
+Since this function is not utf-8/unicode ready, you can use following code to
+get the hex or dec representation of a character.
+
+<?php
+mb_internal_encoding("UTF-8");
+$string = '↗Զ';
+$char = mb_substr($string, 0, 1);
+var_dump(bin2hex($char)); //hex
+var_dump(hexdec(bin2hex($char))); //decimal
+?>
+
+returns:
+
+string(6) "e28697"
+int(14845591)
+===============================================================================
+
+Well, i was thinking about a method to hash a string with md5 in a loose way,
+so md5("HELLO") isn't the same like md5("Hello"), even, i my case, it is about
+cd-titles i got submitted by users. So i made some function transforming my
+string to right what i want
+
+Thisone is the "call" function returning the "loose hash".
+It will get only the chars of a string, make them to uppercase and then hash
+with md5.
+
+<?php
+function loosehash($string){
+    return md5(strtoupper(onlyChars($string)));
+}
+?>
+
+Thisone is moving through a string like a chararray and check for the
+asciivalues, you can edit the values and condition to fit your needs
+
+<?php
+function onlyChars($string){
+    $strlength = strlen($string);
+    $retString = "";
+    for($i = 0; $i < $strlength; $i++){
+        if((ord($string[$i]) >= 48 && ord($string[$i]) <= 57) ||
+        (ord($string[$i]) >= 65 && ord($string[$i]) <= 90) ||
+        (ord($string[$i]) >= 97 && ord($string[$i]) <= 122)){
+            $retString .= $string[$i];
+        }
+    }
+   
+    echo $retString;   
+}
+?>
+===============================================================================
+
+I wrote the following function to clean illegal characters from input strings.
+
+(Background: I have a php-based news website. People were writing articles in
+MS Word, then copy-and-pasting the text into the website. Word uses
+non-standard characters for opening and closing quotes and double-quotes, and
+for "..." - and this was resulting in articles on the website that failed XHTML
+validation)
+
+<?php
+function clean_string_input($input)
+{
+    $interim = strip_tags($input);
+
+    if(get_magic_quotes_gpc())
+    {
+        $interim=stripslashes($interim);
+    }
+
+    // now check for pure ASCII input
+    // special characters that might appear here:
+    //   96: opening single quote (not strictly illegal, but substitute anyway)
+    //   145: opening single quote
+    //   146: closing single quote
+    //   147: opening double quote
+    //   148: closing double quote
+    //   133: ellipsis (...)
+    //   163: pound sign (this is safe, so no substitution required)
+    // these can be substituted for safe equivalents
+    $result = '';
+    for ($i=0; $i<strlen($interim); $i++)
+    {
+        $char = $interim{$i};
+        $asciivalue = ord($char);
+        if ($asciivalue == 96)
+        {
+            $result .= '\\'';
+        }
+        else if (($asciivalue > 31 && $asciivalue < 127) ||
+                 ($asciivalue == 163) || // pound sign
+                 ($asciivalue == 10) || // lf
+                 ($asciivalue == 13)) // cr
+        {
+            // it's already safe ASCII
+            $result .= $char;
+        }
+        else if ($asciivalue == 145) // opening single quote
+        {
+            $result .= '\\'';
+        }
+        else if ($asciivalue == 146) // closing single quote
+        {
+            $result .= '\\'';
+        }
+        else if ($asciivalue == 147) // opening double quote
+        {
+            $result .= '"';
+        }
+        else if ($asciivalue == 148) // closing double quote
+        {
+            $result .= '"';
+        }
+        else if ($asciivalue == 133) // ellipsis
+        {
+            $result .= '...';
+        }
+    }
+
+    return $result;
+}
+?>
+===============================================================================
+
+i need put utf8 hungarian "abc" into html id attribute, but id not contain
+non-ascii chars (like á, ő, ű), and not to begin a number.
+
+<?php
+
+function utfCharToNumber($char) {
+    $i = 0;
+    $number = '';
+    while (isset($char{$i})) {
+        $number.= ord($char{$i});
+        ++$i;
+        }
+    return $number;
+    }
+
+// example use
+foreach (array('a','A','b','B','c','C','e','é','É', 'ó','Ó','ö','Ö','ő','Ő','ú'
+) as $d) {
+    echo $d,': ',utfCharToNumber($d),"\n";
+    }
+?>
+
+output:
+a: 97
+A: 65
+b: 98
+B: 66
+c: 99
+C: 67
+e: 101
+é: 195169
+É: 195137
+ó: 195179
+Ó: 195147
+ö: 195182
+Ö: 195150
+ő: 197145
+Ő: 197144
+ú: 195186
+
+i generated the folowing ids:
+"char-97", "char-65", "char-98" ...

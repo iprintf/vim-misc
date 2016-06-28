@@ -1,0 +1,235 @@
+
+curl_multi_select
+
+(PHP 5, PHP 7)
+
+curl_multi_select — 等待所有cURL批处理中的活动连接
+
+说明
+
+int curl_multi_select ( resource $mh [, float $timeout = 1.0 ] )
+
+阻塞直到cURL批处理连接中有活动连接。
+
+参数
+
+mh
+
+    由 curl_multi_init() 返回的 cURL 多个句柄。
+
+timeout
+
+    以秒为单位，等待响应的时间。
+
+返回值
+
+成功时返回描述符集合中描述符的数量。失败时，select失败时返回-1，否则返回超时(从
+底层的select系统调用).
+
+参见
+
+  • curl_multi_init() - 返回一个新cURL批处理句柄
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Even after so many distro releases, in PHP v5.5.9 and libcurl v7.35.0,
+curl_multi_select still returns -1. The only work around here is to wait and
+proceed like nothing ever happened. You have to determine the "wait" required
+here.
+
+In my application a very small interval like usleep(1) worked. For example:
+
+<?php
+        // While we're still active, execute curl
+        $active = null;
+        do {
+            $mrc = curl_multi_exec($multi, $active);
+        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+   
+        while ($active && $mrc == CURLM_OK) {
+            // Wait for activity on any curl-connection
+            if (curl_multi_select($multi) == -1) {
+                usleep(1);
+            }
+   
+            // Continue to exec until curl is ready to
+            // give us more data
+            do {
+                $mrc = curl_multi_exec($multi, $active);
+            } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+        }
+?>
+
+Internally php curl_multi_select uses libcurl curl_multi_fdset function and its
+libcurl documentation says :
+http://curl.haxx.se/libcurl/c/curl_multi_fdset.html
+
+"When libcurl returns -1 in max_fd, it is because libcurl currently does
+something that isn't possible for your application to monitor with a socket and
+unfortunately you can then not know exactly when the current action is
+completed using select(). When max_fd returns with -1, you need to wait a while
+and then proceed and call curl_multi_perform anyway. How long to wait? I would
+suggest 100 milliseconds at least, but you may want to test it out in your own
+particular conditions to find a suitable value.
+
+When doing select(), you should use curl_multi_timeout to figure out how long
+to wait for action."
+
+Untill PHP implements curl_multi_timeout() we have to play with our application
+and determine the "wait".
+===============================================================================
+
+curl_multi_select($mh, $timeout) simply blocks for $timeout seconds while
+curl_multi_exec() returns CURLM_CALL_MULTI_PERFORM. Otherwise, it works as
+intended, and blocks until at least one connection has completed or $timeout
+seconds, whatever happens first.
+
+For that reason, curl_multi_exec() should always be wrapped:
+
+<?php
+  function full_curl_multi_exec($mh, &$still_running) {
+    do {
+      $rv = curl_multi_exec($mh, $still_running);
+    } while ($rv == CURLM_CALL_MULTI_PERFORM);
+    return $rv;
+  }
+?>
+
+With that, the core of "multi" processing becomes (ignoring error handling for
+brevity):
+
+<?php
+  full_curl_multi_exec($mh, $still_running); // start requests
+  do { // "wait for completion"-loop
+    curl_multi_select($mh); // non-busy (!) wait for state change
+    full_curl_multi_exec($mh, $still_running); // get new state
+    while ($info = curl_multi_info_read($mh)) {
+      // process completed request (e.g. curl_multi_getcontent($info
+['handle']))
+    }
+  } while ($still_running);
+?>
+
+Note that after starting requests, retrieval is done in the background - one of
+the better shots at parallel processing in PHP.
+===============================================================================
+
+On php 5.3.18+ be aware that curl_multi_select() may return -1 forever until
+you call curl_multi_exec().
+See https://bugs.php.net/bug.php?id=63411 for more information.
+===============================================================================
+
+This function blocks the calling process until there is activity on any of the
+connections opened by the curl_multi interface, or until the timeout period has
+expired.
+In other words, it waits for data to be received in the opened connections.
+
+Internally it fetches socket pointers with "curl_multi_fdset()" and runs the
+"select()" C function.
+It returns in 3 cases:
+1. Activity is detected on any socket;
+2. Timeout has ended (second parameter);
+3. Process received any signal (#man kill).
+
+The function returns an integer:
+* In case of activity it returns a number, usually 1.
+I suppose, it returns the number of connections with activity detected.
+* If timeout expires it returns 0
+* In case of error it returns -1
+
+Thanks for attention, hope this helps.
+===============================================================================
+
+In 5.3.9+, curl_multi_select always returns -1. If this is your case, just wait
+a bit and then proceed like nothing ever happened:
+<?php
+do { 
+    $mrc = curl_multi_exec($multi, $active); 
+} while ($mrc == CURLM_CALL_MULTI_PERFORM); 
+   
+while ($active && $mrc == CURLM_OK) {
+    //check for results and execute until everything is done
+
+    if (curl_multi_select($multi) == -1) {
+        //if it returns -1, wait a bit, but go forward anyways!
+        usleep(100);
+    }
+   
+    //do something with the return values
+    while(($info = curl_multi_info_read($multi)) !== false){
+        if ($info["result"] == CURLE_OK){
+            $content = curl_multi_getcontent($info["handle"]);
+            do_something($content);
+        }
+    }
+    do { 
+        $mrc = curl_multi_exec($multi, $active); 
+    } while ($mrc == CURLM_CALL_MULTI_PERFORM);         
+}
+?>
+===============================================================================
+
+According to https://bugs.php.net/bug.php?id=61141:
+
+On Windows setups using libcurl version 7.24 or later (which seems to
+correspond to PHP 5.3.10 or later), you may find that this always returns -1.
+This is, apparently, not strictly a bug: according to the libcurl
+documentation, you should add your own sleep if curl_multi_select returns -1.
+
+For example:
+<?php
+/* setup $mh */
+
+$active = null;
+do {
+    $mrc = curl_multi_exec($mh, $active);
+} while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+while ($active && $mrc == CURLM_OK) {
+    if (curl_multi_select($mh) == -1) {
+        usleep(100);
+    }
+    do {
+        $mrc = curl_multi_exec($mh, $active);
+    } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+}
+
+/* close $mh */
+?>
+===============================================================================
+
+Since the docs are still lacking, here's an example of how to use the function.
+The following code will keep checking all active threads until one of them
+returns the HTTP 200 Ok status code, or simply end. On success, it will return
+the URL that worked.
+
+<?php
+$running=null;
+do {
+    curl_multi_exec($mh,$running);
+    $ready=curl_multi_select($mh); // this will pause the loop
+    if($ready>0){
+        while($info=curl_multi_info_read($mh)){
+            $status=curl_getinfo($info['handle'],CURLINFO_HTTP_CODE);
+            if($status==200){
+                $successUrl=curl_getinfo($info['handle'],CURLINFO_EFFECTIVE_URL
+);
+                break 2;
+            }
+        }
+    }
+} while ($running>0 && $ready!=-1);
+?>
+
+The question for the $ready variable is, if it will return the value before or
+after the timeout has occurred. From my tests it appears that it will return
+the value immediately, and only then pause the execution. That's because it's
+always zero the first time through the loop, even if the time limit is as high
+as 10sec. I've expected it to wait and only then return the value so that came
+unexpected to me.
+
+As stated by someone else, it also doesn't seem to return the overall count of
+threads in the handle, but only that of the currently active ones.

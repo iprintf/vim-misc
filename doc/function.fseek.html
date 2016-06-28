@@ -1,0 +1,897 @@
+
+fseek
+
+(PHP 4, PHP 5, PHP 7)
+
+fseek — 在文件指针中定位
+
+说明
+
+int fseek ( resource $handle , int $offset [, int $whence = SEEK_SET ] )
+
+在与 handle 关联的文件中设定文件指针位置。新位置从文件头开始以字节数度量，是以
+whence 指定的位置加上 offset。
+
+In general, it is allowed to seek past the end-of-file; if data is then
+written, reads in any unwritten region between the end-of-file and the sought
+position will yield bytes with value 0. However, certain streams may not
+support this behavior, especially when they have an underlying fixed size
+storage.
+
+参数
+
+handle
+
+    文件系统指针，是典型地由 fopen() 创建的 resource(资源)。
+
+offset
+
+    偏移量。
+
+    要移动到文件尾之前的位置，需要给 offset 传递一个负值，并设置 whence 为
+    SEEK_END。
+
+whence
+
+    whence values are:
+      □ SEEK_SET - 设定位置等于 offset 字节。
+      □ SEEK_CUR - 设定位置为当前位置加上 offset。
+      □ SEEK_END - 设定位置为文件尾加上 offset。
+
+返回值
+
+成功则返回 0；否则返回 -1。注意移动到 EOF 之后的位置不算错误。
+
+范例
+
+Example #1 fseek() 例子
+
+<?php
+
+$fp = fopen('somefile.txt', 'r');
+
+// read some data
+$data = fgets($fp, 4096);
+
+// move back to the beginning of the file
+// same as rewind($fp);
+fseek($fp, 0);
+
+?>
+
+注释
+
+    Note:
+
+    如果使用附加模试（a 或 a+），任何写入文件数据都会被附加上去，而文件的位置将
+    会被忽略，调用 fseek() 的结果尚未定义。
+
+    Note:
+
+    Not all streams support seeking. For those that do not support seeking,
+    forward seeking from the current position is accomplished by reading and
+    discarding data; other forms of seeking will fail.
+
+参见
+
+  • ftell() - 返回文件指针读/写的位置
+  • rewind() - 倒回文件指针的位置
+
+
+User Contributed Notes 25 notes
+
+===============================================================================
+
+JUST TO QUOTE AND POINT THIS OUT:
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+3. if you're using fseek() to write data to a file, remember to open the file
+in "r+"
+mode, example:
+
+  $fp=fopen($filename,"r+");
+
+DON'T open the file in mode "a" (for append), because it puts
+the file pointer at the end of the file and doesn't let you
+fseek earlier positions in the file (it didn't for me!). Also,
+don't open the file in mode "w" -- although this puts you at
+the beginning of the file -- because it wipes out all data in
+the file.
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Took me half a day to figure :/
+===============================================================================
+
+Write Dummy File 4GB in Php 32bits (X86)
+if you want write more GB File (>4GB), use Php(X64) .
+this file is created in 0.0041329860687256 second
+
+CreatFileDummy('data_test.txt',4294967296);
+
+FUNCTION CreatFileDummy($file_name,$size) {   
+// 32bits 4 294 967 296 bytes MAX Size
+    $f = fopen($file_name, 'wb');
+    if($size >= 1000000000)  {
+        $z = ($size / 1000000000);       
+        if (is_float($z))  {
+            $z = round($z,0);
+            fseek($f, ( $size - ($z * 1000000000) -1 ), SEEK_END);
+            fwrite($f, "\0");
+        }       
+        while(--$z > -1) {
+            fseek($f, 999999999, SEEK_END);
+            fwrite($f, "\0");
+        }
+    }
+    else {
+        fseek($f, $size - 1, SEEK_END);
+        fwrite($f, "\0");
+    }
+    fclose($f);
+
+Return true;
+}
+
+Synx
+===============================================================================
+
+The official docs indicate that not all streams are seekable.
+You can try to seek anyway and handle failure:
+
+<?php
+if (fseek($stream, $offset, SEEK_CUR) === -1) {
+  // whatever
+}
+?>
+
+Or, you can use the stream_get_meta_data function:
+http://php.net/stream_get_meta_data
+
+<?php
+function fseekable($stream) {
+  $meta = stream_get_meta_data($stream);
+  return $meta['seekable'];
+}
+?>
+===============================================================================
+
+Based on the function below, provided by info at o08 dot com (thanks), the
+following should enable you to read a single line from a file, identified by
+the line number (starting with 1):
+
+<?
+    function readLine ($linenum,$fh) {
+        $line = fgets ($fh, 4096);
+        $pos = -1;
+        $i = 0;
+
+        while (!feof($fh) && $i<($linenum-1)) {
+            $char = fgetc($fh);
+            if ($char != "\n" && $char != "\r") {
+                fseek($fh, $pos, SEEK_SET);
+                $pos ++;
+            }
+            else $i ++;
+        }
+        $line = fgets($fh);
+        return $line;
+    } //readLine()
+?>
+===============================================================================
+
+I tried to improve and modify (mail at ulf-kosack dot de)'s function. Actually
+it is very fast, i.e. requires much less time than to get the last five, ten or
+whatever lines of a file using file() ore file_get_contents().
+
+function read_file($file, $lines)
+{
+       $handle = fopen($file, "r");
+       $linecounter = $lines;
+       $pos = -2;
+       $beginning = false;
+       $text = array();
+       while ($linecounter > 0) {
+         $t = " ";
+         while ($t != "\n") {
+           if(fseek($handle, $pos, SEEK_END) == -1) {
+$beginning = true; break; }
+           $t = fgetc($handle);
+           $pos --;
+         }
+         $linecounter --;
+         if($beginning) rewind($handle);
+         $text[$lines-$linecounter-1] = fgets($handle);
+         if($beginning break;
+       }
+       fclose ($handle);
+       return array_reverse($text); // array_reverse is optional: you can also
+just return the $text array which consists of the file's lines.
+}
+
+The good thing now is, that you don't get an error when your requesting more
+lines than the file contains. In this case the function will just return the
+whole file content.
+===============================================================================
+
+I want to give my contribution about the "read last lines from a file" topic.
+I've done some researches (starting from here, really) and run many tests for
+different algorithms and scenarios, and came up with this:
+
+What is the best way in PHP to read last lines from a file?
+http://stackoverflow.com/a/15025877/995958
+
+In that mini-article I tried to analyze all different methods and their
+performance over different files.
+
+Hope it helps.
+===============================================================================
+
+how to read BIG files using fseek (above 2GB+, upto any size like 4GB+, 100GB+,
+100 terabyes+, any file size, 100 petabytes, max limit is php_float_max ) ?
+
+// seek / set file pointer to 50 GB
+my_fseek($fp, floatval(50000000000),1);
+
+function my_fseek($fp,$pos,$first=0) {
+
+// set to 0 pos initially, one-time
+if($first) fseek($fp,0,SEEK_SET);
+
+// get pos float value
+$pos=floatval($pos);
+
+// within limits, use normal fseek
+if($pos<=PHP_INT_MAX)
+  fseek($fp,$pos,SEEK_CUR);
+// out of limits, use recursive fseek
+else {
+  fseek($fp,PHP_INT_MAX,SEEK_CUR);
+  $pos -= PHP_INT_MAX;
+  my_fseek($fp,$pos);
+}
+
+}
+
+hope this helps.
+===============================================================================
+
+Seek to a line of code than break from while to improve performance. Seek to
+specific line using SEEK_SET and get a specific line. If $range is '0' than
+will show seeked line. If set to '2' it will show current line + 2 lines above
++ 2 lines below.
+
+Useful for get a content of a file in very huge file to get lines range. To
+improve performance a while loop breaks from iteration than go for seeking.
+
+I've created a function that read a file and count lines and store into arrays
+each lines bytes to seek. If maximum specified by `linenum` is set, it will
+break from while to keep performance than in a new loop function to seek a
+position in bytes to get a content of file.
+
+    function readFileSeek($source, $linenum = 0, $range = 0)
+    {
+        $fh = fopen($source, 'r');
+        $meta = stream_get_meta_data($fh);
+       
+        if (!$meta['seekable']) {
+            throw new Exception(sprintf("A source is not seekable: %s", print_r
+($source, true)));
+        }
+       
+        $pos = 2;
+        $result = null;
+       
+        if ($linenum) {
+            $minline = $linenum - $range - 1;
+            $maxline = $minline+$range+$range;
+        }
+       
+        $totalLines = 0;
+        while (!feof($fh)) {
+       
+            $char = fgetc($fh);
+           
+            if ($char == "\n" || $char == "\r") {
+                ++$totalLines;
+            } else {
+                $result[$totalLines] = $pos;  
+            }
+            $pos++;
+           
+            if ($maxline+1 == $totalLines) {
+                // break from while to not read entire file
+                break;
+            }
+        }
+       
+        $buffer = '';
+       
+        for ($nr=$minline; $nr<=$maxline; $nr++) {
+           
+            if (isset($result[$nr])) {
+           
+                fseek($fh, $result[$nr], SEEK_SET);
+
+                while (!feof($fh)) {
+                    $char = fgetc($fh);
+
+                    if ($char == "\n" || $char == "\r") {
+                        $buffer .= $char;
+                        break;
+                    } else {
+                        $buffer .= $char;
+                    }
+                }
+           
+            }
+        }
+       
+        return $buffer;
+    }
+
+Test results (1.3 GB file, 100000000 lines of codes, seek to 300000 line a
+code):
+
+    string(55) "299998_abc
+    299999_abc
+    300000_abc
+    300001_abc
+    300002_abc
+    "
+   
+    Time: 612 ms, Memory: 20.00Mb
+   
+    $ ll -h /tmp/testfile
+    -rw-rw-r-- 1  1,3G /tmp/testfile
+===============================================================================
+
+This a tail php script example for windows system.
+
+<?php
+$n = ( isset($_REQUEST['n']) == true )? $_REQUEST['n']:20;
+
+$offset = -$n * 120;
+
+$rs = fopen('C:/wamp/logs/apache_error.log','r');
+if ( $rs === false )
+    die("No se pudo abrir el archivo de log");
+
+fseek($rs,$offset,SEEK_END);
+
+fgets($rs);
+while(!feof($rs))
+{
+    $buffer = fgets($rs);
+    echo $buffer;
+    echo "<hr />";
+}
+
+fclose($rs);
+?>
+===============================================================================
+
+easier tail() function for php:
+
+<?php
+function tail($file, $num_to_get=10)
+{
+  $fp = fopen($file, 'r');
+  $position = filesize($file);
+  fseek($fp, $position-1);
+  $chunklen = 4096;
+  while($position >= 0)
+  {
+    $position = $position - $chunklen;
+    if ($position < 0) { $chunklen = abs($position); $position=0;}
+    fseek($fp, $position);
+    $data = fread($fp, $chunklen). $data;
+    if (substr_count($data, "\n") >= $num_to_get + 1)
+    {
+       preg_match("!(.*?\n){".($num_to_get-1)."}$!", $data, $match);
+       return $match[0];
+    }
+  }
+  fclose($fp);
+  return $data;
+}
+?>
+===============================================================================
+
+Don't use filesize() on files that may be accessed and updated by parallel
+processes or threads (as the filesize() return value is maintained in a cache).
+Instead lock the opened file and use fseek($fp,0,SEEK_END) and ftell($fp) to
+get the actual filesize if you need to perform a fread() call to read the whole
+file...
+===============================================================================
+
+To:seeker at example com
+Be careful, though.
+You can freely position you pointer if you open a file in (r+) mode, but it
+will "overwrite" the data, not "append it".
+
+Tested this:
+
+<?php
+// file.txt content:
+// "You can contribute your notes to the PHP manual from the comfort of your
+browser!"
+
+$handler = fopen("file.txt", "r+");
+fseek($handler, 0);
+fwrite($handler, "want to add this");
+?>
+New contents of the file.txt will be like this:
+"want to add thiste your notes to the PHP manual from the comfort of your
+browser!".
+
+If you really want to append at the beginning, you have to first get all the
+contents, save it, clear the file, put the new contents and append the saved
+contents at the end.
+===============================================================================
+
+Opening the file in a+ mode doesn't work with fseek either, unfortunately. If
+you want a file created and then want be able to go to any position in the
+file, you'll have to use append mode when opening the file, then close it, then
+open it again in r+.
+===============================================================================
+
+Here's a function I wrote to binary search for a line of text within a file,
+particularly useful when the file is too large to read into memory at once and
+you want a faster search than linear.
+
+function binary_search_in_file($filename, $search) {
+
+    //Open the file
+    $fp = fopen($filename, 'r');
+
+    //Seek to the end
+    fseek($fp, 0, SEEK_END);
+
+    //Get the max value
+    $high = ftell($fp);
+   
+    //Set the low value
+    $low = 0;
+
+    while ($low <= $high) {
+        $mid = floor(($low + $high) / 2);  // C floors for you
+
+        //Seek to half way through
+        fseek($fp, $mid);
+
+        if($mid != 0){
+            //Read a line to move to eol
+            $line = fgets($fp);
+        }
+       
+        //Read a line to get data
+        $line = fgets($fp);
+       
+
+        if ($line == $search) {
+            fclose($fp);
+            return $line;
+        }
+        else {
+            if ($search < $line) {
+                $high = $mid - 1;
+            }
+            else {
+                $low = $mid + 1;
+            }
+        }
+    }
+
+    //Close the pointer
+    fclose($fp);
+
+    return FALSE;
+
+}
+===============================================================================
+
+Here a little extension for the code of ekow.
+If you want to read more than one line and more than one file. Some times the
+last five ore ten lines are interesting in.
+
+You only have to submit a array with filenames and optionally a number of lines
+you want to read.
+
+<?php
+  function read_logfiles($files, $lines=5)
+  {
+    foreach($files as $file_num => $file) {
+      if (file_exists ($file) ) {
+        $handle = fopen($file, "r");
+        $linecounter = $lines;
+        $pos = -2;
+        $t = " "; 
+        $text[$file_num] = "";
+        while ($linecounter > 0) {
+          while ($t != "\n") {
+            fseek($handle, $pos, SEEK_END);
+            $t = fgetc($handle);
+            $pos --;
+          }
+          $t = " ";
+          $text[$file_num] .= fgets($handle);
+          $linecounter --;
+        }
+        fclose ($handle);
+      } else {
+        $text[$file_num] = "The file doesn't exist.";
+      }
+    }
+   
+    return $text;
+?>
+===============================================================================
+
+A little correction for code to read last line from chenganeyou at eyou dot
+com.
+$linenumber = sizeof($file)-1;
+should be
+$linenumber = sizeof($contents)-1;
+because sizeof will count array element, not file size.
+<?php
+function readlastline($file)
+{
+       $linecontent = " ";
+       $contents = file($file);
+       $linenumber = sizeof($contents)-1;
+       $linecontet = $contents[$linenumber];
+       unset($contents,$linenumber);
+       return $linecontent;
+}
+?>
+===============================================================================
+
+I use the following codes to read the last line of a file.
+Compared to jim at lfchosting dot com, it should be more efficient.
+
+<?php
+function readlastline($file)
+{
+       $linecontent = " ";
+       $contents = file($file);
+       $linenumber = sizeof($file)-1;
+       $linecontet = $contents[$linenumber];
+       unset($contents,$linenumber);
+       return $linecontent;
+}
+?>
+===============================================================================
+
+In order to read a text file from end->beginning e.g display the most recent
+contents of a log file first.  I use the following.
+
+It basically just uses fseek to find the end of the file, ftell to find the
+byte count for a counter, then iterates backwards through the file using fgetc
+to test for the newline charater.
+
+$i=0 ;
+$lines=500 ;
+$fp = fopen($log,"r") ;
+if(is_resource($fp)){
+    fseek($fp,0,SEEK_END) ;
+    $a = ftell($fp) ;
+    while($i <= $lines){
+        if(fgetc($fp) == "\n"){
+            echo (fgets($fp));
+            $i++ ;
+        }
+    fseek($fp,$a) ;
+    $a-- ;
+    }
+}
+===============================================================================
+
+Thanks to Dan, whose above comment provided a key to solve the issue of how to
+append to a file.
+     After, using phpinfo(); I made sure my installation of PHP had the
+requisite settings mentioned in the text to the manual entry for fopen(), I was
+puzzled as to why my use of fopen() with the append option 'a' (append option)
+didn't work. Then I  read a comment contributed to Appendix L (http://
+us2.php.net/manual/en/wrappers.php) that the append option 'a' for fopen()
+doesn't work as expected. The writer suggested using the 'w' option instead,
+which I found did work. But the 'w' option (write option) overwrites everything
+in the file.
+     The question remained how to accomplish appending. Following Dan's
+suggestion about the 'r+' option, I tried this, which works fine:
+       $string = "Message to write to log";
+       $filehandle = fopen ("/home/name/sqllogs/phpsqlerr.txt", 'r+');
+    fseek ( $filehandle,0, SEEK_END);
+    fwrite ( $filehandle, $string."\n" );
+    fclose ($filehandle);
+===============================================================================
+
+Here is a function that returns the last line of a file.  This should be
+quicker than reading the whole file till you get to the last line.  If you want
+to speed it up a bit, you can set the $pos = some number that is just greater
+than the line length.  The files I was dealing with were various lengths, so
+this worked for me.
+
+<?php
+function readlastline($file)
+{
+        $fp = @fopen($file, "r");
+        $pos = -1;
+        $t = " ";
+        while ($t != "\n") {
+              fseek($fp, $pos, SEEK_END);
+              $t = fgetc($fp);
+              $pos = $pos - 1;
+        }
+        $t = fgets($fp);
+        fclose($fp);
+        return $t;
+}
+?>
+===============================================================================
+
+Modified @ben's function to work for files larger than PHP_INT_MAX bytes.
+
+<?php
+function longTail($file, $numLines = 100)
+{
+    $fp = fopen($file, "r");
+    $chunk = 4096;
+    $fs = sprintf("%u", filesize($file));
+    $max = (intval($fs) == PHP_INT_MAX) ? PHP_INT_MAX : filesize($file);
+
+    for ($len = 0; $len < $max; $len += $chunk) {
+        $seekSize = ($max - $len > $chunk) ? $chunk : $max - $len;
+
+        fseek($fp, ($len + $seekSize) * -1, SEEK_END);
+        $data = fread($fp, $seekSize) . $data;
+
+        if (substr_count($data, "\n") >= $numLines + 1) {
+            preg_match("!(.*?\n){".($numLines)."}$!", $data, $match);
+            fclose($fp);
+            return $match[0];
+        }
+    }
+    fclose($fp);
+    return $data;
+}
+?>
+===============================================================================
+
+I needed to stream a txt file (here big xml file) to get nodes blockwise. I
+couldn't find a shorter way. So i did write this class.
+
+Function: streams a complete file and returns the content between two search
+strings with their search strings (multi byte safe)
+
+Hope it helps anyone.
+
+PS: It lacks any boolean checks / exception handling for non existing files /
+read errors.
+
+<?php
+/**
+* Reads txt-files blockwise
+* Usage:
+    $c_streamFileTxt = new streamFileTxt;
+    $_args = array(
+
+        'file' => 'temporary.xml',
+        'start_string' => '<Product>',
+        'stop_string' => '</Product>',
+        'block_size' => '8192'
+    );
+   
+    $c_streamFileTxt->setArgs($_args);
+
+    while ($txt_block = $c_streamFileTxt->getNextBlock())
+    {
+        // use $txt_block for something
+    }
+*/
+
+class streamFileTxt
+{
+    private $handle;
+    private $file;
+    private $file_offset;
+    private $block;
+    private $start_string;
+    private $stop_string;
+    private $block_size;
+
+    /**
+     * Sett class arguments
+     * @param array $_args
+     */
+    public function setArgs($_args)
+    {
+        $this->file = $_args['file'];
+        $this->start_string = $_args['start_string'];
+        $this->stop_string = $_args['stop_string'];
+        $this->block_size = $_args['block_size'];
+    }
+
+    /**
+     * Get next textblock within a file
+     * @param void
+     * @return string $textblock
+     */
+    public function getNextBlock()
+    {
+        $this->openFile();
+
+        fseek($this->handle, $this->file_offset);
+        $start_string_found = false;
+        $stop_string_found = false;
+        while (!feof($this->handle))
+        {
+            $txt_block = fread($this->handle, $this->block_size);
+
+            if (!$start_string_found) // while not start start snippet found
+            {
+                $strpos = mb_strpos($txt_block, $this->start_string);
+                if ($strpos !== false)
+                {
+                    // cut of first left chunk
+                    $txt_block = mb_substr($txt_block, $strpos, $this->
+block_size);
+                    $start_string_found = true;
+                }
+            }
+
+            if ($start_string_found && !$stop_string_found) // start snipped
+found, looking for stop snippet
+            {
+                $strpos = mb_strpos($txt_block, $this->stop_string);
+                if ($strpos !== false)
+                {
+                    $removed_block_size = mb_strlen($txt_block) - $strpos;
+                    $txt_block = mb_substr($txt_block, 0, $strpos + mb_strlen(
+$this->stop_string));
+                    $stop_string_found = true;
+                    $this->setFileOffset($removed_block_size);
+                }
+            }
+
+            if ($stop_string_found) // stop-snippet found, keep file offset,
+return
+            {
+                $this->closeFile();
+                return $txt_block;
+            }
+        }
+
+        $this->closeFile();
+        return false;
+    }
+   
+    /**
+     * Set current file offset and consider the removed block size
+     * current file position = current file offset - removed block size
+     * @param int $removed_block_size
+     */
+    private function setFileOffset($removed_block_size)
+    {
+        $this->file_offset = ftell($this->handle) - $removed_block_size;
+    }
+   
+    /**
+     * close current file
+     * @param void
+     * @return void
+     */
+    private function openFile()
+    {
+        $this->handle = fopen($this->file, 'r');
+    }
+   
+    /**
+     * open file
+     * @param void
+     * @return void
+     */
+    private function closeFile()
+    {
+        fclose($this->handle);
+    }
+}
+===============================================================================
+
+sometimes we want read file from last line to beginning of file.I use the
+following.
+<?php
+function read_backward_line($filename, $lines, $revers = false)
+{
+    $offset = -1;
+    $c = '';
+    $read = '';
+    $i = 0;
+    $fp = @fopen($filename, "r");
+    while( $lines && fseek($fp, $offset, SEEK_END) >= 0 ) {
+        $c = fgetc($fp);
+        if($c == "\n" || $c == "\r"){
+            $lines--;
+            if( $revers ){
+                $read[$i] = strrev($read[$i]);
+                $i++;
+            }
+        }
+        if( $revers ) $read[$i] .= $c;
+        else $read .= $c;
+        $offset--;
+    }
+    fclose ($fp);
+    if( $revers ){
+        if($read[$i] == "\n" || $read[$i] == "\r")
+            array_pop($read);
+        else $read[$i] = strrev($read[$i]);
+        return implode('',$read);
+    }
+    return strrev(rtrim($read,"\n\r"));
+}
+//if $revers=false function return->
+//line 1000: i am line of 1000
+//line 1001: and i am line of 1001
+//line 1002: and i am last line
+//but if $revers=true function return->
+//line 1002: and i am last line
+//line 1001: and i am line of 1001
+//line 1000: i am line of 1000
+?>
+Enjoy! Mail me if it works!  ;-)
+===============================================================================
+
+The tail example functions below will return a PHP memory limit error when
+trying to open large files. Since tail is convenient for opening large logs,
+here is a function that lets you (provided you have permission):
+
+<?php
+
+function unix_tail($lines,$file)
+{
+    shell_exec("tail -n $lines $file > /tmp/phptail_$file");
+    $output = file_get_contents("/tmp/phptail_$file");
+    unlink("/tmp/phptail_$file");
+    return $output;
+}
+
+?>
+===============================================================================
+
+Jim's (jim at lfchosting dot com) code for the last-line issue is perfect if
+the file is not empty, or moreover if it has more than one line. However if the
+file you're using cotains no new-line character at all (i.e. it is empty or
+it's got one line and only one) the while loop will stuck indefinitely.
+
+I know this script is meant for big files which would always contain at least
+several lines, but it would be clever to make the script error-proof.
+
+Thus, here's a little modification to his code.
+
+<?php
+function readLastLine ($file) {
+    $fp = @fopen($file, "r");
+
+    $pos = -1;
+    $t = " ";
+    while ($t != "\n") {
+        if (!fseek($fp, $pos, SEEK_END)) { // *** - fseek returns 0 if
+successfull, and -1 if it has no succes as in seeking a byte outside the file's
+range
+            $t = fgetc($fp);
+            $pos = $pos - 1;
+        } else { // ***
+            rewind($fp); // ***
+            break; // ***
+        } // ***
+    }
+    $t = fgets($fp);
+    fclose($fp);
+    return $t;
+}
+?>
+
+Lines added and/or modified have been marked with "// ***". I hope this helps!
+
+Regards!

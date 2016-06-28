@@ -1,0 +1,455 @@
+
+stream_wrapper_register
+
+(PHP 4 >= 4.3.2, PHP 5, PHP 7)
+
+stream_wrapper_register — 注册一个用 PHP 类实现的 URL 封装协议
+
+说明
+
+bool stream_wrapper_register ( string $protocol , string $classname [, int
+$flags = 0 ] )
+
+允许用户实现自定义的协议处理器和流，用于所有其它的文件系统函数中（例如 fopen()
+，fread() 等）。
+
+参数
+
+protocol
+
+    待注册的封装的名字。
+
+classname
+
+    实现了protocol的类名。
+
+flags
+
+    Should be set to STREAM_IS_URL if protocol is a URL protocol. Default is 0,
+    local stream.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+当 protocol 已经有处理者时，stream_wrapper_register() 将返回FALSE
+
+更新日志
+
+版本        说明
+5.2.4 添加 flags 参数.
+
+范例
+
+Example #1 如何注册一个 stream wrapper
+
+<?php
+$existed = in_array("var", stream_get_wrappers());
+if ($existed) {
+    stream_wrapper_unregister("var");
+}
+stream_wrapper_register("var", "VariableStream");
+$myvar = "";
+
+$fp = fopen("var://myvar", "r+");
+
+fwrite($fp, "line1\n");
+fwrite($fp, "line2\n");
+fwrite($fp, "line3\n");
+
+rewind($fp);
+while (!feof($fp)) {
+    echo fgets($fp);
+}
+fclose($fp);
+var_dump($myvar);
+
+if ($existed) {
+    stream_wrapper_restore("var");
+}
+
+?>
+
+以上例程会输出：
+
+line1
+line2
+line3
+string(18) "line1
+line2
+line3
+"
+
+参见
+
+  • The streamWrapper prototype class
+  • Example class registered as stream wrapper
+  • stream_wrapper_unregister() - Unregister a URL wrapper
+  • stream_wrapper_restore() - Restores a previously unregistered built-in
+    wrapper
+  • stream_get_wrappers() - 获取已注册的流类型
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+In response to Anonymouse at Coward dot com:
+
+The manual says "Reading stops when up to length bytes have been read, [...] or
+(after opening userspace stream) when 8192 bytes have been read whichever comes
+first."
+
+I tested it and fread($filehandle, 4096) returns 4096 bytes, so it's working as
+the manual says it should. You're right when you say "8192 bytes is always
+passed to stream_read as count", but that doesn't mean fread will return 8192
+bytes. If you call fread twice with length 4096, PHP calls stream_read passing
+8192 as count on the first fread, and doesn't call it on second fread. On both
+cases, fread returns the correct amount of bytes.
+
+<?php
+
+class VariableStream {
+    var $position;
+    var $varname;
+ 
+    function stream_open($path, $mode, $options, &$opened_path)
+    {
+        $url = parse_url($path);
+        $this->varname = $url["host"];
+        $this->position = 0;
+      
+        return true;
+    }
+
+    function stream_read($count)
+    {
+        echo "stream_read called asking for $count bytes\n";
+        $ret = substr($GLOBALS[$this->varname], $this->position, $count);
+        $this->position += strlen($ret);
+        return $ret;
+    }
+
+    function stream_eof()
+    {
+        return $this->position >= strlen($GLOBALS[$this->varname]);
+    }
+
+}
+
+stream_wrapper_register("var", "VariableStream")
+    or die("Failed to register protocol");
+
+$myvar = "";
+$l=range('a','z');
+for($i=0;$i<65536;$i++) {
+    $myvar .= $l[array_rand($l)];
+}
+  
+$fp = fopen("var://myvar", "r+");
+
+while (!feof($fp)) {
+    $out = fread($fp,1000);
+    echo "fread returned ",strlen($out)," bytes\n";
+}
+
+fclose($fp);
+
+?>
+===============================================================================
+
+Updated for PHP 5, and optimized for readability, low line count, and minimum
+memory use:
+
+<?php
+class VariableStream {
+    private $position;
+    private $varname;
+    public function stream_open($path, $mode, $options, &$opened_path) {
+        $url = parse_url($path);
+        $this->varname = $url["host"];
+        $this->position = 0;
+        return true;
+    }
+    public function stream_read($count) {
+        $p=&$this->position;
+        $ret = substr($GLOBALS[$this->varname], $p, $count);
+        $p += strlen($ret);
+        return $ret;
+    }
+    public function stream_write($data){
+        $v=&$GLOBALS[$this->varname];
+        $l=strlen($data);
+        $p=&$this->position;
+        $v = substr($v, 0, $p) . $data . substr($v, $p += $l);
+        return $l;
+    }
+    public function stream_tell() {
+        return $this->position;
+    }
+    public function stream_eof() {
+        return $this->position >= strlen($GLOBALS[$this->varname]);
+    }
+    public function stream_seek($offset, $whence) {
+        $l=strlen(&$GLOBALS[$this->varname]);
+        $p=&$this->position;
+        switch ($whence) {
+            case SEEK_SET: $newPos = $offset; break;
+            case SEEK_CUR: $newPos = $p + $offset; break;
+            case SEEK_END: $newPos = $l + $offset; break;
+            default: return false;
+        }
+        $ret = ($newPos >=0 && $newPos <=$l);
+        if ($ret) $p=$newPos;
+        return $ret;
+    }
+}
+stream_wrapper_register("var", "VariableStream")
+or die("Failed to register protocol");
+
+$myvar = "";
+  
+$fp = fopen("var://myvar", "r+");
+
+fwrite($fp, "line1\n");
+fwrite($fp, "line2\n");
+fwrite($fp, "line3\n");
+
+rewind($fp);
+while (!feof($fp)) {
+    echo fgets($fp);
+}
+fclose($fp);
+var_dump($myvar);
+?>
+===============================================================================
+
+If you plan to use your wrapper in a require_once you need to define
+stream_stat().  If you plan to allow any other tests like is_file()/is_dir(),
+you have to define url_stat().
+
+stream_stat() must define the size of the file, or it will never be included. 
+url_stat() must define mode, or is_file()/is_dir()/is_executable(), and any of
+those functions affected by clearstatcache() simply won't work.
+
+It's not documented, but directories must be a mode like 040777 (octal), and
+files a mode like 0100666.  If you wish the file to be executable, use 7s
+instead of 6s.  The last 3 digits are exactly the same thing as what you pass
+to chmod.  040000 defines a directory, and 0100000 defines a file.  It would be
+really helpful to add this to the official manual!
+===============================================================================
+
+on using dir_opendir on PHP5 make sure you not return a resource object on
+success. A resource object is diferent from false but php make a cast to bool
+to dir_opendir return value and modify the value of your resource to 1.
+
+example:
+
+class myclass{
+  private $mysqlHandler;
+  public function dir_opendir(....)
+  {
+    $this->mysqlHandler = mysql_connect(....);
+    return $this->mysqlHandler; //this is wrong, next
+                                          //time you use
+                                          //$this->mysqlHandler
+                                          // the value is 1
+  }
+}
+===============================================================================
+
+In case someone else starts scratching their head like I was, you should change
+the VariableStream::stream_eof() function to something like this:
+
+   function stream_eof()
+   {
+       $eof = ($this->position >= strlen($GLOBALS[$this->varname]));
+        if(version_compare(PHP_VERSION,'5.0','>=') && version_compare
+(PHP_VERSION,'5.1','<'))
+        {
+            $eof = !$eof;
+        }
+        return $eof;
+   }
+
+PHP 5.0 introduced a bug that wasn't fixed until 5.1
+===============================================================================
+
+using streams to use the ever useful fgetcsv() on a variable where explode()
+would not work (and would otherwise require regex(though that may be easier;)))
+
+$explode_this="yak, llama, 'big llama', 'wobmat, with a comma in it',
+bandycoot";
+
+<?php
+class csvstream{
+   var $position; 
+   var $varname; 
+   function stream_open($path, $mode, $options, &$opened_path){ 
+       $url = parse_url($path); 
+        $this->varname = $url['host'] ;
+       $this->position = 0; 
+       return true;
+   }
+  function stream_read($count){ 
+       $ret = substr($GLOBALS[$this->varname], $this->position, $count); 
+       $this->position += strlen($ret); 
+       return $ret; 
+   }
+  function stream_eof(){ 
+       return $this->position >= strlen($GLOBALS[$this->varname]); 
+   } 
+   function stream_tell(){ 
+       return $this->position; 
+   } 
+}
+
+   stream_wrapper_register("csvstr", "csvstream") ;
+   $str="yak, llama, 'big llama', 'wobmat, with a comma in it', bandycoot";
+
+   $fp = fopen("csvstr://str", "r+"); 
+   print_r(fgetcsv($fp,100,",","'"));
+
+?>
+===============================================================================
+
+Actually, I don't know if there's a better way to figure out if stream_read()
+was called by fgets() or e.g. fread() than this one:
+
+    public function stream_read($count)
+    {
+        $bt = debug_backtrace();
+        if(($bt[0]['function'] == 'stream_read') &&
+           ($bt[1]['function'] == 'fgets'))
+        {
+                $pos = strpos($GLOBALS[$this->varname], "\n", $this->position);
+                $retval = substr($GLOBALS[$this->varname], $this->position,
+($pos > $count) ? $count : $pos+1);
+
+        }
+        else
+        {
+                $retval = substr($GLOBALS[$this->varname], $this->position,
+$count);
+
+        }
+                $this->position += strlen($retval);
+                return (string)$retval;
+    }
+===============================================================================
+
+Updated. I figured there's no need to store the variable name if we're
+dereferenceing; we can just store the pointer and not have to dereference in
+each function for brevity.
+
+Also, I added the assertion that the stream is a string, since we're behaving
+basically like it has to be, and I changed the name to GlobalStream and global:
+//, as that's a more descriptive moniker than VariableName/var://.
+<?php
+class GlobalStream {
+    private $pos;
+    private $stream;
+    public function stream_open($path, $mode, $options, &$opened_path) {
+        $url = parse_url($path);
+        $this->stream = &$GLOBALS[$url["host"]];
+        $this->pos = 0;
+        if (!is_string($this->stream)) return false;
+        return true;
+    }
+    public function stream_read($count) {
+        $p=&$this->pos;
+        $ret = substr($this->stream, $this->pos, $count);
+        $this->pos += strlen($ret);
+        return $ret;
+    }
+    public function stream_write($data){
+        $l=strlen($data);
+        $this->stream =
+            substr($this->stream, 0, $this->pos) .
+            $data .
+            substr($this->stream, $this->pos += $l);
+        return $l;
+    }
+    public function stream_tell() {
+        return $this->pos;
+    }
+    public function stream_eof() {
+        return $this->pos >= strlen($this->stream);
+    }
+    public function stream_seek($offset, $whence) {
+        $l=strlen($this->stream);
+        switch ($whence) {
+            case SEEK_SET: $newPos = $offset; break;
+            case SEEK_CUR: $newPos = $this->pos + $offset; break;
+            case SEEK_END: $newPos = $l + $offset; break;
+            default: return false;
+        }
+        $ret = ($newPos >=0 && $newPos <=$l);
+        if ($ret) $this->pos=$newPos;
+        return $ret;
+    }
+}
+stream_wrapper_register('global', 'GlobalStream') or die('Failed to register
+protocol global://');
+
+$myvar = "";
+  
+$fp = fopen("global://myvar", "r+");
+
+fwrite($fp, "line1\n");
+fwrite($fp, "line2\n");
+fwrite($fp, "line3\n");
+
+rewind($fp);
+while (!feof($fp)) {
+    echo fgets($fp);
+}
+fclose($fp);
+var_dump($myvar);
+?>
+===============================================================================
+
+Be aware that even when stream_wrapper_register won't fail, open_basedir will
+affect functionality of the class.
+===============================================================================
+
+"for use with all the other filesystem functions"
+
+"all" is not accurate.  Unfortunately, zip_open(), and presumably others, will
+ignore your custom stream wrapper.
+===============================================================================
+
+Use caution with writing code that may use stream wrappers with fread, as fread
+behaviour is 'inconsistent' with normal file operations because of the 8192
+bytes internal buffer used by PHP ( >= 5.0.5 IIRC ).
+
+ie:
+
+fread($filehandle, filesize($filename))
+
+will not work correctly if the file is larger than 8KB, it will only get you
+the first 8192 bytes. Also, it seems that:
+
+fread($filehandle, 4096)
+
+will still give you 8KB (if the file is larger than 8KB) as 8192 bytes is
+always passed to stream_read as count.
+
+This makes it somewhat impossible to just 'drop in' a stream where normally a
+file would be used without taking special care.
+
+Yes, it IS mentioned in the documentation here if you read it really well, but
+I for one spent some time scratching my head over it, and looking at the bug
+tracker, I am not the only one. The dev's say this inconsistancy is a feature
+though, even if it does make stream wrappers pretty much useless 'out of the
+box'.
+
+file_get_contents and stream_get_contents seem to work ok though.
+===============================================================================
+
+It is worth noting that if your wrapper supports stream_flush() then when you
+flcose() your stream this function will be called prior to closing the stream.
+===============================================================================
+
+The current URL standard is RFC 3986 - available at www.ietf.org/rfc/
+rfc3986.txt

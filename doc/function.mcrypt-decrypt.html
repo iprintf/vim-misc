@@ -1,0 +1,202 @@
+
+mcrypt_decrypt
+
+(PHP 4 >= 4.0.2, PHP 5, PHP 7)
+
+mcrypt_decrypt — 使用给定参数解密密文
+
+说明
+
+string mcrypt_decrypt ( string $cipher , string $key , string $data , string
+$mode [, string $iv ] )
+
+解密 data 并返回明文。
+
+参数
+
+cipher
+
+    MCRYPT_ciphername 常量中的一个，或者是字符串值的算法名称。
+
+key
+
+    数据加密密钥。如果密钥长度不是加解密算法能够支持的有效长度，那么会产生警告
+    并且返回 FALSE
+
+data
+
+    要使用给定的 cipher 和 mode 解密的数据。如果数据大小不是 n * 分组大小，则在
+    其后追加 '\0' 来补齐。
+
+mode
+
+    MCRYPT_MODE_modename 常量中的一个，或以下字符串中的一个："ecb"，"cbc"，
+    "cfb"，"ofb"，"nofb" 和 "stream"。
+
+iv
+
+    Used for the initialization in CBC, CFB, OFB modes, and in some algorithms
+    in STREAM mode. If the provided IV size is not supported by the chaining
+    mode or no IV was provided, but the chaining mode requires one, the
+    function will emit a warning and return FALSE.
+
+返回值
+
+以字符串格式返回解密后的数据，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+      不再接受无效长度的 key and iv 参数。如果参数长度无效，则 mcrypt_decrypt()
+5.6.0 函数会产生警告并且返回 FALSE。之前版本中，对于长度不足的密钥和初始向量会
+      在其后补齐 '\0' 使其达到有效长度。
+
+参见
+
+  • mcrypt_encrypt() - 使用给定参数加密明文
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+It appears that mcrypt_decrypt pads the *RETURN STRING* with nulls ('\0') to
+fill out to n * blocksize.  For old C-programmers, like myself, it is easy to
+believe the string ends at the first null.  In PHP it does not:
+
+    strlen("abc\0\0") returns 5 and *NOT* 3
+    strcmp("abc", "abc\0\0") returns -2 and *NOT* 0
+
+I learned this lesson painfully when I passed a string returned from
+mycrypt_decrypt into a NuSoap message, which happily passed the nulls along to
+the receiver, who couldn't figure out what I was talking about.
+
+My solution was:
+<?php
+    $retval = mcrypt_decrypt( ...etc ...);
+    $retval = rtrim($retval, "\0");     // trim ONLY the nulls at the END
+?>
+===============================================================================
+
+Be careful, sometimes mcrypt_decrypt return additional white spaces to the
+uncrypted string; use trim() for deleting them. I was like 2 hours searching
+the error and it was that..
+===============================================================================
+
+If you happen to be decrypting something encrypted in ColdFusion, you'll
+discover that its encrypt function apparently pads the plaintext with ASCII 4,
+the "end of transmission" character.
+
+Building on eddiec's code, you can remove both nulls and EOTs with this:
+
+<?php
+    $retval = mcrypt_decrypt( ...etc ...);
+    $retval = rtrim($retval, "\0\4");     // trim ONLY the nulls and EOTs at
+the END
+?>
+===============================================================================
+
+Caution, MCRYPT_RIJNDAEL_256 is not equivalent to AES_256.
+
+The way to make RIJNDAEL be decrypted from AES with openssl is to use
+MCRYPT_RIJNDAEL_128 and padd the string to encrypt before encrypting with the
+follwing function:
+
+<?php
+function pkcs5_pad ($text, $blocksize) {
+    $pad = $blocksize - (strlen($text) % $blocksize);
+    return $text . str_repeat(chr($pad), $pad);
+}
+?>
+
+On the decryption, the choosing of AES_256 or AES_128, etc. is based on the
+keysize used in the crypting. In my case it was a 128bit key so I used AES_128.
+===============================================================================
+
+To remove PKCS7 padding:
+
+<?php
+    $decrypted = mdecrypt_generic($td, base64_decode($enc_auth_token));
+    $dec_s = strlen($decrypted);
+    $padding = ord($decrypted[$dec_s-1]);
+    $decrypted = substr($decrypted, 0, -$padding);
+?>
+===============================================================================
+
+When i using this function i find some problem, with adding additional binary
+symbols in decode message.
+$sDecrypt – «2433091»
+$sDecrypt strlen – 16 (before trim)
+$sDecrypt – «2433091»
+$sDecrypt strlen – 7 (after trim)
+At local PC this problem solved by using trim/trim, but if I send my encrypt
+message to sever, and try encrypt them, I see that my message is not 16
+symbols, as it was in my local pc, it is 32 sybmols, after encode. And trim
+function not working. I look at symbols code and what I see
+    50
+    52
+    51
+    51
+    48
+    57
+    49
+    0
+    0
+    0
+    0
+    0
+    0
+    0
+    0
+    0
+    10
+    158
+    112
+    183
+    154
+    27
+    95
+    85
+    42
+    35
+    95
+    54
+    227
+    41
+    179
+    77
+After “tabulation symbols” I get some junk symbols, and  I solve this problems
+like this.
+After mcrypt_decrypt I use this code
+$plaintext_dec = substr($plaintext_dec, 0, strpos($plaintext_dec, "\0"));
+I think it is not best resolution for this problem, but I solve my problem :)
+===============================================================================
+
+To decrypt data coming from MySQL's AES_ENCRYPT function:
+
+<?php
+
+function mysql_aes_key($key)
+{
+    $new_key = str_repeat(chr(0), 16);
+    for($i=0,$len=strlen($key);$i<$len;$i++)
+    {
+        $new_key[$i%16] = $new_key[$i%16] ^ $key[$i];
+    }
+    return $new_key;
+}
+
+function aes_decrypt($encrypted,$key)
+{
+    // if $encrypted is HEXed, then return it to binary
+    $encrypted = pack('H*',$encrypted);
+
+    $key = mysql_aes_key($key);
+    return rtrim(mcrypt_decrypt(MCRYPT_RIJNDAEL_128,$key,$encrypted,
+MCRYPT_MODE_ECB,''),"\x00..\x1F");
+}
+
+?>
+
+adapted from the article "Replicating MySQL AES Encryption Methods With PHP"
+(dated 2012-05-20) found somewhere online.

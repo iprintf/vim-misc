@@ -1,0 +1,222 @@
+
+ob_flush
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+ob_flush — 冲刷出（送出）输出缓冲区中的内容
+
+说明
+
+void ob_flush ( void )
+
+这个函数将送出缓冲区的内容（如果里边有内容的话）。如果想进一步处理缓冲区中的内
+容，必须在ob_flush()之前调用ob_get_contents() ，因为在调用ob_flush()之后缓冲区
+内容将被丢弃。
+
+此函数不会销毁输出缓冲区，而像ob_end_flush() 函数会销毁缓冲区。
+
+返回值
+
+没有返回值。
+
+参见
+
+  • ob_get_contents() - 返回输出缓冲区的内容
+  • ob_clean() - 清空（擦掉）输出缓冲区
+  • ob_end_flush() - 冲刷出（送出）输出缓冲区内容并关闭缓冲
+  • ob_end_clean() - 清空（擦除）缓冲区并关闭输出缓冲
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+As of August 2012, all browsers seem to show an all-or-nothing approach to
+buffering. In other words, while php is operating, no content can be shown.
+
+In particular this means that the following workarounds listed further down
+here are ineffective:
+
+1) ob_flush (),  flush () in any combination with other output buffering
+functions;
+
+2) changes to php.ini involving setting output_buffer and/or
+zlib.output_compression to 0 or Off;
+
+3) setting Apache variables such as "no-gzip" either through apache_setenv ()
+or through entries in .htaccess.
+
+So, until browsers begin to show buffered content again, the tips listed here
+are moot.
+===============================================================================
+
+some problems with ob_flush() and flush() could be resolved by defining content
+type header :
+header( 'Content-type: text/html; charset=utf-8' );
+
+so working code looks like this:
+<?php
+header( 'Content-type: text/html; charset=utf-8' );
+echo 'Begin ...<br />';
+for( $i = 0 ; $i < 10 ; $i++ )
+{
+    echo $i . '<br />';
+    flush();
+    ob_flush();
+    sleep(1);
+}
+echo 'End ...<br />';
+?>
+===============================================================================
+
+If you call ob_flush() and flush() and still dont get the buffer flushed it
+might be because some antivirus software (Panda in this case) holds the buffer
+until the page has finished loaded before sending it to the browser.
+===============================================================================
+
+Although browsers now have an all or none buffering strategy, the arguments are
+not moot.
+
+If you are not using ob_flush, you run this risk of exceeding socket timeouts
+(commonly seen in php-fpm/nginx combos).
+
+Basically, flushing solves the infamous 504 Gateway Time-out error.
+===============================================================================
+
+If you're still not getting the buffer work correctly then try to clean all the
+others before starting your own (and even if PHP tells you that there are no
+buffers active):
+
+while(@ob_end_clean());
+===============================================================================
+
+As stated in flush() manual entry, if php compresses the ouput with zlib this
+function may be ineffective.
+
+A possible option for folders on your server that have scripts which may take a
+long time to run is to add the following in your relevant .htaccess file:
+
+<FilesMatch "\.(php|html?)$">
+php_flag zlib.output_compression off
+php_value max_execution_time 3000
+php_value max_input_time 3000
+</FilesMatch>
+===============================================================================
+
+Currently I have Chrome on OS X Snow Leopard updating a page as it is sent more
+data, BUT it only does this after I send it <body> along with 1013 more
+characters (making 1019 total characters). After it receives this it
+immediately displays it and then displays anything else as it is received.
+(Note that this browser-operating system combination isn't necessarily the only
+one, it's just the only one I've tested.)
+
+In order to do this using php, I've done nothing but send ob_flush() after each
+echo or print. I can also make it happen without ob_flush() by calling
+ob_implicit_flush(), then ob_end_flush() before print, and then it updates with
+each print after that. I have pretty typical settings and I change none of them
+when the file runs, it literally looks like this:
+
+<?php
+  ob_implicit_flush();
+  ob_end_flush();
+  ?><body>[1013 more characters]<?php
+  for ($i = 1; $i < 30000000; ++$i) {}
+  echo "something that didn't show up immediately";
+?>
+
+(Ok, the "[1013 more characters]" part wasn't strictly literal.)
+
+If you want just text in the browser, you do this before everything else:
+
+<?php
+header("Content-type: text/plain");
+...
+?>
+
+Then it won't care whether you sent a body tag, it will just wait for 1019
+characters.
+===============================================================================
+
+You must call them in the correct order.
+ob_flush();
+flush();
+===============================================================================
+
+I was having problems with output buffering which seemed to be active by
+default on the server, although phpinfo said something else..
+
+In any case I needed to know that when I ran ob_start, it would start at the
+top level, so I could use ob_flush as it's intended without having to call
+multiple ob_flush in-script - this is what I did:
+
+<?php
+
+// make sure output buffering is off before we start it
+// this will ensure same effect whether or not ob is enabled already
+while (ob_get_level()) {
+    ob_end_flush();
+}
+// start output buffering
+if (ob_get_length() === false) {
+    ob_start();
+}
+
+?>
+
+Then I could call ob_flush(); followed by flush(); and get the output I wanted,
+which I didn't if I started the script with just ob_start();
+
+This was on a windows apache 2 server with php 5.0.4 btw.
+===============================================================================
+
+when using command line php, if somewhere in your script you have ob_start(),
+you have to call ob_end_flush() first, and then you can call these functions:
+flush();
+ob_flush();
+
+without calling ob_end_flush first, flush and ob_flush does not have any
+effect, at least that's what I experienced.
+===============================================================================
+
+For some reason, calling just flush or ob_flush or even both together did not
+get my output buffers flushed, and calling ob_end_flush by itself didn't work
+either but calling them all worked well. Here is my new output flushing
+function.
+
+<?php
+function flush_buffers(){
+    ob_end_flush();
+    ob_flush();
+    flush();
+    ob_start();
+}
+?>
+
+Enjoy
+===============================================================================
+
+we had problems with flushing data to the browser. a simple call to ob_flush()
+or flush() would not work. We found that repeatly calling theses fuctions did
+work however.
+
+<?
+flush();
+ob_flush();
+flush();
+ob_flush();
+flush();
+ob_flush();
+?>
+
+go figure!
+===============================================================================
+
+Also note that any data in the buffer will flush at the end of the script, not
+destroyed, so it is often not necessary to call ob_flush(); for example:
+
+<?php
+ob_start();
+echo 'Hello World!'
+?>
+
+Will still result in Hello World! being displayed to the browser.

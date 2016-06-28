@@ -1,0 +1,282 @@
+
+ssh2_shell
+
+(PECL ssh2 >= 0.9.0)
+
+ssh2_shell — Request an interactive shell
+
+说明
+
+resource ssh2_shell ( resource $session [, string $term_type = "vanilla" [, 
+array $env [, int $width = 80 [, int $height = 25 [, int $width_height_type =
+SSH2_TERM_UNIT_CHARS ]]]]] )
+
+Open a shell at the remote end and allocate a stream for it.
+
+参数
+
+session
+
+    An SSH connection link identifier, obtained from a call to ssh2_connect().
+
+term_type
+
+    term_type should correspond to one of the entries in the target system's /
+    etc/termcap file.
+
+env
+
+    env may be passed as an associative array of name/value pairs to set in the
+    target environment.
+
+width
+
+    Width of the virtual terminal.
+
+height
+
+    Height of the virtual terminal.
+
+width_height_type
+
+    width_height_type should be one of SSH2_TERM_UNIT_CHARS or
+    SSH2_TERM_UNIT_PIXELS.
+
+返回值
+
+范例
+
+Example #1 Executing a command
+
+<?php
+$connection = ssh2_connect('shell.example.com', 22);
+ssh2_auth_password($connection, 'username', 'password');
+
+$stream = ssh2_shell($connection, 'vt102', null, 80, 24, SSH2_TERM_UNIT_CHARS);
+?>
+
+参见
+
+  • ssh2_exec() - Execute a command on a remote server
+  • ssh2_tunnel() - Open a tunnel through a remote server
+  • ssh2_fetch_stream() - Fetch an extended data stream
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+Do not use \n to end the command. Some server will fail to process. Use always
+the standard for PHP end of line: PHP_EOL
+
+'suri at suribala dot com"'s example should be modified as follows (also change
+the double quotes to single, for better performance):
+
+<?php
+
+$con=ssh2_connect('192.168.0.1', 22);
+ssh2_auth_password($con, 'user', 'password');
+$shell=ssh2_shell($con, 'xterm');
+fwrite( $shell, 'cd /dir_one;'.PHP_EOL);
+fwrite( $shell, 'ls -la;'.PHP_EOL);
+fwrite( $shell, 'cd /dir_two;'.PHP_EOL);
+fwrite( $shell, 'ls -la;'.PHP_EOL);
+
+?>
+
+Cheers,
+
+Pimmy
+===============================================================================
+
+To run a shell script with all the variables that you would have when logged in
+interactively add bash -l or sh --login infront of your command.  The script I
+use creates a shell script, copies the script to the box with ssh2_scp_send,
+then executes the script with ssh2_exec.  Hope this helps somebody.
+
+<?php
+
+//Example
+
+$script1 = "bash -l /etc/rc.d/rc.httpd restart";
+
+$connection = ssh2_connect('shell.example.com', 22);
+ssh2_auth_password($connection, 'username', 'password');
+
+$stream = ssh2_exec($connection, $script1);
+?>
+===============================================================================
+
+Keep in mind that when using ssh2_shell, the remote system's EOL may not be the
+same as PHP's EOL, so it may not be safe to use PHP_EOL. The native EOL for
+Windows is \r\n, while Unix is typically merely \n, and classic Mac for some
+reason is \r.
+
+If you're running PHP on Windows (\r\n) and sshing into a Unix box (\n) you're
+going to end up sending extra lines. My experience so far is that it just acts
+as though you typed nothing, which may cause issues with password prompts.
+
+Oh, and \n\r? Don't do that. Nobody does that.
+===============================================================================
+
+In response to webmaster at spectreanime dot com:
+
+"For some obscur reasons, just after ur command, u need to make a sleep to be
+sure, that the command has reached the server and is running"
+
+Actually what you must do is set the blocking of the string to true, so it
+waits until the server sends data to the STDOUT before echoing it.
+
+So, instead of:
+
+sleep(1);
+
+Just do:
+
+stream_set_blocking($stdio, true);
+
+Best regards,
+===============================================================================
+
+Hi,
+
+we could also use shell_exec to execute multiple related commands
+separated by semicolon (;).
+
+And I figured out  problem that sometimes arise related to the execution of
+complex java c/c++ programs. All we need to do is to set the required
+environment variables. I have a environment variable in .bash_profile. This
+variable would be set when I log into my account normally through shell. But
+when we use ssh2_connect(), the environment variables in the .bash_profile are
+not set, all we need to do is export the required environment variables with
+shell_exec();
+
+example:
+
+$conn = ssh2_connect($ipaddress);
+ssh2_auth_password($conn,$username,$passwd);
+$cmd1="/path/to/program1";
+$cmd2="/path/to/program2";
+$env1="export Variable_name1=path1";
+$env2="export Variable_name2=path2"
+$stream = ssh2_exec($connection,"$env1; $env2; $cmd1; $cmd2");//this would
+execute all the //commands and return
+// stream
+stream_set_blocking($stream, true);
+while($o=fgets($stream)){
+echo $o.'<br>';
+}
+
+...
+...
+
+Thanks,
+Vikram Gopu .
+http:\\my.lsu.edu/vgopu1
+===============================================================================
+
+Instead of using sleep(1) try using usleep(350000). If not, you will need to
+spend much time unnecessary. In my scripts, I tried to use usleep(250000), but
+it's too short and brought some problems. usleep(300000) worked, but only to
+garantee use 350000. ;)
+===============================================================================
+
+// Connection to SSH server
+        echo "Connexion SSH ";
+        if (!($resource=@ssh2_connect("192.168.0.1"))) {
+                echo "[FAILED]<br />";
+                exit(1);
+        }
+        echo "[OK]<br />";
+                                                                               
+                                                                            
+        // Authentification by login/passwd
+        echo "Authentification ";
+        if (!@ssh2_auth_password($resource,"root","your_password")) {
+                echo "[FAILED]<br />";
+                exit(1);
+        }
+        echo "[OK]<br />";
+                                                                               
+                                                                            
+        // We need a shell
+        echo "Shell stdio ";
+        if (!($stdio = @ssh2_shell($resource,"xterm"))) {
+                echo "[FAILED]<br />";
+                exit(1);
+        }
+        echo "[OK]<br />";
+                                                                               
+                                                                            
+        // Execution of any command
+        // Be careful to add an '\n' at the  end of the command
+        $command = "/bin/ls /tmp\n";
+        fwrite($stdio,$command);
+                                                                               
+                                                                            
+        // IMPORTANT
+        // For some obscur reasons, just after ur command, u need to make a
+sleep to be sure, that the command has reached the server and is running
+        sleep(1);
+       
+        // Then u can fetch the stream to see what happens on stdio
+        while($line = fgets($stdio)) {
+                flush();
+                echo $line."<br />";
+        }
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                      
+        // It's always cleaner to close all stream
+        fclose($stdio);
+
+I truly hope i'll help someone :)
+===============================================================================
+
+Using ssh_exec, one could execute only one command at a time. However,
+ssh_shell, offers greater flexibility.
+
+Here is an example:
+
+<?php
+
+$con=ssh2_connect('192.168.0.1', 22);
+ssh2_auth_password($con, "user", "password");
+$shell=ssh2_shell($con, 'xterm');
+fwrite( $shell, "cd /dir_one\n");
+fwrite( $shell, "ls -la\n");
+fwrite( $shell, "cd /dir_two\n");
+fwrite( $shell, "ls -la\n");
+
+?>
+
+Thanks Sara for your implementation and your help !
+===============================================================================
+
+In my case the ssh2_shell doesn't work every time. There were many problems:
+- If I use stream_get_contents, the command(s) never executed
+- with while ($buf = fgets...) the loop never stops
+- without sleep(1) before stream_set_blocking, the command wasn't execute every
+time. Anyone knows why?
+That's what I made, and it works - but I think it isn't what it should be:
+<?php
+        $strCommand = 'tar -C /path/to/extract -xjf /path/from/file.tar.bz2';
+        $sshStream = ssh2_shell($this->sshSession, 'xterm', null, 120, 24, 
+SSH2_TERM_UNIT_CHARS);
+        fwrite($sshStream, $strCommand . PHP_EOL);
+        sleep(1);
+        stream_set_blocking($sshStream, true);
+        $sshUntarRetval = "";
+        while ($buf = fgets($sshStream,4096)) {
+        flush();
+            $sshUntarRetval .= $buf;
+            if (strpos($buf, 'tar -C') !== false)
+            {
+                break;
+            }
+        }
+        fclose($sshStream);
+?>

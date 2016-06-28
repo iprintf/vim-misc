@@ -1,0 +1,616 @@
+
+is_array
+
+(PHP 4, PHP 5, PHP 7)
+
+is_array — 检测变量是否是数组
+
+描述
+
+bool is_array ( mixed $var )
+
+如果 var 是 array，则返回 TRUE，否则返回 FALSE。
+
+参见 is_float()、is_int()、is_integer()、is_string() 和 is_object()。
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+I've found a faster way of determining an array. If you use is_array() millions
+of times, you will notice a *huge* difference. On my machine, this method takes
+about 1/4 the time of using is_array().
+
+Cast the value to an array, then check (using ===) if it is identical to the
+original.
+
+<?php
+if ( (array) $unknown !== $unknown ) {
+    echo '$unknown is not an array';
+} else {
+    echo '$unknown is an array';
+}
+?>
+
+You can use this script to test the speed of both methods.
+
+<pre>
+What's faster for determining arrays?
+
+<?php
+
+$count = 1000000;
+
+$test = array('im', 'an', 'array');
+$test2 = 'im not an array';
+$test3 = (object) array('im' => 'not', 'going' => 'to be', 'an' => 'array');
+$test4 = 42;
+// Set this now so the first for loop doesn't do the extra work.
+$i = $start_time = $end_time = 0;
+
+$start_time = microtime(true);
+for ($i = 0; $i < $count; $i++) {
+    if (!is_array($test) || is_array($test2) || is_array($test3) || is_array(
+$test4)) {
+        echo 'error';
+        break;
+    }
+}
+$end_time = microtime(true);
+echo 'is_array  :  '.($end_time - $start_time)."\n";
+
+$start_time = microtime(true);
+for ($i = 0; $i < $count; $i++) {
+    if (!(array) $test === $test || (array) $test2 === $test2 || (array) $test3
+=== $test3 || (array) $test4 === $test4) {
+        echo 'error';
+        break;
+    }
+}
+$end_time = microtime(true);
+echo 'cast, === :  '.($end_time - $start_time)."\n";
+
+echo "\nTested $count iterations."
+
+?>
+</pre>
+
+Prints something like:
+
+What's faster for determining arrays?
+
+is_array  :  7.9920151233673
+cast, === :  1.8978719711304
+
+Tested 1000000 iterations.
+===============================================================================
+
+Or you could make use of the array_diff_key and array_key function:
+
+<?php
+
+function is_assoc($var)
+{
+        return is_array($var) && array_diff_key($var,array_keys(array_keys($var
+)));
+}
+
+function test($var)
+{
+        echo is_assoc($var) ? "I'm an assoc array.\n" : "I'm not an assoc
+array.\n";
+}
+
+// an assoc array
+$a = array("a"=>"aaa","b"=>1,"c"=>true);
+test($a);
+
+// an array
+$b = array_values($a);
+test($b);
+
+// an object
+$c = (object)$a;
+test($c);
+
+// other types
+test($a->a);
+test($a->b);
+test($a->c);
+
+?>
+
+The above code outputs:
+I'm an assoc array.
+I'm not an assoc array.
+I'm not an assoc array.
+I'm not an assoc array.
+I'm not an assoc array.
+I'm not an assoc array.
+===============================================================================
+
+Yet another simpler, faster is_assoc():
+
+<?php
+function is_assoc($array) {
+  foreach (array_keys($array) as $k => $v) {
+    if ($k !== $v)
+      return true;
+  }
+  return false;
+}
+?>
+
+In my tests it runs about twice as fast as Michael/Gabriel's array_reduce()
+method.
+
+(Speaking of which: Gabriel's version doesn't work as written; it reports
+associative arrays as numeric if only the first key is non-numeric, or if the
+keys are numeric but ordered backwards.  Michael solves this problem by
+comparing array_reduce() to count(), but that costs another function call; it
+also works to just compare to -1 instead of 0, and therefore return -1 as the
+ternary else from the callback).
+===============================================================================
+
+function is_associate_array($array)
+{
+    return $array === array_values($array);
+}
+
+or you can add check is_array in functions
+===============================================================================
+
+I would change the order of the comparison, because if it is really an empty
+array, it is better to stop at that point before doing several 'cpu & memory
+intensive' function calls.
+
+In the end on a ratio of 3 not empty arrays to 1 empty array computed for
+1000000 iterations it needed 10% less time.
+Or the other way round:
+It needed approx 3% to 4% more time if the array is not empty, but was at least
+4 times faster on empty arrays.
+
+Additionally the memory consumption veritably lesser.
+
+<?php
+function is_assoc($array) {
+    return (is_array($array) && (count($array)==0 || 0 !== count(array_diff_key
+($array, array_keys(array_keys($array))) )));
+}
+?>
+===============================================================================
+
+A slight modification of what's below:
+
+<?php
+
+function is_assoc($array)
+{
+    return is_array($array) && count($array) !== array_reduce(array_keys($array
+), 'is_assoc_callback', 0);
+}
+
+function is_assoc_callback($a, $b)
+{
+    return $a === $b ? $a + 1 : 0;
+}
+
+?>
+===============================================================================
+
+yousef's example was wrong because is_vector returned true instead of false if
+the key was found
+here is the fixed version (only 2 lines differ)
+<?php
+function is_vector( &$array ) {
+   if ( !is_array($array) || empty($array) ) {
+      return -1;
+   }
+   $next = 0;
+   foreach ( $array as $k => $v ) {
+      if ( $k !== $next ) return false;
+      $next++;
+   }
+   return true;
+}
+?>
+===============================================================================
+
+Here is something for compare `is_assoc` functions.
+
+<?php
+function is_assoc1($var)
+{
+    return is_array($var) && array_diff_key($var, array_keys(array_keys($var
+)));
+}
+
+function is_assoc2($var)
+{
+    return is_array($var) && array_diff_key($var, array_fill(0, count($var), 
+null));
+}
+
+$count = 1000000;
+
+$a = array('a' => 'foo', 'b' => 1, 'c' => true);
+$b = array('a', 'b', 'c');
+
+$i = $start_time = $end_time = 0;
+
+$start_time = microtime(true);
+for ($i = 0; $i < $count; $i++) {
+    assert(is_assoc1($a) === true);
+    assert(is_assoc1($b) === false);
+}
+$end_time = microtime(true);
+echo 'is_assoc1  :  ' . ($end_time - $start_time) . "\n";
+
+$start_time = microtime(true);
+for ($i = 0; $i < $count; $i++) {
+    assert(is_assoc2($a) === true);
+    assert(is_assoc2($b) === false);
+}
+$end_time = microtime(true);
+echo 'is_assoc2  :  ' . ($end_time - $start_time) . "\n";
+?>
+
+It prints something like this:
+
+```
+% php is_assoc.php
+is_assoc1  :  19.36315202713
+is_assoc2  :  18.954080104828
+```
+
+The first one is from
+skaimauve (http://www.php.net/manual/en/function.is-array.php#89332). The
+second one is mine.
+===============================================================================
+
+alex frase's example is fast but elanthis at awesomeplay dot com's example is
+faster and Ilgar's modification of alex's code is faulty (the part " || $_array
+[$k] !== $v"). Also, Ilgar's suggestion of giving a false return value when the
+variable isnt an array is not suitable in my opinion and i think checking if
+the array is empty would also be a suitable check before the rest of the code
+runs.
+
+So here's the modified (is_vector) version
+
+<?php
+function is_vector( &$array ) {
+   if ( !is_array($array) || empty($array) ) {
+      return -1;
+   }
+   $next = 0;
+   foreach ( $array as $k => $v ) {
+      if ( $k !== $next ) return true;
+      $next++;
+   }
+   return false;
+}
+?>
+
+and the modified (alex's is_assoc) version
+
+<?php
+function is_assoc($_array) {
+    if ( !is_array($_array) || empty($array) ) {
+        return -1;
+    }
+    foreach (array_keys($_array) as $k => $v) {
+        if ($k !== $v) {
+            return true;
+        }
+    }
+    return false;
+}
+?>
+===============================================================================
+
+Will check a Multi-Dimentional Array to any specified level.  This is a fix to
+11/16/05 submission, which would break since you must supply a foreach with an
+array. Beware recursive functions shouldn't go over 100 deep or could break the
+memory stack on server.
+
+<?php
+// checks for multiarray to defined depth level recursively
+// original $level must be 2 or more, else will instantly return true
+function isDeepMultiArray($multiarray, $level = 2) {  // default is simple
+multiarray
+    if (is_array($multiarray)) {  // confirms array
+        if ($level == 1) {  // $level reaches 1 after specified # of
+recursions 
+            return true;  // returns true to recursive function conditional
+        }  // end conditional
+        foreach ($multiarray as $array) {  // goes one level deeper into array
+            if (isDeepMultiArray($array, $level - 1)) {  // check subarray
+                $message = "I'm a multiarray";  // optional message
+                return $message;  // best if $message = true so function
+returns boolean
+            }  // end recursive function
+        }  // end loop
+    } else {  // not an array at specified level
+    return false;  // is also used recursively so can't change to message
+    }
+}
+
+if (isDeepMultiArray(array(array()), 2)); // beware this returns true
+eventhough arrays are empty
+
+?>
+BTW my notation is consistent with the PEAR manual on coding standards, which
+is what php.net says to follow. I hope a function like this gets included in
+PHP6.
+===============================================================================
+
+The is_associative_array() and is_sequential_array() functions posted by
+'rjg4013 at rit dot edu' are not accurate.
+
+The functions fail to recognize indexes that are not in sequence or in order. 
+For example, array(0=>'a', 2=>'b', 1=>'c') and array(0=>'a', 3=>'b', 5=>'c')
+would be considered as sequential arrays. A true sequential array would be in
+consecutive order with no gaps in the indices.
+
+The following solution utilizes the array_merge properties. If only one array
+is given and the array is numerically indexed, the keys get re-indexed in a
+continuous way.  The result must match the array passed to it in order to truly
+be a numerically indexed (sequential) array.  Otherwise it can be assumed to be
+an associative array (something unobtainable in languages such as C).
+
+The following functions will work for PHP >= 4.
+
+<?php
+    function is_sequential_array($var)
+    {
+        return (array_merge($var) === $var && is_numeric( implode( array_keys( 
+$var ) ) ) );
+    }
+   
+    function is_assoc_array($var)
+    {
+        return (array_merge($var) !== $var || !is_numeric( implode( array_keys(
+$var ) ) ) );
+    }
+?>
+
+If you are not concerned about the actual order of the indices, you can change
+the comparison to == and != respectively.
+===============================================================================
+
+And here is another variation for a function to test if an array is
+associative. Based on the idea by mot4h.
+
+<?php
+function is_associative($array)
+{
+  if (!is_array($array) || empty($array))
+    return false;
+
+  $keys = array_keys($array);
+  return array_keys($keys) !== $keys;
+}
+?>
+===============================================================================
+
+Or you could make use of the array_diff_key and range functions:
+
+<?php
+
+function isVector($var) { return count(array_diff_key($var, range(0, count($var
+) - 1))) == 0; }
+
+function isAssociative($var) { return !isVector($var); }
+
+?>
+===============================================================================
+
+Using empty() in the previous example posted by Anonymous will result in a
+"Fatal error: Can't use function return value in write context".  I suggest
+using count() instead:
+
+<?php
+function is_assoc($array) {
+    return (is_array($array) && 0 !== count(array_diff_key($array, array_keys(
+array_keys($array)))));
+}
+?>
+===============================================================================
+
+is_array() under PHP 5.0.2 will return FALSE when passed an object descended
+from the internal class interface ArrayAccess(http://www.php.net/spl) even
+though said object behaves as an array would in most instances.
+
+I've found the following user function helpful with my own classes and
+functions that expect array(s) as arguments, but work fine with objects that
+behave as an array would.
+
+<?php
+function is_array_abled(&$x)
+{
+    return (bool)($x instanceof ArrayAccess or is_array($x));
+}
+?>
+===============================================================================
+
+Yet another associative array test:
+
+<?php
+function binary_nand ($a, $b) { return !$a && !$b; }
+function binary_nor ($a, $b)  { return !$a || !$b; }
+
+// Returns true if array has elements with non-numeric keys
+function is_associative_array ($arr) {
+  return is_array($arr) && !empty($arr) && array_reduce(array_map("is_numeric",
+array_keys($arr)), "binary_nor", true);
+}
+
+// Returns true if all elements of array have a non-numeric key
+function is_strict_associative_array ($arr) {
+  return is_array($arr) && !empty($arr) && array_reduce(array_map("is_numeric",
+array_keys($arr)), "binary_nand", false);
+}
+?>
+===============================================================================
+
+Simple check for a Multi-Dimentional Array of any depth
+<?php
+// checks for multiarray (2 or more levels deep)
+function isMultiArray($multiarray) {
+  if (is_array($multiarray)) {  // confirms array
+    foreach ($multiarray as $array) {  // goes one level deeper
+      if (is_array($array)) {  // is subarray an array
+        return true;  // return will stop function
+      }  // end 2nd check
+    }  // end loop
+  }  // end 1st check
+  return false;  // not a multiarray if this far
+}
+?>
+===============================================================================
+
+If you wanted to have 'pure' associative arrays,
+you could filter out non-string keys and then compare the count of the original
+array with the count of the filtered array.
+
+<?php
+    // Only validates empty or completely associative arrays
+    function is_assoc ($arr) {
+        return (is_array($arr) && count(array_filter(array_keys($arr),
+'is_string')) == count($arr));
+    }
+
+    $a = '';
+    $b = 'z';
+    $c = array();
+    $d = array('x','y','z');
+    $e = array('x','y','zed'=>'z');
+    $f = array('ex'=>'x','why'=>'y','zed'=>'z');
+
+    echo '$a: ' . ( (is_assoc($a)) ? 'true' : 'false' ) ."\n"; // False
+    echo '$b: ' . ( (is_assoc($b)) ? 'true' : 'false' ) ."\n"; // False
+    echo '$c: ' . ( (is_assoc($c)) ? 'true' : 'false' ) ."\n"; // True
+    echo '$d: ' . ( (is_assoc($d)) ? 'true' : 'false' ) ."\n"; // False
+    echo '$e: ' . ( (is_assoc($e)) ? 'true' : 'false' ) ."\n"; // False
+    echo '$f: ' . ( (is_assoc($f)) ? 'true' : 'false' ) ."\n"; // True
+?>   
+
+I've tested the point of checking whether the array is empty first.
+The overall result was a 200% speed increase when the array was indeed empty,
+but an average 10% slow when it had elements inside.
+
+<?php
+    /***********************************************************
+     *    Benchmarks: checking for empty array vs. not checking  *
+     ***********************************************************/
+   
+    // With empty check
+    function is_assoc ($arr) {
+        return (is_array($arr) && (!count($arr) || count(array_filter(
+array_keys($arr),'is_string')) == count($arr)));
+    }
+   
+    function test_speed($arr) {   
+        $t = microtime(true);
+        for($i = 0; $i < 100000; ++$i) is_assoc($arr);
+        return (microtime(true) - $t);
+    }
+   
+    echo '$a: ' . test_speed($a) ."\n"; // 0.20597505569458
+    echo '$b: ' . test_speed($b) ."\n"; // 0.19199514389038
+    echo '$c: ' . test_speed($c) ."\n"; // 0.28803396224976
+    echo '$d: ' . test_speed($d) ."\n"; // 0.94685983657837
+    echo '$e: ' . test_speed($e) ."\n"; // 0.96698403358459
+    echo '$f: ' . test_speed($f) ."\n"; // 0.98052096366882
+   
+    // Without empty check
+    function is_assoc_2 ($arr) {
+        return (is_array($arr) && count(array_filter(array_keys($arr),
+'is_string')) == count($arr));
+    }
+   
+    function test_speed_2($arr) {   
+        $t = microtime(true);
+        for($i = 0; $i < 100000; ++$i) is_assoc_2($arr);
+        return (microtime(true) - $t);
+    }
+   
+    echo '$a: ' . test_speed_2($a) ."\n"; // 0.18811202049255 = FASTER:  91.3%
+of is_assoc
+    echo '$b: ' . test_speed_2($b) ."\n"; // 0.18782901763916 = FASTER:  97.8%
+of is_assoc
+    echo '$c: ' . test_speed_2($c) ."\n"; // 0.64437484741211 = SLOWER: 223.7%
+of is_assoc
+    echo '$d: ' . test_speed_2($d) ."\n"; // 0.84632205963135 = FASTER:  89.4%
+of is_assoc
+    echo '$e: ' . test_speed_2($e) ."\n"; // 0.86739897727966 = FASTER:  89.7%
+of is_assoc
+    echo '$f: ' . test_speed_2($f) ."\n"; // 0.87963700294495 = FASTER:  89.7%
+of is_assoc
+?>
+===============================================================================
+
+Mike's function is quite cool, it is just the one, I was searching for. Using
+range is a great idea! But it's a bit long for me. Here is a shorter version:
+
+<?php
+function is_assoc_array($var) {
+    if (!is_array($var)) {
+        return false;
+    }
+    return array_keys($var)!==range(0,sizeof($var)-1);
+}
+?>
+
+Or, if you don't want to type that much:
+
+<?php
+function is_assoc($var) {
+    return is_array($var) && array_keys($var)!==range(0,sizeof($var)-1);
+}
+?>
+===============================================================================
+
+Yet another safer, faster way of detecting whether an array is associative.
+
+The principle is: using array reduction on the keys, we verify that each key is
+numeric and is equal to its rank.
+
+Beware: integer keys that are not in sequence, or are negative, or with
+"holes", still make an associative array.
+
+<?php
+/**
+  * @param array $arr
+  * @returns boolean
+  */
+function isNotAssocArray($arr)
+{
+    return (0 !== array_reduce(
+        array_keys($arr),
+        create_function('$a, $b', 'return ($b === $a ? $a + 1 : 0);'),
+        0
+        )
+    );
+}
+?>
+
+Of course, it is still faster if the callback for array_reduce is not an
+anonymous function:
+
+<?php
+function callbackReduceNotArray($a, $b)
+{
+    return ($b === $a ? $a + 1 : 0);
+}
+function isVector($arr)
+{
+    return (0 !== array_reduce(
+        array_keys($arr),
+        'callbackReduceNotArray',
+        0
+        )
+    );
+}
+?>

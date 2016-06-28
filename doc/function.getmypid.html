@@ -1,0 +1,428 @@
+
+getmypid
+
+(PHP 4, PHP 5, PHP 7)
+
+getmypid — 获取 PHP 进程的 ID
+
+说明
+
+int getmypid ( void )
+
+获取当前 PHP 进程 ID。
+
+返回值
+
+返回当前 PHP 进程 ID，或在错误时返回 FALSE。
+
+注释
+
+Warning
+
+进程 ID 并不是唯一的，所以他们是一个弱煽源。对安全性有依赖的上下文中我们不推荐
+依赖于 pid。
+
+参见
+
+  • getmygid() - 获取当前 PHP 脚本拥有者的 GID
+  • getmyuid() - 获取 PHP 脚本所有者的 UID
+  • get_current_user() - 获取当前 PHP 脚本所有者名称
+  • getmyinode() - 获取当前脚本的索引节点（inode）
+  • getlastmod() - 获取页面最后修改的时间
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+The lock-file mechanism in Kevin Trass's note is incorrect because it is
+subject to race conditions.
+
+For locks you need an atomic way of verifying if a lock file exists and
+creating it if it doesn't exist. Between file_exists and file_put_contents,
+another process could be faster than us to write the lock.
+
+The only filesystem operation that matches the above requirements that I know
+of is symlink().
+
+Thus, if you need a lock-file mechanism, here's the code. This won't work on a
+system without /proc (so there go Windows, BSD, OS X, and possibly others), but
+it can be adapted to work around that deficiency (say, by linking to your pid
+file like in my script, then operating through the symlink like in Kevin's
+solution).
+
+#!/usr/bin/php
+<?php
+
+define('LOCK_FILE', "/var/run/" . basename($argv[0], ".php") . ".lock");
+
+if (!tryLock())
+    die("Already running.\n");
+
+# remove the lock on exit (Control+C doesn't count as 'exit'?)
+register_shutdown_function('unlink', LOCK_FILE);
+
+# The rest of your script goes here....
+echo "Hello world!\n";
+sleep(30);
+
+exit(0);
+
+function tryLock()
+{
+    # If lock file exists, check if stale.  If exists and is not stale, return
+TRUE
+    # Else, create lock file and return FALSE.
+
+    if (@symlink("/proc/" . getmypid(), LOCK_FILE) !== FALSE) # the @ in front
+of 'symlink' is to suppress the NOTICE you get if the LOCK_FILE exists
+        return true;
+
+    # link already exists
+    # check if it's stale
+    if (is_link(LOCK_FILE) && !is_dir(LOCK_FILE))
+    {
+        unlink(LOCK_FILE);
+        # try to lock again
+        return tryLock();
+    }
+
+    return false;
+}
+?>
+===============================================================================
+
+<?php
+/*
+
+mixed getpidinfo(mixed pid [, string system_ps_command_options])
+
+this function gets PID-info from system ps command and return it in useful
+assoc-array,
+or return false and trigger warning if PID doesn't exists
+
+$pidifo=getpidinfo(12345);
+
+print_r($pidifo);
+
+Array
+(
+    [USER] => user
+    [PID] => 12345
+    [%CPU] => 0.0
+    [%MEM] => 0.0
+    [VSZ] => 1720
+    [RSS] => 8
+    [TT] => ??
+    [STAT] => Is
+    [STARTED] => 6:00PM
+    [TIME] => 0:00.01
+    [COMMAND] => php someproces.php > logfile
+)
+
+*/
+
+//////////////////////////////////////////////
+
+function getpidinfo($pid, $ps_opt="aux"){
+
+   $ps=shell_exec("ps ".$ps_opt."p ".$pid);
+   $ps=explode("\n", $ps);
+  
+   if(count($ps)<2){
+      trigger_error("PID ".$pid." doesn't exists", E_USER_WARNING);
+      return false;
+   }
+
+   foreach($ps as $key=>$val){
+      $ps[$key]=explode(" ", ereg_replace(" +", " ", trim($ps[$key])));
+   }
+
+   foreach($ps[0] as $key=>$val){
+      $pidinfo[$val] = $ps[1][$key];
+      unset($ps[1][$key]);
+   }
+  
+   if(is_array($ps[1])){
+      $pidinfo[$val].=" ".implode(" ", $ps[1]);
+   }
+   return $pidinfo;
+}
+
+?>
+===============================================================================
+
+One good use for this is deciding on a concurrency-safe temporary file or
+directory name. You can be assured that no two processes on the same server
+have the same PID, so this is enough to avoid collisions. For example:
+
+<?php
+$tmpfile = "/tmp/foo_".getmypid();
+// Use $tmpfile...
+// Use $tmpfile...
+// Use $tmpfile...
+unlink ($tmpfile);
+?>
+
+If you are sharing /tmp over the network (which is odd....) then you can, of
+course, mix in the PHP server's IP address.
+===============================================================================
+
+Looking to create a lock-file mechanism for a cmd-line script?
+
+Enjoy!
+
+#!/usr/bin/php
+<?php
+
+define( 'LOCK_FILE', "/var/run/".basename( $argv[0], ".php" ).".lock" );
+if( isLocked() ) die( "Already running.\n" );
+
+# The rest of your script goes here....
+echo "Hello world!\n";
+sleep(30);
+
+unlink( LOCK_FILE );
+exit(0);
+
+function isLocked()
+{
+    # If lock file exists, check if stale.  If exists and is not stale, return
+TRUE
+    # Else, create lock file and return FALSE.
+
+    if( file_exists( LOCK_FILE ) )
+    {
+        # check if it's stale
+        $lockingPID = trim( file_get_contents( LOCK_FILE ) );
+
+       # Get all active PIDs.
+        $pids = explode( "\n", trim( `ps -e | awk '{print $1}'` ) );
+
+        # If PID is still active, return true
+        if( in_array( $lockingPID, $pids ) )  return true;
+
+        # Lock-file is stale, so kill it.  Then move on to re-creating it.
+        echo "Removing stale lock file.\n";
+        unlink( LOCK_FILE );
+    }
+   
+    file_put_contents( LOCK_FILE, getmypid() . "\n" );
+    return false;
+
+}
+?>
+===============================================================================
+
+On Linux you can check if a process is still running by verifying if the PID
+exists in the /proc directory :
+
+<?php
+if(file_exists('/proc/'.$pid))
+{
+    echo 'The process is still running.';
+}
+?>
+===============================================================================
+
+We also had this challenge in our company to prevent a php script in a cron job
+from overlapping each other.
+
+We made this solution
+
+<?php
+        // Initialize variables
+    $found            = 0;
+    $file                 = basename(__FILE__);
+    $commands    = array();
+
+        // Get running processes.
+    exec("ps w", $commands);
+
+        // If processes are found
+    if (count($commands) > 0) {
+
+        foreach ($commands as $command) {
+            if (strpos($command, $file) === false) {
+                               // Do nothin'
+            }
+            else {
+                               // Let's count how many times the file is found.
+                $found++;
+            }
+        }
+    }
+
+        // If the instance of the file is found more than once.
+    if ($found > 1) {
+        echo "Another process is running.\n";
+        die();
+    }
+
+        /**
+        *
+        * Regular process here...
+        *
+        */
+?>
+===============================================================================
+
+Here is how you'd use exec on a posix system to accomplish counting processes
+quickly.
+
+I want to know how many processes are running with 'update.php' in the command:
+
+ps aux|grep "[u]pdate.php"|wc -l
+
+(the trick of using [u]pdate.php instead of update.php makes sure that the grep
+command itself is not matched).  Be sure to use quotes in the command, or it
+won't work either.
+
+So, the code:
+
+<?php
+function countProcesses($scriptName)
+{
+    // ps aux|grep "[u]pdate.php"|wc -l
+    $first    =    substr($scriptName, 0, 1);
+    $rest    =    substr($scriptName, 1);
+   
+    $name    =    '"['.$first.']'.$rest.'"';
+    $cmd    =    "ps aux | grep $name | wc -l";
+           
+    $result    =    exec($cmd);
+           
+    return $result;
+}
+?>
+===============================================================================
+
+All of the examples above require you to have shell command execution turned
+on- this example uses only PHP functions and should work on any system (posix
+is included by default)-
+
+the key is posix_getsid which will return FALSE if the processes does not
+exist.
+
+<?php
+$lockfile = sys_get_temp_dir() . '/myScript.lock';
+$pid = file_get_contents($lockfile);
+if (posix_getsid($pid) === false) {
+   print "process has died! restarting...\n";
+   file_put_contents($lockfile, getmypid()); // create lockfile
+} else {
+   print "PID is still alive! can not run twice!\n";
+   exit;
+}
+?>
+
+:-) perfect if you need to make sure a cron job or shell script has ended
+before it can be started again.
+
+This works across users- if the cron job is started as 'root' your 'web user'
+can see if the process is still alive (useful for system status pages)
+===============================================================================
+
+Based on what james at voodoo dot co dot uk said, but modified for CLI scripts
+(ie: there is no $_SERVER).
+
+<?php
+
+/**
+* Check for a current process by filename
+* @param $file[optional] Filename
+* @return Boolean
+*/
+function processExists($file = false) {
+
+    $exists     = false;
+    $file       = $file ? $file : __FILE__;
+
+    // Check if file is in process list
+    exec("ps -C $file -o pid=", $pids);
+    if (count($pids) > 1) {
+        $exists = true;
+    }
+    return $exists;
+}
+
+?>
+===============================================================================
+
+My lockfile system
+
+<?php
+function isLocked(){
+    if(file_exists(LOCK_FILE)) {
+        $lockingPID = trim(file_get_contents(LOCK_FILE));
+        $test=trim(`ps -p $lockingPID -o pid=`);
+        if(!empty($test)) return true;
+        echo "Removing stale lock file.\n";
+        unlink(LOCK_FILE);
+    }
+    file_put_contents(LOCK_FILE, getmypid()."\n");
+    return false;
+}
+?>
+===============================================================================
+
+On windows, ps is not available. Instead, to view a list of running processes,
+you can use exec('tasklist'); To kill processes you can use exec('taskkill);
+Enter taskkill /? for more information.
+===============================================================================
+
+The 'ps' command has an option that can make filtering for a specific process
+more efficient.  Using this the work of looking for matching processes can be
+made neater:
+
+<?php
+    /*
+    Return an array of the pids of the processes that are running for the
+specific command
+    e.g.
+        returnPids('myprocess.php');
+    */
+    function returnPids($command) {
+        exec("ps -C $command -o pid=",$pids);
+        foreach ($pids as $key=>$value) $pids[$key]=trim($value);
+        return $pids;
+    }   
+
+    /*
+    Returns an array of the pids for processes that are like me, i.e. my
+program running
+    */
+    function returnMyPids() {
+        return returnPids(basename($_SERVER["SCRIPT_NAME"]));
+    }
+?>
+
+e.g. to bomb out if I'm running already
+
+if (count(returnMyPids())>1) exit;
+===============================================================================
+
+You can use this function also to avoid more than one instance of your app.
+
+You can also use this class.
+http://www.pure-php.de/node/20
+
+Usage:
+
+<?php
+
+inlude("ProcessHandler.class.php");
+
+if(ProcessHandler::isActive()){
+   die("Already running!\n";);
+}else{
+   ProcessHandler::activate();
+   //run my app
+}
+
+?>
+===============================================================================
+
+On windows, you can get a list of PID's using this single line statement: <?php
+$pids = array_column(array_map('str_getcsv', explode("\n",trim(`tasklist /FO
+csv /NH`))), 1); ?>.

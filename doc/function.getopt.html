@@ -1,0 +1,714 @@
+
+getopt
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+getopt — 从命令行参数列表中获取选项
+
+说明
+
+array getopt ( string $options [, array $longopts ] )
+
+解析传入脚本的选项。
+
+参数
+
+options
+    该字符串中的每个字符会被当做选项字符，匹配传入脚本的选项以单个连字符(-)开头
+    。比如，一个选项字符串 "x" 识别了一个选项 -x。只允许 a-z、A-Z 和 0-9。
+longopts
+    选项数组。此数组中的每个元素会被作为选项字符串，匹配了以两个连字符(--)传入
+    到脚本的选项。例如，长选项元素 "opt" 识别了一个选项 --opt。
+
+options 可能包含了以下元素：
+
+  • 单独的字符（不接受值）
+  • 后面跟随冒号的字符（此选项需要值）
+  • 后面跟随两个冒号的字符（此选项的值可选）
+
+选项的值是字符串后的第一个参数。它不介意值之前是否有空格。
+
+
+    Note: 选项的值不接受空格（" "）作为分隔符。
+
+    Note:
+
+    options 和 longopts 的格式几乎是一样的，唯一的不同之处是 longopts 需要是选
+    项的数组（每个元素为一个选项），而 options 需要一个字符串（每个字符是个选项
+    ）。
+
+返回值
+
+此函数会返回选项/参数对，失败时返回 FALSE。
+
+    Note:
+
+    选项的解析会终止于找到的第一个非选项，之后的任何东西都会被丢弃。
+
+更新日志
+
+版本                           说明
+5.3.0 支持 "=" 作为参数和值的分隔符。
+5.3.0 增加了可选值的支持（用"::"指定）。
+5.3.0 参数 longopts 在所有系统平台上均可用。
+5.3.0 此函数不再依赖于操作系统，现在也能够在 Windows 上运行。
+
+范例
+
+Example #1 getopt() 例子
+
+<?php
+$options = getopt("f:hp:");
+var_dump($options);
+?>
+
+通过 php script.php -fvalue -h 运行以上脚本会输出：
+
+array(2) {
+  ["f"]=>
+  string(5) "value"
+  ["h"]=>
+  bool(false)
+}
+
+Example #2 getopt() 例子#2
+
+<?php
+$shortopts  = "";
+$shortopts .= "f:";  // Required value
+$shortopts .= "v::"; // Optional value
+$shortopts .= "abc"; // These options do not accept values
+
+$longopts  = array(
+    "required:",     // Required value
+    "optional::",    // Optional value
+    "option",        // No value
+    "opt",           // No value
+);
+$options = getopt($shortopts, $longopts);
+var_dump($options);
+?>
+
+通过 php script.php -f "value for f" -v -a --required value --optional=
+"optional value" --option 运行以上脚本会输出：
+
+array(6) {
+  ["f"]=>
+  string(11) "value for f"
+  ["v"]=>
+  bool(false)
+  ["a"]=>
+  bool(false)
+  ["required"]=>
+  string(5) "value"
+  ["optional"]=>
+  string(14) "optional value"
+  ["option"]=>
+  bool(false)
+}
+
+Example #3 getopt() 例子#3
+
+传递同一多个选项
+
+<?php
+$options = getopt("abc");
+var_dump($options);
+?>
+
+使用 php script.php -aaac 运行以上脚本会输出：
+
+array(2) {
+  ["a"]=>
+  array(3) {
+    [0]=>
+    bool(false)
+    [1]=>
+    bool(false)
+    [2]=>
+    bool(false)
+  }
+  ["c"]=>
+  bool(false)
+}
+
+参见
+
+  •  $argv
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+"phpnotes at kipu dot co dot uk" and "tim at digicol dot de" are both wrong or
+misleading.  Sean was correct.  Quoted space-containing strings on the command
+line are one argument.  It has to do with how the shell handles the command
+line, more than PHP.  PHP's getopt() is modeled on and probably built upon the
+Unix/POSIX/C library getopt(3) which treats strings as strings, and does not
+break them apart on white space.
+
+Here's proof:
+
+$ cat opt.php
+#! /usr/local/bin/php
+<?php
+$options = getopt("f:");
+print_r($options);
+?>
+$ opt.php -f a b c
+Array
+(
+    [f] => a
+)
+$ opt.php -f 'a b c'
+Array
+(
+    [f] => a b c
+)
+$ opt.php -f "a b c"
+Array
+(
+    [f] => a b c
+)
+$ opt.php -f a\ b\ c
+Array
+(
+    [f] => a b c
+)
+$
+===============================================================================
+
+Sometimes you will want to run a script from both the command line and as a web
+page, for example to debug with better output or a command line version that
+writes an image to the system but a web version that prints the image in the
+browser. You can use this function to get the same options whether passed as
+command line arguments or as $_REQUEST values.
+
+<?php
+/**
+* Get options from the command line or web request
+*
+* @param string $options
+* @param array $longopts
+* @return array
+*/
+function getoptreq ($options, $longopts)
+{
+   if (PHP_SAPI === 'cli' || empty($_SERVER['REMOTE_ADDR']))  // command line
+   {
+      return getopt($options, $longopts);
+   }
+   else if (isset($_REQUEST))  // web script
+   {
+      $found = array();
+
+      $shortopts = preg_split('@([a-z0-9][:]{0,2})@i', $options, 0, 
+PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+      $opts = array_merge($shortopts, $longopts);
+
+      foreach ($opts as $opt)
+      {
+         if (substr($opt, -2) === '::')  // optional
+         {
+            $key = substr($opt, 0, -2);
+
+            if (isset($_REQUEST[$key]) && !empty($_REQUEST[$key]))
+               $found[$key] = $_REQUEST[$key];
+            else if (isset($_REQUEST[$key]))
+               $found[$key] = false;
+         }
+         else if (substr($opt, -1) === ':')  // required value
+         {
+            $key = substr($opt, 0, -1);
+
+            if (isset($_REQUEST[$key]) && !empty($_REQUEST[$key]))
+               $found[$key] = $_REQUEST[$key];
+         }
+         else if (ctype_alnum($opt))  // no value
+         {
+            if (isset($_REQUEST[$opt]))
+               $found[$opt] = false;
+         }
+      }
+
+      return $found;
+   }
+
+   return false;
+}
+?>
+
+Example
+
+<?php
+// php script.php -a -c=XXX -e=YYY -f --two --four=ZZZ --five=5
+// script.php?a&c=XXX&e=YYY&f&two&four=ZZZ&five=5
+
+$opts = getoptreq('abc:d:e::f::', array('one', 'two', 'three:', 'four:', 
+'five::'));
+
+var_dump($opts);
+
+/**
+array(7) {
+  'a' => bool(false)
+  'c' => string(3) "XXX"
+  'e' => string(3) "YYY"
+  'f' => bool(false)
+  'two' => bool(false)
+  'four' => string(3) "ZZZ"
+  'five' => string(1) "5"
+}
+*/
+?>
+===============================================================================
+
+As already mentioned getopt() will stop parsing options upon the '--'. 
+Sometimes you will have options and arguments but the user may not always
+provide the explicit -- option.
+
+Below is a quick way to collect options and arguments regardless of the --
+consistently.
+
+#!/usr/bin/php
+<?php
+
+$options = getopt('hl::m:v:a', [
+    'help',
+    'list::',
+    'module:',
+    'version:',
+    'all',
+]);
+
+var_dump( $options );
+
+$args = array_search('--', $argv);
+$args = array_splice($argv, $args ? ++$args : (count($argv) - count($opt)));
+
+var_dump( $args );
+?>
+===============================================================================
+
+To elaborate on what 'ch1902' said, there certainly are instances where you may
+need to execute a script via CLI and the HTTP protocol. In such an instance,
+you can normalize how your script parses via CLI (using getopt()) as well as
+via HTTP (using $_GET) with the following simplified code:
+
+<?php
+// PHP 5.4+ only due to the new array brace style.
+function request(array $options = []) {
+    // Set the default values.
+    $defaults = [
+        'params' => '',
+        'os' => '',
+        'username' => posix_getpwuid(posix_geteuid())['name'],
+        'env' => ''
+    ];
+    $options += $defaults;
+
+    // Sufficient enough check for CLI.
+    if ('cli' === PHP_SAPI) {
+        return getopt('', ['params:', 'os::', 'username::', 'env::']) + 
+$options;
+    }
+    return $_GET + $options;
+}
+
+print_r(request());
+?>
+
+The above code would yield the results below when access via CLI and HTTP.
+
+/**
+* params = foo/bar
+* username = housni.yakoob
+*/
+// CLI
+$ php script.php --params=foo/bar --username=housni.yakoob
+Array
+(
+    [params] => foo/bar
+    [username] => housni.yakoob
+    [os] =>
+    [env] =>
+)
+
+// HTTP
+script.php?params=foo/bar&username=housni.yakoob
+Array
+(
+    [params] => foo/bar
+    [username] => housni.yakoob
+    [os] =>
+    [env] =>
+)
+
+/**
+* params = foo/bar
+* username = Not provided, therefore, the default value will be used.
+*/
+// CLI
+$ whoami && php script.php --params=foo/bar
+housni // <-- Current users usersname (output of `whoami`).
+Array
+(
+    [params] => foo/bar
+    [os] =>
+    [username] => housni
+    [env] =>
+)
+
+// HTTP
+script.php?params=foo/bar
+Array
+(
+    [params] => foo/bar
+    [os] =>
+    // The username of my Apache user, the result of posix_getpwuid
+(posix_geteuid())['name']
+    [username] => www-data
+    [env] =>
+)
+
+As you can see, the output is consistent when the script is executed via the
+CLI or the web.
+===============================================================================
+
+One thing of important note would be that getopt() actually respects the '--'
+option to end an option list.  Thus given the code:
+
+test.php:
+<?php
+    $options = getopt("m:g:h:");
+    if (!is_array($options) ) {
+        print "There was a problem reading in the options.\n\n";
+        exit(1);
+    }
+    $errors = array();
+    print_r($options);
+?>
+
+And running:
+
+# ./test.php ./run_vfs  -h test1 -g test2 -m test3 -- this is a test -m green
+
+Will return:
+
+Array
+(
+    [h] => test1
+    [g] => test2
+    [m] => test3
+)
+
+Whereas running:
+# /test.php ./run_vfs  -h test1 -g test2 -m test3 this is a test -m green
+
+Will return:
+
+Array
+(
+    [h] => test1
+    [g] => test2
+    [m] => Array
+        (
+            [0] => test3
+            [1] => green
+        )
+
+)
+===============================================================================
+
+getopt() only returns the options specified if they were listed in the options.
+
+So you cant make a switch() use default: to complain of an unknown option. :(
+===============================================================================
+
+Here's another way of removing options found by getopt() from the argv[] array.
+It handles the different kind of parameters without eating chunks that do not
+belong to an --option. (-nr foo param1 param2 foo)
+<?php
+$parameters = array(
+  'n' => 'noparam',
+  'r:' => 'required:',
+  'o::' => 'optional::',
+);
+
+$options = getopt(implode('', array_keys($parameters)), $parameters);
+$pruneargv = array();
+foreach ($options as $option => $value) {
+  foreach ($argv as $key => $chunk) {
+    $regex = '/^'. (isset($option[1]) ? '--' : '-') . $option . '/';
+    if ($chunk == $value && $argv[$key-1][0] == '-' || preg_match($regex, 
+$chunk)) {
+      array_push($pruneargv, $key);
+    }
+  }
+}
+while ($key = array_pop($pruneargv)) unset($argv[$key]);
+?>
+===============================================================================
+
+After you use the getopt function you can use the following script to update
+the $argv array:
+<?php
+  $options = "c:ho:s:t:uvV";
+  $opts = getopt( $options );
+  foreach( $opts as $o => $a )
+  {
+    while( $k = array_search( "-" . $o, $argv ) )
+    {
+      if( $k )
+        unset( $argv[$k] );
+      if( preg_match( "/^.*".$o.":.*$/i", $options ) )
+        unset( $argv[$k+1] );
+    }
+  }
+  $argv = array_merge( $argv );
+?>
+Note: I used the array_merge function to reindex the array's keys.
+
+Cheers, Koen Bollen
+===============================================================================
+
+There are 2 simpler (and much faster) methods for getting good getopt()
+operation without creating your own handler.
+
+1. Use the Console_Getopt PEAR class (should be standard in most PHP
+installations) which lets you specify both short and long form options as well
+as whether or not arguments supplied to an option are themselves 'optional'.
+Very simple to use and requires very little code to operate compaired to
+writing own handler.
+
+2. If you cannot load external PEAR objects, use your shell's getopt()
+functions (which in BASHs case work very well) to process options and have your
+shell script then call your PHP script with a rigid argument structure that is
+very easy for PHP to digest such as:
+% myfile.php -a TRUE -b FALSE -c ARGUMENT ...
+If the initial arguments are invalid you can have the shell script return an
+error without calling the PHP script. Sounds convoluted but is a very simple
+solution and in fact PHP's own % pear command uses this method. /usr/bin/pear
+is a shell script that does some simle checking before calling pearcmd.php and
+repassing the arguments on to it.
+
+The second method is by far the best for portability because it allows a single
+shell script to check a few things like your PHP version and respond acordingly
+e.g. does it call your PHP4 or PHP5 compatible script? Also, because getopt()
+is not available on Windows, The second solution allows you to do Windows
+specific testing as a BAT file (as oposed to BASH, ZSH or Korn on UNIX).
+===============================================================================
+
+Although very interesting, koenbollen at gnospamail dot com's update of the
+argv array fails when option values follow the option with no space :
+Indeed
+    php MyScript.php5 -t5
+and
+    php MyScript.php5 -t 5
+with $options="t:" are treated as the same by getopt.
+
+This upgraded function should take care of it :
+
+File : shift_test.php5
+<?php
+    function shift($options_array)
+    {
+        foreach( $options_array as $o => $a )
+        {
+            // Look for all occurrences of option in argv and remove if found :
+            // ----------------------------------------------------------------
+            // Look for occurrences of -o (simple option with no value) or -o
+<val> (no space in between):
+            while($k=array_search("-".$o.$a,$GLOBALS['argv']))
+            {    // If found remove from argv:
+                if($k)
+                    unset($GLOBALS['argv'][$k]);
+            }
+            // Look for remaining occurrences of -o <val> (space in between):
+            while($k=array_search("-".$o,$GLOBALS['argv']))
+            {    // If found remove both option and value from argv:
+                if($k)
+                {    unset($GLOBALS['argv'][$k]);
+                    unset($GLOBALS['argv'][$k+1]);
+                }
+            }
+        }
+        // Reindex :
+        $GLOBALS['argv']=array_merge($GLOBALS['argv']);
+    }
+
+    print_r($argv);
+    $options_array=getopt('t:h');
+    shift($options_array);
+    print_r($argv);
+?>
+
+>php shift_test.php5 -h -t4 param1 param2
+will ouptut :
+Array
+(
+    [0] => test.php5
+    [1] => -h
+    [2] => -t4
+    [3] => param1
+    [4] => param2
+)
+Array
+(
+    [0] => test.php5
+    [1] => param1
+    [2] => param2
+)
+
+>php shift_test.php5 -h -t 4 param1 param2
+will ouptut :
+Array
+(
+    [0] => test.php5
+    [1] => -h
+    [2] => -t
+    [3] => 4
+    [4] => param1
+    [5] => param2
+)
+Array
+(
+    [0] => test.php5
+    [1] => param1
+    [2] => param2
+)
+===============================================================================
+
+This is how I handle arguments with getopt: I use switch within a foreach at
+the beginning of a program.
+
+<?php
+
+$opts = getopt('hs:');
+
+// Handle command line arguments
+foreach (array_keys($opts) as $opt) switch ($opt) {
+  case 's':
+    // Do something with s parameter
+    $something = $opts['s'];
+    break;
+
+  case 'h':
+    print_help_message();
+    exit(1);
+}
+
+print "$something\n";
+
+?>
+===============================================================================
+
+After getopt() of PHP5.3.0 (on Windows) ignored some parameters if there was a
+syntactical problem, I decided to code my own generic parameter parser.
+
+<?php
+    /**
+     * Parses $GLOBALS['argv'] for parameters and assigns them to an array.
+     *
+     * Supports:
+     * -e
+     * -e <value>
+     * --long-param
+     * --long-param=<value>
+     * --long-param <value>
+     * <value>
+     *
+     * @param array $noopt List of parameters without values
+     */
+    function parseParameters($noopt = array()) {
+        $result = array();
+        $params = $GLOBALS['argv'];
+        // could use getopt() here (since PHP 5.3.0), but it doesn't work
+relyingly
+        reset($params);
+        while (list($tmp, $p) = each($params)) {
+            if ($p{0} == '-') {
+                $pname = substr($p, 1);
+                $value = true;
+                if ($pname{0} == '-') {
+                    // long-opt (--<param>)
+                    $pname = substr($pname, 1);
+                    if (strpos($p, '=') !== false) {
+                        // value specified inline (--<param>=<value>)
+                        list($pname, $value) = explode('=', substr($p, 2), 2);
+                    }
+                }
+                // check if next parameter is a descriptor or a value
+                $nextparm = current($params);
+                if (!in_array($pname, $noopt) && $value === true && $nextparm !
+== false && $nextparm{0} != '-') list($tmp, $value) = each($params);
+                $result[$pname] = $value;
+            } else {
+                // param doesn't belong to any option
+                $result[] = $p;
+            }
+        }
+        return $result;
+    }
+?>
+
+A call like: php.exe -f test.php -- alfons -a 1 -b2 -c --d 2 --e=3=4 --f "alber
+t" hans wurst
+
+and an in-program call parseParameters(array('f')); would yield in a resulting
+array:
+
+Array
+(
+    [0] => alfons
+    [a] => 1
+    [b2] => 1
+    [c] => 1
+    [d] => 2
+    [e] => 3=4
+    [f] => 1
+    [1] => alber t
+    [2] => hans
+    [3] => wurst
+)
+
+As you can see, values without an identifier are stored with numeric indexes.
+Existing identifiers without values get "true".
+===============================================================================
+
+It seems under PHP 5.3.2, getopt() makes a script fail to load if called via
+HTTP without any conditions. You'll need something like if(isset($_SERVER
+['argc'])) $args = getopt(); to prevent that.
+===============================================================================
+
+About getopt(String):
+Parses the command-line arguments into an associative array, using the
+function's String parameter to specify arguments and options, thus:
+* arguments are specified as any letter followed by a colon, e.g. "h:".
+* arguments are returned as "h" => "value".
+* options are specified as any letter not followed by a colon, e.g. "r".
+* options are returned as "r" => (boolean) false.
+
+Also note that:
+1) Options or arguments not passed in the command-line parameters are not set
+in the returned associative array.
+2) Options or arguments present in the command-line arguments multiple times
+are returned as an enumerated array within the returned associative array.
+===============================================================================
+
+when using -f option to indicate script name, php does not allow to use double
+dash -- to define options after the script name;
+
+For example, the following command  cannot be execute:
+php -f myscript.php --config "myconfig.ini"
+===============================================================================
+
+I wrote a library some time ago to counter some of the missing features of the
+rather limited 'getopt' function. The library as well documentation can be
+found on my website at http://hash-bang.net/2008/12/
+missing-php-functions-getopts/
+
+It provides functionality for long switches (e.g. '--delete'), incrementing
+switches (e.g. '-v -v -v' or '-vvv' for very, very verbose), long values (e.g.
+'--exclude this.file') and lots more.

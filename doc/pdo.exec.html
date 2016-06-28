@@ -1,0 +1,266 @@
+
+PDO::exec
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.1.0)
+
+PDO::exec — 执行一条 SQL 语句，并返回受影响的行数
+
+说明
+
+int PDO::exec ( string $statement )
+
+PDO::exec() 在一个单独的函数调用中执行一条 SQL 语句，返回受此语句影响的行数。
+
+PDO::exec() 不会从一条 SELECT 语句中返回结果。对于在程序中只需要发出一次的
+SELECT 语句，可以考虑使用 PDO::query()。对于需要发出多次的语句，可用 
+PDO::prepare() 来准备一个 PDOStatement 对象并用 PDOStatement::execute() 发出语
+句。
+
+参数
+
+statement
+
+    要被预处理和执行的 SQL 语句。
+
+    查询中的数据应该被妥善地转义。
+
+返回值
+
+PDO::exec() 返回受修改或删除 SQL 语句影响的行数。如果没有受影响的行，则 
+PDO::exec() 返回 0。
+
+Warning
+
+此函数可能返回布尔值 FALSE，但也可能返回等同于 FALSE 的非布尔值。请阅读布尔类型
+章节以获取更多信息。应使用 === 运算符来测试此函数的返回值。
+
+下面例子依赖 PDO::exec() 的返回值是不正确的，其中受影响行数为 0 的语句会导致调
+用 die() ：
+<?php
+$db->exec() or die(print_r($db->errorInfo(), true));
+?>
+
+范例
+
+Example #1 发出一条 DELETE 语句
+
+计算由一条不带 WHERE 字句的 DELETE 语句删除的行数。
+
+<?php
+$dbh = new PDO('odbc:sample', 'db2inst1', 'ibmdb2');
+
+/*  删除 FRUIT 数据表中满足条件的所有行 */
+$count = $dbh->exec("DELETE FROM fruit WHERE colour = 'red'");
+
+/* 返回被删除的行数 */
+print("Deleted $count rows.\n");
+?>
+
+以上例程会输出：
+
+Deleted 1 rows.
+
+参见
+
+  • PDO::prepare() - Prepares a statement for execution and returns a statement
+    object
+  • PDO::query() - Executes an SQL statement, returning a result set as a
+    PDOStatement object
+  • PDOStatement::execute() - 执行一条预处理语句
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+This function cannot be used with any queries that return results.  This
+includes SELECT, OPTIMIZE TABLE, etc.
+===============================================================================
+
+PDO::eval() might return `false` for some statements (e.g. CREATE TABLE) even
+if the operation completed successfully, when using PDO_DBLIB and FreeTDS. So
+it is not a reliable way of testing the op status.
+
+PDO::errorInfo() can be used to test the SQLSTATE error code for '00000'
+(success) and '01000' (success with warning).
+
+<?php
+function execute(PDO $conn, $sql) {
+    $affected = $conn->exec($sql);
+    if ($affected === false) {
+        $err = $conn->errorInfo();
+        if ($err[0] === '00000' || $err[0] === '01000') {
+            return true;
+        }
+    }
+    return $affected;
+}
+?>
+
+PDO::errorInfo(): http://php.net/manual/en/pdo.errorinfo.php
+List of SQLSTATE Codes: http://www-01.ibm.com/support/knowledgecenter/
+SSGU8G_11.70.0/com.ibm.sqls.doc/ids_sqs_0809.htm
+===============================================================================
+
+It's worth noting here, that - in addition to the hints given in docs up there
+- using prepare, bind and execute provides more benefits than multiply querying
+a statement: performance and security!
+
+If you insert some binary data (e.g. image file) into database using INSERT
+INTO ... then it may boost performance of parsing your statement since it is
+kept small (a few bytes, only, while the image may be several MiBytes) and
+there is no need to escape/quote the file's binary data to become a proper
+string value.
+
+And, finally and for example, if you want to get a more secure PHP application
+which isn't affectable by SQL injection attacks you _have to_ consider using
+prepare/execute on every statement containing data (like INSERTs or SELECTs
+with WHERE-clauses). Separating the statement code from related data using
+prepare, bind and execute is best method - fast and secure! You don't even need
+to escape/quote/format-check any data.
+===============================================================================
+
+this function don't execute multi_query
+to get it see SQLITE_EXEC comments there is an pereg function that get all
+queries and execute all then an return the last one
+===============================================================================
+
+You can't use it not only with SELECT statement, but any statement that might
+return rows. "OPTIMIZE table" is such example (returns some rows with
+optimization status).
+
+If you do, PDO will lock-up with the "Cannot execute queries while other
+unbuffered queries are active." nonsense.
+===============================================================================
+
+I spent half a day trying to work out why I could not update my sqlite3
+database from apache using the PHP PDO driver. I was getting NO error messages
+at all.
+
+I could connect and select data, but not modify it.
+
+It wasn't until I added the following line:
+
+$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+
+after immediately opening the database, that I got a hint of what was
+happening.
+
+filename: File3
+dl_count: 100
+
+( ! ) Warning: PDO::exec() [pdo.exec.html]: SQLSTATE[HY000]: General error: 8
+attempt to write a readonly database in /www/htdocs/test/dl-counter/
+sqlite-readwrite-test.php on line 76
+Call Stack
+#
+Time
+Memory
+Function
+Location
+1  0.0086  330120  {main}( )  ../sqlite-readwrite-test.php:0
+  2  0.0273  331240  PDO->exec( )  ../sqlite-readwrite-test.php:76
+
+Affected Rows: ''
+
+filename: File3
+dl_count: 100
+
+The problem was with the file permissions. As root I could read and write the
+database from the sqlite3 command line monitor. But Apache was unable to write
+the database.
+
+Changed the permissions to 755 wwwrun:wwrun and it all works OK!
+
+Thanks again :)
+===============================================================================
+
+If you do this:
+
+<?php
+$res = $dbh->query("SELECT * FROM sessions                        WHERE
+session_id = '$p_sessID'");
+
+$l_records = $res->fetch(PDO::FETCH_ASSOC);
+
+if( $l_records ) {
+   // ...update session-data
+   $l_theQuery = "UPDATE sessions SET session_expires='$newExp', session_data='
+$p_sessData' WHERE session_id='$p_sessID'";
+   echo $l_theQuery;
+   $l_stmt = $this->db->prepare($l_theQuery);
+
+   if ( $l_stmt ) {
+      $l_rows = $l_stmt->execute();
+   }
+}
+?>
+
+You will get nothing.
+
+But do this:
+
+<?php
+$dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+?>
+
+Prior to the code above, you will get this:
+
+"PDO::prepare(): SQLSTATE[HY000]: General error: 2014 Cannot execute queries
+while other unbuffered queries are active. Consider using
+PDOStatement::fetchAll(). Alternatively, if your code is only ever going to run
+against mysql, you may enable query buffering by setting the
+PDO::MYSQL_ATTR_USE_BUFFERED_QUERY attribute."
+
+So, instead of fetch(), use fetchAll(), it will make you less insane.
+
+Incidentally, the INSERT statement that I was issuing, if the record that I
+needed to update didn't yet exist, after the initial fetch() command worked
+perfectly.
+
+Changing to fetchAll() fixed it.
+===============================================================================
+
+For those that want an exec that handles params like prepare/execute does.  You
+can simulate this with another function
+
+<?php
+class Real_PDO extends PDO {
+  public function execParams($sql, $params) {
+    $stm = $this->prepare($sql);
+    $result = false;
+    if( $stm && $stm->execute($params) ) {
+      $result = $stm->rowCount();
+      while( $stm->fetch(PDO::FETCH_ASSOC) ) {
+      }
+    }
+    return $result;
+  }
+}
+?>
+
+Remember though, if you are doing a lot of inserts, you'll want to do it the
+manual way, as the prepare statement will speed up when doing multiple executes
+(inserts).  I use this so I can place all my SQL statements in one place, and
+have auto safe quoting against sql-injections.
+
+If you are wondering about the fetch after, remember some databases can return
+data SELECT-like data from REMOVE/INSERTS.  In the case of PostgreSQL, you can
+have it return you all records that were actually removed, or have the insert
+return the records after the insert/post field functions, and io trigger fire,
+to give you normalized data.
+
+<?php
+define("BLAH_INSERT", "INSERT INTO blah (id,data) VALUES(?,?)");
+$pdo = new Real_PDO("connect string");
+$data = array("1", "2");
+$pdo->execParams(BLAH_INSERT, $data);
+?>
+===============================================================================
+
+if  a field's value is a string, u must use single quotes, for example:
+update a set b = 'test' where id = 1
+
+if u use    update a set b = "test" where id = 1
+it does not run as u expect
+i do not know what the reason

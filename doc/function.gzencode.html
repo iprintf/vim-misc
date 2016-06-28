@@ -1,0 +1,262 @@
+
+gzencode
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+gzencode — Create a gzip compressed string
+
+说明
+
+string gzencode ( string $data [, int $level = -1 [, int $encoding_mode =
+FORCE_GZIP ]] )
+
+This function returns a compressed version of the input data compatible with
+the output of the gzip program.
+
+For more information on the GZIP file format, see the document: » GZIP file
+format specification version 4.3 (RFC 1952).
+
+参数
+
+data
+
+    The data to encode.
+
+level
+
+    The level of compression. Can be given as 0 for no compression up to 9 for
+    maximum compression. If not given, the default compression level will be
+    the default compression level of the zlib library.
+
+encoding_mode
+
+    The encoding mode. Can be FORCE_GZIP (the default) or FORCE_DEFLATE.
+
+    Prior to PHP 5.4.0, using FORCE_DEFLATE results in a standard zlib deflated
+    string (inclusive zlib headers) after a gzip file header but without the
+    trailing crc32 checksum.
+
+    In PHP 5.4.0 and later, FORCE_DEFLATE generates RFC 1950 compliant output,
+    consisting of a zlib header, the deflated data, and an Adler checksum.
+
+返回值
+
+The encoded string, or FALSE if an error occurred.
+
+更新日志
+
+版本                           说明
+5.4.0 FORCE_DEFLATE now generates RFC 1950 compliant output.
+
+范例
+
+The resulting data contains the appropriate headers and data structure to make
+a standard .gz file, e.g.:
+
+Example #1 Creating a gzip file
+
+<?php
+$data = implode("", file("bigfile.txt"));
+$gzdata = gzencode($data, 9);
+$fp = fopen("bigfile.txt.gz", "w");
+fwrite($fp, $gzdata);
+fclose($fp);
+?>
+
+参见
+
+  • gzdecode() - Decodes a gzip compressed string
+  • gzdeflate() - Deflate a string
+  • gzinflate() - Inflate a deflated string
+  • gzuncompress() - Uncompress a compressed string
+  • gzcompress() - Compress a string
+  • »  ZLIB Compressed Data Format Specification (RFC 1950)
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+NOTE:
+
+doing like this and so on
+
+<?php
+  file_put_contents('output.gz', gzencode( file_get_contents('input.file'),9));
+?>
+
+(complete file reading)
+
+may cause memory overflow (Fatal error: Allowed memory size of ..), so it's
+better to read by parts/bytes.
+===============================================================================
+
+Had some trouble finding the correct way to send a Content-Length header with
+HTTP compression.
+The pitch is to use gzencode (not gzdeflaten not gzcompress).
+
+<?php
+
+// disable ZLIB ouput compression
+ini_set('zlib.output_compression','Off');
+
+// compress data
+$gzipoutput = gzencode($output,6);
+
+// various headers, those with # are mandatory
+header('Content-Type: application/x-download');
+header('Content-Encoding: gzip'); #
+header('Content-Length: '.strlen($gzipoutput)); #
+header('Content-Disposition: attachment; filename="myfile.name"');
+header('Cache-Control: no-cache, no-store, max-age=0, must-revalidate');
+header('Pragma: no-cache');
+
+// output data
+echo $gzipoutput;
+
+?>
+===============================================================================
+
+this is a benchmark test of gzencode (.txt file)
+----------------------------------------------
+original file size = 3.29 MB (3,459,978 bytes)
+compress lvl 1 = 1.09 MB (1,144,006 bytes)
+compress lvl 2 = 1.06 MB (1,119,518 bytes)
+compress lvl 3 = 1.03 MB (1,085,567 bytes)
+compress lvl 4 = 953 KB (976,538 bytes)
+compress lvl 5 = 909 KB (931,486 bytes)
+compress lvl 6 = 910 KB (932,516 bytes)
+compress lvl 7 = 910 KB (932,608 bytes)
+compress lvl 8 = 910 KB (932,646 bytes)
+compress lvl 9 = 910 KB (932,652 bytes)
+----------------------------------------------
+===============================================================================
+
+here is my clean up of supaplex %at% pcbkits %d0t% c0m
+submission above.
+
+function alt_gzdecode($gzdatadecode) {
+  // seed with microseconds since last "whole" second.
+  mt_srand((float)microtime()*1000000);
+  $eh="/tmp/php-" . md5(mt_rand(0,mt_getrandmax())) . ".gz";
+  if(file_exists($eh)){
+
+  $gzf=fopen($eh,"w");
+  fwrite($gzf,$gzdatadecode);
+  fclose($gzf);
+
+  $gzf = gzopen ($eh, "r");
+  $gzdatadecode=gzpassthru($gzf);
+  unlink($eh);
+
+  return $gzdatadecode;
+  }else{
+  return 'File '.$eh.' was not found.';
+  }
+}
+===============================================================================
+
+The 10 byte string in gzencode is the standard gzip header. The first two bytes
+(1f 8b) define the return as a gzip file, the third byte (08) means that the
+body is compressed using the "deflate" algorithm. The rest is padding (00)'s.
+
+Technically, I believe one should check if the third byte is hex 08 and if so
+strip off the first ten bytes and last four bytes and run inflate on it. The
+last four bytes are file size and checksum bits.
+
+In practice, you can get away with just stripping the first 10 bytes and
+running inflate on it.
+
+Hope this helps,
+
+terry
+===============================================================================
+
+Aaron G. 07-Aug-2004 03:29 posted the excellent function gzdecode() (SEE BELOW)
+BUGFIX: Change: if($flags & 1) to ... if($flags & 2)
+
+Unfortunately the function gzencode() does NOT append a CRC! So the previous
+version worked with output of gzencode but not with output of the gzip program
+itself.
+===============================================================================
+
+Well, I was looking for a gzdecode too and didn't consider the temporary file
+example above to be very elegant.
+However, as is noted in the very first comment: gzencode() only adds a  10 byte
+header.
+
+I don't quite know what this header is supposed to be used for, but gzinflate()
+certainly doesn't like it, so I stripped it off:
+
+function my_gzdecode($string) {
+  $string = substr($string, 10);
+  return gzinflate($string);
+}
+
+That's useful to read HTTP-Connections that were compressed by mod_gzip.
+--
+Henryk Pl tz
+Gr  e aus Berlin
+===============================================================================
+
+I was almost discouraged when I didn't find a gzdecode() function!  However,
+fear not, for I'll contribute my work... :)
+function alt_gzdecode($str) {
+  // seed with microseconds since last "whole" second.
+  mt_srand((float)microtime()*1000000);
+  $eh="/tmp/php-" . md5(mt_rand(0,mt_getrandmax())) . ".gz";
+
+
+  $fd=fopen($eh,"w");
+  fwrite($fd,$str);
+  fclose($fd);
+
+  $fd = gzopen ($eh, "r");
+  $str=gzpassthru($fd);
+  unlink($eh);
+
+  return $str;
+}
+
+It's only ugly point is that it does not check to see if the file already
+exists.  You may also have to adjust reference names like $str and $fd if they
+stomp on your code. (Sorry, but this is all you get atm! ;} )  If your
+conserned about a race condition, cry for a internal gzdecode() function that
+actualy functions...
+I spent about 3 hours straight debugging this problem.  I know the input data
+was valid, becuase I validated it with MD5() to compare to the md5's I had made
+of the input data before hand.  I'm not sure whats up with gzuncompress or
+gzinflate, but this works in its place . . .
+
+Enjoy!
+===============================================================================
+
+Correct is:
+<?php
+  file_put_contents('output.gz', gzencode( file_get_contents('input.file'),9));
+?>
+===============================================================================
+
+function alt_gzdecode($str) {
+  // seed with microseconds since last "whole" second
+  mt_srand((float)microtime()*1000000);
+  $eh="/tmp/php-" . md5(mt_rand(0,mt_getrandmax())) . ".gz";
+
+  $fd=fopen($eh,"w");
+  fwrite($fd,$str);
+  fclose($fd);
+
+  unset($str);
+
+  $fd = gzopen ($eh, "r");
+  while (1==1) {
+    $s=gzread($fd,10240);
+    if ("$s" == "") {
+      break;
+    }
+    $str=$str . $s;
+  }
+  unlink($eh);
+
+  return $str;
+}

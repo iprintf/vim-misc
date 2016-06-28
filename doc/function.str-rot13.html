@@ -1,0 +1,466 @@
+
+str_rot13
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+str_rot13 — 对字符串执行 ROT13 转换
+
+说明
+
+string str_rot13 ( string $str )
+
+对 str 参数执行 ROT13 编码并将结果字符串返回。
+
+ROT13 编码简单地使用字母表中后面第 13 个字母替换当前字母，同时忽略非字母表中的
+字符。编码和解码都使用相同的函数，传递一个编码过的字符串作为参数，将得到原始字
+符串。
+
+参数
+
+str
+
+    输入字符串。
+
+返回值
+
+返回给定字符串的 ROT13 版本。
+
+范例
+
+Example #1 str_rot13() 范例
+
+<?php
+
+echo str_rot13('PHP 4.3.0'); // CUC 4.3.0
+
+?>
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+I was reminded again of the desire for a generic str_rot function. Character
+manipulation loops in PHP are slow compared to their C counterparts, so here's
+a tuned version of the previous function I posted. It's 1.6 times as fast,
+mainly by avoiding chr() calls.
+
+<?php
+function str_rot($s, $n = 13) {
+    static $letters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $n = (int)$n % 26;
+    if (!$n) return $s;
+    if ($n == 13) return str_rot13($s);
+    for ($i = 0, $l = strlen($s); $i < $l; $i++) {
+        $c = $s[$i];
+        if ($c >= 'a' && $c <= 'z') {
+            $s[$i] = $letters[(ord($c) - 71 + $n) % 26];
+        } else if ($c >= 'A' && $c <= 'Z') {
+            $s[$i] = $letters[(ord($c) - 39 + $n) % 26 + 26];
+        }
+    }
+    return $s;
+}
+?>
+
+But using strtr() you can get something 10 times as fast as the above :
+
+<?php
+function str_rot($s, $n = 13) {
+    static $letters = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz';
+    $n = (int)$n % 26;
+    if (!$n) return $s;
+    if ($n < 0) $n += 26;
+    if ($n == 13) return str_rot13($s);
+    $rep = substr($letters, $n * 2) . substr($letters, 0, $n * 2);
+    return strtr($s, $letters, $rep);
+}
+?>
+
+This technique is faster because PHP's strtr is implemented in C using a byte
+lookup table (it has O(m + n) complexity). However, PHP 6 will use Unicode, so
+I guess(?) strtr will then have to be implemented with a search for each
+character (O(m * n)). Using strtr might still be faster since it offloads the
+character manipulation to C rather than PHP, but I don't really know. Take your
+pick.
+
+Happy coding!
+
+(Benchmark code):
+
+<?php
+for ($k = 0; $k < 10; $k++) {
+    $s = 'The quick brown fox jumps over the lazy dog.';
+    $t = microtime(1);
+    for ($i = 0; $i < 1000; $i++) $s = str_rot($s, $i);
+    $t = microtime(1) - $t;
+    echo number_format($t, 3) . "\n";
+}
+?>
+===============================================================================
+
+This ROT13 variant is different from my earlier version in that it retains
+'ethnicity'. For example, a Chinese text when encrypted will remain Chinese,
+and the string will not be making sense (the real meaning will be encrypted).
+Just look at the code and you will understand.
+
+<?php
+
+function unichar2ords($char, $encoding = 'UTF-8') {       
+    $char = mb_convert_encoding($char, 'UCS-4', $encoding);
+    $val = unpack('N', $char);           
+    return $val[1];
+    }
+
+function ords2unichar($ords, $encoding = 'UTF-8'){
+    $char = pack('N', $ords);
+    return mb_convert_encoding($char, $encoding, 'UCS-4');           
+    }
+
+function mbStringToArray ($string, $encoding = 'UTF-8') {
+    if (empty($string)) return false;
+    for ($strlen = mb_strlen($string, $encoding); $strlen > 0; ) {
+        $array[] = mb_substr($string, 0, 1, $encoding);
+        $string  = mb_substr($string, 1, $strlen, $encoding);
+        $strlen  = $strlen - 1;
+        }
+    return $array;
+    }
+
+function unicodeRotN($str, $offset, $encoding = 'UTF-8') {
+    $val = '';
+    $array = mbStringToArray ($str, $encoding = 'UTF-8');
+    $len = count($array);
+    for ($i = 0; $i < $len; $i++) {
+        $val .= ords2unichar(unichar2ords($array[$i], $encoding) + $offset, 
+$encoding);
+        }
+    return $val;
+    }
+
+// example
+
+$original = '中國是我的家'; // means "China is my home"
+
+$encrypted = unicodeRotN($string, 13); // 为團昼戞皑寃 means "Ñ Ai injustice
+for the Mission Day" (Google translation)
+
+$decrypted = unicodeRotN($encrypted, -13); // 中國是我的家
+
+?>
+===============================================================================
+
+I was writing a function for my website to also rotate numbers, and kept
+expanding it. I added extra characters, the ability to define the shift in
+percent, and which type of characters to affect.
+
+<?php
+//================================================== STRING ROTATE EXPANDED
+function str_shift ($string, $perc=50, $useextra=FALSE, $usedigits=TRUE, 
+$useupper=TRUE, $uselower=TRUE) {
+    static $chars = array(
+        'lower' => 'abcdefghijklmnopqrstuvwxyz',
+        'upper' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+        'digits' => '0123456789',
+        'extra' => ',.-()<>%/!"&=;:_[]{}#\\?\'+*',
+    );
+    settype($perc, 'float');
+    if  (!$perc)  return $string;
+    $perc = fmod((abs($perc) < 1 ? 100*$perc : $perc), 100);
+    if  ($perc < 0)  $perc += 100;
+    $use = (is_array($useextra) ? $useextra : array('lower'=>$uselower, 'upper'
+=>$useupper, 'digits'=>$usedigits, 'extra'=>$useextra));
+    foreach ($chars as $type => $letters) {
+        if  (!$use[$type])  continue;
+        $shift = round(strlen($letters) * $perc / 100);
+        $repl = substr($letters, $shift).substr($letters, 0, $shift);
+        $string = strtr($string, $letters, $repl);
+    }
+    return $string;
+}
+
+//===== USAGE =====
+
+string str_shift ( string $str [, float $percent [, bool $useextra [, bool
+$usedigits [, bool $uselower [, bool $useupper] ] ] ] ] )
+
+string str_shift ( string $str [, float $percent [, array $usetypes ] ] )
+
+$usetypes = array('lower'=>bool $uselower, 'upper'=>bool $useupper, 'digits'=>
+bool $usedigits, 'extra'=>bool $useextra);
+
+//===== EXAMPLES =====
+
+$string = "Peter's 17 pets (incl. 5 hamsters) love Dr Sarah Gibson, DVM!";
+echo str_shift($string);
+echo str_shift($string, 50, TRUE);
+echo str_shift($string, -25, FALSE, FALSE);
+echo str_shift($string, 1/3);
+echo str_shift($string, 50, array('lower'=>TRUE, 'digits'=>TRUE));
+?>
+
+//===== RESULT =====
+
+Crgre'f 62 crgf (vapy. 0 unzfgref) ybir Qe Fnenu Tvofba, QIZ!
+Crgre"f 62 crgf [vapy: 0 unzfgref] ybir Qe Fnenu Tvofba; QIZ?
+Jynyl'm 17 jynm (chwf. 5 bugmnylm) fipy Xl Mulub Acvmih, XPG!
+Yncna'b 40 yncb (rwlu. 8 qjvbcnab) uxen Ma Bjajq Prkbxw, MEV!
+Prgre'f 62 crgf (vapy. 0 unzfgref) ybir De Snenu Gvofba, DVM!
+
+1. The basic parameters are the string and the percentage, 50 by default. The
+next four parameters allow to select which type of characters to process. There
+is a good reason why I put less common types first, and most obvious last. To
+activate extra characters you need only 1 additional parameter, otherwise you
+would need 4 enabling also the obvious types.
+
+2. The definition for the letters and digits is obvious. For the extra
+characters I chose kind of pairs that make sense when shifted by 50%, e.g. ()
+=> [] or & => + etc. Of course you can adjust those characters to anything you
+like.
+
+3. The first step is to clean the percentage, and also allow "real" floats,
+e.g. 1/3 for 33.33%.
+
+4. The next step secures great flexibility when using the function. As
+described, instead of 4 boolean parameters you can pass 1 array. E.g. the array
+('upper' => TRUE) will enable the change of uppercase letters only.
+
+5. Finally the function goes through every type and shifts the characters
+according to the given percentage.
+
+I hope you can use this function and do some fancy stuff with it. Rotating
+characters doesn't really make sense, but it can be fun.
+
+Arthur :-)
+===============================================================================
+
+Perhaps someone will find this useful ;)
+
+<?
+           function rotN($s, $n){
+                $s2 = "";
+                for($i = 0; $i < strlen($s); $i++){
+                    $char2 = $char = ord($s{$i});
+                    $cap = $char & 32;
+
+                    $char &= ~ $cap;
+                    $char = $char > 64 && $char < 123 ? (($char - 65 + $n) % 26
++ 65) : $char;
+                    $char |= $cap;
+                    if($char < 65 && $char2 > 64 || ($char > 90 && $char < 97 &
+& ($char2 < 91 || $char2 > 96))) $char += 26;
+                    else if($char > 122 && $char2 < 123) $char -= 52;
+                    if(strtoupper(chr($char2)) === chr($char2)) $char =
+strtoupper(chr($char)); else $char = strtolower(chr($char));
+                    $s2 .= $char;
+                }
+                return $s2;
+            }
+?>
+It takes any string, $s, and any ROT value, $n. Just like str_rot13, it's both
+an encoder and decoder. To decode an encoded string, just pass -$n instead of
+$n.
+===============================================================================
+
+<?php
+
+/**
+* Rotate each string characters by n positions in ASCII table
+* To encode use positive n, to decode - negative.
+* With n = 13 (ROT13), encode and decode n can be positive.
+*
+* @param string $string
+* @param integer $n
+* @return string
+*/
+function rotate($string, $n) {
+   
+    $length = strlen($string);
+    $result = '';
+   
+    for($i = 0; $i < $length; $i++) {
+        $ascii = ord($string{$i});
+       
+        $rotated = $ascii;
+       
+        if ($ascii > 64 && $ascii < 91) {
+            $rotated += $n;
+            $rotated > 90 && $rotated += -90 + 64;
+            $rotated < 65 && $rotated += -64 + 90;
+        } elseif ($ascii > 96 && $ascii < 123) {
+            $rotated += $n;
+            $rotated > 122 && $rotated += -122 + 96;
+            $rotated < 97 && $rotated += -96 + 122;
+        }
+       
+        $result .= chr($rotated);
+    }
+   
+    return $result;
+}
+
+$enc = rotate('string', 6);
+echo "Encoded: $enc<br/>\n";
+echo 'Decoded: ' . rotate($enc, -6);
+
+?>
+===============================================================================
+
+here's my rot function, it works anyway
+<?php
+/**
+* preforms the rotation algorithm on the passed in string
+*/
+function _rot( $str , $dist=13 ){
+    if( !is_numeric($dist) || $dist < 0){
+        $dist = 13;
+    }
+
+    $u_lower =  65; $u_upper =  90;
+    $l_lower =  97; $l_upper = 122;
+   
+    $char_count = ($u_upper - $u_lower) +1;
+
+    while( $dist > $char_count ){
+        $dist -= $char_count;
+    }
+
+    $newstr = '';
+   
+    for( $i=0; $i<strlen($str); ++$i){
+        $c = ord($str[$i]);
+
+        /*
+         * Check if the character is within the bounds of our function (a-zA-z)
+         * if not it gets tacked on to the string as is and we move on to the
+         * next one.
+         */
+        if( $c<$u_lower || $c>$l_upper || ( $c>$u_upper && $c <$l_lower ) ){
+            $newstr .= chr($c);
+            continue;
+        }
+
+        $lower = ( $c<=$u_upper?$u_lower:$l_lower);
+        $upper = ( $c<=$u_upper?$u_upper:$l_upper);
+
+        $c += $dist;
+
+        if( $c > $upper){
+            $c = (($c - $upper) + ($lower-1));
+        }
+
+        $newstr .= chr($c);
+    }
+   
+    return $newstr;
+}
+?>
+===============================================================================
+
+/**
+SALVAJE COMENTARIO EN ESPAÑOL XD
+*/
+
+<?php 
+
+   
+$cadena = $_POST['entrada'];
+
+/**convierte en cadena*/
+$array = str_split($cadena);
+
+echo $cadena ."<br>";
+
+for ($i=0; $i < count($array); $i++) {
+
+if( $array[$i] >= "A" &&  $array[$i] <= "M" ){
+$letra = ord($array[$i]);
+$letra = $letra + 13;
+echo chr($letra);
+}
+
+if( $array[$i] >= "N" &&  $array[$i] <= "Z" ){
+$letra = ord($array[$i]);
+$letra = $letra - 13;
+echo chr($letra);
+}
+
+}
+
+?>
+===============================================================================
+
+Here is my ROT13 function that works for all possible characters and not just
+ASCII. It can be used on Chinese, Japanese, ....
+
+<?php
+
+function rot13encrypt ($str) {
+    return str_rot13(base64_encode($str));
+    }
+
+function rot13decrypt ($str) {
+    return base64_decode(str_rot13($str));
+    }
+
+// example
+
+$string = '中國是我的家';
+
+$encrypted = rot13encrypt ($string); // produces 5Yvg5MlY5cvi5bvE55dR5n62
+
+$decrypted = rot13decrypt ($encrypted); // produces 中國是我的家
+
+?>
+===============================================================================
+
+Below is a short function that allows you to rotate a string which includes non
+alphabetic characters you choose.
+
+By running the code without the second argument you can both obfuscate then
+de-obfuscate.  This isn't a safe form of encryption, just a quick way to hide
+stuff from the casual viewer.
+
+function str_rot($s, $n = -1) {
+    //Rotate a string by a number.
+    static $letters =
+'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789.,!$*+-?@#'; //
+To be able to de-obfuscate your string the length of this needs to be a
+multiple of 4 AND no duplicate characters
+    $letterLen=round(strlen($letters)/2);
+    if($n==-1) $n=(int)($letterLen/2); //Find the "halfway rotate point"
+    $n = (int)$n % ($letterLen);
+    if (!$n) return $s;
+    if ($n < 0) $n += ($letterLen);
+    //if ($n == 13) return str_rot13($s);
+    $rep = substr($letters, $n * 2) . substr($letters, 0, $n * 2);
+    return strtr($s, $letters, $rep);
+}
+
+$input="ABC123";
+$output=str_rot($input);
+echo $input." = ".$output." = ".str_rot($output)."<br>";
+===============================================================================
+
+Here's my implementation of a str_rot that takes a custom offset. It's faster
+than the others here because it allocates the output string in one go instead
+of tacking on characters one at a time. It can handle positive or negative
+offsets of any size, and it fixes everything up to ensure only upper and lower
+case letters are translated and that they wrap around correctly within the
+alphabet.
+
+<?php
+function str_rot($s, $n = 13) {
+    $n = (int)$n % 26;
+    if (!$n) return $s;
+    for ($i = 0, $l = strlen($s); $i < $l; $i++) {
+        $c = ord($s[$i]);
+        if ($c >= 97 && $c <= 122) {
+            $s[$i] = chr(($c - 71 + $n) % 26 + 97);
+        } else if ($c >= 65 && $c <= 90) {
+            $s[$i] = chr(($c - 39 + $n) % 26 + 65);
+        }
+    }
+    return $s;
+}
+?>

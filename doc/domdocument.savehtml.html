@@ -1,0 +1,363 @@
+
+DOMDocument::saveHTML
+
+(PHP 5, PHP 7)
+
+DOMDocument::saveHTML — Dumps the internal document into a string using HTML
+formatting
+
+说明
+
+public string DOMDocument::saveHTML ([ DOMNode $node = NULL ] )
+
+Creates an HTML document from the DOM representation. This function is usually
+called after building a new dom document from scratch as in the example below.
+
+参数
+
+node
+
+    Optional parameter to output a subset of the document.
+
+返回值
+
+Returns the HTML, or FALSE if an error occurred.
+
+更新日志
+
+版本              说明
+5.3.6 The node parameter was added.
+
+范例
+
+Example #1 Saving a HTML tree into a string
+
+<?php
+
+$doc = new DOMDocument('1.0');
+
+$root = $doc->createElement('html');
+$root = $doc->appendChild($root);
+
+$head = $doc->createElement('head');
+$head = $root->appendChild($head);
+
+$title = $doc->createElement('title');
+$title = $head->appendChild($title);
+
+$text = $doc->createTextNode('This is the title');
+$text = $title->appendChild($text);
+
+echo $doc->saveHTML();
+
+?>
+
+参见
+
+  • DOMDocument::saveHTMLFile() - Dumps the internal document into a file using
+    HTML formatting
+  • DOMDocument::loadHTML() - Load HTML from a string
+  • DOMDocument::loadHTMLFile() - Load HTML from a file
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+This method, as of 5.2.6, will automatically add <html><body> and <!DOCTYPE>
+tags to the document if they are missing, without asking whether you want them.
+In my application, I needed to use the DOM methods to manipulate just a
+fragment of html, so these tags were rather unhelpful.
+
+Here's a simple hack to remove them in case, like me, all you wanted to do was
+perform a few operations on an HTML fragment.
+
+$html_fragment = preg_replace('/^<!DOCTYPE.+?>/', '', str_replace( array('
+<html>', '</html>', '<body>', '</body>'), array('', '', '', ''), $dom->saveHTML
+()));
+===============================================================================
+
+Since PHP/5.3.6, DOMDocument->saveHTML() accepts an optional DOMNode parameter
+similarly to DOMDocument->saveXML():
+
+http://bugs.php.net/bug.php?id=39771
+===============================================================================
+
+I am using this solution to prevent tags and the doctype from being added to
+the HTML string automatically:
+
+<?php
+$html = '<h1>Hello world!</h1>';
+$html = '<div>' . $html . '</div>';
+$doc = new DOMDocument;
+$doc->loadHTML($html);
+echo substr($doc->saveXML($doc->getElementsByTagName('div')->item(0)), 5, -6)
+
+// Outputs: "<h1>Hello world!</h1>"
+?>
+===============================================================================
+
+<?php
+// Using DOM to fix sloppy HTML.
+// An example by Tyson Clugg <tyson@clugg.net>
+//
+// vim: syntax=php expandtab tabstop=2
+
+function tidyHTML($buffer)
+{
+  // load our document into a DOM object
+  $dom = @DOMDocument::loadHTML($buffer);
+  // we want nice output
+  $dom->formatOutput = true;
+  return($dom->saveHTML());
+}
+
+// start output buffering, using our nice
+// callback funtion to format the output.
+ob_start("tidyHTML");
+
+?>
+<html>
+<p>It's like comparing apples to oranges.
+</html>
+<?php
+
+// this will be called implicitly, but we'll
+// call it manually to illustrate the point.
+ob_end_flush();
+
+?>
+
+The above code takes out sloppy HTML:
+<html>
+<p>It's like comparing apples to oranges.
+</html>
+
+And cleans it up to the following:
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://
+www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>It's like comparing apples to oranges.
+</p></body></html>
+===============================================================================
+
+To solve the script tag problem just add an empty text node to the script node
+and DOMDocument will render <script src="your.js"></script> nicely.
+===============================================================================
+
+If you want a simpler way to get around the <script> tag problem try:
+
+<?php
+
+  $script = $doc->createElement ('script');\
+  // Creating an empty text node forces <script></script>
+  $script->appendChild ($doc->createTextNode (''));
+  $head->appendChild ($script);
+
+?>
+===============================================================================
+
+To avoid script tags from being output as <script />, you can use the
+DOMDocumentFragment class:
+
+<?php
+
+$doc = new DOMDocument();
+$doc -> loadXML($xmlstring);
+$fragment = $doc->createDocumentFragment();
+/* Append the script element to the fragment using raw XML strings (will be
+preserved in their raw form) and if succesful proceed to insert it in the DOM
+tree */
+if($fragment->appendXML("<script type='text/javascript' src='$source'></script>
+") {
+  $xpath = new DOMXpath($doc);
+  $resultlist = $xpath->query("//*[local-name() = 'html']/*[local-name() =
+'head']"); /* namespace-safe method to find all head elements which are childs
+of the html element, should only return 1 match */
+  foreach($resultlist as $headnode)  // insert the script tag
+     $headnode->appendChild($fragment);
+}
+$doc->saveXML(); /* and our script tags will still be <script></script> */
+
+?>
+===============================================================================
+
+DOMDocument->saveXML() doesn't generate a proper XHTML format either.
+
+There is a problem with "script" empty elements. For example:
+
+This will be the code generated by saveXML, with an empty script tag.
+
+<html>
+  <head>
+    <script type="text/JavaScript" src="myScript.js"/>
+  </head>
+  <body>
+    <p>I will not appear</p>
+    <script type="text/JavaScript">
+    alert("Not working");
+    </script>
+  </body>
+</html>
+
+I don't know if this is valid XHTML (W3C Validator doesn't complain), but both
+FF 2.0 and IE 6 will not render it properly. Both will use </script> as the
+closing tag for the first script causing js errors and ignoring in between
+elements.
+
+You can post-process saveXML string in order to close empty tags with the
+following function:
+
+<?php
+    function cerrarTag($tag, $xml){
+        $indice = 0;
+        while ($indice< strlen($xml)){
+            $pos = strpos($xml, "<$tag ", $indice);
+            if ($pos){
+                $posCierre = strpos($xml, ">", $pos);
+                if ($xml[$posCierre-1] == "/"){
+                    $xml = substr_replace($xml, "></$tag>", $posCierre-1, 2);
+                }
+                $indice = $posCierre;
+            }
+            else break;
+        }
+        return $xml;
+    }
+?>
+
+At least script and select empty elements should be closed. This example shows
+how it can be used:
+
+<?php
+    define("CABECERA_XHTML", '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
+Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">');
+
+  $xhtml = $docXML->saveXML($docXML->documentElement);
+  $xhtml = cerrarTag("script", $xhtml);
+  $xhtml = cerrarTag("select", $xhtml);
+  $xhtml = CABECERA_XHTML."\n".$xhtml;
+  echo $xhtml;
+?>
+===============================================================================
+
+If created your DOMDocument object using loadHTML() (where the source is from
+another site) and want to pass your changes back to the browser you should make
+sure the HTTP Content-Type header matches your meta content-type tags value
+because modern browsers seem to ignore the meta tag and trust just the HTTP
+header. For example if you're reading an ISO-8859-1 document and your web
+server is claiming UTF-8 you need to correct it using the header() function.
+
+<?php
+header('Content-Type: text/html; charset=iso-8859-1');
+?>
+===============================================================================
+
+XHTML:
+
+If the output is XHTML use the function saveXML().
+
+Output example for saveHTML:
+
+<select name="pet" size="3" multiple>
+    <option selected>mouse</option>
+    <option>bird</option>
+    <option>cat</option>
+</select>
+
+XHTML conform output using saveXML:
+
+<select name="pet" size="3" multiple="multiple">
+    <option selected="selected">mouse</option>
+    <option>bird</option>
+    <option>cat</option>
+</select>
+===============================================================================
+
+In this post http://softontherocks.blogspot.com/2014/11/
+descargar-el-contenido-de-una-url_11.html I found a simple way to get the
+content of a URL with DOMDocument, loadHTMLFile and saveHTML().
+
+function getURLContent($url){
+    $doc = new DOMDocument;
+    $doc->preserveWhiteSpace = FALSE;
+    @$doc->loadHTMLFile($url);
+    return $doc->saveHTML();
+}
+===============================================================================
+
+Tested in PHP 5.2.9-2 and PHP 5.2.17.
+saveHTML() игнорирует свойство DOMDocument->encoding. Метод saveHTML()
+сохраняет html-документ в кодировке, которая указана в теге <meta> исходного
+(загруженного) html-документа.
+saveHTML() ignores property DOMDocument->encoding. Method saveHTML() saves the
+html-document encoding, which is specified in the tag <meta> source
+(downloaded) html-document.
+Example:
+file.html. Кодировка файла должна совпадать с указанной в теге <meta>. The
+encoding of the file must match the specified tag <meta>.
+<html><head>
+<meta http-equiv="Content-Type" content="text/html; charset=windows-1251">
+<title>Russian language</title></head>
+<body>Русский язык</body></html>
+
+<?php
+error_reporting(-1);
+$document=new domDocument('1.0', 'UTF-8');
+$document->preserveWhiteSpace=false;
+$document->loadHTMLFile('file.html');
+$document->formatOutput=true;
+$document->encoding='UTF-8';
+$htm=$document->saveHTML();
+echo"Записано байт. Recorded bytes: ".file_put_contents('file_new.html', $htm);
+?>
+file_new.html будет в кодировке Windows-1251 (НЕ в UTF-8).
+file_new.html will be encoded in Windows-1251 (not in UTF-8).
+
+saveHTML() и file_put_contents() позволяют преодолеть недостаток метода
+saveHTMLFile().
+Смотрите мой комментарий к методу saveHTMLFile().
+saveHTML() and file_put_contents() allows you to overcome the lack of a method
+saveHTMLFile().
+See my comment on the method saveHTMLFile().
+http://php.net/manual/ru/domdocument.savehtmlfile.php
+===============================================================================
+
+<?php
+function getDOMString($retNode) {
+  if (!$retNode) return null;
+  $retval = strtr($retNode-->ownerDocument->saveXML($retNode),
+  array(
+    '></area>' => ' />',
+    '></base>' => ' />',
+    '></basefont>' => ' />',
+    '></br>' => ' />',
+    '></col>' => ' />',
+    '></frame>' => ' />',
+    '></hr>' => ' />',
+    '></img>' => ' />',
+    '></input>' => ' />',
+    '></isindex>' => ' />',
+    '></link>' => ' />',
+    '></meta>' => ' />',
+    '></param>' => ' />',
+    'default:' => '',
+    // sometimes, you have to decode entities too...
+    '&quot;' => '&#34;',
+    '&amp;' =>  '&#38;',
+    '&apos;' => '&#39;',
+    '&lt;' =>   '&#60;',
+    '&gt;' =>   '&#62;',
+    '&nbsp;' => '&#160;',
+    '&copy;' => '&#169;',
+    '&laquo;' => '&#171;',
+    '&reg;' =>   '&#174;',
+    '&raquo;' => '&#187;',
+    '&trade;' => '&#8482;'
+  ));
+  return $retval;
+}
+?>
+===============================================================================
+
+Another way to workaround the <script/> problem is putting a semicolon (;)
+inside the script element.

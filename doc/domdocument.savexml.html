@@ -1,0 +1,452 @@
+
+DOMDocument::saveXML
+
+(PHP 5, PHP 7)
+
+DOMDocument::saveXML — Dumps the internal XML tree back into a string
+
+说明
+
+public string DOMDocument::saveXML ([ DOMNode $node [, int $options ]] )
+
+Creates an XML document from the DOM representation. This function is usually
+called after building a new dom document from scratch as in the example below.
+
+参数
+
+node
+
+    Use this parameter to output only a specific node without XML declaration
+    rather than the entire document.
+
+options
+
+    Additional Options. Currently only LIBXML_NOEMPTYTAG is supported.
+
+返回值
+
+Returns the XML, or FALSE if an error occurred.
+
+错误／异常
+
+DOM_WRONG_DOCUMENT_ERR
+
+    Raised if node is from another document.
+
+更新日志
+
+版本             说明
+5.1.0 Added the options parameter
+
+范例
+
+Example #1 Saving a DOM tree into a string
+
+<?php
+
+$doc = new DOMDocument('1.0');
+// we want a nice output
+$doc->formatOutput = true;
+
+$root = $doc->createElement('book');
+$root = $doc->appendChild($root);
+
+$title = $doc->createElement('title');
+$title = $root->appendChild($title);
+
+$text = $doc->createTextNode('This is the title');
+$text = $title->appendChild($text);
+
+echo "Saving all the document:\n";
+echo $doc->saveXML() . "\n";
+
+echo "Saving only the title part:\n";
+echo $doc->saveXML($title);
+
+?>
+
+以上例程会输出：
+
+Saving all the document:
+<?xml version="1.0"?>
+<book>
+  <title>This is the title</title>
+</book>
+
+Saving only the title part:
+<title>This is the title</title>
+
+参见
+
+  • DOMDocument::save() - Dumps the internal XML tree back into a file
+  • DOMDocument::load() - Load XML from a file
+  • DOMDocument::loadXML() - Load XML from a string
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+if you are storing multi-byte characters in XML, then saving the XML using
+saveXML() will create problems. It will spit out the characters converted in
+encoded format.
+
+<?php
+$str = domdoc->saveXML(); // gives "&x#1245;" some encoded data
+?>
+
+Instead do the following
+
+<?php
+$str = domdoc->saveXML(domdoc->documentElement); // gives "保存しました"
+correct multi-byte data
+?>
+===============================================================================
+
+If you want to save xhtml (in a string), you may try the following method:
+<?php
+    $doc = new DOMDocument('1.0');
+
+    // ...
+
+    $xhtml = (string) $doc->saveXML($doc->doctype);
+    $xhtml .= "\n";
+    $xhtml .= (string) $doc->saveXML($doc->documentElement);
+?>
+===============================================================================
+
+It took some searching to figure this one out. I didn't see much in the way of
+explaining this glitch in the manual thus far. (For PHP5 I believe)
+
+formatOutput = true; appears to fail when the origin of the DOM came from a
+file via load(). EX:
+
+<?php
+    $dom = new DOMDocument();
+    $dom->load ("test.xml");
+    $dom->formatOutput = true;
+
+    $new_tag = $dom->createElement ('testNode');
+    $new_tag->appendChild (
+        $dom->createElement ('test', 'this is a test'));
+    $dom->documentElement->appendChild ($new_tag);
+
+    printf ("<pre>%s</pre>", htmlentities ($dom->saveXML()));
+?>
+
+Will not indent the output and will display the modified nodes all in one long
+line. Makes for editing a config.xml a bit difficult when saving to a file.
+
+By adding the preserveWhiteSpace = false; BEFORE the load() the formatOutput
+works as expected. EX:
+
+<?php
+    $dom = new DOMDocument();
+    $dom->preserveWhiteSpace = false;
+    $dom->load ("test.xml");
+    $dom->formatOutput = true;
+
+    $new_tag = $dom->createElement ('testNode');
+    $new_tag->appendChild (
+        $dom->createElement ('test', 'this is a test'));
+    $dom->documentElement->appendChild ($new_tag);
+
+    printf ("<pre>%s</pre>", htmlentities ($dom->saveXML()));
+?>
+
+CAUTION: If your loaded xml file (test.xml) has an empty root node that is not
+shortened or has no children this will NOT work.
+
+Example:
+
+DOES NOT WORK:
+<?xml version="1.0"?>
+<root>
+</root>
+
+WORKS:
+<?xml version="1.0"?>
+<root/>
+
+WORKS:
+<?xml version="1.0"?>
+<root>
+  <!-- comment -->
+</root>
+
+WORKS:
+<?xml version="1.0"?>
+<root>
+  <child/>
+</root>
+===============================================================================
+
+When you save whole document:
+DOMDocument->saveXML() produces string in encoding defined in property
+DOMDocument->encoding.
+
+When you save only one node:
+DOMDocument->saveXML(DOMNode) produces always string in UTF-8.
+===============================================================================
+
+As @fbernodi said earlier, there is a problem with saveXML of DOMNode when you
+have a number of defined namespaces. The simple solution for this:
+
+<code>
+   // $node is some node of some other document
+   $temp_document = new DOMDocument('1.0', 'utf-8');
+   $temp_document->appendChild($temp_document->importNode($node, true));
+   echo $temp_document->saveXML();
+</code>
+===============================================================================
+
+We discovered using DOMDocument::saveHTML() that it converts to HTML 4.01
+compatible markup; rather than XHTML. The simple answer is to use saveXML()
+instead, although this adds the XML declaration to the top.
+
+To qjerry.com at gmail.com, thanks for the pointer below - but I think that the
+simplest way seems to be using:
+<?php $domDocument->saveXML($domDocument->documentElement); ?>
+
+Of course, if you're dealing with XHTML, this will strip any <!DOCTYPE>
+declarations in the document too.
+===============================================================================
+
+Comment to `devin at SPAMISBAD dot tritarget dot com''s post:
+
+Thanks for pointing out the pitfalls of `formatOutput' vs. `load*()'. This has
+certainly saved me from some possible surprises.
+
+I think the seemingly strange behaviour can be explained. Warning: The
+following stuff is mostly based on deductions and experiments. Much less on
+studying the sources and specs (I'm not sure some of these would provide answer
+anyway, at least not easily).
+
+As you point out, `preserveWhiteSpace' must be set before loading the DOM from
+the source string (I'm working with `loadXML()' but I believe the situation
+should be the same with `load()' you used). This looks logical, as this
+property seems to control the parsing and DOM creation process during which
+text nodes containing the whitespace are either included or dropped. This can
+be proven by dumping the DOM structure and comparing the results based on the
+value of `preserveWhiteSpace'. With `preserveWhiteSpace' set to `FALSE', no
+text nodes containing whitespace will be present in the returned DOM. When this
+property is `TRUE', these nodes will be present.
+
+Note: When speaking about the whitespace in the previous paragraph, we're most
+certainly speaking about so called `whitespace in element content' or `element
+content whitespace', if I'm not mistaken. See also my comment in the notes of
+`DOMText->isWhitespaceInElementContent()' method.
+
+As for the mysterious effect on the output of `saveXLM()', I think the
+explanation lies in the presence or absence of the above mentioned whitespace
+text nodes. This was also proven by experiments: After adding such a node into
+a DOM which contained none (the DOM was created using `loadXML()' with
+`preserveWhiteSpace' set to `FALSE'), the output formatting got affected in a
+such a way, the formatting got lost for the rest of the document after the
+added node. I think the presence of whitespace text nodes forces such
+rendering, that the content of these nodes is used to separate adjoining nodes
+thus disabling default formatting. Only when there are no such text nodes
+present, the ouput formatting takes effect (provided the `formatOutput' is set
+to `TRUE', of course).
+
+Well, the thing I don't really understand is how you did get an output of a
+signle line with `formatOutput' set to `TRUE'. This has happened to me when no
+whitespace text nodes were present (ie. when loading the XML with
+`preserveWhiteSpace' set to `FALSE') *and* with `formatOutput' set to *`FALSE'*
+(with the opposite value of `formatOutput', the formatting should do it's work
+and you should not end up with just one line). But I haven't seen your source.
+Perhaps you had whitespace nodes containing no new-lines in your DOM?
+
+As for the CAUTION about root element, I didn't see any problems with empty
+root element neither in shortened nor full form. What did you have in mind,
+when you said it `WORKS' or `DOES NOT WORK'?
+===============================================================================
+
+Be careful, this function has been changed in 5.2.6 version. Adding a required
+parameter which is not that required wasn't the most intelligent idea ever,
+especially for a function which is often used.
+
+To fix your programs if you have an error, fill the first parameter like this:
+
+$dom->saveXML($dom->documentElement);
+
+Why didn't the devs simply implement this as optional parameter, fixing the
+default parameter as documentElement?
+===============================================================================
+
+Quick tip to minimize memory when generating documents with DOM.
+
+Rather than using
+   $xmlStr = DOMDocument->saveXML();
+   echo $xmlStr;
+
+to dump a large DOM to the output buffer, use a PHP output stream, as in
+
+   DOMDocument->save('php://output');
+
+A lot of memory will be saved when generating large DOMs.
+===============================================================================
+
+Hello,
+
+I had an unexpected behavior in some parsing code, because of this saveXML
+method that is saving the tags without namespace specification. If you try to
+load into a DOMDocument a string saved from a DOMNode that has a referenced
+namespace but it the original document it was not defined in that element, you
+get a not well formed xml. In the example you can see the issue and a possible
+solution, the other solution may be add to the ChildElement node the namespace
+reference (<testNS:ChildElement testNS="http://example.org">), but in my
+scenario it was not needed.
+
+<?php
+
+//Test XML
+$test_xml =
+"<?xml version=\"1.0\"?>
+<testNS:RootNode xmlns:testNS=\"http://example.org\">
+    <testNS:ChildElement>
+        <testNS:AnotherChildElement>I'm a Another Child node.</
+testNS:AnotherChildElement>
+    </testNS:ChildElement>
+</testNS:RootNode>";
+
+//We define our Test DOMDocument
+$domDoc = new DOMDocument("1.0");
+$domDoc->loadXML($test_xml);
+
+//We use xpath to search ChildElement:
+$domXPath = new DOMXPath($domDoc);
+$domXPath->registerNamespace("testNS", "http://example.org");
+$DOMNodeList_ChildElement = $domXPath->query("//testNS:RootNode/
+testNS:ChildElement");
+$ChildElement = $DOMNodeList_ChildElement->item(0);
+
+echo "Not usefull xml to load in another document:\n\n";
+echo $domDoc->saveXML($ChildElement);
+
+/* Output here:
+*
+* Not usefull xml to load in another document:
+*
+*  <testNS:ChildElement>
+*        <testNS:AnotherChildElement>I'm a Another Child node.</
+testNS:AnotherChildElement>
+*    </testNS:ChildElement>
+*
+*/
+
+/**
+* Function to help us clone the element to another document.
+* @param DOMElement $node The node to clone.
+* @param DOMDocument $doc The document where we are going to reference the
+elements.
+* @return DOMElement The new cloned element without namespace.
+*/
+function cloneNode($node, $doc) {
+    //Create new element with the original localName (w/o namespace)
+    $nd = $doc->createElement($node->localName);
+
+    //Clone attributes
+    foreach($node->attributes as $value)
+        $nd->setAttribute($value->localName, $value->value);
+
+    //No more childs then we finish.
+    if (!$node->childNodes)
+        return $nd;
+    //We have childs, add them
+    foreach($node->childNodes as $child) {
+        if ($child->nodeName=="#text") //Only needed to clone text nodes, i.e.
+text comments, spaces, tabs. etc.
+            $nd->appendChild($doc->createTextNode($child->nodeValue));
+        else
+            $nd->appendChild(cloneNode($child, $doc)); //recursion to clone all
+children.
+    }
+    return $nd;
+}
+
+//New Document to reference the new node without namespaces
+$domDoc2 = new DOMDocument("1.0");
+
+//We clone this node taking out the namespace
+$new_node = cloneNode($ChildElement, $domDoc2);
+
+echo "\n\nWe can load this into a DOMDocument without problems:\n\n";
+echo $domDoc2->saveXML($new_node);
+
+/*
+* We can load this into a DOMDocument without problems:
+*
+*    <ChildElement>
+*        <AnotherChildElement>I'm a Another Child node.</AnotherChildElement>
+*    </ChildElement>
+*/
+
+?>
+===============================================================================
+
+The simpliest (and probably the fastest) way to strip an XML declaration (<?xml
+version="1.0" ... ?>) out of output document, is to output child nodes of
+DOMDocument separately:
+
+<?php
+
+$document = new DOMDocument();
+$document->load('/some/file.xml');
+
+// this will also output doctype and comments at top level
+foreach($document->childNodes as $node)
+    $result .= $document->saveXML($node)."\n";
+
+echo $result;
+
+?>
+
+This might be userful when dealing with browser compatibility issues, for
+example, well known problem with valid XHTML in IE6.
+===============================================================================
+
+Create before test.xml with:
+<?xml version="1.0" encoding="utf-8"?>
+<Photos>
+</Photos>
+
+and past after in your php-file:
+
+<?php
+$simp = simplexml_load_file('test.xml');
+$node = $simp->addChild('home');
+$node->addChild('mychild', 'insert text');
+$s = simplexml_import_dom($simp);
+$s->saveXML('test.xml');
+?>
+
+This code creating a child-nod in the root.
+Owner http://www.mensfashion.ru
+===============================================================================
+
+Note that for large DOM trees (tens of thousands of elements nested at least a
+few levels deep), setting formatOutput to true drives up memory usage to rather
+insane levels when you call saveXML(). (Tested with PHP 5.2.1) Pretty output is
+not worth that cost.
+===============================================================================
+
+A little function to get the full xml contents of a Xml node.
+
+function innerXml($node)
+{
+    $out = $node->ownerDocument->saveXML($node);
+    $re = "{^<(\\w*)(?:\\s*\\w+=(?:\"[^\"]*\"|\'[^\']*\'))*\\s*>(.*)</\\1>$}";
+    preg_match($re, $out, $mat);
+    return $mat[2];
+}
+===============================================================================
+
+I used the function posted by "joe" but the following works to me for get the
+innerXML
+<?php
+$itemLeido = $XMLRespuesta->getElementsByTagName("articulos");
+foreach($itemLeido as $node) {
+    echo($node->ownerDocument->saveXML($node));
+}
+?>

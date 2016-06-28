@@ -1,0 +1,152 @@
+
+time_sleep_until
+
+(PHP 5 >= 5.1.0, PHP 7)
+
+time_sleep_until — 使脚本睡眠到指定的时间为止。
+
+说明
+
+bool time_sleep_until ( float $timestamp )
+
+使脚本睡眠到指定的 timestamp。
+
+参数
+
+timestamp
+
+    将脚本唤醒的时间戳。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本              说明
+5.3.0 自此，函数在Windows平台可用。
+
+错误／异常
+
+如果设定的 timestamp 为过去的时间，脚本将会产生一个 E_WARNING 级别的错误。
+
+范例
+
+Example #1 time_sleep_until() 的一个例子
+
+<?php
+
+//returns false and generates a warning
+var_dump(time_sleep_until(time()-1));
+
+// may only work on faster computers, will sleep up to 0.2 seconds
+var_dump(time_sleep_until(microtime(true)+0.2));
+
+?>
+
+注释
+
+    Note: 所有的信号会被延迟至脚本唤醒以后。
+
+参见
+
+  • sleep() - 延缓执行
+  • usleep() - 以指定的微秒数延迟执行
+  • time_nanosleep() - 延缓执行若干秒和纳秒
+  • set_time_limit() - 设置脚本最大执行时间
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+Not realising that this function existed, I wrote something similar, but it has
+the additional facility to specify a minimum pause even if the target time has
+already been reached, for instance in a processor-intensive loop.
+
+It's in seconds rather than microseconds (it's intended for heavy-duty CLI
+scripts), but that could easily be changed by using microtime(true) and usleep
+if greater granularity was required.
+
+<?php
+    /**
+     * Pause processing until the specified time, to avoid hammering a DB or
+service
+     *
+     * @param int $target_time Timestamp
+     * @param int $min_sleep Always sleep for a minimum number of seconds,
+     *    even if the target timestamp has already passed.
+     *     Default 0, meaning only sleep until the target timestamp is reached.
+     *
+     * @example <code>
+         while ( ! $finished )
+         {
+             $minimum_start_of_next_loop = time() + $min_secs_per_loop;
+            
+             # DO STUFF THAT MAY OR MAY NOT TAKE VERY LONG
+            
+             sleep_until( $minimum_start_of_next_loop, $min_pause_between_loops
+);
+         }
+     </code>
+     */
+    function sleep_until($target_time, $min_sleep = 0)
+    {
+        $time_now = time();
+       
+        $time_to_target = $target_time - $time_now;
+       
+        // If we've already reached the target time, that's fine
+        if ( $time_to_target <= $min_sleep )
+        {
+            // If required, sleep for a bit anyway
+            sleep( $min_sleep );
+        }
+        else
+        {
+            // Sleep for the number of seconds until the target time
+            sleep( $time_to_target );
+        }
+    }
+?>
+===============================================================================
+
+At least on my Windows machine, the time_sleep_until function appears to
+calculate the number of microseconds between now and the sleep-until timestamp,
+and it appears to use unsigned 32-bit math in this calculation.  This roundoff
+leads to a maximum sleep time of just under 4295 seconds (1 hour, 11 minutes,
+35 seconds).  To get longer sleep times, while still using time_sleep_until to
+minimize processor overhead, the following loop may be some help to you:
+
+<?php
+
+$sleepuntil = strtotime("tuesday 3pm");
+
+while (time() < $sleepuntil)
+   time_sleep_until($sleepuntil);
+
+// proceed with dated processing
+
+?>
+
+Of course, one could use something like "cron" instead, to avoid the script
+doing the extended sleep.  Also note that time_nanosleep appears to do similar
+math, but it is somewhat more intuitive that the seconds parameter has an upper
+limit on what it can be.  Still, both functions might report a warning when
+waking up prematurely due to roundoff.
+===============================================================================
+
+better implementation
+<?php
+if (!function_exists('time_sleep_until')) {
+   function time_sleep_until($future) {
+       if ($future < time()) {
+           trigger_error("Time in past", E_USER_WARNING);
+           return false;
+       }
+
+       usleep(($future - microtime(1))*1000000);
+       return true;
+   }
+}
+?>

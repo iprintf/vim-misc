@@ -1,0 +1,309 @@
+
+php_strip_whitespace
+
+(PHP 5, PHP 7)
+
+php_strip_whitespace — 返回删除注释和空格后的PHP源码
+
+说明
+
+string php_strip_whitespace ( string $filename )
+
+返回删除注释和空格后 filename 的PHP源码。这对实际代码数量和注释数量的对比很有用
+。此函数与命令行下执行 php -w 相似。 commandline.
+
+参数
+
+filename
+
+    PHP文件的路径。
+
+返回值
+
+在成功时返回过滤后的代码，或者在失败时返回空字符串。
+
+    Note:
+
+    此函数在PHP 5.0.1后以所述方式工作。之前它仅会返回一个空字符串。关于更多此
+    BUG的信息与其行为，详见BUG报告 » #29606。
+
+范例
+
+Example #1 php_strip_whitespace() 的例子
+
+<?php
+// PHP comment here
+
+/*
+ * Another PHP comment
+ */
+
+echo        php_strip_whitespace(__FILE__);
+// Newlines are considered whitespace, and are removed too:
+do_nothing();
+?>
+
+以上例程会输出：
+
+<?php
+ echo php_strip_whitespace(__FILE__); do_nothing(); ?>
+
+可以注意到PHP的注释已不存在，成为第一个echo语句前的换行和空格。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+If you wish to just remove excess whitespace from a string, see the example
+"Strip whitespace" in the preg_replace documentation (http://www.php.net/manual
+/en/function.preg-replace.php).
+===============================================================================
+
+With this function You can compress Your PHP source code.
+
+<?php
+
+function compress_php_src($src) {
+    // Whitespaces left and right from this signs can be ignored
+    static $IW = array(
+        T_CONCAT_EQUAL,             // .=
+        T_DOUBLE_ARROW,             // =>
+        T_BOOLEAN_AND,              // &&
+        T_BOOLEAN_OR,               // ||
+        T_IS_EQUAL,                 // ==
+        T_IS_NOT_EQUAL,             // != or <>
+        T_IS_SMALLER_OR_EQUAL,      // <=
+        T_IS_GREATER_OR_EQUAL,      // >=
+        T_INC,                      // ++
+        T_DEC,                      // --
+        T_PLUS_EQUAL,               // +=
+        T_MINUS_EQUAL,              // -=
+        T_MUL_EQUAL,                // *=
+        T_DIV_EQUAL,                // /=
+        T_IS_IDENTICAL,             // ===
+        T_IS_NOT_IDENTICAL,         // !==
+        T_DOUBLE_COLON,             // ::
+        T_PAAMAYIM_NEKUDOTAYIM,     // ::
+        T_OBJECT_OPERATOR,          // ->
+        T_DOLLAR_OPEN_CURLY_BRACES, // ${
+        T_AND_EQUAL,                // &=
+        T_MOD_EQUAL,                // %=
+        T_XOR_EQUAL,                // ^=
+        T_OR_EQUAL,                 // |=
+        T_SL,                       // <<
+        T_SR,                       // >>
+        T_SL_EQUAL,                 // <<=
+        T_SR_EQUAL,                 // >>=
+    );
+    if(is_file($src)) {
+        if(!$src = file_get_contents($src)) {
+            return false;
+        }
+    }
+    $tokens = token_get_all($src);
+   
+    $new = "";
+    $c = sizeof($tokens);
+    $iw = false; // ignore whitespace
+    $ih = false; // in HEREDOC
+    $ls = "";    // last sign
+    $ot = null;  // open tag
+    for($i = 0; $i < $c; $i++) {
+        $token = $tokens[$i];
+        if(is_array($token)) {
+            list($tn, $ts) = $token; // tokens: number, string, line
+            $tname = token_name($tn);
+            if($tn == T_INLINE_HTML) {
+                $new .= $ts;
+                $iw = false;
+            } else {
+                if($tn == T_OPEN_TAG) {
+                    if(strpos($ts, " ") || strpos($ts, "\n") || strpos($ts, "\
+t") || strpos($ts, "\r")) {
+                        $ts = rtrim($ts);
+                    }
+                    $ts .= " ";
+                    $new .= $ts;
+                    $ot = T_OPEN_TAG;
+                    $iw = true;
+                } elseif($tn == T_OPEN_TAG_WITH_ECHO) {
+                    $new .= $ts;
+                    $ot = T_OPEN_TAG_WITH_ECHO;
+                    $iw = true;
+                } elseif($tn == T_CLOSE_TAG) {
+                    if($ot == T_OPEN_TAG_WITH_ECHO) {
+                        $new = rtrim($new, "; ");
+                    } else {
+                        $ts = " ".$ts;
+                    }
+                    $new .= $ts;
+                    $ot = null;
+                    $iw = false;
+                } elseif(in_array($tn, $IW)) {
+                    $new .= $ts;
+                    $iw = true;
+                } elseif($tn == T_CONSTANT_ENCAPSED_STRING
+                       || $tn == T_ENCAPSED_AND_WHITESPACE)
+                {
+                    if($ts[0] == '"') {
+                        $ts = addcslashes($ts, "\n\t\r");
+                    }
+                    $new .= $ts;
+                    $iw = true;
+                } elseif($tn == T_WHITESPACE) {
+                    $nt = @$tokens[$i+1];
+                    if(!$iw && (!is_string($nt) || $nt == '$') && !in_array($nt
+[0], $IW)) {
+                        $new .= " ";
+                    }
+                    $iw = false;
+                } elseif($tn == T_START_HEREDOC) {
+                    $new .= "<<<S\n";
+                    $iw = false;
+                    $ih = true; // in HEREDOC
+                } elseif($tn == T_END_HEREDOC) {
+                    $new .= "S;";
+                    $iw = true;
+                    $ih = false; // in HEREDOC
+                    for($j = $i+1; $j < $c; $j++) {
+                        if(is_string($tokens[$j]) && $tokens[$j] == ";") {
+                            $i = $j;
+                            break;
+                        } else if($tokens[$j][0] == T_CLOSE_TAG) {
+                            break;
+                        }
+                    }
+                } elseif($tn == T_COMMENT || $tn == T_DOC_COMMENT) {
+                    $iw = true;
+                } else {
+                    if(!$ih) {
+                        $ts = strtolower($ts);
+                    }
+                    $new .= $ts;
+                    $iw = false;
+                }
+            }
+            $ls = "";
+        } else {
+            if(($token != ";" && $token != ":") || $ls != $token) {
+                $new .= $token;
+                $ls = $token;
+            }
+            $iw = true;
+        }
+    }
+    return $new;
+}
+
+?>
+
+For example:
+<?php
+
+$src = <<<EOT
+<?php
+// some comment
+for ( $i = 0; $i < 99; $i ++ ) {
+   echo "i=${ i }\n";
+   /* ... */
+}
+/** ... */
+function abc() {
+   return   "abc";
+};
+
+abc();
+?>
+<h1><?= "Some text " . str_repeat("_-x-_ ", 32);;; ?></h1>
+EOT;
+var_dump(compress_php_src($src));
+?>
+
+And the result is:
+string(125) "<?php for(=0;<99;++){echo "i=\n";}function abc(){return "abc";};
+abc(); ?>
+<h1><?="Some text ".str_repeat("_-x-_ ",32)?></h1>"
+===============================================================================
+
+It should be pointed out that this function does not work on files that make
+use of the short tag notation (<?).
+===============================================================================
+
+Beware that this function uses the output buffering mechanism.
+
+If you give a 'stream wrapped' path as argument, anything echoed by the stream
+wrapper during this call (e.g. trace messages) won't be displayed to the screen
+but will be inserted in php_strip_whitespace's result.
+
+If you execute this stripped code later, it will display the messages which
+should have been output during php_strip_whitespace's execution !
+===============================================================================
+
+I was looking earlier for a way to strip php comments from my source files but
+didn't come up with much.  I wrote the following function to do the trick using
+the tokenizer.  I've tested in on an entire phpMyAdmin install and it worked
+fine afterward... so it should be good to go.  You may also specify any number
+of tokens to strip such as T_WHITESPACE rather the default of T_COMMENT and
+T_DOC_COMMENT.
+
+Hopefully someone finds it useful.
+
+<?php
+
+function strip_tokens($code) {
+
+    $args = func_get_args();
+    $arg_count = count($args);
+   
+    // if no tokens to strip have been specified then strip comments by default
+    if( $arg_count === 1 ) {
+        $args[1] = T_COMMENT;
+        $args[2] = T_DOC_COMMENT;
+    }
+
+    // build a keyed array of tokens to strip
+    for( $i = 1; $i < $arg_count; ++$i )
+        $strip[ $args[$i] ] = true;
+
+    // set a keyed array of newline characters used to preserve line numbering
+    $newlines = array("\n" => true, "\r" => true);
+
+    $tokens = token_get_all($code);
+
+    reset($tokens);
+
+    $return = '';
+
+    $token = current($tokens);
+   
+    while( $token ) {
+
+        if( !is_array($token) )
+
+            $return.= $token;
+
+        elseif(    !isset($strip[ $token[0] ]) )
+
+            $return.= $token[1];
+
+        else {
+           
+            // return only the token's newline characters to preserve line
+numbering
+            for( $i = 0, $token_length = strlen($token[1]); $i < $token_length;
+++$i )
+                if( isset($newlines[ $token[1][$i] ]) )
+                    $return.= $token[1][$i];
+
+        }
+
+        $token = next($tokens);
+
+    } // while more tokens
+
+    return $return;
+
+} // function
+
+?>

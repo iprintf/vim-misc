@@ -1,0 +1,1134 @@
+
+uniqid
+
+(PHP 4, PHP 5, PHP 7)
+
+uniqid — 生成一个唯一ID
+
+说明
+
+string uniqid ([ string $prefix = "" [, bool $more_entropy = false ]] )
+
+获取一个带前缀、基于当前时间微秒数的唯一ID。
+
+参数
+
+prefix
+
+    有用的参数。例如：如果在多台主机上可能在同一微秒生成唯一ID。
+
+    prefix为空，则返回的字符串长度为13。more_entropy 为 TRUE，则返回的字符串长
+    度为23。
+
+more_entropy
+
+    如果设置为 TRUE，uniqid() 会在返回的字符串结尾增加额外的煽（使用combined
+    linear congruential generator）。使得唯一ID更具唯一性。
+
+返回值
+
+返回字符串形式的唯一ID。
+
+范例
+
+Example #1 uniqid() 例子
+
+<?php
+/* A uniqid, like: 4b3403665fea6 */
+printf("uniqid(): %s\r\n", uniqid());
+
+/* We can also prefix the uniqid, this the same as 
+ * doing:
+ *
+ * $uniqid = $prefix . uniqid();
+ * $uniqid = uniqid($prefix);
+ */
+printf("uniqid('php_'): %s\r\n", uniqid('php_'));
+
+/* We can also activate the more_entropy parameter, which is 
+ * required on some systems, like Cygwin. This makes uniqid()
+ * produce a value like: 4b340550242239.64159797
+ */
+printf("uniqid('', true): %s\r\n", uniqid('', true));
+?>
+
+更新日志
+
+版本                   说明
+5.0.0 prefix 参数设为可选。
+4.3.1 prefix 参数的长度限制提升到114个字符。
+
+注释
+
+    Note:
+
+    在Cygwin环境下，为了使此函数能够工作，more_entropy 必须设置为 TRUE。
+
+
+User Contributed Notes 29 notes
+
+===============================================================================
+
+For the record, the underlying function to uniqid() appears to be roughly as
+follows:
+
+$m=microtime(true);
+sprintf("%8x%05x\n",floor($m),($m-floor($m))*1000000);
+
+In other words, first 8 hex chars = Unixtime, last 5 hex chars = microseconds.
+This is why it has microsecond precision. Also, it provides a means by which to
+reverse-engineer the time when a uniqid was generated:
+
+date("r",hexdec(substr(uniqid(),0,8)));
+
+Increasingly as you go further down the string, the number becomes "more
+unique" over time, with the exception of digit 9, where numeral prevalence is
+0..3>4>5..f, because of the difference between 10^6 and 16^5 (this is
+presumably true for the remaining digits as well but much less noticeable).
+===============================================================================
+
+Here is my approach to generate short string unique id. I am just increasing
+base of UUID. If you need even shorter keys you may add more chars to $index .
+When $index gets longer $out will be shorter.
+
+<?php
+function struuid($entropy)
+{
+    $s=uniqid("",$entropy);
+    $num= hexdec(str_replace(".","",(string)$s));
+    $index = '1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $base= strlen($index);
+    $out = '';
+        for($t = floor(log10($num) / log10($base)); $t >= 0; $t--) {
+            $a = floor($num / pow($base,$t));
+            $out = $out.substr($index,$a,1);
+            $num = $num-($a*pow($base,$t));
+        }
+    return $out;
+}
+
+echo struuid(false); //Return sample: F4518NTQTQ
+echo struuid(true);  //Return sample: F451FAHSUCD90N6YNRBQHLZ9E1W
+
+?>
+===============================================================================
+
+The following class generates VALID RFC 4211 COMPLIANT Universally Unique
+IDentifiers (UUID) version 3, 4 and 5.
+
+Version 3 and 5 UUIDs are named based. They require a namespace (another valid
+UUID) and a value (the name). Given the same namespace and name, the output is
+always the same.
+
+Version 4 UUIDs are pseudo-random.
+
+UUIDs generated below validates using OSSP UUID Tool, and output for
+named-based UUIDs are exactly the same. This is a pure PHP implementation.
+
+<?php
+class UUID {
+  public static function v3($namespace, $name) {
+    if(!self::is_valid($namespace)) return false;
+
+    // Get hexadecimal components of namespace
+    $nhex = str_replace(array('-','{','}'), '', $namespace);
+
+    // Binary Value
+    $nstr = '';
+
+    // Convert Namespace UUID to bits
+    for($i = 0; $i < strlen($nhex); $i+=2) {
+      $nstr .= chr(hexdec($nhex[$i].$nhex[$i+1]));
+    }
+
+    // Calculate hash value
+    $hash = md5($nstr . $name);
+
+    return sprintf('%08s-%04s-%04x-%04x-%12s',
+
+      // 32 bits for "time_low"
+      substr($hash, 0, 8),
+
+      // 16 bits for "time_mid"
+      substr($hash, 8, 4),
+
+      // 16 bits for "time_hi_and_version",
+      // four most significant bits holds version number 3
+      (hexdec(substr($hash, 12, 4)) & 0x0fff) | 0x3000,
+
+      // 16 bits, 8 bits for "clk_seq_hi_res",
+      // 8 bits for "clk_seq_low",
+      // two most significant bits holds zero and one for variant DCE1.1
+      (hexdec(substr($hash, 16, 4)) & 0x3fff) | 0x8000,
+
+      // 48 bits for "node"
+      substr($hash, 20, 12)
+    );
+  }
+
+  public static function v4() {
+    return sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+
+      // 32 bits for "time_low"
+      mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+
+      // 16 bits for "time_mid"
+      mt_rand(0, 0xffff),
+
+      // 16 bits for "time_hi_and_version",
+      // four most significant bits holds version number 4
+      mt_rand(0, 0x0fff) | 0x4000,
+
+      // 16 bits, 8 bits for "clk_seq_hi_res",
+      // 8 bits for "clk_seq_low",
+      // two most significant bits holds zero and one for variant DCE1.1
+      mt_rand(0, 0x3fff) | 0x8000,
+
+      // 48 bits for "node"
+      mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+    );
+  }
+
+  public static function v5($namespace, $name) {
+    if(!self::is_valid($namespace)) return false;
+
+    // Get hexadecimal components of namespace
+    $nhex = str_replace(array('-','{','}'), '', $namespace);
+
+    // Binary Value
+    $nstr = '';
+
+    // Convert Namespace UUID to bits
+    for($i = 0; $i < strlen($nhex); $i+=2) {
+      $nstr .= chr(hexdec($nhex[$i].$nhex[$i+1]));
+    }
+
+    // Calculate hash value
+    $hash = sha1($nstr . $name);
+
+    return sprintf('%08s-%04s-%04x-%04x-%12s',
+
+      // 32 bits for "time_low"
+      substr($hash, 0, 8),
+
+      // 16 bits for "time_mid"
+      substr($hash, 8, 4),
+
+      // 16 bits for "time_hi_and_version",
+      // four most significant bits holds version number 5
+      (hexdec(substr($hash, 12, 4)) & 0x0fff) | 0x5000,
+
+      // 16 bits, 8 bits for "clk_seq_hi_res",
+      // 8 bits for "clk_seq_low",
+      // two most significant bits holds zero and one for variant DCE1.1
+      (hexdec(substr($hash, 16, 4)) & 0x3fff) | 0x8000,
+
+      // 48 bits for "node"
+      substr($hash, 20, 12)
+    );
+  }
+
+  public static function is_valid($uuid) {
+    return preg_match('/^\{?[0-9a-f]{8}\-?[0-9a-f]{4}\-?[0-9a-f]{4}\-?'.
+                      '[0-9a-f]{4}\-?[0-9a-f]{12}\}?$/i', $uuid) === 1;
+  }
+}
+
+// Usage
+// Named-based UUID.
+
+$v3uuid = UUID::v3('1546058f-5a25-4334-85ae-e68f2a44bbaf', 'SomeRandomString');
+$v5uuid = UUID::v5('1546058f-5a25-4334-85ae-e68f2a44bbaf', 'SomeRandomString');
+
+// Pseudo-random UUID
+
+$v4uuid = UUID::v4();
+?>
+===============================================================================
+
+Generating an MD5 from a unique ID is naive and reduces much of the value of
+unique IDs, as well as providing significant (attackable) stricture on the MD5
+domain.  That's a deeply broken thing to do.  The correct approach is to use
+the unique ID on its own; it's already geared for non-collision.
+
+IDs should never be obfuscated for security, so if you're worried about someone
+guessing your ID, fix the system, don't just make it harder to guess (because
+it's nowhere near as difficult to guess as you imagine: you can just brute
+force the 60,000 MD5s that are generatable from millisecond IDs over the course
+of a given minute, which the typical computer can do in less than 0.1s).
+
+If you absolutely need to involve a hash somehow - maybe to placate a boss who
+thinks they understand security much better than they actually do - append it
+instead.
+
+function BadIdeaID() { return uniqid() . '_' . md5(mt_rand()); }
+===============================================================================
+
+If you are storing the value to database it might be more efficient to use more
+letters than in hexadecimal, for me I decided 0-9a-z is good enough.
+
+Notice also that many databases are case insensitive by default so using
+capitals maybe unwise anyway:
+
+<?php
+
+function uniqid_base36($more_entropy=false) {
+    $s = uniqid('', $more_entropy);
+    if (!$more_entropy)
+        return base_convert($s, 16, 36);
+       
+    $hex = substr($s, 0, 13);
+    $dec = $s[13] . substr($s, 15); // skip the dot
+    return base_convert($hex, 16, 36) . base_convert($dec, 10, 36);
+}
+
+echo uniqid_base36() . "\n"; // eb98xzzhq7
+echo uniqid_base36(true) . "\n"; // eb98xzzhr8dervre
+
+?>
+
+String length may vary with this method.
+===============================================================================
+
+The php5-uuid functions could definitely use some documentation to clarify how
+they should be used, but here's what I've gleaned by examining the OSSP source
+code (found here: http://ossp-uuid.sourcearchive.com/documentation/
+1.5.1-1ubuntu1/php_2uuid_8c-source.html).
+
+The uuid_make() function takes two arguments when generating v1 or v4, but four
+arguments are required when generating v3 or v5. The first two arguments have
+been demonstrated below and are straightforward, so I'll skip to the as-yet
+non-described arguments.
+
+The third argument to uuid_make() is: $namespace
+  - this is a secondary resource created with uuid_create(); it is apparently
+used to generate an internal UUID, which is used as the namespace of the output
+UUID
+
+The fourth argument to uuid_make() is: $url
+  - this is the value that is to be hashed (MD5 for v3, SHA-1 for v5); it may
+be any string or even null
+
+Here's a simple class illustrating the proper usage (note that if php5-uuid is
+not installed on your system, each function call will just return false):
+
+<?php
+class UUID {
+  /**
+   * Generates version 1: MAC address
+   */
+  public static function v1() {
+    if (!function_exists('uuid_create'))
+      return false;
+
+    uuid_create(&$context);
+    uuid_make($context, UUID_MAKE_V1);
+    uuid_export($context, UUID_FMT_STR, &$uuid);
+    return trim($uuid);
+  }
+
+  /**
+   * Generates version 3 UUID: MD5 hash of URL
+   */
+  public static function v3($i_url) {
+    if (!function_exists('uuid_create'))
+      return false;
+
+    if (!strlen($i_url))
+      $i_url = self::v1();
+
+    uuid_create(&$context);
+    uuid_create(&$namespace);
+
+    uuid_make($context, UUID_MAKE_V3, $namespace, $i_url);
+    uuid_export($context, UUID_FMT_STR, &$uuid);
+    return trim($uuid);
+  }
+
+  /**
+   * Generates version 4 UUID: random
+   */
+  public static function v4() {
+    if (!function_exists('uuid_create'))
+      return false;
+
+    uuid_create(&$context);
+
+    uuid_make($context, UUID_MAKE_V4);
+    uuid_export($context, UUID_FMT_STR, &$uuid);
+    return trim($uuid);
+  }
+
+  /**
+   * Generates version 5 UUID: SHA-1 hash of URL
+   */
+  public static function v5($i_url) {
+    if (!function_exists('uuid_create'))
+      return false;
+
+    if (!strlen($i_url))
+      $i_url = self::v1();
+
+    uuid_create(&$context);
+    uuid_create(&$namespace);
+
+    uuid_make($context, UUID_MAKE_V5, $namespace, $i_url);
+    uuid_export($context, UUID_FMT_STR, &$uuid);
+    return trim($uuid);
+  }
+}
+?>
+
+And here's a demonstration:
+
+<?php
+for ($i = 1; $i <= 3; ++$i) {
+  echo 'microtime = ' . microtime(true) . '<br/>';
+  echo "V1 UUID: " . UUID::v1() . '<br/>';
+  echo "V3 UUID of URL='abc': " . UUID::v3('abc') . '<br/>';
+  echo "V4 UUID: " . UUID::v4() . '<br/>';
+  echo "V5 UUID of URL=null: " . UUID::v5(null) . '<br/>';
+  echo '<hr/>';
+}
+?>
+
+And the output:
+
+microtime = 1306620716.0457
+V1 UUID: 7fddae8e-8977-11e0-bc11-003048c3b1f2
+V3 UUID of URL='abc': 522ec739-ca63-3ec5-b082-08ce08ad65e2
+V4 UUID: b3851ec7-4871-4527-92b5-ef5616bae1e6
+V5 UUID of URL=null: e129f27c-5103-5c5c-844b-cdf0a15e160d
+-------------------
+microtime = 1306620716.0465
+V1 UUID: 7fddb83e-8977-11e0-9e6e-003048c3b1f2
+V3 UUID of URL='abc': 522ec739-ca63-3ec5-b082-08ce08ad65e2
+V4 UUID: 7e78fe0d-59b8-4637-af7f-e88d221a7d1e
+V5 UUID of URL=null: e129f27c-5103-5c5c-844b-cdf0a15e160d
+-------------------
+microtime = 1306620716.0467
+V1 UUID: 7fddbfb4-8977-11e0-a2bc-003048c3b1f2
+V3 UUID of URL='abc': 522ec739-ca63-3ec5-b082-08ce08ad65e2
+V4 UUID: 12a940c7-0f3f-46a1-bb5f-bdd602e10654
+V5 UUID of URL=null: e129f27c-5103-5c5c-844b-cdf0a15e160d
+
+As you can see, the calls to v3() always return the same UUID because the same
+URL parameter, "abc", is always supplied. The same goes for the v5() function
+which is always supplied a null URL.
+
+The v4() UUIDs are always entirely different because they are (pseudo)random.
+And the v1() calls are very similar but just slightly different because it's
+based on the computer's MAC address and the current time.
+===============================================================================
+
+DUPLICATE UID WARNING: Be aware that calling this function many times in a
+tight loop (for instance, to assign UIDs to objects in an array) can result in
+many of the UIDs being identical, since less than a microsecond may have passed
+since the previous call. One simple solution is to compare the latest value
+returned with the previous result, and keep calling in a loop until the new
+value is different, if you don't mind this call causing a delay of 1
+microsecond per call when necessary.
+===============================================================================
+
+I use such UUID (it not RFC!!!)
+(server_id)-(clientIP)-(unixtime)-(milliseconds)-(random)
+
+I can easyly determine which server at which time and who initiate creating of
+object.
+
+<?php
+
+$u=uuid();   // 0001-7f000001-478c8000-4801-47242987
+echo $u;
+echo "<br>";
+print_r(uuidDecode($u)); // Array ( [serverID] => 0001 [ip] => 127.0.0.1
+[unixtime] => 1200390144 [micro] => 0.28126525878906 )
+
+function uuid($serverID=1)
+{
+    $t=explode(" ",microtime());
+    return sprintf( '%04x-%08s-%08s-%04s-%04x%04x',
+        $serverID,
+        clientIPToHex(),
+        substr("00000000".dechex($t[1]),-8),   // get 8HEX of unixtime
+        substr("0000".dechex(round($t[0]*65536)),-4), // get 4HEX of microtime
+        mt_rand(0,0xffff), mt_rand(0,0xffff));
+}
+
+function uuidDecode($uuid) {
+    $rez=Array();
+    $u=explode("-",$uuid);
+    if(is_array($u)&&count($u)==5) {
+        $rez=Array(
+            'serverID'=>$u[0],
+            'ip'=>clientIPFromHex($u[1]),
+            'unixtime'=>hexdec($u[2]),
+            'micro'=>(hexdec($u[3])/65536)
+        );
+    }
+    return $rez;
+}
+
+function clientIPToHex($ip="") {
+    $hex="";
+    if($ip=="") $ip=getEnv("REMOTE_ADDR");
+    $part=explode('.', $ip);
+    for ($i=0; $i<=count($part)-1; $i++) {
+        $hex.=substr("0".dechex($part[$i]),-2);
+    }
+    return $hex;
+}
+
+function clientIPFromHex($hex) {
+    $ip="";
+    if(strlen($hex)==8) {
+        $ip.=hexdec(substr($hex,0,2)).".";
+        $ip.=hexdec(substr($hex,2,2)).".";
+        $ip.=hexdec(substr($hex,4,2)).".";
+        $ip.=hexdec(substr($hex,6,2));
+    }
+    return $ip;
+}
+
+?>
+===============================================================================
+
+Prefix can be useful, for instance, if you generate identifiers simultaneously
+on several hosts that might happen to generate the identifier at the same
+microsecond.
+So we can include the hostname / servername in the id.
+<?php
+echo uniqid(php_uname('n'), true);
+// Output: darkstar4dfa8c27aea106.40781203
+?>
+===============================================================================
+
+I use this function to generate microsoft-compatible GUID's.
+
+<?php
+public function create_guid($namespace = '') {    
+    static $guid = '';
+    $uid = uniqid("", true);
+    $data = $namespace;
+    $data .= $_SERVER['REQUEST_TIME'];
+    $data .= $_SERVER['HTTP_USER_AGENT'];
+    $data .= $_SERVER['LOCAL_ADDR'];
+    $data .= $_SERVER['LOCAL_PORT'];
+    $data .= $_SERVER['REMOTE_ADDR'];
+    $data .= $_SERVER['REMOTE_PORT'];
+    $hash = strtoupper(hash('ripemd128', $uid . $guid . md5($data)));
+    $guid = '{' .  
+            substr($hash,  0,  8) .
+            '-' .
+            substr($hash,  8,  4) .
+            '-' .
+            substr($hash, 12,  4) .
+            '-' .
+            substr($hash, 16,  4) .
+            '-' .
+            substr($hash, 20, 12) .
+            '}';
+    return $guid;
+  }
+?>
+===============================================================================
+
+Running:
+
+rand_uniqid(9007199254740989);
+
+will return 'PpQXn7COf' and:
+
+rand_uniqid('PpQXn7COf', true);
+
+will return '9007199254740989'
+
+---
+
+If you want the rand_uniqid to be at least 6 letter long, use the $pad_up = 6
+argument
+
+---
+
+You can support even more characters (making the resulting rand_uniqid even
+smaller) by adding characters to the $index var at the top of the function
+body.
+
+---
+
+<?php
+function rand_uniqid($in, $to_num = false, $pad_up = false, $passKey = null)
+{
+    $index = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    if ($passKey !== null) {
+        // Although this function's purpose is to just make the
+        // ID short - and not so much secure,
+        // you can optionally supply a password to make it harder
+        // to calculate the corresponding numeric ID
+
+        for ($n = 0; $n<strlen($index); $n++) {
+            $i[] = substr( $index,$n ,1);
+        }
+
+        $passhash = hash('sha256',$passKey);
+        $passhash = (strlen($passhash) < strlen($index))
+            ? hash('sha512',$passKey)
+            : $passhash;
+
+        for ($n=0; $n < strlen($index); $n++) {
+            $p[] =  substr($passhash, $n ,1);
+        }
+
+        array_multisort($p,  SORT_DESC, $i);
+        $index = implode($i);
+    }
+
+    $base  = strlen($index);
+
+    if ($to_num) {
+        // Digital number  <<--  alphabet letter code
+        $in  = strrev($in);
+        $out = 0;
+        $len = strlen($in) - 1;
+        for ($t = 0; $t <= $len; $t++) {
+            $bcpow = bcpow($base, $len - $t);
+            $out   = $out + strpos($index, substr($in, $t, 1)) * $bcpow;
+        }
+
+        if (is_numeric($pad_up)) {
+            $pad_up--;
+            if ($pad_up > 0) {
+                $out -= pow($base, $pad_up);
+            }
+        }
+        $out = sprintf('%F', $out);
+        $out = substr($out, 0, strpos($out, '.'));
+    } else {
+        // Digital number  -->>  alphabet letter code
+        if (is_numeric($pad_up)) {
+            $pad_up--;
+            if ($pad_up > 0) {
+                $in += pow($base, $pad_up);
+            }
+        }
+
+        $out = "";
+        for ($t = floor(log($in, $base)); $t >= 0; $t--) {
+            $bcp = bcpow($base, $t);
+            $a   = floor($in / $bcp) % $base;
+            $out = $out . substr($index, $a, 1);
+            $in  = $in - ($a * $bcp);
+        }
+        $out = strrev($out); // reverse
+    }
+
+    return $out;
+}
+
+echo rand_uniqid(1);
+?>
+===============================================================================
+
+I wouldn't use:
+$prefix = exec("hostname");
+- since it's CPU-expensive.
+
+Instead use php_uname('n') if you have many visitors.
+===============================================================================
+
+Just to note this function is fairly slow, and can bring your script to a crawl
+if it is in a loop. Strangely if you run it as uniqid('', true) it runs much
+more quickly
+===============================================================================
+
+The following is one example to get a random string class.
+
+/**
+* Description of RandomString
+*
+* @package
+*/
+class RandomString
+{
+
+    /**
+     *
+     * @param int $length
+     * @return string
+     */
+    static public function getRandom($length)
+    {
+        $randomData = base64_encode(
+                file_get_contents('/dev/urandom', false, null, 0, $length) .
+uniqid(mt_rand(), true)
+        );
+        return substr(strtr($randomData, array('/' => '', '=' => '', '+' =>
+'')), 0, $length);
+    }
+
+}
+===============================================================================
+
+Another UUID function. This time using /dev/random
+<?php
+/**
+     * @brief Generates a Universally Unique IDentifier, version 4.
+     *
+     * This function generates a truly random UUID. The built in CakePHP
+String::uuid() function
+     * is not cryptographically secure. You should uses this function instead.
+     *
+     * @see http://tools.ietf.org/html/rfc4122#section-4.4
+     * @see http://en.wikipedia.org/wiki/UUID
+     * @return string A UUID, made up of 32 hex digits and 4 hyphens.
+     */
+    public function uuidSecure() {
+       
+        $pr_bits = null;
+        $fp = @fopen('/dev/urandom','rb');
+        if ($fp !== false) {
+            $pr_bits .= @fread($fp, 16);
+            @fclose($fp);
+        } else {
+            $this->cakeError('randomNumber');
+        }
+       
+        $time_low = bin2hex(substr($pr_bits,0, 4));
+        $time_mid = bin2hex(substr($pr_bits,4, 2));
+        $time_hi_and_version = bin2hex(substr($pr_bits,6, 2));
+        $clock_seq_hi_and_reserved = bin2hex(substr($pr_bits,8, 2));
+        $node = bin2hex(substr($pr_bits,10, 6));
+       
+        /**
+         * Set the four most significant bits (bits 12 through 15) of the
+         * time_hi_and_version field to the 4-bit version number from
+         * Section 4.1.3.
+         * @see http://tools.ietf.org/html/rfc4122#section-4.1.3
+         */
+        $time_hi_and_version = hexdec($time_hi_and_version);
+        $time_hi_and_version = $time_hi_and_version >> 4;
+        $time_hi_and_version = $time_hi_and_version | 0x4000;
+       
+        /**
+         * Set the two most significant bits (bits 6 and 7) of the
+         * clock_seq_hi_and_reserved to zero and one, respectively.
+         */
+        $clock_seq_hi_and_reserved = hexdec($clock_seq_hi_and_reserved);
+        $clock_seq_hi_and_reserved = $clock_seq_hi_and_reserved >> 2;
+        $clock_seq_hi_and_reserved = $clock_seq_hi_and_reserved | 0x8000;
+       
+        return sprintf('%08s-%04s-%04x-%04x-%012s',
+            $time_low, $time_mid, $time_hi_and_version, 
+$clock_seq_hi_and_reserved, $node);
+    }
+?>
+===============================================================================
+
+I've created a class from the function below. With it, creating a lot of uuids
+beomes about 100 times faster because you do not need to fopen() for each uuid.
+uuid::get() still works as a static function if you just need a single uuid.
+
+<?php
+class uuid {
+   
+    protected $urand;
+   
+    public function __construct() {
+        $this->urand = @fopen ( '/dev/urandom', 'rb' );
+    }
+
+    /**
+     * @brief Generates a Universally Unique IDentifier, version 4.
+     *
+     * This function generates a truly random UUID. The built in CakePHP
+String::uuid() function
+     * is not cryptographically secure. You should uses this function instead.
+     *
+     * @see http://tools.ietf.org/html/rfc4122#section-4.4
+     * @see http://en.wikipedia.org/wiki/UUID
+     * @return string A UUID, made up of 32 hex digits and 4 hyphens.
+     */
+    function get() {
+       
+        $pr_bits = false;
+        if (is_a ( $this, 'uuid' )) {
+            if (is_resource ( $this->urand )) {
+                $pr_bits .= @fread ( $this->urand, 16 );
+            }
+        }
+        if (! $pr_bits) {
+            $fp = @fopen ( '/dev/urandom', 'rb' );
+            if ($fp !== false) {
+                $pr_bits .= @fread ( $fp, 16 );
+                @fclose ( $fp );
+            } else {
+                // If /dev/urandom isn't available (eg: in non-unix systems),
+use mt_rand().
+                $pr_bits = "";
+                for($cnt = 0; $cnt < 16; $cnt ++) {
+                    $pr_bits .= chr ( mt_rand ( 0, 255 ) );
+                }
+            }
+        }
+        $time_low = bin2hex ( substr ( $pr_bits, 0, 4 ) );
+        $time_mid = bin2hex ( substr ( $pr_bits, 4, 2 ) );
+        $time_hi_and_version = bin2hex ( substr ( $pr_bits, 6, 2 ) );
+        $clock_seq_hi_and_reserved = bin2hex ( substr ( $pr_bits, 8, 2 ) );
+        $node = bin2hex ( substr ( $pr_bits, 10, 6 ) );
+       
+        /**
+         * Set the four most significant bits (bits 12 through 15) of the
+         * time_hi_and_version field to the 4-bit version number from
+         * Section 4.1.3.
+         * @see http://tools.ietf.org/html/rfc4122#section-4.1.3
+         */
+        $time_hi_and_version = hexdec ( $time_hi_and_version );
+        $time_hi_and_version = $time_hi_and_version >> 4;
+        $time_hi_and_version = $time_hi_and_version | 0x4000;
+       
+        /**
+         * Set the two most significant bits (bits 6 and 7) of the
+         * clock_seq_hi_and_reserved to zero and one, respectively.
+         */
+        $clock_seq_hi_and_reserved = hexdec ( $clock_seq_hi_and_reserved );
+        $clock_seq_hi_and_reserved = $clock_seq_hi_and_reserved >> 2;
+        $clock_seq_hi_and_reserved = $clock_seq_hi_and_reserved | 0x8000;
+       
+        return sprintf ( '%08s-%04s-%04x-%04x-%012s', $time_low, $time_mid, 
+$time_hi_and_version, $clock_seq_hi_and_reserved, $node );
+    }
+
+}
+===============================================================================
+
+This builds slightly on david's post below.  The differences are that it
+doesn't require Cake anymore and there is a graceful fallback for /dev/urandom
+in case that isn't available (/dev/urandom is not available on windows systems
+for example).
+
+Since it uses mt_rand(), it is still cryptographically secure.
+
+<?php
+/**
+     * @brief Generates a Universally Unique IDentifier, version 4.
+     *
+     * This function generates a truly random UUID. The built in CakePHP
+String::uuid() function
+     * is not cryptographically secure. You should uses this function instead.
+     *
+     * @see http://tools.ietf.org/html/rfc4122#section-4.4
+     * @see http://en.wikipedia.org/wiki/UUID
+     * @return string A UUID, made up of 32 hex digits and 4 hyphens.
+     */
+      function uuidSecure() {
+      
+        $pr_bits = null;
+        $fp = @fopen('/dev/urandom','rb');
+        if ($fp !== false) {
+            $pr_bits .= @fread($fp, 16);
+            @fclose($fp);
+        } else {
+            // If /dev/urandom isn't available (eg: in non-unix systems), use
+mt_rand().
+            $pr_bits = "";
+            for($cnt=0; $cnt < 16; $cnt++){
+                $pr_bits .= chr(mt_rand(0, 255));
+            }
+        }
+      
+        $time_low = bin2hex(substr($pr_bits,0, 4));
+        $time_mid = bin2hex(substr($pr_bits,4, 2));
+        $time_hi_and_version = bin2hex(substr($pr_bits,6, 2));
+        $clock_seq_hi_and_reserved = bin2hex(substr($pr_bits,8, 2));
+        $node = bin2hex(substr($pr_bits,10, 6));
+      
+        /**
+         * Set the four most significant bits (bits 12 through 15) of the
+         * time_hi_and_version field to the 4-bit version number from
+         * Section 4.1.3.
+         * @see http://tools.ietf.org/html/rfc4122#section-4.1.3
+         */
+        $time_hi_and_version = hexdec($time_hi_and_version);
+        $time_hi_and_version = $time_hi_and_version >> 4;
+        $time_hi_and_version = $time_hi_and_version | 0x4000;
+      
+        /**
+         * Set the two most significant bits (bits 6 and 7) of the
+         * clock_seq_hi_and_reserved to zero and one, respectively.
+         */
+        $clock_seq_hi_and_reserved = hexdec($clock_seq_hi_and_reserved);
+        $clock_seq_hi_and_reserved = $clock_seq_hi_and_reserved >> 2;
+        $clock_seq_hi_and_reserved = $clock_seq_hi_and_reserved | 0x8000;
+      
+        return sprintf('%08s-%04s-%04x-%04x-%012s',
+            $time_low, $time_mid, $time_hi_and_version, 
+$clock_seq_hi_and_reserved, $node);
+    }
+===============================================================================
+
+I'm not sure the previous function by mimec is really all that random.  For one
+thing, generating 8 small random 4 digit sequeces != generating one 32 digit
+sequence.
+===============================================================================
+
+If you want many ids and performance of this function is an issue why not pull
+uniquid() out of the loop, eg:
+
+$base = uniqueid();
+$ids[] = array();
+
+for ($index = 0; $index < 100000; $index++) 
+    $ids[] = $base . '.' . $index;
+===============================================================================
+
+Neither the pseudo-random number rand() nor the Mersenne Twister algorithms are
+cryptographically strong, and this is well known.  Simply combining
+non-cryptographically strong algorithms doesn't not make a cryptographically
+strong algorithm either.  Mersenne Twister is a fast algorithm with good
+k-distribution which will give you numbers for a long time before it repeats
+itself.  MT, rand(), and MD5 should NOT be used for encryption, or for cookies
+that that store a session ID that gives personal information.  A simple
+application where non-collision of session IDs is highly preferred but not
+critical, such as storing a user's shopping cart items for when they return to
+your site (but not their personal information), IS a good use for the MT, rand
+() MD5, uniqid() and combinations thereof.
+===============================================================================
+
+I have been using mimecs version lately and do not think it's safe to think the
+results are always unqiue.
+
+Although it could be just my bad programming, I found exactly 1 collission
+while debugging my code. It seems to me that if my code was incorrect it would
+have happened more than once.
+
+I recommend anyone to include time as a factor of such an ID as to be a little
+more certain it is in fact unique.
+===============================================================================
+
+wooshoofoo, the reason mimec is calling mt_rand multiple times is because the
+largest number mt_rand can produce is 2^31 (2147483647, as reported by
+mt_getrandmax() on my server).  RFC 4122 requires a 128 bit value.
+
+Also they are not "4 digit sequeces", but 4 digit hexadecimal numbers.  16^4 ==
+2^16.
+
+mimec's limiting each random result to 2^16 avoids problem of PHP's 2^32
+integer max (http://php.net/manual/en/language.types.integer.php).
+
+If you want to call mt_rand fewer times:  mimec's version calls mt_rand 8 times
+( 16 bits * 8 = 128 bits ).  You *could* call mt_rand 5 times ( 31 bits + 31
+bits + 31 bits + 31 bits + 4 bits = 128 bits ).  But then you would have keep
+all your values as strings.
+
+Something like:
+
+<?php
+/**
+* Another (ugly) "random or pseudo-random" version of RFC 4122
+*
+* This version calls mt_rand() the fewest possible times.
+* if mt_getrandmax() == 2^31 then this will call mt_rand() 5 times YMMV
+*
+* Personally, I would use mimec's version
+* To handle the large values, we'll keep everything as strings.
+*
+* @return string
+*/
+function uuid() {   
+
+     // Generate 128 bit random sequence
+     $randmax_bits = strlen(base_convert(mt_getrandmax(), 10, 2));  // how many
+bits is mt_getrandmax()
+     $x = '';
+     while (strlen($x) < 128) {
+         $maxbits = (128 - strlen($x) < $randmax_bits) ? 128 - strlen($x) :  
+$randmax_bits;
+         $x .= str_pad(base_convert(mt_rand(0, pow(2,$maxbits)), 10, 2), 
+$maxbits, "0", STR_PAD_LEFT);
+     }
+
+     // break into fields
+     $a = array();
+     $a['time_low_part'] = substr($x, 0, 32);
+     $a['time_mid'] = substr($x, 32, 16);
+     $a['time_hi_and_version'] = substr($x, 48, 16);
+     $a['clock_seq'] = substr($x, 64, 16);
+     $a['node_part'] =  substr($x, 80, 48);
+    
+     // Apply bit masks for "random or pseudo-random" version per RFC
+     $a['time_hi_and_version'] = substr_replace($a['time_hi_and_version'], 
+'0100', 0, 4);
+     $a['clock_seq'] = substr_replace($a['clock_seq'], '10', 0, 2);
+
+    // Format output
+    return sprintf('%s-%s-%s-%s-%s',
+        str_pad(base_convert($a['time_low_part'], 2, 16), 8, "0", STR_PAD_LEFT
+),
+        str_pad(base_convert($a['time_mid'], 2, 16), 4, "0", STR_PAD_LEFT),
+        str_pad(base_convert($a['time_hi_and_version'], 2, 16), 4, "0", 
+STR_PAD_LEFT),
+        str_pad(base_convert($a['clock_seq'], 2, 16), 4, "0", STR_PAD_LEFT),
+        str_pad(base_convert($a['node_part'], 2, 16), 12, "0", STR_PAD_LEFT));
+}
+
+?>
+
+However, I think mimec's version is much more elegant.
+===============================================================================
+
+If you're on a Windows system, and you wan't the prefix to be the computer name
+(and not only localhost), you can invoke the exec function to get it.
+
+Then your unique id should be :
+
+<?php
+$prefix = exec("hostname");
+echo uniqid($prefix, true);
+?>
+
+Regards
+===============================================================================
+
+The example given in this document for a "better token" should be:
+
+<?php
+$better_token = uniqid(md5(rand()), true);
+?>
+
+As it is now, the result isn't guaranteed to be unique, because MD5 has
+collisions.
+===============================================================================
+
+I guess, this is not a bugs, just a note for someone newbie like me,
+i've got problem on uploading image, i tested on local server, it works fine
+but when i upload on my hosting site , the scripts failed (i use shared
+hosting, so i' m helpless), this is a part of my scripts:
+
+$ext=$this->_fuphandler->extractExtension($data);   
+        $strsha=sha1($this->_fuphandler->extractFilename($data));
+        $r=sprintf($pathToRoot.$dest.'%s.%s',$strsha,$ext);    // filename
+builder
+        $rawsrc = $data['tmp_name'];
+        if(!move_uploaded_file($rawsrc,$r))
+        {....}
+it should work,  it did on my uniform server, but it didn't on my hosting so i
+spend many hours on trying, then i try  to change the  $strsha=uniqid();
+and it works...
+i know it's just a silly thing, ...hehehe, beside i'm just a newbie, but
+probably will help someone who has some problem like me.
+===============================================================================
+
+mt_rand() features in a lot of comments here. It is a good PRNG for Monte Carlo
+simulations, not for anything related to security. Wikipedia's page on
+cryptographically-secure PRNGs explains. If you want it to be hard for an
+attacker to guess or predict a "random" UUID, try using /dev/random instead.
+
+<?php
+$r = unpack('v*', fread(fopen('/dev/random', 'r'),16));
+$uuid = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+    $r[1], $r[2], $r[3], $r[4] & 0x0fff | 0x4000,
+    $r[5] & 0x3fff | 0x8000, $r[6], $r[7], $r[8]);
+?>
+
+That's obviously not production code. It's just for illustration.
+===============================================================================
+
+Calls to uuid_make that use the constants UUID_MAKE_V5 or UUID_MAKE_V3 (using
+Debian package php5-uuid available June 2010) will not work with only two
+variables.
+
+I could not find good documentation, so I read some source code and figured out
+that this would work:
+
+uuid_create(&$v5);
+//uuid_make($v5, UUID_MAKE_V5);
+uuid_make($v5, UUID_MAKE_V5,$v5,$uniqid());
+uuid_export($v5, UUID_FMT_STR, &$v5String);
+
+Please use at your own risk.  This may not be the best way to give this param
+variables, but it at least makes it work what appears to be properly
+(generating unique ID's).
+
+I imagine that UUID_MAKE_V3 is similar in what it needs.
+
+  Ryan
+===============================================================================
+
+I'm not too fond of the recommendation to use an MD5 of the unique ID for
+session IDs. It would be a better idea just to use uniqueid(rand(), true)
+without the MD5, because even though it's a rare circumstance, MD5 is a hash,
+not an encryption, which means it has collisions. Therefore you theoretically
+could have multiple users given the same session ID which could result in one
+user's ability to access another user's data.
+===============================================================================
+
+Better yet, just use the php5-uuid extension and this class to create
+'official' UUIDs at high speed (On my system 1000 UUIDs are created in 0.0064
+seconds)
+
+<?php
+
+Usage:
+$uuid=new uuid();
+echo $uuid->v1();
+
+class uuid {
+    /**
+     * This class enables you to get real uuids using the OSSP library.
+     * Note you need php-uuid installed.
+     * On my system 1000 UUIDs are created in 0.0064 seconds.
+     *
+     * @author Marius Karthaus
+     *
+     */
+   
+    protected $uuidobject;
+   
+    /**
+     * On long running deamons i've seen a lost resource. This checks the
+resource and creates it if needed.
+     *
+     */
+    protected function create() {
+        if (! is_resource ( $this->uuidobject )) {
+            uuid_create ( &$this->uuidobject );
+        }
+    }
+   
+    /**
+     * Return a type 1 (MAC address and time based) uuid
+     *
+     * @return String
+     */
+    public function v1() {
+        $this->create ();
+        uuid_make ( $this->uuidobject, UUID_MAKE_V1 );
+        uuid_export ( $this->uuidobject, UUID_FMT_STR, &$uuidstring );
+        return trim ( $uuidstring );
+    }
+   
+    /**
+     * Return a type 4 (random) uuid
+     *
+     * @return String
+     */
+    public function v4() {
+        $this->create ();
+        uuid_make ( $this->uuidobject, UUID_MAKE_V4 );
+        uuid_export ( $this->uuidobject, UUID_FMT_STR, &$uuidstring );
+        return trim ( $uuidstring );
+    }
+   
+    /**
+     * Return a type 5 (SHA-1 hash) uuid
+     *
+     * @return String
+     */
+    public function v5() {
+        $this->create ();
+        uuid_make ( $this->uuidobject, UUID_MAKE_V5 );
+        uuid_export ( $this->uuidobject, UUID_FMT_STR, &$uuidstring );
+        return trim ( $uuidstring );
+    }
+}
+?>

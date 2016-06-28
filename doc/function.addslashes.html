@@ -1,0 +1,742 @@
+
+addslashes
+
+(PHP 4, PHP 5, PHP 7)
+
+addslashes — 使用反斜线引用字符串
+
+说明
+
+string addslashes ( string $str )
+
+返回字符串，该字符串为了数据库查询语句等的需要在某些字符前加上了反斜线。这些字
+符是单引号（'）、双引号（"）、反斜线（\）与 NUL（NULL 字符）。
+
+一个使用 addslashes() 的例子是当你要往数据库中输入数据时。例如，将名字 O'reilly
+插入到数据库中，这就需要对其进行转义。强烈建议使用 DBMS 指定的转义函数（比如
+MySQL 是 mysqli_real_escape_string()，PostgreSQL 是 pg_escape_string()），但是
+如果你使用的 DBMS 没有一个转义函数，并且使用 \ 来转义特殊字符，你可以使用这个函
+数。仅仅是为了获取插入数据库的数据，额外的 \ 并不会插入。当 PHP 指令
+magic_quotes_sybase 被设置成 on 时，意味着插入 ' 时将使用 ' 进行转义。
+
+PHP 5.4 之前 PHP 指令 magic_quotes_gpc 默认是 on，实际上所有的 GET、POST 和
+COOKIE 数据都用被 addslashes() 了。不要对已经被 magic_quotes_gpc 转义过的字符串
+使用 addslashes()，因为这样会导致双层转义。遇到这种情况时可以使用函数 
+get_magic_quotes_gpc() 进行检测。
+
+参数
+
+str
+
+    要转义的字符。
+
+返回值
+
+返回转义后的字符。
+
+范例
+
+Example #1 一个 addslashes() 例子
+
+<?php
+$str = "Is your name O'reilly?";
+
+// 输出： Is your name O\'reilly?
+echo addslashes($str);
+?>
+
+参见
+
+  • stripcslashes() - 反引用一个使用 addcslashes 转义的字符串
+  • stripslashes() - 反引用一个引用字符串
+  • addcslashes() - 以 C 语言风格使用反斜线转义字符串中的字符
+  • htmlspecialchars() - Convert special characters to HTML entities
+  • quotemeta() - 转义元字符集
+  • get_magic_quotes_gpc() - 获取当前 magic_quotes_gpc 的配置选项设置
+
+
+User Contributed Notes 38 notes
+
+===============================================================================
+
+@ mark at hagers dot demon dot nl :
+
+You shouldn't use str_replace() for this. Use a function like htmlentities(),
+which will properly encode all user input for fields. That way, it will also
+work if the user types &, <, >, etc.
+===============================================================================
+
+I was stumped for a long time by the fact that even when using addslashes and
+stripslashes explicitly on the field values double quotes (") still didn't seem
+to show up in strings read from a database. Until I looked at the source, and
+realised that the field value is just truncated at the first occurrence of a
+double quote. the remainder of the string is there (in the source), but is
+ignored when the form is displayed and submitted.
+
+This can easily be solved by replacing double quotes with "&quot;" when
+building the form. like this:
+$fld_value =  str_replace ( "\"", "&quot;", $src_string ) ;
+The reverse replacement after the form submission is not necessary.
+===============================================================================
+
+To output a PHP variable to Javascript, use json_encode().
+
+<?php
+
+$var = "He said \"Hello O'Reilly\" & disappeared.\nNext line...";
+echo "alert(".json_encode($var).");\n";
+
+?>
+
+Output:
+alert("He said \"Hello O'Reilly\" & disappeared.\nNext line...") ;
+===============================================================================
+
+There are other functions "kind of" like this one but this should help adding
+slashes to a form post which also contains arrays (and you can't access runtime
+quotes), or you need to add slashes to an array which is already stripped:
+
+<?php
+    function addslashes_array($a){
+        if(is_array($a)){
+            foreach($a as $n=>$v){
+                $b[$n]=addslashes_array($v);
+            }
+            return $b;
+        }else{
+            return addslashes($a);
+        }
+    }
+?>
+
+note this does not add slashes to the keys - you could easily modify to do
+this..
+===============================================================================
+
+May it is better use the function mysql_real_escape_string instead of
+addslashes when inserting data into a MySQL database. Check it at:
+
+http://www.php.net/manual/en/function.mysql-real-escape-string.php
+===============================================================================
+
+What happends when you add addslashes(addslashes($str))? This is not a good
+thing and it may be fixed:
+
+function checkaddslashes($str){       
+    if(strpos(str_replace("\'",""," $str"),"'")!=false)
+        return addslashes($str);
+    else
+        return $str;
+}
+
+checkaddslashes("aa'bb");  => aa\'bb
+checkaddslashes("aa\'bb"); => aa\'bb
+checkaddslashes("\'"); => \'
+checkaddslashes("'");  => \'
+
+Hope this will help you
+===============================================================================
+
+For thelogrus, my testing shows the opposite--that a slashed string is stored
+correctly by MySQL.  Consider
+
+insert into test (field1) values ('test\'test')
+
+...which is stored as "test'test".  If you were posting "Sir'Weaser" from a
+form to your script and have magic_quotes_gpc on, then the string is slashed
+already so if you run addslashes() again you will be entering "Sir\\'Weaser"
+into MySQL.  In that case "Sir\'Weaser" would be the correct output.
+
+In summary, addslashes() is not necessary if magic_quotes_gpc is on.
+===============================================================================
+
+In addition to the post made by Aditya P Bhatt below. This code works fine for
+posting a single string but does not work for posting arrays.
+===============================================================================
+
+Note that when using addslashes() on a string that includes cyrillic
+characters, addslashes() totally mixes up the string, rendering it unusable.
+===============================================================================
+
+Beware of using addslashes() on input to the serialize() function.   serialize
+() stores strings with their length; the length must match the stored string or
+unserialize() will fail. 
+
+Such a mismatch can occur if you serialize the result of addslashes() and store
+it in a database; some databases (definitely including PostgreSQL)
+automagically strip backslashes from "special" chars in SELECT results, causing
+the returned string to be shorter than it was when it was serialized.
+
+In other words, do this...
+
+<?php
+$string="O'Reilly";
+$ser=serialize($string);    # safe -- won't count the slash
+$result=addslashes($ser);
+?>
+
+...and not this...
+
+<?php
+$string="O'Reilly";
+$add=addslashes($string);   # RISKY!  -- will count the slash
+$result=serialize($add);
+?>
+
+In both cases, a backslash will be added after the apostrophe in "O'Reilly";
+only in the second case will the backslash be included in the string length as
+recorded by serialize().
+
+[Note to the maintainers: You may, at your option, want to link this note to
+serialize() as well as to addslashes().  I'll refrain from doing such
+cross-posting myself...]
+===============================================================================
+
+Never use addslashes function to escape values you are going to send to mysql.
+use mysql_real_escape_string or pg_escape at least if you are not using
+prepared queries yet.
+
+keep in mind that single quote is not the only special character that can break
+your sql query. and quotes are the only thing which addslashes care.
+===============================================================================
+
+If all you want to do is quote a string as you would normally do in PHP (for
+example, when returning an Ajax result, inside a json string value, or when
+building a URL with args), don't use addslashes (you don't want both " and '
+escaped at the same time). Instead, just use this function:
+
+<?php
+function Quote($Str) // Double-quoting only
+    {
+    $Str=str_replace('"','\"',$Str);
+    return '"'.$Str.'"';
+    } // Quote
+?>
+
+Modify this easily to get a single-quoting function.
+===============================================================================
+
+Hello,
+
+If you are getting trouble to SGDB write/read HTML data, try to use this:
+
+<?php
+
+//from html_entity_decode() manual page
+function unhtmlentities ($string) {
+   $trans_tbl =get_html_translation_table (HTML_ENTITIES );
+   $trans_tbl =array_flip ($trans_tbl );
+   return strtr ($string ,$trans_tbl );
+}
+
+//read from db
+$content = stripslashes (htmlspecialchars ($field['content']));
+
+//write to db
+$content = unhtmlentities (addslashes (trim ($_POST['content'])));
+
+//make sure result of function get_magic_quotes_gpc () == 0, you can get
+strange slashes in your content adding slashes twice
+
+//better to do this using addslashes
+$content = (! get_magic_quotes_gpc ()) ? addslashes ($content) : $content;
+
+?>
+===============================================================================
+
+spamdunk at home dot com, your way is dangerous on PostgreSQL (and presumably
+MySQL). You're quite correct that ANSI SQL specifies using ' to escape, but
+those databases also support \ for escaping (in violation of the standard, I
+think). Which means that if they pass in a string that includes a "\'", you
+expand it to "\'''" (an escaped quote followed by a non-escaped quote. WRONG!
+Attackers can execute arbitrary SQL to drop your tables, make themselves
+administrators, whatever they want.)
+
+The best way to be safe and correct is to:
+
+- don't use magic quotes; this approach is bad. For starters, that's making the
+assumption that you will be using your input in a database query, which is
+arbitrary. (Why not escape all "<"s with "&lt;"s instead? Cross-site scripting
+attacks are quite common as well.) It's better to set up a way that does
+whatever escaping is correct for you when you use it, as below:
+
+- when inserting into the database, use prepared statements with placeholders.
+For example, when using PEAR DB:
+
+<?php
+    $stmt = $dbh->prepare('update mb_users set password = ? where username = ?'
+);
+    $dbh->execute($stmt, array('12345', 'bob'));
+?>
+
+Notice that there are no quotes around the ?s. It handles that for you
+automatically. It's guaranteed to be safe for your database. (Just ' on oracle,
+\ and ' on PostgreSQL, but you don't even have to think about it.)
+
+Plus, if the database supports prepared statements (the soon-to-be-released
+PostgreSQL 7.3, Oracle, etc), several executes on the same prepare can be
+faster, since it can reuse the same query plan. If it doesn't (MySQL, etc),
+this way falls back to quoting code that's specifically written for your
+database, avoiding the problem I mentioned above.
+
+(Pardon my syntax if it's off. I'm not really a PHP programmer; this is
+something I know from similar things in Java, Perl, PL/SQL, Python, Visual
+Basic, etc.)
+===============================================================================
+
+<?php
+
+/**
+* @desc add slashes if use MySQL and check if function addslashes is exits else
+* return to escape string in MySQL .
+* same way its return to stripslashes function
+* @param string $type any string u want to insert in MySQL and display from
+MySQL
+* @param string $type must be add to add slashes and strip to strip slashes
+* @author Yousef Ismaeil - cliprz@gmail.com
+*/
+function PHP_slashes($string,$type='add')
+{
+    if ($type == 'add')
+    {
+        if (get_magic_quotes_gpc())
+        {
+            return $string;
+        }
+        else
+        {
+            if (function_exists('addslashes'))
+            {
+                return addslashes($string);
+            }
+            else
+            {
+                return mysql_real_escape_string($string);
+            }
+        }
+    }
+    else if ($type == 'strip')
+    {
+        return stripslashes($string);
+    }
+    else
+    {
+        die('error in PHP_slashes (mixed,add | strip)');
+    }
+}
+
+?>
+===============================================================================
+
+If you want to add slashes to special symbols that would interfere with a
+regular expression (i.e., . \ + * ? [ ^ ] $ ( ) { } = ! < > | :), you should
+use the preg_quote() function.
+===============================================================================
+
+Note, this function wont work with mssql or access queries.
+Use the function above (work with arrays too).
+
+function addslashes_mssql($str){
+    if (is_array($str)) {
+        foreach($str AS $id => $value) {
+            $str[$id] = addslashes_mssql($value);
+        }
+    } else {
+        $str = str_replace("'", "''", $str);   
+    }
+   
+    return $str;
+}
+
+function stripslashes_mssql($str){
+    if (is_array($str)) {
+        foreach($str AS $id => $value) {
+            $str[$id] = stripslashes_mssql($value);
+        }
+    } else {
+        $str = str_replace("''", "'", $str);   
+    }
+
+    return $str;
+}
+===============================================================================
+
+In response to Krasimir Slavov and Luiz Miguel Axcar:
+
+There are several encoding schemes for inserting binary data into places it
+doesn't typically belong, such as databases and e-mail bodies. Check out the
+base64_encode() and convert_uuencode() functions for the details.
+===============================================================================
+
+to quote boris-pieper AT t-online DOT de, 15-Jan-2005 06:07,
+
+Note: You should use mysql_real_escape_string() (http://php.net/
+mysql_real_escape_string) if possible (PHP => 4.3.0) instead of
+mysql_escape_string().
+
+You may also want to us it instead of addslashes.
+===============================================================================
+
+re: problem with mcrypt, addslashes and mysql
+
+Here is my solution to the problem of characters from mcrypt creating issues
+with mysql calls (due to characters which aren't cleaned up by addslashes).
+
+Solution: simply convert your encryption string to hex, then back to binary
+when you are ready to decrypt.
+
+<?php
+// ie.
+$encrypted = addslashes($string);   
+$encrypted = bin2hex($encrypted);
+
+// ... then:
+$decrypted = hex2bin($encrypted);
+$decrypted = stripslashes($decrypted);
+
+// where hex2bin() is:
+function hex2bin($hexdata) {
+  $bindata="";
+ 
+  for ($i=0;$i<strlen($hexdata);$i+=2) {
+    $bindata.=chr(hexdec(substr($hexdata,$i,2)));
+  }
+
+  return $bindata;
+}
+?>
+
+One word of caution: this will increase the length of your initial data string,
+so you will need to increase the field length for your mysql database.
+
+Cheers, Phil
+PS. I knew that I'd eventually be able to give something back to the site!
+===============================================================================
+
+Be careful on whether you use double or single quotes when creating the string
+to be escaped:
+
+$test = 'This is one line\r\nand this is another\r\nand this line has\ta tab';
+
+echo $test;
+echo "\r\n\r\n";
+echo addslashes($test);
+
+$test = "This is one line\r\nand this is another\r\nand this line has\ta tab";
+
+echo $test;
+echo "\r\n\r\n";
+echo addslashes($test);
+===============================================================================
+
+This function is deprecated in PHP 4.0, according to this article:
+
+http://www.newsforge.com/article.pl?sid=06/05/23/2141246
+
+Also, it is worth mentioning that PostgreSQL will soon start to block queries
+involving escaped single quotes using \ as the escape character, for some
+cases, which depends on the string's encoding.  The standard way to escape
+quotes in SQL (not all SQL databases, mind you) is by changing single quotes
+into two single quotes (e.g, ' ' ' becomes ' '' ' for queries).
+
+You should look into other ways for escaping strings, such as
+"mysql_real_escape_string" (see the comment below), and other such database
+specific escape functions.
+===============================================================================
+
+addslashes does NOT make your input safe for use in a database query! It only
+escapes according to what PHP defines, not what your database driver defines.
+Any use of this function to escape strings for use in a database is likely an
+error - mysql_real_escape_string, pg_escape_string, etc, should be used
+depending on your underlying database as each database has different escaping
+requirements. In particular, MySQL wants \n, \r and \x1a escaped which
+addslashes does NOT do. Therefore relying on addslashes is not a good idea at
+all and may make your code vulnerable to security risks. I really don't see
+what this function is supposed to do.
+===============================================================================
+
+Remember to slash underscores (_) and percent signs (%), too, if you're going
+use the LIKE operator on the variable or you'll get some unexpected results.
+===============================================================================
+
+As mentioned, magic_quotes_gpc automatically adds slashes to POST and GET data
+and these slashes don't go in the database.  BUT, be careful of this. If you
+have a form with an error check, make sure you strip the slashes if your form
+remembers the OK fields, so the user doesn't view these automagically added
+slashes.
+===============================================================================
+
+Here's an example of a function that prevents double-quoting, I'm surprised
+noone has put something like this up yet... (also works on arrays)
+
+<?php
+function escape_quotes($receive) {
+    if (!is_array($receive))
+        $thearray = array($receive);
+    else
+        $thearray = $receive;
+   
+    foreach (array_keys($thearray) as $string) {
+        $thearray[$string] = addslashes($thearray[$string]);
+        $thearray[$string] = preg_replace("/[\\/]+/","/",$thearray[$string]);
+    }
+   
+    if (!is_array($receive))
+        return $thearray[0];
+    else
+        return $thearray;
+}
+?>
+===============================================================================
+
+Based on:
+Danijel Pticar
+05-Aug-2009 05:22
+I recommend this extended version, to replace addslashes altogether(works for
+both strings and arrays):
+<?php
+function addslashesextended(&$arr_r)
+{
+    if(is_array($arr_r))
+    {
+        foreach ($arr_r as &$val)
+            is_array($val) ? addslashesextended($val):$val=addslashes($val);
+        unset($val);
+    }
+    else
+        $arr_r=addslashes($arr_r);
+}
+?>
+===============================================================================
+
+this is my version of an addslashes function, useful for processing $_POST
+array:
+
+<?php
+function add_slashes ($an_array) {
+  foreach ($an_array as $key => $value) {
+    $new_array[$key] = addslashes($an_array[$key]);
+  }
+}
+?>
+
+then call it:
+
+<?php add_slashes($_POST); ?>
+===============================================================================
+
+Automagically add slashes to $_POST variables. It helps to prevent some sql
+injection attacks. Also works with $_GET variables.
+
+FILE NAME: input_cl.php
+<?php
+//create array to temporarily grab variables
+$input_arr = array();
+//grabs the $_POST variables and adds slashes
+foreach ($_POST as $key => $input_arr) {
+    $_POST[$key] = addslashes($input_arr);
+}
+?>
+
+Just put this at the top of your script that gets the variables. Here is an
+example.
+
+Usage Example
+<?php
+include("input_cl.php");
+// all $_POST variables have slashes added to them
+$f_name = $_POST["f_name"];
+$l_name = $_POST["l_name"];
+$phone_num = $_POST["phone_num"];
+$address1 = $_POST["address1"];
+$address2 = $_POST["address2"];
+$city = $_POST["city"];
+$State = $_POST["State"];
+$zip = $_POST["zip"];
+
+//sql insert code goes here.
+?>
+===============================================================================
+
+If you have problems with adding images or other binady data with addslashes()
+for php 4.3 >= use:
+
+<?php
+$search = array("\x00", "\x0a", "\x0d", "\x1a", "\x09");
+$replace = array('\0', '\n', '\r', '\Z' , '\t');
+
+$chrData .= str_replace($search, $replace, $Data );
+?>
+
+and put in your SQL field='$chrData' ! please remark quotes
+===============================================================================
+
+re: encryption, addslashes and mysql
+
+Note that mcrypt encryption may add in an apostrophe from the ascii table which
+cannot be protected by addslashes. It may not even be on your keyboard.
+
+Because encryption strings are random, you may not discover it unless you test
+(or stumble?) on the correct sequence which inserts an apostrophe in the
+encrypted string.
+
+This means that testing is even more important where encryption is concerned.
+If I create a solution I'll post it here.
+
+Phil
+===============================================================================
+
+Actually I prefer to escape the SQL queries completely (then no more challenge
+for data security);
+
+<?php
+function escape_query($str) {
+    return strtr($str, array(
+        "\0" => "",
+        "'"  => "&#39;",
+        "\"" => "&#34;",
+        "\\" => "&#92;",
+        // more secure
+        "<"  => "&lt;",
+        ">"  => "&gt;",
+    ));
+}
+?>
+
+// &#39;&#34;&#92;
+echo escape_query("'\"\\\0");
+
+// &lt;script&gt;alert(1)&lt;/script&gt;
+echo escape_query("<\0script>alert(1)<\0/script>");
+
+// See more: www.asciitable.com
+===============================================================================
+
+Hi,
+I use this recursive function for POST. It handles multidimensional arrays.
+
+<?php
+function as_array(&$arr_r)
+{
+foreach ($arr_r as &$val) is_array($val) ? as_array($val):$val=addslashes($val
+);
+unset($val);
+}
+
+as_array($_POST);
+?>
+===============================================================================
+
+Even for simple json string backslash encodings, do not use this function. Some
+tests may work fine, but in json the single quote (') must not be escaped.
+===============================================================================
+
+About Raymond and Aditya's post
+
+Following code can help you to add slashes with posted array.
+I just added a recursive function with Aditya's code.
+
+<?php
+//create array to temporarily grab variables
+$input_arr = array();
+//grabs the $_POST variables and adds slashes
+foreach ($_POST as $key => $input_arr) {
+    if(is_array($input_arr)){       
+        $_POST[$key] = addslashes_array($input_arr);
+    }else{
+        $_POST[$key] = addslashes($input_arr);
+    }
+   
+}
+
+// Recursive Function to add slashes with posted array.
+function addslashes_array($input_arr){
+    if(is_array($input_arr)){
+        $tmp = array();
+        foreach ($input_arr as $key1 => $val){
+            $tmp[$key1] = addslashes_array($val);
+        }
+        return $tmp;
+    }else{
+        return addslashes($input_arr);
+    }
+}
+
+?>
+===============================================================================
+
+If you're trying to escape quotes in a javascript event as such:
+
+<img src="foo.gif" OnMouseOver="alert('<? print $myString ?>')">
+
+It helps to perform this first:
+
+$myString = str_replace("'", "\'", $myString);
+$myString = str_replace('"', "'+String.fromCharCode(34)+'", $myString);
+===============================================================================
+
+Regarding the previous note using addslashes/stripslahes with regular
+expressions and databases it looks as if the purpose of these functions gets
+mixed.
+
+addslahes encodes data to be sent to a database or something similar. Here you
+need addslashes because you send commands to the database as command strings
+that contain data and thus you have to escape characters that are special in
+the command language like SQL.
+
+Therefore the use of addslahses on a regex does properly store the regex in the
+database.
+
+stripslashes does the opposite: it decodes an addslashes encoded string.
+However, retrieving data from a database works differently: it does not go
+through some string interpretation because you actually retrieve your binary
+data in your variables. In other words: the data stored in your variable is the
+unmodified binary data that your database returned. You do not run stripslahes
+on data returned from a database. That way, the regexs are retrieved correctly,
+too.
+
+This is different from other data exchange like urlencoded strings that you
+exchange with your browser. Here the data channel uses the same encodings in
+both directions: therefore you have to encode data to be sent and you have to
+decode data received.
+===============================================================================
+
+so you can use replace single quote and double quote with HTML Entities
+
+for example
+
+<?php
+/**
+* replcae quotes to HTML entities by names or numbers
+*
+* @param (string) escaped string value
+* @param (string) default ='number' will be return to number entities you can
+use ='name' to return name entities
+* Note : don't use ='name' coz (&apos;) (does not work in IE)
+*/
+function quote2entities($string,$entities_type='number')
+{
+    $search                     = array("\"","'");
+    $replace_by_entities_name   = array("&quot;","&apos;");
+    $replace_by_entities_number = array("&#34;","&#39;");
+    $do = null;
+    if ($entities_type == 'number')
+    {
+        $do = str_replace($search,$replace_by_entities_number,$string);
+    }
+    else if ($entities_type == 'name')
+    {
+        $do = str_replace($search,$replace_by_entities_name,$string);
+    }
+    else
+    {
+        $do = addslashes($string);
+    }
+    return $do;
+}
+
+echo quote2entities("I love 'PHP' for ever");
+// will return I love 'PHP' for ever in browsere
+// but in view code and database will be  I love &#34;PHP&#34; for ever in
+source
+?>

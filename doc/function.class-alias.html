@@ -1,0 +1,262 @@
+
+class_alias
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+class_alias — 为一个类创建别名
+
+说明
+
+bool class_alias ( string $original , string $alias [, bool $autoload = TRUE ]
+)
+
+基于用户定义的类 original 创建别名 alias。这个别名类和原有的类完全相同。
+
+参数
+
+original
+
+    原有的类。
+
+alias
+
+    类的别名。
+
+autoload
+
+    如果原始类没有加载，是否使用自动加载（autoload）。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 class_alias() 例子
+
+<?php
+
+class foo { }
+
+class_alias('foo', 'bar');
+
+$a = new foo;
+$b = new bar;
+
+// the objects are the same
+var_dump($a == $b, $a === $b);
+var_dump($a instanceof $b);
+
+// the classes are the same
+var_dump($a instanceof foo);
+var_dump($a instanceof bar);
+
+var_dump($b instanceof foo);
+var_dump($b instanceof bar);
+
+?>
+
+以上例程会输出：
+
+bool(true)
+bool(false)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+
+参见
+
+  • get_parent_class() - 返回对象或类的父类名
+  • is_subclass_of() - 如果此对象是该类的子类，则返回 TRUE
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+class_alias() gives you the ability to do conditional imports.
+
+Whereas the following will not work:
+
+<?php
+namespace Component;
+
+if (version_compare(PHP_VERSION, '5.4.0', 'gte')) {
+    use My\ArrayObject;
+} else {
+    use ArrayObject;
+}
+
+class Container extends ArrayObject
+{
+}
+?>
+
+the following, using class_alias, will:
+
+<?php
+namespace Component;
+
+if (version_compare(PHP_VERSION, '5.4.0', 'lt')) {
+    class_alias('My\ArrayObject', 'Component\ArrayObject');
+} else {
+    class_alias('ArrayObject', 'Component\ArrayObject');
+}
+
+class Container extends ArrayObject
+{
+}
+?>
+
+The semantics are slightly different (I'm now indicating that Container extends
+from an ArrayObject implementation in the same namespace), but the overall idea
+is the same: conditional imports.
+===============================================================================
+
+If you defined the class 'original' in a namespace, you will have to specify
+the namespace(s), too:
+<?php
+namespace ns1\ns2\ns3;
+
+class A {}
+
+class_alias('ns1\ns2\ns3\A', 'B');
+/* or if you want B to exist in ns1\ns2\ns3 */
+class_alias('ns1\ns2\ns3\A', 'ns1\ns2\ns3\B');
+?>
+===============================================================================
+
+class_alias also works for interfaces!
+
+<?php
+interface foo {}
+class_alias('foo', 'bar');
+echo interface_exists('bar') ? 'yes!' : 'no'; // prints yes!
+?>
+===============================================================================
+
+class_alias() creates aliases only for user defined classes, not for classes
+supplied by PHP (PHP will show the warning "First argument of class_alias()
+must be a name of user defined class"). To create aliases for every kind of
+classes, use namespaces:
+
+<?php
+
+// Does not work
+class_alias("ZipArchive", "myZip");
+
+// Creates class alias "myZip" of class "ZipArchive"
+use \ZipArchive as myZip;
+
+?>
+===============================================================================
+
+At first, you might wonder that:
+<?php class A {}; class_alias('A', 'B'); ?>
+
+is equivalent to:
+<?php class A {}; class B extends A {}; ?>
+
+class_alias is NOT equivalent to class extending! Private methods/properties
+are unseen in child classes, but in alias classes they are.
+===============================================================================
+
+At first, you might wonder that:
+<?php class A {}; class_alias('A', 'B'); ?>
+
+is equivalent to:
+<?php class A {}; class B extends A {}; ?>
+
+BUT when derivation creates a new class name - that means, you can then
+instantiate a new kind of objects - aliasing is just what it says: a synonym,
+so objects instantiated with the aliased name are of the exact same kind of
+objects instantiated with the non-aliased name.
+
+See this code for example:
+<?php
+class A {};
+class B1 extends A {};
+class_alias('A', 'B2');
+
+$b1 = new B1; echo get_class($b1); // prints B1
+$b2 = new B2; echo get_class($b2); // prints A !
+?>
+===============================================================================
+
+Something to note,
+
+If the $original class has not yet been defined or loaded, the auto loader will
+be invoked in order to try and load it.
+
+If the class for which you are trying to create an alias does not exist, or can
+not be loaded with the auto loader, you will generate a PHP Warning.
+===============================================================================
+
+Like class_alias but for functions:
+
+<?php
+function function_alias ($original, $alias) {
+ 
+  $args = func_get_args();
+  assert('count($args) == 2', 'function_alias() require exactly two arguments'
+);
+  assert('is_string($original) && is_string($alias)', 'function_alias() require
+string arguments');
+ 
+  // valid function name - http://php.net/manual/en/functions.user-defined.php
+  assert('preg_match(\'/^[a-zA-Z_\x7f-\xff][\\\\\\\\a-zA-Z0-9_\x7f-\xff]*$/\',
+$original) > 0',
+    "'$original' is not a valid function name");
+  assert('preg_match(\'/^[a-zA-Z_\x7f-\xff][\\\\\\\\a-zA-Z0-9_\x7f-\xff]*$/\',
+$alias) > 0',
+    "'$alias' is not a valid function name");
+ 
+  $aliasNamespace = substr($alias, 0, strrpos($alias, '\\') !== false ? strrpos
+($alias, '\\') : 0);
+  $aliasName = substr($alias, strrpos($alias, '\\') !== false ? strrpos($alias,
+'\\') + 1 : 0);
+  $serializedOriginal = var_export($original, true);
+ 
+  eval("
+    namespace $aliasNamespace {
+      function $aliasName () {
+        return call_user_func_array($serializedOriginal, func_get_args());
+      }
+    }
+  ");
+ 
+}
+
+?>
+
+Until hopefully function_alias is added to php...
+===============================================================================
+
+If you need the same function in PHP version < 5.3 you can use this
+
+<?php
+function class_alias($original,$alias) {
+    $newclass = create_function('','class '.$alias.' extends '.$original.' {}'
+);
+    $newclass();
+}
+?>
+===============================================================================
+
+This function will appear in PHP 5.3 (at least I can use it with PHP 5.3, build
+Aug 7 2009 08:21:14)
+For older versions of PHP I wrote the next function:
+
+<?php
+if (!function_exists('class_alias')) {
+    function class_alias($original, $alias) {
+        eval('abstract class ' . $alias . ' extends ' . $original . ' {}');
+    }
+}
+?>
+
+Keyword 'abstract' is used for classes, which defines abstract methods.
+This function is used in autoload purposes (when I extend classes), so abstract
+keyword doesn't broke anything for me.

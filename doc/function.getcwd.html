@@ -1,0 +1,335 @@
+
+getcwd
+
+(PHP 4, PHP 5, PHP 7)
+
+getcwd — 取得当前工作目录
+
+说明
+
+string getcwd ( void )
+
+取得当前工作目录。
+
+返回值
+
+成功则返回当前工作目录，失败返回 FALSE。
+
+在某些 Unix 的变种下，如果任何父目录没有设定可读或搜索模式，即使当前目录设定了
+，getcwd() 还是会返回 FALSE。有关模式与权限的更多信息见 chmod()。
+
+范例
+
+Example #1 getcwd() 例子
+
+<?php
+
+// current directory
+echo getcwd() . "\n";
+
+chdir('cvs');
+
+// current directory
+echo getcwd() . "\n";
+
+?>
+
+以上例程的输出类似于：
+
+/home/didou
+/home/didou/cvs
+
+参见
+
+  • chdir() - 改变目录
+  • chmod() - 改变文件模式
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+getcwd() returns the path of the "main" script referenced in the URL.
+
+dirname(__FILE__) will return the path of the script currently executing.
+
+I had written a script that required several class definition scripts from the
+same directory. It retrieved them based on filename matches and used getcwd to
+figure out where they were.
+
+Didn't work so well when I needed to call that first script from a new file in
+a different directory.
+===============================================================================
+
+It appears there is a change in functionality in PHP5 from PHP4 when using the
+CLI tool.  Here is the example: -
+
+cd /tmp
+
+cat > foo.php << END
+<?php
+    print getcwd() . "\n";
+?>
+END
+
+cd /
+
+php -q /tmp/foo.php
+
+PHP4 returns /tmp
+PHP5 returns /
+
+Something to be aware of.
+===============================================================================
+
+Take care if you use getcwd() in file that you'll need to include (using
+include, require, or *_once) in a script located outside of the same directory
+tree.
+
+example:
+<?php
+//in /var/www/main_document_root/include/MySQL.inc.php
+if (strpos(getcwd(),'main_')>0) {
+  //code to set up main DB connection
+}
+?>
+
+<?php
+//in home/cron_user/maintenance_scripts/some_maintenance_script.php
+require_once ('/var/www/main_document_root/include/MySQL.inc.php');
+?>
+
+In the above example, the database connection will not be made because the call
+to getcwd() returns the path relative to the calling script ( /home/cron_user/
+maintenance_scripts ) NOT relative to the file where the getcwd() function is
+called.
+===============================================================================
+
+If you try to use getcwd() in a directory that is a symbolic link, getcwd()
+gives you the target of that link (similarly when parent etc. is symbolic
+link). There might be a better solution, but this worked for me (linux):
+<? php
+$cwd = exec('pwd');
+?>
+===============================================================================
+
+if you link your php to /bin/linkedphp  and your php is at for ex /home/
+actual.php
+
+when you run linkedphp in somewhere in your filesystem,
+getcwd returns /bin instead of working dir,
+
+solution: use dirname(__FILENAME__) instead
+===============================================================================
+
+As you could read in
+http://www.php.net/manual/en/features.commandline.differences.php
+the CLI SAPI does - contrary to other SAPIs - NOT automatically change the
+current working directory to the one the started script resides in.
+
+A very simple workaround to regain the behaviour you're used to from your
+"ordinary" webpage scripting is to include something like that at the beginning
+of your script:
+
+<?php
+  chdir( dirname ( __FILE__ ) );
+?>
+
+But because this is about reading or "finding" pathes, you might appreciate it
+if I share some more sophisticated tricks I frequently use in CLI scripts ...
+
+<?php
+// Note: all pathes stored in subsequent Variables end up with a
+DIRECTORY_SEPARATOR
+
+// how to store the working directory "from where" the script was called:
+$initial_cwd = preg_replace( '~(\w)$~' , '$1' . DIRECTORY_SEPARATOR , realpath(
+getcwd() ) );
+
+// how to switch symlink-free to the folder the current file resides in:
+chdir( dirname ( realpath ( __FILE__ ) ) );
+
+// how to store the former folder in a variable:
+$my_folder = dirname( realpath( __FILE__ ) ) . DIRECTORY_SEPARATOR;
+
+// how to get a path one folder up if $my_folder ends with \class\ or /class/ :
+$my_parent_folder = preg_replace( '~[/\\\\]class[/\\\\]$~' , 
+DIRECTORY_SEPARATOR , $my_folder );
+
+// how to get a path one folder up in any case :
+$my_parent_folder = preg_replace( '~[/\\\\][^/\\\\]*[/\\\\]$~' , 
+DIRECTORY_SEPARATOR , $my_folder );
+
+// how to make an array of OS-style-pathes from an array of unix-style-pathes
+// (handy if you use config-files or so):
+foreach( $unix_style_pathes as $unix_style_path )
+    $os_independent_path[] = str_replace( '/' , DIRECTORY_SEPARATOR , 
+$unix_style_path );
+
+?>
+===============================================================================
+
+Some server's has security options to block the getcwd()
+
+Alternate option:
+
+str_replace($_SERVER['SCRIPT_NAME'],'', $_SERVER['SCRIPT_FILENAME']);
+===============================================================================
+
+This function is often used in conjuction with basename(), i.e.
+http://www.php.net/manual/en/function.basename.php
+===============================================================================
+
+In response to myself: that function will not work for cases like:
+/usr/bin$: /home/johndoe/Work/script.php
+So here's a better and simpler way (I think this one works for all cases)
+<?php
+function get_file_dir() {
+    global $argv;
+    return realpath($argv[0]);
+}
+?>
+Knock yourself out :)
+===============================================================================
+
+When running PHP on the command line, if you want to include another file which
+is in the same directory as the main script, doing just
+<?php
+include './otherfile.php';
+?>
+might not work, if you run your script like this:
+/$ /path/to/script.php
+because the current working dir will be set to '/', and the file '/
+otherfile.php' does not exist, because it is in '/path/to/otherfile.php'.
+So, to get the directory in which the script resides, you can use this
+function:
+<?php
+function get_file_dir() {
+    global $argv;
+    $dir = dirname(getcwd() . '/' . $argv[0]);
+    $curDir = getcwd();
+    chdir($dir);
+    $dir = getcwd();
+    chdir($curDir);
+    return $dir;
+}
+?>
+So you can use it like this:
+<?php
+include get_file_dir() . '/otherfile.php';
+// or even..
+chdir(get_file_dir());
+include './otherfile.php';
+?>
+Spent some time thinking this one out, maybe it helps someone :)
+===============================================================================
+
+This is a function to convert a path which looks something like this:
+
+/home/www/somefolder/../someotherfolder/../
+
+To a proper directory path:
+
+<?php
+
+function simplify_path($path) {
+
+//saves our current working directory to a variable
+$oldcwd = getcwd();
+//changes the directory to the one to convert
+//$path is the directory to convert (clean up), handed over to the //function
+as a string
+
+chdir($path);
+return gstr_replace('\\', '/', getcwd());
+
+//change the cwd back to the old value to not interfere with the script
+chdir($oldcwd);
+
+}
+
+This function is really useful if you want to compare two filepaths which are
+not necesarily in a "cleaned up" state. It works in *NIX and WINDOWS alike
+
+?>
+===============================================================================
+
+I use this code to replicate the pushd and popd DOS commands in PHP:
+
+<?php
+$g_DirStack = array();
+function pushd( $dir )
+{
+    global $g_DirStack;
+    array_push( $g_DirStack, getcwd() );
+    chdir( $dir );
+}
+function popd( )
+{
+    global $g_DirStack;
+    $dir = array_pop( $g_DirStack );
+    assert( $dir !== null );
+    chdir( $dir );
+}
+?>
+
+This allows you to change the current directory with pushd, then use popd to
+"undo" the directory change when you're done.
+===============================================================================
+
+"On some Unix variants, getcwd() will return FALSE if any one of the parent
+directories does not have the readable or search mode set, even if the current
+directory does."
+
+Just so you know, MacOS X is one of these variants (at least 10.4 is for me).
+You can make it work by applying 'chmod a+rx' to all folders from your site
+folder upwards.
+===============================================================================
+
+If getcwd() returns nothing for you under Solaris with an NFS mounted
+subdirectory, you are running into an OS bug that is supposedly fixed in recent
+versions of Solaris 10.  This same OS bug effects the include() and require()
+functions as well.
+===============================================================================
+
+watch out:
+working directory, and thus:
+getcwd ()
+is "/" while being into a register'ed shutdown function!!!
+===============================================================================
+
+To get the username of the account:
+
+<?php
+$dir = getcwd();
+$part = explode('/', $dir);
+$username = $part[1];
+?>
+
+If current directory is '/home/mike/public_html/' it would return mike.
+===============================================================================
+
+Be aware when calling getcwd() in directories consisting of symlinks.
+
+getcwd()  is the equivalent of shell command "pwd -P" which resolves symlinks.
+
+The shell command "pwd" is the equivalent of "pwd -L" which uses PWD from the
+environment without resolving symlinks. This is also the equivalent of calling
+getenv('PWD').
+===============================================================================
+
+If your PHP cli binary is built as a cgi binary (check with php_sapi_name), the
+cwd functions differently than you might expect.
+
+say you have a script /usr/local/bin/purge
+you are in /home/username
+
+php CLI: getcwd() gives you /home/username
+php CGI: getcwd() gives you /usr/local/bin
+
+This can trip you up if you're writing command line scripts with php. You can
+override the CGI behavior by adding -C to the php call:
+
+#!/usr/local/bin/php -Cq
+
+and then getcwd() behaves as it does in the CLI-compiled version.

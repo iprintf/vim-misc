@@ -1,0 +1,288 @@
+
+odbc_columns
+
+(PHP 4, PHP 5, PHP 7)
+
+odbc_columns — Lists the column names in specified tables
+
+说明
+
+resource odbc_columns ( resource $connection_id [, string $qualifier [, string
+$schema [, string $table_name [, string $column_name ]]]] )
+
+Lists all columns in the requested range.
+
+参数
+
+connection_id
+
+    ODBC 连接标识符，详见 odbc_connect()。
+
+qualifier
+
+    The qualifier.
+
+schema
+
+    The owner.
+
+table_name
+
+    The table name.
+
+column_name
+
+    The column name.
+
+The schema, table_name, and column_name accept search patterns ('%' to match
+zero or more characters and '_' to match a single character).
+
+返回值
+
+Returns an ODBC result identifier 或者在失败时返回 FALSE.
+
+The result set has the following columns:
+
+  • TABLE_QUALIFIER
+  • TABLE_SCHEM
+  • TABLE_NAME
+  • COLUMN_NAME
+  • DATA_TYPE
+  • TYPE_NAME
+  • PRECISION
+  • LENGTH
+  • SCALE
+  • RADIX
+  • NULLABLE
+  • REMARKS
+
+The result set is ordered by TABLE_QUALIFIER, TABLE_SCHEM and TABLE_NAME.
+
+参见
+
+  • odbc_columnprivileges() - Lists columns and associated privileges for the
+    given table to retrieve associated privileges
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+[MS SQL Server 2005/2008, PHP 5]
+
+Imagine you would need to access the column names of a specific table, for
+instance to display them as table headers for fields with missing information.
+While browsing the documentation I was kind of lost how to use odbc_columns()
+without the usage of odbc_result_all() which outputs EVERYTHING in a single
+HTML table.
+
+Here is a way to stuff all output into an array and then access only one or
+more fields of the odbc_columns() output:
+
+<?php
+include('connect.inc'); // <== Put all your database connection parameters in
+here. (DSN, PWD, USR, mssql_connect, etc.; returns $connection)
+
+$outval = odbc_columns($connection, "your DB name", "%", "your table name", "%"
+);
+
+$pages = array();
+while (odbc_fetch_into($outval, $pages)) {
+        echo $pages[3] . "<br />\n"; // presents all fields of the array $pages
+in a new line until the array pointer reaches the end of array data
+    }
+?>
+
+Now your array $pages will have the following contents:
+([x] is the array index displayed here for better understanding)
+
+[0] TABLE_CAT <== your DB name
+[1] TABLE_SCHEM <== dbo, your table scheme
+[2] TABLE_NAME <== your table name
+[3] COLUMN_NAME <== your column names (selected all with "%" in odbc_columns()
+)
+[4] DATA_TYPE <== -8
+[5] TYPE_NAME <== nchar (corresponds to -8, 11 f.i. is datetime and so on)
+[6] COLUMN_SIZE <== num. val.
+[7] BUFFER_LENGTH <== num. val.
+[8] DECIMAL_DIGITS <== num. val. or NULL
+[9] NUM_PREC_RADIX <== num. val. or NULL
+[10] NULLABLE <== num. val.
+[11] REMARKS <== num. val. or NULL
+[12] COLUMN_DEF <== num. val. or NULL
+[13] SQL_DATA_TYPE <== num. val.
+[14] SQL_DATETIME_SUB <== num. val. or NULL
+[15] CHAR_OCTET_LENGTH <== num. val. or NULL
+[16] ORDINAL_POSITION <== num. val.
+[17] IS_NULLABLE <== YES/NO
+[18] SS_DATA_TYPE <== num. val.
+
+Now you can access each field recursivly by its key and output only the DESIRED
+fields instead of having ALL output from odbc_result_all().
+Please note that the array key starts at zero (0) instead of one (1), so echo
+$pages[3] selects COLUMN_NAME from the above list.
+
+I hope this helps...
+
+Cheers
+Thomas
+===============================================================================
+
+Since I was just looking for table descriptions of an MS Access file I didn't
+know the table structure of, I wrote this (where $inputfile is the Access file
+name):
+
+<?php
+$conn = odbc_connect("DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=".
+$inputfile;, "", "");
+
+$tabs = odbc_tables($conn);
+$tables = array();
+while (odbc_fetch_row($tabs)){
+    if (odbc_result($tabs,"TABLE_TYPE")=="TABLE") {
+        $table_name = odbc_result($tabs,"TABLE_NAME");
+        $tables["{$table_name}"] = array();
+        $cols = odbc_exec($conn,'select * from `'.$table_name.'` where 1=2');  
+// we don't want content
+      $ncols = odbc_num_fields($cols);
+        for ($n=1; $n<=$ncols; $n++) {
+            $field_name = odbc_field_name($cols, $n);
+            $tables["{$table_name}"]["{$field_name}"]['len'] = odbc_field_len(
+$cols, $n);
+            $tables["{$table_name}"]["{$field_name}"]['type'] = odbc_field_type
+($cols, $n);
+        }
+    }
+}
+odbc_close ($conn);
+print_r($tables);
+?>
+===============================================================================
+
+The complete script to get into from a DSN MS Access DB Table and display it is
+below.
+
+function Error_Handler( $msg, $cnx ) {
+    echo "$msg \n";
+    odbc_close( $cnx);
+    exit();
+    }
+
+$cnx = odbc_connect( 'DSN_NAME' , '', '' );//connect to MSAccess
+    if (!$cnx) {
+      Error_handler( "Error in odbc_connect" , $cnx );
+    } 
+
+    $res400= odbc_columns($cnx,"DSN_NAME","","TABLE");
+    echo odbc_result_all($res400);
+===============================================================================
+
+Sometimes the array keys of the results of odbc_columns() can be in lower case,
+instead of upper case (eg 'column_name' instead of 'COLUMN_NAME').  This can
+vary depending on which ODBC driver you are connecting to.
+===============================================================================
+
+Here is the way to use odbc_columns() with "Attunity Connect", an ODBC
+connector to VMS :
+
+$db = "my_database";
+$table = "my_table";
+$con = odbc_connect($db, "user", "password");
+$result = odbc_columns($con, $db, "", $table, "%");
+while (odbc_fetch_row($resu)) {
+    echo odbc_result_all($resu);
+}
+===============================================================================
+
+This is the only way I could actually get field names using odbc_columns. Hope
+it will be usefull for someone.
+
+$result = odbc_columns($odbc,$dbhost,"dbo", "KIR_ViolationDetail");
+
+while (odbc_fetch_row($result))
+{
+  echo odbc_result($result,"COLUMN_NAME");
+}
+===============================================================================
+
+Getting all column names from Excel with ODBC:
+$cols = odbc_columns($connection, $filename, NULL, $sheet);
+
+where:
+$connection is the result of your odbc_connect;
+$filename is the filename of the Excel file;
+$sheet is the name of the Excel worksheet.
+
+This is useful when you want to query an Excel file without having to name
+ranges beforehand. With the results obtained from the above command, you can
+populate an array and use its contents (ie the column names) for further
+querying.
+===============================================================================
+
+Connect with IBM Client Access 32-bit ODBC driver
+
+To access table information in DB2 iSeries (AS/400) via ODBC Driver i've tried
+with this code and worked!!!
+
+$conn_ODBC = odbc_connect("DSN", "USER", "PASSW") or die;
+$tabela = "table name in IBM iSeries";
+$libname = "library name in IBM iSeries"
+
+$res400 = odbc_columns($conn_ODBC, "DSN", $libname, $tabela, "%")  or die("<p>
+<font color=#FF0000>Erro Na Leitura da Tabela ".$tabela." do AS/400:
+".odbc_errormsg());
+
+echo odbc_result_all($res400);
+
+Netaminas.com
+PORTUGAL
+===============================================================================
+
+ODBC & MS ACCESS :
+
+odbc_columns($conn,"DSN_NAME","","TABLE_NAME");
+===============================================================================
+
+Using this function on a MS SQL Server 2000 database connection with the
+syntax:
+
+$res = odbc_columns($connId, $dbName, "%", $tableName, "%");
+
+I actually get a result set with THESE columns name:
+
+TABLE_CAT, TABLE_SCHEM, TABLE_NAME, COLUMN_NAME, DATA_TYPE, TYPE_NAME,
+COLUMN_SIZE, BUFFER_LENGTH, DECIMAL_DIGITS, NUM_PREC_RADIX, NULLABLE, REMARKS
+
+in the order displayed.
+===============================================================================
+
+(PHP4.2.1, Win2k, MSSQL 2K)
+
+The result id returned from this function does not appear to behave exactly the
+same as a result id returned from a query. 
+
+I get all sorts of errors when I try to use subsequent odbc functions on the
+result id, such as:
+
+odbc_fetch_into - This function only seems to work if I don't specify a row
+number or if the row number = 0.
+
+odbc_fetch_row - This function will not return a row from the result set. 
+Under some scenarios, I am able to use it in a while loop, but its seems
+buggy.  Hence, my odbc_num_of_rows function (hack to replace the non-functional
+odbc_num_rows function) also doesn't work.
+
+I recommend dumping the results into an array immediately and freeing the
+result id created by this function.
+
+ps - If anyone has any further insight or workarounds, I would appreciate them.
+===============================================================================
+
+Took me a while to figure out this command, thought I would save some other
+people the time.  We couldn't quite figure out what the qualifier was.  For
+MSSQL 7.0, it is the Database that you are connecing to.  For the pubs database
+it would look something like this.
+
+$rs = odbc_columns($DBConnection, "Pubs", "%", "jobs");
+
+That would be for showing the jobs table.

@@ -1,0 +1,168 @@
+
+clearstatcache
+
+(PHP 4, PHP 5, PHP 7)
+
+clearstatcache — 清除文件状态缓存
+
+说明
+
+void clearstatcache ([ bool $clear_realpath_cache = false [, string $filename
+]] )
+
+当使用 stat()，lstat() 或者任何列在受影响函数表（见下面）中的函数时，PHP 将缓存
+这些函数的返回信息以提供更快的性能。然而在某些情况下，你可能想清除被缓存的信息
+。例如如果在一个脚本中多次检查同一个文件，而该文件在此脚本执行期间有被删除或修
+改的危险时，你需要清除文件状态缓存。这种情况下，可以用 clearstatcache() 函数来
+清除被 PHP 缓存的该文件信息。
+
+必须注意的是，对于不存在的文件，PHP 并不会缓存其信息。所以如果调用 file_exists
+() 来检查不存在的文件，在该文件没有被创建之前，它都会返回 FALSE。如果该文件被创
+建了，就算以后被删除，它都会返回 TRUE 函数 unlink() 会自动清除该缓存.
+
+    Note:
+
+    本函数缓存特定文件名的信息，因此只在对同一个文件名进行多次操作并且需要该文
+    件信息不被缓存时才需要调用 clearstatcache()。
+
+受影响的函数包括 stat()， lstat()， file_exists()， is_writable()， is_readable
+()， is_executable()， is_file()， is_dir()， is_link()， filectime()， 
+fileatime()， filemtime()， fileinode()， filegroup()， fileowner()， filesize
+()， filetype() 和 fileperms()。
+
+参数
+
+clear_realpath_cache
+
+    是否清除真实路径缓存
+
+filename
+
+    清除文件名指定的文件的真实路径缓存; 只在 clear_realpath_cache 为 TRUE 时启
+    用
+
+返回值
+
+没有返回值。
+
+更新日志
+
+版本                         说明
+5.3.0 增加了可选的 clear_realpath_cache 和 filename 参数.
+
+范例
+
+Example #1 clearstatcache() 例子
+
+<?php
+$file = 'output_log.txt';
+
+function get_owner($file)
+{
+    $stat = stat($file);
+    $user = posix_getpwuid($stat['uid']);
+    return $user['name'];
+}
+
+$format = "UID @ %s: %s\n";
+
+printf($format, date('r'), get_owner($file));
+
+chown($file, 'ross');
+printf($format, date('r'), get_owner($file));
+
+clearstatcache();
+printf($format, date('r'), get_owner($file));
+?>
+
+以上例程的输出类似于：
+
+UID @ Sun, 12 Oct 2008 20:48:28 +0100: root
+UID @ Sun, 12 Oct 2008 20:48:28 +0100: root
+UID @ Sun, 12 Oct 2008 20:48:28 +0100: ross
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+unlink() does not clear the cache if you are performing file_exists() on a
+remote file like:
+
+<?php
+if (file_exists("ftp://ftp.example.com/somefile"))
+?>
+
+In this case, even after you unlink() successfully, you must call
+clearstatcache().
+
+<?php
+unlink("ftp://ftp.example.com/somefile");
+clearstatcache();
+?>
+
+file_exists() then properly returns false.
+===============================================================================
+
+Just to make this more obvious (and so search engines find this easier):
+
+If you do fileops of any kind outside of PHP (say via a system() call), you
+probably want to clear the stat cache before doing any further tests on the
+file/dir/whatever.  For example:
+
+<?php
+// is_dir() forces a stat call, so the cache is populated
+if( is_dir($foo) ) {
+    system("rm -rf " . escapeshellarg($foo));
+    if( is_dir($foo) ) {
+        // ...will still be true, even if the rm succeeded, because it's just
+        // reading from cache, not re-running the stat()
+    }
+}
+?>
+
+Pop a clearstatcache() after the system call and all is good (modulo a bit of a
+performance hit from having a cleared stat cache :-( ).
+===============================================================================
+
+On Linux, a forked process inherits a copy of the parent's cache, but after
+forking the two caches do not impact each other.  The snippet below
+demonstrates this by creating a child and confirming outdated (cached)
+information, then clearing the cache, and getting new information.
+
+<?php
+
+function report($directory, $prefix = '') { printf('%sDoes %s exist?  PHP says
+"%s"'. PHP_EOL, $prefix, $directory, is_dir($directory) ? 'yes' : 'no'); }
+$target = './delete-me-before-running-statcache';
+
+if (is_dir($target)) {
+    die("Delete $target before running.\n");
+}
+
+echo "Creating $target.\n";
+mkdir($target) || die("Unable to create $target.\n");
+report($target); // is_dir($target) is now cached as true
+
+echo "Unlinking $target.\n";
+rmdir($target) || die("Unable to unlink $target.\n");
+
+// This will say "yes", which is old (inaccurate) information.
+report($target);
+
+if (($pid = pcntl_fork()) === -1) { die("Failed to pcntl_fork.\n"); }
+elseif ($pid === 0) {
+    // child
+    report($target, '<<child>> ');
+    echo "<<child>> Clearing stat cache.\n";
+    clearstatcache();
+    report($target, '<<child>> ');
+} else {
+    // parent
+    sleep(2); // move this to the child block to reverse the test.
+    report($target, '<<<parent>> ');
+    clearstatcache();
+    report($target, '<<<parent>> ');
+}
+
+?>

@@ -1,0 +1,454 @@
+
+mysqli_stmt::fetch
+
+mysqli_stmt_fetch
+
+(PHP 5, PHP 7)
+
+mysqli_stmt::fetch -- mysqli_stmt_fetch — Fetch results from a prepared
+statement into the bound variables
+
+说明
+
+面向对象风格
+
+bool mysqli_stmt::fetch ( void )
+
+过程化风格
+
+bool mysqli_stmt_fetch ( mysqli_stmt $stmt )
+
+Fetch the result from a prepared statement into the variables bound by 
+mysqli_stmt_bind_result().
+
+    Note:
+
+    Note that all columns must be bound by the application before calling 
+    mysqli_stmt_fetch().
+
+    Note:
+
+    Data are transferred unbuffered without calling mysqli_stmt_store_result()
+    which can decrease performance (but reduces memory cost).
+
+参数
+
+stmt
+
+    仅以过程化样式：由 mysqli_stmt_init() 返回的 statement 标识。
+
+返回值
+
+                          返回值
+Value                     Description
+TRUE  Success. Data has been fetched
+FALSE Error occurred
+NULL  No more rows/data exists or data truncation occurred
+
+范例
+
+Example #1 面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query = "SELECT Name, CountryCode FROM City ORDER by ID DESC LIMIT 150,5";
+
+if ($stmt = $mysqli->prepare($query)) {
+
+    /* execute statement */
+    $stmt->execute();
+
+    /* bind result variables */
+    $stmt->bind_result($name, $code);
+
+    /* fetch values */
+    while ($stmt->fetch()) {
+        printf ("%s (%s)\n", $name, $code);
+    }
+
+    /* close statement */
+    $stmt->close();
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+Example #2 过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+$query = "SELECT Name, CountryCode FROM City ORDER by ID DESC LIMIT 150,5";
+
+if ($stmt = mysqli_prepare($link, $query)) {
+
+    /* execute statement */
+    mysqli_stmt_execute($stmt);
+
+    /* bind result variables */
+    mysqli_stmt_bind_result($stmt, $name, $code);
+
+    /* fetch values */
+    while (mysqli_stmt_fetch($stmt)) {
+        printf ("%s (%s)\n", $name, $code);
+    }
+
+    /* close statement */
+    mysqli_stmt_close($stmt);
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Rockford (USA)
+Tallahassee (USA)
+Salinas (USA)
+Santa Clarita (USA)
+Springfield (USA)
+
+参见
+
+  • mysqli_prepare() - Prepare an SQL statement for execution
+  • mysqli_stmt_errno() - Returns the error code for the most recent statement
+    call
+  • mysqli_stmt_error() - Returns a string description for last statement error
+  • mysqli_stmt_bind_result() - Binds variables to a prepared statement for
+    result storage
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+I was trying to use a generic select * from table statment and have the results
+returned in an array. I finally came up with this solution, others have similar
+solutions, but they where not working for me.
+<?php
+    //Snip use normal methods to get to this point
+    $stmt->execute();
+    $metaResults = $stmt->result_metadata();
+    $fields = $metaResults->fetch_fields();
+    $statementParams='';
+     //build the bind_results statement dynamically so I can get the results in
+an array
+     foreach($fields as $field){
+         if(empty($statementParams)){
+             $statementParams.="\$column['".$field->name."']";
+         }else{
+             $statementParams.=", \$column['".$field->name."']";
+         }
+    }
+    $statment="\$stmt->bind_result($statementParams);";
+    eval($statment);
+    while($stmt->fetch()){
+        //Now the data is contained in the assoc array $column. Useful if you
+need to do a foreach, or
+        //if your lazy and didn't want to write out each param to bind.
+    }
+    // Continue on as usual.
+?>
+===============================================================================
+
+This function uses the same idea as the last, but instead binds the fields to a
+given array.
+<?php
+function stmt_bind_assoc (&$stmt, &$out) {
+    $data = mysqli_stmt_result_metadata($stmt);
+    $fields = array();
+    $out = array();
+
+    $fields[0] = $stmt;
+    $count = 1;
+
+    while($field = mysqli_fetch_field($data)) {
+        $fields[$count] = &$out[$field->name];
+        $count++;
+    }   
+    call_user_func_array(mysqli_stmt_bind_result, $fields);
+}
+
+// example
+
+$stmt = $mysqli->prepare("SELECT name, userid FROM somewhere");
+$stmt->execute();
+
+$row = array();
+stmt_bind_assoc($stmt, $row);
+
+// loop through all result rows
+while ($stmt->fetch()) {
+    print_r($row);
+}
+?>
+===============================================================================
+
+The following function taken from PHP Cookbook 2, returns an associative array
+of a row in the resultset, place in while loop to iterate through whole result
+set.
+
+<?php
+public function fetchArray () {
+   $data = mysqli_stmt_result_metadata($this->stmt);
+        $fields = array();
+        $out = array();
+
+        $fields[0] = &$this->stmt;
+        $count = 1;
+
+        while($field = mysqli_fetch_field($data)) {
+            $fields[$count] = &$out[$field->name];
+            $count++;
+        }
+       
+        call_user_func_array(mysqli_stmt_bind_result, $fields);
+        mysqli_stmt_fetch($this->stmt);
+        return (count($out) == 0) ? false : $out;
+
+    }
+?>
+===============================================================================
+
+As php at johnbaldock dot co dot uk mentioned the problem is that the $row
+returned is reference and not data. So, when you write  $array[] = $row, the
+$array will be filled up with the last element of the dataset. To come up with
+this you can write the following hack:
+
+// loop through all result rows
+while ($stmt->fetch()) {
+
+    foreach( $row as $key=>$value )
+    {
+        $row_tmb[ $key ] = $value;
+    }
+    $array[] = $row_tmb;
+   
+}
+===============================================================================
+
+Having just learned about call_user_func_array I reworked my fetch_assoc
+example. Swapping the following code makes for a more elegant (and faster)
+solution.
+
+Using:
+<?php
+while ($columnName = $meta->fetch_field()) {
+    $columns[] = &$results[$columnName->name];
+}       
+call_user_func_array(array($stmt, 'bind_result'), $columns);
+?>
+
+Instead of this code from my example below:
+<?php
+$bindResult = '$stmt->bind_result(';
+while ($columnName = $meta->fetch_field()) {
+   $bindResult .= '$results["'.$columnName->name.'"],';
+}
+$bindResult = rtrim($bindResult, ',') . ');';
+eval($bindResult);
+?>
+
+The full reworked fetch_assoc code for reference:
+<?php
+$mysqli = new mysqli($dbHost, $dbUsername, $dbPassword, $dbDatabase);
+$stmt = $mysqli->prepare('select * from foobar');
+$stmt->execute();
+$stmt->store_result();
+$meta = $stmt->result_metadata();
+
+while ($column = $meta->fetch_field()) {
+   $bindVarsArray[] = &$results[$column->name];
+}       
+call_user_func_array(array($stmt, 'bind_result'), $bindVarsArray);
+
+$stmt->fetch();
+
+echo var_dump($results);
+// outputs:
+//
+// array(3) {
+//  ["id"]=>
+//  &int(1)
+//  ["foo"]=>
+//  &string(11) "This is Foo"
+//  ["bar"]=>
+//  &string(11) "This is Bar"
+// }
+?>
+===============================================================================
+
+Same as everyone else, I was looking for a way NOT to have to duplicate the
+amount of code it takes to fetch the results of a prepared statement as an
+associative array.
+
+Some of the other methods didn't work as written, and this one is packaged into
+a simple function to reduce code repetition.
+
+Adapted from code others have posted.
+<?php
+// Example usage:
+$id = 1;
+$stmt = $dbc->prepare("SELECT * FROM table WHERE id=?");
+if (!$stmt->bind_param('i', $id) || !$stmt->execute()) {
+    throw new \Exception("Database error: $stmt->errno - $stmt->error");
+}
+$results = fetch_assoc_stmt($stmt);
+$stmt->close();
+
+/**
+* Fetches the results of a prepared statement as an array of associative
+* arrays such that each stored array is keyed by the result's column names.
+* @param stmt   Must have been successfully prepared and executed prior to
+calling this function
+* @param buffer Whether to buffer the result set; if true, results are freed at
+end of function
+* @return An array, possibly empty, containing one associative array per result
+row
+*/
+function fetch_assoc_stmt(\mysqli_stmt $stmt, $buffer = true) {
+    if ($buffer) {
+        $stmt->store_result();
+    }
+    $fields = $stmt->result_metadata()->fetch_fields();
+    $args = array();
+    foreach($fields AS $field) {
+        $key = str_replace(' ', '_', $field->name); // space may be valid SQL,
+but not PHP
+        $args[$key] = &$field->name; // this way the array key is also
+preserved
+    }
+    call_user_func_array(array($stmt, "bind_result"), $args);
+    $results = array();
+    while($stmt->fetch()) {
+        $results[] = array_map("copy_value", $args);
+    }
+    if ($buffer) {
+        $stmt->free_result();
+    }
+    return $results;
+}
+
+/**
+* Copy value as value
+*/
+function copy_value($v) {
+    return $v;
+}
+?>
+===============================================================================
+
+IMPORTANT note: Be careful when you use this function with big result sets or
+with BLOB/TEXT columns. When one or more columns are of type (MEDIUM|LONG)(BLOB
+|TEXT) and ::store_result() was not called mysqli_stmt_fetch() will try to
+allocate at least 16MB for every such column. It _doesn't_ matter that the
+longest value in the result set is for example 30 bytes, 16MB will be
+allocated. Therefore it is not the best idea ot use binding of parameters
+whenever fetching big data. Why? Because once the data is in the mysql result
+set stored in memory and then second time in the PHP variable.
+===============================================================================
+
+I tried the mentioned stmt_bind_assoc() function, but somehow, very strangely
+it doesn't allow the values to be written in an array! In the while loop, the
+row is fetched correctly, but if I write $array[] = $row;, the array will be
+filled up with the last element of the dataset... Unfortunately I couldn't find
+a solution.
+===============================================================================
+
+Just a side note,
+
+I see many people are contributing in ways to help return result sets for
+prepared statements in ASSOSITAVE arrays the same as the mysqli_fetch_assos
+function might return from a normal query issued via mysqli_query.
+
+This is done, in all the examples I have seen, by dynamically getting the field
+names in the prepared statement and binding them using 'variable' variables,
+which are variables that are created dynamically with the name of the field
+names.
+
+Some thing though you should take into consideration is illegal variable names
+in PHP. Assume that you have a field name in your database table named 'My
+Field' , notice the space between 'My' and 'Field'.
+
+To dynamically create this variable is illegal in PHP as variables can not have
+spaces in them. Furthermore, you won't be able to access the binded data as you
+can not reference a variable like so:
+
+<?php
+
+// Syntax Error.
+
+echo $My Table;
+
+?>
+
+The only suitable solution I find now is to replace all spaces in a field name
+with an underscore so that you can use the binded variable like so:
+
+<?php
+
+// This Works.
+
+echo $My_Table;
+
+// Notice the space is now replaced with an underscore.
+
+?>
+
+All you simply have to do is before you dynamically bind the data, so a string
+search for any spaces in the table name, replace them with an underscore, THEN
+bind the variable.
+
+That way you should not run into problems.
+===============================================================================
+
+I wanted a simple way to get the equivalent of fetch_assoc when using a
+prepared statement. I came up with the following:
+
+<?php
+$mysqli = new mysqli($dbHost, $dbUsername, $dbPassword, $dbDatabase);
+$stmt = $mysqli->prepare('select * from foobar');
+$stmt->execute();
+$stmt->store_result();
+$meta = $stmt->result_metadata();
+
+// the following creates a bind_result string with an argument for each column
+in the query
+// e.g. $stmt->bind_result($results["id"], $results["foo"], $results["bar"]);
+$bindResult = '$stmt->bind_result(';
+while ($columnName = $meta->fetch_field()) {
+    $bindResult .= '$results["'.$columnName->name.'"],';
+}
+$bindResult = rtrim($bindResult, ',') . ');';
+
+// executes the bind_result string
+eval($bindResult);
+$stmt->fetch();
+
+echo var_dump($results);
+// outputs:
+//
+// array(3) {
+//   ["id"]=>
+//   &int(1)
+//   ["foo"]=>
+//   &string(11) "This is Foo"
+//   ["bar"]=>
+//   &string(11) "This is Bar"
+// }
+?>

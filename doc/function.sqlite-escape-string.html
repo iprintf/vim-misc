@@ -1,0 +1,188 @@
+
+sqlite_escape_string
+
+(PHP 5 < 5.4.0, PECL sqlite >= 1.0.0)
+
+sqlite_escape_string — Escapes a string for use as a query parameter
+
+说明
+
+string sqlite_escape_string ( string $item )
+
+sqlite_escape_string() will correctly quote the string specified by item for
+use in an SQLite SQL statement. This includes doubling up single-quote
+characters (') and checking for binary-unsafe characters in the query string.
+
+Although the encoding makes it safe to insert the data, it will render simple
+text comparisons and LIKE clauses in your queries unusable for the columns that
+contain the binary data. In practice, this shouldn't be a problem, as your
+schema should be such that you don't use such things on binary columns (in
+fact, it might be better to store binary data using other means, such as in
+files).
+
+参数
+
+item
+
+    The string being quoted.
+
+    If the item contains a NUL character, or if it begins with a character
+    whose ordinal value is 0x01, PHP will apply a binary encoding scheme so
+    that you can safely store and retrieve binary data.
+
+返回值
+
+Returns an escaped string for use in an SQLite SQL statement.
+
+注释
+
+    Note: Do not use this function to encode the return values from UDF's
+    created using sqlite_create_function() or sqlite_create_aggregate() - use 
+    sqlite_udf_encode_binary() instead.
+
+Warning
+
+addslashes() should NOT be used to quote your strings for SQLite queries; it
+will lead to strange results when retrieving your data.
+
+参见
+
+  • sqlite_udf_encode_binary() - Encode binary data before returning it from an
+    UDF
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+You can try this (it works with strings and arrays):
+
+<?php
+// oop
+
+class sqlite extends SQLiteDatabase {
+    public function escape($data) {
+        if(is_array($data))
+            return array_map("sqlite_escape_string", $data);
+
+        return sqlite_escape_string($data);
+    }
+}
+
+$db = new sqlite("dbname");
+$values = array("hell'o", "he'y");
+$values = $db->escape($values); // returns array("hell''o", "hey''y")
+
+// procedural
+
+function sqlite_myescape($data) {
+    if(is_array($data))
+        return array_map("sqlite_escape_string", $data);
+
+    return sqlite_escape_string($data);
+}
+
+$values = array("hell'o", "he'y");
+$values = sqlite_myescape($values); // returns array("hell''o", "hey''y")
+?>
+===============================================================================
+
+@minots: simplify what you are doing:
+
+<?php
+
+function sqlite_escape_array( &$arr ) {
+
+  $invalid = array( 'argv', 'argc' );
+
+  foreach ( $arr as $key => $val )
+     if ( ( strtoupper( $key ) != $key ) && !is_numeric( $key ) && !in_array( 
+$key, $invalid ) ) {
+       if ( is_string( $val ) )
+           $arr[$key] = sqlite_escape_string( $val );
+       else if ( is_array( $val ) )
+           sqlite_escape_array( $arr[$key] );
+     }
+
+  return $arr;
+}
+
+?>
+
+I'm not sure if the condition is equivalent to yours, but this excludes any
+numeric key, any completely uppercase'd keys and some selected (argc and argv)
+special keys. In case of never passing $GLOBALS or $_SERVER as argument one
+might shorten everything to this as a "pipelined" version:
+
+<?php
+
+function sqlite_escape_array( $arr ) {
+
+  foreach ( $arr as $key => $val )
+
+    if ( is_string( $val ) )
+      $arr[$key] = sqlite_escape_string( $val );
+
+    else if ( is_array( $val ) )
+      $arr[$key] = sqlite_escape_array( $val );
+
+  return $arr;
+
+}
+
+?>
+
+PHP's syntax is more powerful than those of many other languages, even when
+it's supporting their one's as well.
+===============================================================================
+
+sometimes i you have to escape an array instead of a string.
+my function to do it works like:
+array sqlite_escape_array ( &array string)
+
+<?php
+function sqlite_escape_array(&$arr)
+{
+  while ( list($key, $val) = each($arr) ):
+    if ( (strtoupper($key)!=$key OR "".intval($key) == "$key") && $key!="argc" 
+and $key!="argv"):
+        if (is_string($val)):
+            $arr[$key]=sqlite_escape_string($val);
+        endif;
+        if (is_array($val)):
+            $arr[$key]=sqlite_escape_array($val);
+        endif;
+    endif;
+  endwhile;
+  return $arr;
+}
+?>
+===============================================================================
+
+sqlite_escape_string() does not catch all HTML characters that may 
+conflict with a browser display. Notice the difference with the
+custom routine below
+
+<?php
+# php lib command
+$str = "Advoid! /slashes\, 'single' and these <too>";
+$str = sqlite_escape_string($str);
+echo "<br>$str<br>";
+
+# custom function
+$str = "Advoid! /slashes\, 'single' and these <too>";
+$str = clean($str);
+echo "<br>$str<br>";
+
+function clean($str) {
+  $search  = array('&'    , '"'     , "'"    , '<'   , '>'    );
+  $replace = array('&amp;', '&quot;', '&#39;', '&lt;', '&gt;' );
+
+  $str = str_replace($search, $replace, $str);
+  return $str;
+}
+?>
+
+Output:
+Advoid! /slashes\, "single" and these
+Advoid! /slashes\, 'single' and these <too>

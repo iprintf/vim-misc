@@ -1,0 +1,122 @@
+
+MysqlndUhConnection::reapQuery
+
+(PECL mysqlnd-uh >= 1.0.0-alpha)
+
+MysqlndUhConnection::reapQuery — Get result from async query
+
+说明
+
+public bool MysqlndUhConnection::reapQuery ( mysqlnd_connection $connection )
+
+Get result from async query.
+
+参数
+
+connection
+
+    Mysqlnd connection handle. Do not modify!
+
+返回值
+
+Returns TRUE on success. Otherwise, returns FALSE
+
+范例
+
+Example #1 MysqlndUhConnection::reapQuery() example
+
+<?php
+class proxy extends MysqlndUhConnection {
+ public function reapQuery($res) {
+  printf("%s(%s)\n", __METHOD__, var_export(func_get_args(), true));
+  $ret = parent::reapQuery($res);
+  printf("%s returns %s\n", __METHOD__, var_export($ret, true));
+  return $ret;
+ }
+}
+mysqlnd_uh_set_connection_proxy(new proxy());
+
+$conn1 = new mysqli("localhost", "root", "", "test");
+$conn2 = new mysqli("localhost", "root", "", "test");
+
+$conn1->query("SELECT 1 as 'one', SLEEP(1) AS _sleep FROM DUAL", MYSQLI_ASYNC |
+  MYSQLI_USE_RESULT);
+$conn2->query("SELECT 1.1 as 'one dot one' FROM DUAL", MYSQLI_ASYNC |  
+MYSQLI_USE_RESULT);
+
+$links = array(
+ $conn1->thread_id => array('link' => $conn1, 'processed' => false),
+ $conn2->thread_id => array('link' => $conn2, 'processed' => false)
+);
+
+$saved_errors = array();
+do {
+ $poll_links = $poll_errors = $poll_reject = array();
+ foreach ($links as $thread_id => $link) {
+  if (!$link['processed']) {
+   $poll_links[] = $link['link'];
+   $poll_errors[] = $link['link'];
+   $poll_reject[] = $link['link'];
+  }
+ }
+ if (0 == count($poll_links))
+  break;
+
+ if (0 == ($num_ready = mysqli_poll($poll_links, $poll_errors, $poll_reject, 0
+, 200000)))
+  continue;
+
+ if (!empty($poll_errors)) {
+  die(var_dump($poll_errors));
+ }
+
+ foreach ($poll_links as $link) {
+  $thread_id = mysqli_thread_id($link);
+  $links[$thread_id]['processed'] = true;
+
+  if (is_object($res = mysqli_reap_async_query($link))) {
+   // result set object
+   while ($row = mysqli_fetch_assoc($res)) {
+    // eat up all results
+    var_dump($row);
+   }
+   mysqli_free_result($res);
+  } else {
+   // either there is no result (no SELECT) or there is an error
+   if (mysqli_errno($link) > 0) {
+    $saved_errors[$thread_id] = mysqli_errno($link);
+    printf("'%s' caused %d\n", $links[$thread_id]['query'],     mysqli_errno(
+$link));
+   }
+  }
+ }
+} while (true);
+?>
+
+以上例程会输出：
+
+proxy::reapQuery(array (
+  0 => NULL,
+))
+proxy::reapQuery returns true
+array(1) {
+  ["one dot one"]=>
+  string(3) "1.1"
+}
+proxy::reapQuery(array (
+  0 => NULL,
+))
+proxy::reapQuery returns true
+array(2) {
+  ["one"]=>
+  string(1) "1"
+  ["_sleep"]=>
+  string(1) "0"
+}
+
+参见
+
+  • mysqlnd_uh_set_connection_proxy() - Installs a proxy for mysqlnd
+    connections
+  • mysqli_real_async_query()
+

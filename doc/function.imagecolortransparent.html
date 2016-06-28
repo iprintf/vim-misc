@@ -1,0 +1,1291 @@
+
+imagecolortransparent
+
+(PHP 4, PHP 5, PHP 7)
+
+imagecolortransparent — 将某个颜色定义为透明色
+
+说明
+
+int imagecolortransparent ( resource $image [, int $color ] )
+
+imagecolortransparent() 将 image 图像中的透明色设定为 color。image 是 
+imagecreatetruecolor() 返回的图像标识符，color 是 imagecolorallocate() 返回的颜
+色标识符。
+
+    Note:
+
+    透明色是图像的一种属性，透明度不是颜色的属性。一旦设定了某个颜色为透明色，
+    图像中之前画为该色的任何区域都成为透明的。
+
+返回新透明色的标识符，如果省略 color 则返回当前透明色的标识符。
+
+    Note:
+
+    透明度仅能通过 imagecopymerge() 和真彩色图像拷贝，不能用 imagecopy() 或调色
+    板图像。
+
+
+User Contributed Notes 45 notes
+
+===============================================================================
+
+I've made a very simple script that will retain transparency of images
+especially when resizing.
+
+NOTE: Transparency is only supported on GIF and PNG files.
+
+Parameters:
+
+$new_image = image resource identifier such as returned by imagecreatetruecolor
+(). must be passed by reference
+$image_source = image resource identifier returned by imagecreatefromjpeg,
+imagecreatefromgif and imagecreatefrompng. must be passed by reference
+
+<?php
+function setTransparency($new_image,$image_source)
+    {
+       
+            $transparencyIndex = imagecolortransparent($image_source);
+            $transparencyColor = array('red' => 255, 'green' => 255, 'blue' => 
+255);
+            
+            if ($transparencyIndex >= 0) {
+                $transparencyColor    = imagecolorsforindex($image_source, 
+$transparencyIndex);   
+            }
+           
+            $transparencyIndex    = imagecolorallocate($new_image, 
+$transparencyColor['red'], $transparencyColor['green'], $transparencyColor[
+'blue']);
+            imagefill($new_image, 0, 0, $transparencyIndex);
+             imagecolortransparent($new_image, $transparencyIndex);
+       
+    }
+?>
+
+
+Sample Usage: (resizing)
+
+<?php
+$image_source = imagecreatefrompng('test.png');
+$new_image = imagecreatetruecolor($width, $height);
+setTransparency($new_image,$image_source);
+imagecopyresampled($new_image, $image_source, 0, 0, 0, 0, $new_width, 
+$new_height, $old_width, $old_height);
+?>
+===============================================================================
+
+This is my 'perfect' (i use that word lightly) thumbnail generation script,
+switch '$transparency' to true to have it do its best to handle transparency in
+gifs and pngs. this code is built off of comments and advice of everyone else
+here, and i do not deserve full credit. So far this handles every error i can
+throw at it.
+<?php
+function createthumb($name, $newname, $new_w, $new_h, $border=false, 
+$transparency=true, $base64=false) {
+    if(file_exists($newname))
+        @unlink($newname);
+    if(!file_exists($name))
+        return false;
+    $arr = split("\.",$name);
+    $ext = $arr[count($arr)-1];
+
+    if($ext=="jpeg" || $ext=="jpg"){
+        $img = @imagecreatefromjpeg($name);
+    } elseif($ext=="png"){
+        $img = @imagecreatefrompng($name);
+    } elseif($ext=="gif") {
+        $img = @imagecreatefromgif($name);
+    }
+    if(!$img)
+        return false;
+    $old_x = imageSX($img);
+    $old_y = imageSY($img);
+    if($old_x < $new_w && $old_y < $new_h) {
+        $thumb_w = $old_x;
+        $thumb_h = $old_y;
+    } elseif ($old_x > $old_y) {
+        $thumb_w = $new_w;
+        $thumb_h = floor(($old_y*($new_h/$old_x)));
+    } elseif ($old_x < $old_y) {
+        $thumb_w = floor($old_x*($new_w/$old_y));
+        $thumb_h = $new_h;
+    } elseif ($old_x == $old_y) {
+        $thumb_w = $new_w;
+        $thumb_h = $new_h;
+    }
+    $thumb_w = ($thumb_w<1) ? 1 : $thumb_w;
+    $thumb_h = ($thumb_h<1) ? 1 : $thumb_h;
+    $new_img = ImageCreateTrueColor($thumb_w, $thumb_h);
+   
+    if($transparency) {
+        if($ext=="png") {
+            imagealphablending($new_img, false);
+            $colorTransparent = imagecolorallocatealpha($new_img, 0, 0, 0, 127
+);
+            imagefill($new_img, 0, 0, $colorTransparent);
+            imagesavealpha($new_img, true);
+        } elseif($ext=="gif") {
+            $trnprt_indx = imagecolortransparent($img);
+            if ($trnprt_indx >= 0) {
+                //its transparent
+                $trnprt_color = imagecolorsforindex($img, $trnprt_indx);
+                $trnprt_indx = imagecolorallocate($new_img, $trnprt_color['red'
+], $trnprt_color['green'], $trnprt_color['blue']);
+                imagefill($new_img, 0, 0, $trnprt_indx);
+                imagecolortransparent($new_img, $trnprt_indx);
+            }
+        }
+    } else {
+        Imagefill($new_img, 0, 0, imagecolorallocate($new_img, 255, 255, 255));
+    }
+   
+    imagecopyresampled($new_img, $img, 0,0,0,0, $thumb_w, $thumb_h, $old_x, 
+$old_y);
+    if($border) {
+        $black = imagecolorallocate($new_img, 0, 0, 0);
+        imagerectangle($new_img,0,0, $thumb_w, $thumb_h, $black);
+    }
+    if($base64) {
+        ob_start();
+        imagepng($new_img);
+        $img = ob_get_contents();
+        ob_end_clean();
+        $return = base64_encode($img);
+    } else {
+        if($ext=="jpeg" || $ext=="jpg"){
+            imagejpeg($new_img, $newname);
+            $return = true;
+        } elseif($ext=="png"){
+            imagepng($new_img, $newname);
+            $return = true;
+        } elseif($ext=="gif") {
+            imagegif($new_img, $newname);
+            $return = true;
+        }
+    }
+    imagedestroy($new_img);
+    imagedestroy($img);
+    return $return;
+}
+//example useage
+createthumb("img.gif", "tn_img.gif", 64,64,true, true, false);
+?>
+===============================================================================
+
+Pay attention, that some GIF images may not include a transparent color. A good
+example of forced transparency in resized GIF image was given by markglibres at
+yahoo dot com 29-Mar-2009 02:48. But sometimes the transparent color in GIF
+images can be not set. The problem is, that the color you force to be
+transparent can be used in the original GIF as opaque and you will loose that
+color in resized image. The solution is not to use some default transparent
+color and to leave the resized image without transparent color (the same as
+original GIF). I used (nearly) the following code to make resized GIF images
+trnsparent  only when the transparency is needed:
+
+<?php
+/* ... */
+
+$img = ImageCreateFromGIF($f); /* create image from existing GIF: original
+image file name $f you may take from where you need */
+$transparent_index = ImageColorTransparent($img); /* gives the index of current
+transparent color or -1 */
+if($transparent_index!=(-1)) $transparent_color = ImageColorsForIndex($img,
+$transparent_index);
+
+/* ... */
+
+$img_resized = ImageCreateTrueColor( $nw, $nh ); /* (the new width $nw and
+height $nh must be defined before) */
+if(!empty($transparent_color)) /* simple check to find wether transparent color
+was set or not */
+{
+    $transparent_new = ImageColorAllocate( $img_resized, $transparent_color[
+'red'], $transparent_color['green'], $transparent_color['blue'] );
+    $transparent_new_index = ImageColorTransparent( $img_resized, 
+$transparent_new );
+    ImageFill( $img_resized, 0,0, $transparent_new_index ); /* don't forget to
+fill the new image with the transparent color */
+}
+list($w,$h) = GetImageSize($f); /* defines the original width $w and height $h
+*/
+if( ImageCopyResized( $img_resized, $img, 0,0, 0,0, $nw,$nh, $w,$h ) ) /*
+resized copying and replacing the original image */
+{
+    ImageDestroy($img);
+    $img = $img_resized;
+}
+
+/* ... */
+
+header('Content-Type: image/gif');
+ImageGIF($img);
+ImageDestroy($img);
+?>
+
+P.S.
+If there some errors, I hope you could understood the idea.
+===============================================================================
+
+I have found that ImageColorTransparent() works on true color images if and
+only if the transparent color is black.
+(PHP 4.2.3/GD 2.0)
+===============================================================================
+
+This might be of importance to newbies...If you are trying to create GIF's with
+transparencies, stick to the 216 colour pallet for all colours on the image...
+or transparencies wont work...at the very least yo will get dithering...
+===============================================================================
+
+A transparent background with text doesn't seem to work very well because of
+the antialiasing . But I tried the following kluge and it turned out very well:
+
+<?php
+   $im = imagecreatetruecolor(100,20);
+   $almostblack = imagecolorallocate($im,254,254,254);
+   imagefill($im,0,0,$almostblack);
+   $black = imagecolorallocate($im,0,0,0);
+   imagecolortransparent($im,$almostblack);
+   //... set x and y..
+   imagettftext($im,8,0,$x,$y,$black,"calibri.ttf",$txt);
+?>
+===============================================================================
+
+To resize transparent PNG (if image is transparent & ImageColorTransparent()
+returns -1):
+1) create a new image with the new sizes
+2) make the new image all transparent
+3) turn off the alpha blending for the new image (to keep the alpha channel
+when copy data)
+4) do copyresampled or copyresized into new image
+
+PHP code:
+// 1
+$im2 = ImageCreateTrueColor($w, $h);
+// 2
+ImageColorTransparent($im2, ImageColorAllocate($im2, 0, 0, 0));
+// 3
+ImageAlphaBlending($im2, false);
+// 4
+ImageCopyResampled($im2, $im, 0, 0, 0, 0, $w, $h, ImageSX($im), ImageSY($im));
+===============================================================================
+
+This script should take an animated GIF whit a white background transparancy,
+put some white=transparant text on it, and can be used in any page using the
+filename and the normal image tags.
+
+Everything works well, exept the animation. The GIF animation stands still.
+Don't know how to keep the animation  animated. Is it possible in PHP?
+
+<?php
+
+$TextFile = "teller.txt";
+$Count = trim(file_get_contents($TextFile));
+$FP = fopen($TextFile, "r");
+$Count=fgets($FP, 4096);
+fclose ($FP);
+settype($Count, "integer");
+$Count++;
+if ($FP = fopen ($TextFile, "w")){
+fwrite ($FP, $Count);
+fclose ($FP);
+}
+
+$image = "blad.gif";
+$im    = imagecreatefromgif($image);
+$white = imageColorAllocate ($im, 255, 255, 255);
+$trans = imagecolortransparent($im,$white);
+$hit = "$Count";
+$ip = $_SERVER["REMOTE_ADDR"];
+
+ImageString($im, 2, 30, 60,  " je bent bezoeker ", $white);
+ImageString($im, 3, 20, 80, " $ip.$hit", $trans);
+
+header("Content-Type: image/gif");
+Imagegif($im,'',100);
+ImageDestroy ($im);
+
+?>
+===============================================================================
+
+Only one color may be transparent in one image.  The last call to
+imagecolortransparent will be the color that is set to transparent.
+
+I am processing button images that have a slightly different fill color than
+the background color outside the border of the button. I was hoping that I
+could just make both of those colors transparent and solve the problem.
+
+Hope this tidbit of info will save you some time.
+===============================================================================
+
+In fact this function can be used for two purposes:
+
+A.) to work with transparency while dealing with images in php (see watermark
+example)
+
+B.) to create a partially transparent picture
+
+For A.) one can work with truecolor images with some regulations, but B.) can
+only be used with palette-based images (= indexed = created with imagecreate
+not imagecreatetruecolor) and formats that support transparency (png, gif).
+
+For instance if you want to cut out a color out of a give picture that is in
+truecolor, use the following method to first convert it to palette-based image,
+assign the transparency and give it to the browser as png:
+
+<?
+$img = imagecreatefromjpeg('test.jpg');
+imagetruecolortopalette($img, false, 256); // convert
+
+$white = imagecolorresolve($img, 255, 255, 255); // resolve given palette entry
+imagecolortransparent($img, $white);
+
+header("Content-type: image/png");
+imagepng($img);
+?>
+===============================================================================
+
+This function has a very strange behaviour with GD version > 2. It returns
+count of colors instead of -1 (as noted) if cannot find transparent color. Be
+carefull!
+===============================================================================
+
+After much devious mindbending, I have found a way to test any GIF for presence
+of background transparency. This ability is essential for my application which
+uploads any of GIF, JPEG or PNG and simultaneously creates a thumbnail of
+identical image type and identical filename (full size and thumbnail versions
+being stored in different folders).
+After uploading and moving the image in the usual way, a switch($image_type)
+statement ensures that the optimum code is used to generate the thumbnail;
+regardless of image type.
+The problem with the GIF type is that those with transparent backgrounds need
+to be treated differently to those without. When I don't detect GIF
+transparency, I either end up with all transparent GIF's having black
+backgrounds, or all GIF's get converted to transparent background - even if
+they weren't transparent in the original.
+But how to detect transparency in the original? It finally occurred to me that
+I could test for transparency programmatically by overlaying a copy of the
+original image over an all-black image, record the color value at particular
+pixel locations and then repeat the process by overlaying a copy of the
+original image over an all-white image, recording the color values at identical
+pixel locations and comparing these with the first set of values.
+If the two sets of values correlate exactly, and if sensible sampling points
+are used, the image can be treated as non-transparent. If the two sets of
+values show differences, the image should be treated as having a transparent
+background.
+===============================================================================
+
+How to center your text both vertically and horizontally in a GD image:
+
+<?php
+//get box size
+$box = imagettfbbox($titlesize, 0, $titlefont, $title);
+       
+//Find out the width and height of the text box
+$textW = $box[2] - $box[0];
+$textH = $box[5] - $box[3];
+       
+// Calculate the positions
+$positionLeft = ($width - $textW)/2;
+$positionTop = (($height - $textH)/2);
+       
+// Add some text
+if($align=="center"){   
+imagettftext($pic, size, angle, $positionLeft, $positionTop, colour, font, 
+message);
+?>
+===============================================================================
+
+Well 8-bit gif and png files can have multiple transparent colors, so detecting
+the transparent color by manually looking into the file or using
+imagecolortransparent and using the detected rgb color as the background color
+when imagecopy'ing (or other image copying functions) on a true color image
+will not work. The only means of getting the transparent pixels to appear is to
+copy the pixel colors one by one to a new true color image. Here's some code i
+wrote to do this.
+
+$original_image = @imagecreatefromgif( $original_image_file );
+
+$original_image_width = imagesx( $original_image );
+$original_image_height = imagesy( $original_image );
+
+if ( !imageistruecolor($original_image) ) {
+   # detects if its non-true color image
+   if ( imagecolortransparent($original_image) >= 0 ) {
+      # detects if any of the color palette has been set to transparent
+      $truecolor = imagecreatetruecolor( $original_image_width,
+$original_image_height );
+      for ($x = 0; $x < $original_image_width; $x++) {
+         for ($y = 0; $y < $original_image_height; $y++) {
+            $color_index = ImageColorAt($original_image, $x, $y);
+            if ( !$color_palette[$color_index] ) {
+               $rgb = imagecolorsforindex($original_image, $color_index);
+               $color_to_set = imagecolorallocate($truecolor, $rgb['red'], $rgb
+['green'], $rgb['blue']);
+               $color_palette[$color_index] = $color_to_set;
+            } else {
+               $color_to_set = $color_palette[$color_index];
+            }
+            imagesetpixel($truecolor, $x, $y, $color_to_set);
+         }
+      }
+      imagedestroy($original_image);
+      $original_image = $truecolor;
+   }
+}
+===============================================================================
+
+Sorry, below should be:
+
+<?php
+$is_alpha = ord (file_get_contents ($file_path, false, null, 25, 1)) & 4;
+?>
+
+much better :)
+Both types 4 (greyscale transparent png), and 6 (colour transparent png) have
+bit 4 set, so there's no need to bitwise twice and there's no need for == as
+the return value will be 4 or 0, which is easily interpreted as true or false
+elsewhere in your code.
+
+note: file_get_contents isn't reading the whole file in this instance, just 1
+byte on its own and that's it, so you can be assured this is fast and safe.
+===============================================================================
+
+a simple way to check png with alpha channel reading IHDR PNG HEADER
+
+$readPng =    fopen    ($argSourceImagePath, "rb");
+$readAlp =    fread    ($readPng, 52);
+            fclose    ($readPng);
+
+if(substr(bin2hex($readAlp),50,2) == "04" || substr(bin2hex($readAlp),50,2) ==
+"06")
+echo("Png has alpha");
+===============================================================================
+
+This script creates transparency for a unspecific RBG color for an already
+created PNG image.  It also includes script of overlay text that does not get
+ruined in the process.
+
+<?php
+
+header("Content-type: image/png");
+$image = imagecreatetruecolor(250, 250);
+$string = $_GET['text'];
+$im     = imagecreatefrompng("dynIcon.png");
+$img = imagecreatetruecolor(16,16);
+$orange = imagecolorallocate($im, 220, 210, 60);
+$bg_color = imagecolorat($im,1,1);
+$px     = (imagesx($im) - 3 * strlen($string)) / 2;
+imagecolortransparent($im, $bg_color);
+imagestring($im, 3, $px, 5, $string, $orange);
+imagepng($im);
+imagedestroy($im);
+
+?>
+
+Use $bg_color = imagecolorat($im,1,1); for instance, if you made the
+transparent color in photoshop by clearing out all the color leaving you with
+the checkered background showing you it's empty.
+===============================================================================
+
+When you use palette images (created with imagecreate()), the first color
+allocated is the background color. This color cannot be used for transparency.
+So if you want to make the background transparent, first allocate a dummy
+background color, then allocate the real background color and declare this is
+as transparent.
+===============================================================================
+
+in reference to webmaster at webnetwizard dotco dotuk who had a rather
+complicated method of determining if a GIF had any transparency set ...
+
+imagecolortransparent will return -1 if no transparency is found.
+
+eg:
+
+$transColorIndexMain = imageColorTransparent($mainImgObj);
+if ($transColorIndexMain >= 0 ) {
+       # GIF has transparency ... ;
+}
+
+Current PHP Version: 4.4.4
+[GD Version] => bundled (2.0.28 compatible)
+===============================================================================
+
+To resize or copy image (gif [with gd>=2.0.28] or png) with transparency.
+-Take current transparency color
+-create a new image with palette like old one and fill new image with
+transparent color
+-set transparent color
+-copy resized image
+
+$colorTransparent = imagecolortransparent($im);
+$im2 = imagecreate($new_w,$new_h);
+imagepalettecopy($im2,$im);
+imagefill($im2,0,0,$colorTransparent);
+imagecolortransparent($im2, $colorTransparent);
+imagecopyresized($im2,$im,0,0,0,0,$new_w,$new_h,$imsx,$imsy);
+===============================================================================
+
+Hi!
+I'm using GDLib 1.6.3 so far I know.
+You can have transparency on any defined color on any image type when using the
+imagecolorclosest($im, $R, $G, $B) function instead of imagecolorallocate() or
+imagecolorexact().
+===============================================================================
+
+ok some works...
+
+i had a test-sytem with GDLib, phpinfo shows me this version:
+"GD Version  2.0 or higher" so far no porblems with: imageColorTransparent
+
+Then we had to copy ouer codes to another sever on this server phpinfo shots me
+version:
+"GD Version  bundled (2.0.12 compatible)"
+
+The jpg was wrong and nothing was transparent.
+The point is, you have to use: imagecopymerge
+
+Don't if its true on any system just work on
+SUSE 8.2
+PHP 4.3.2
+===============================================================================
+
+If you are looking for a blank PNG, you don't need to generate it every time.
+Just define this constant:
+
+define("BLANK_PNG",     "iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/
+rhtAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29m".
+                        "dHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAADqSURBVHjaYvz//z
+/DYAYAAcTEMMgBQAANegcCBNCg".
+                       
+"dyBAAA16BwIE0KB3IEAADXoHAgTQoHcgQAANegcCBNCgdyBAAA16BwIE0KB3IEAADXoHAgTQoHcgQAAN".
+                       
+"egcCBNCgdyBAAA16BwIE0KB3IEAADXoHAgTQoHcgQAANegcCBNCgdyBAAA16BwIE0KB3IEAADXoHAgTQ".
+                       
+"oHcgQAANegcCBNCgdyBAAA16BwIE0KB3IEAADXoHAgTQoHcgQAANegcCBNCgdyBAAA16BwIE0KB3IEAA".
+                       
+"DXoHAgTQoHcgQAANegcCBNCgdyBAgAEAMpcDTTQWJVEAAAAASUVORK5CYII=");
+===============================================================================
+
+I would like to share with others how to make PNG image transparent. I have
+tried almost all examples described on that page but none of them work for me.
+Finally I found the solution, but there is a bit cheating :) but who cares if
+it works?
+
+So when I tried to allocate white (as an example) color as a transparent, it
+worked randomly (lets say 1 in 10 examples). That in turn pushed me to the idea
+that the problem is that white color is already exist in color palette. So if I
+try to add another white color with DIFFERENT index as a transparent, that will
+cause error.
+
+So I found the solution, instead of adding new index, I searched for the white
+color’s index in the color palette and made it defined as transparent :) The
+best idea is to use not a white but left bottom corner as transparent color (I
+guess that s standard for some other software languages).
+
+<?php
+$index = imagecolorexact($this->image, 255, 255, 255);
+imagecolortransparent($this->image, $index);
+?>
+
+All you need is to add that two lines before outputting your result.
+===============================================================================
+
+I found out the hard way that for two png's with alpha transparency to
+correctly stack you need to explicitly re-enable alpha blending.
+
+$img=imagecreatetruecolor($dx,$dy);
+$img1=imagecreatefrompng($png1); //first layer
+$img2=imagecreatefrompng($png2); //second layer (smaller image)
+
+imagealphablending($img, false);
+$transparent = imagecolorallocatealpha($img, 0, 0, 0, 127);
+imagefill($img, 0, 0, $transparent);
+imagesavealpha($img,true);
+imagealphablending($img, true); //removing this causes the second layer's
+transparency to go trough the 1st layer erasing it (the image >is< transparent
+there ... as is the 2nd layer ... but not the 1st so it should not be
+transparent)
+
+imagecopyresampled($img,$img1,
+imagecopyresampled($img,$img2,
+===============================================================================
+
+@wesley gunn:
+Thank you very, very much for the code to determine if a PNG is 24 or 32-bit :)
+Here's an improved version in one line without using a file-handle
+
+<?php
+$is_alpha = ((ord (
+    file_get_contents ($filename, false, null, 25, 1)
+) & 6) & 4) == 4;
+?>
+
+Gives true for a PNG with alpha, false otherwise.
+This cannot detect 8-bit PNGs with transparency, but you could do that by
+searching the file contents for the presence of "PLTE" *AND* "tRNS".
+===============================================================================
+
+On some versions you must set the index number of that color in color pallete
+rather than the color! So if you allocate color with imagecolorallocate, that
+this color gets 0 index on color pallete so than you must call:
+imagecolortransparent ( resource $image , 0 ) to make the image transparent!
+===============================================================================
+
+i had problems with the example by sandhawk at spies dot com because my png
+overlay, and the jpeg canvas were using different color depths, so, this
+function corrects this:
+
+[code]
+function WatermarkImage($CanvasImage, $WatermarkImage /* MUST BE PHG */,
+$Opacity=10, $Quality=75)
+{
+    // create true color canvas image:
+    $canvas_src = imagecreatefromjpeg($CanvasImage);
+    $canvas_w = ImageSX($canvas_src);
+    $canvas_h = ImageSY($canvas_src);
+    $canvas_img = imagecreatetruecolor($canvas_w, $canvas_h);
+    imagecopy($canvas_img, $canvas_src, 0,0,0,0, $canvas_w, $canvas_h);
+    imagedestroy($canvas_src);    // no longer needed
+
+    // create true color overlay image:
+    $overlay_src = imagecreatefrompng($WatermarkImage);
+    $overlay_w = ImageSX($overlay_src);
+    $overlay_h = ImageSY($overlay_src);
+    $overlay_img = imagecreatetruecolor($overlay_w, $overlay_h);
+    imagecopy($overlay_img, $overlay_src, 0,0,0,0, $overlay_w, $overlay_h);
+    imagedestroy($overlay_src);    // no longer needed
+
+    // setup transparent color (pick one):
+    $black   = imagecolorallocate($overlay_img, 0x00, 0x00, 0x00);
+    $white   = imagecolorallocate($overlay_img, 0xFF, 0xFF, 0xFF);
+    $magenta = imagecolorallocate($overlay_img, 0xFF, 0x00, 0xFF);   
+    // and use it here:
+    imagecolortransparent($overlay_img, $white);
+
+    // copy and merge the overlay image and the canvas image:
+    imagecopymerge($canvas_img, $overlay_img, 0,0,0,0, $overlay_w, $overlay_h,
+$Opacity);
+
+    // output:
+    header("Content-type: image/jpeg");
+    imagejpeg($canvas_img, '', $Quality);
+
+    imagedestroy($overlay_img);
+    imagedestroy($canvas_img);
+}
+
+// call function with opcity set to 50% and 95% quality
+WatermarkImage("canvas.jpg", "overlay.png", 50, 95);
+
+[/code]
+===============================================================================
+
+If you have a transparent PNG , in PHP 4.3.1 , GD 2.0 , you don't need to set
+the transparency anymore , it's automatic ...
+===============================================================================
+
+In response to the note above...
+
+ImageColorTransparent() does work on TrueColor images.  I have it working
+myself but I do remember having to add an extra step somewhere.  Anyways, here
+is how I overlay text on a jpeg.  Don't forget, you need GD 2.x for true color
+to work.  This example requires TTF support also.
+
+//
+// get src image and dimensions
+$src_img = ImageCreateFromJPEG("foo.jpg");
+$src_w = ImageSX($src_img);
+$src_h = ImageSY($src_img);
+//
+// create empty true color canvas, def bg is black
+$txt_img = ImageCreateTrueColor($src_w,$src_h);
+//
+// define colors
+$white = ImageColorAllocate ($txt_img, 255, 255, 255);
+$black = ImageColorAllocate ($txt_img, 0, 0, 0);
+//
+// add your white text
+ImageTTFText ($txt_img, 80, 25, 65, 350, $white, "impact.ttf", "Kung Fu");
+//
+// make black bg transparent
+ImageColorTransparent($txt_img, $black);
+//
+// merge text image onto src image
+ImageCopyMerge($src_img,$txt_img,0,0,0,0,$src_w,$src_h,30); // 30% opacity
+
+'Now' you can do resizing or whatever and output it.  You need to create yet
+another blank image to resample.  (Actually you can resize the image before the
+text overlay step with some small mods, but its REALLY messy if you want the
+output size to be dynamic)
+
+//
+// create empty true color canvas for resizing.
+$dst_img = ImageCreateTrueColor(100,100);
+//
+// resize
+ImageCopyResampled($dst_img,$src_img,0,0,0,0,100,100,$src_w,$src_h);
+//
+// output to browser.
+ImageJPEG($dst_img,'',70);   // quality 70
+
+If someone could tell me a shorter way to do this, that would be sweet.  The
+way it is now, it just feels like there is one too many steps to get this
+done.  But I am glad it works at all!
+===============================================================================
+
+This block of code should preserve transparency when resizing an image using
+the GD library.
+
+<?php
+/**
+* Try to preserve transparency info
+* $orig_type - Original Image Type
+* $orig_img  - GD Image Resource for original image
+* $new_img   - GD Image Resource for resized image
+*/
+
+// Transparency only available for GIFs & PNGs
+if ( ($orig_type == IMAGETYPE_GIF) || ($orig_type == IMAGETYPE_PNG) ) {
+    $trnprt_indx = imagecolortransparent($orig_img);
+
+    // If we have a specific transparent color
+    if ($trnprt_indx >= 0) {
+
+        // Get the original image's transparent color's RGB values
+        $trnprt_color    = imagecolorsforindex($orig_img, $trnprt_indx);
+
+        // Allocate the same color in the new image resource
+        $trnprt_indx    = imagecolorallocate($new_img, $trnprt_color['red'], 
+$trnprt_color['green'], $trnprt_color['blue']);
+
+        // Completely fill the background of the new image with allocated
+color.
+        imagefill($new_img, 0, 0, $trnprt_indx);
+
+        // Set the background color for new image to transparent
+        imagecolortransparent($new_img, $trnprt_indx);
+
+    // Always make a transparent background color for PNGs that don't have one
+allocated already
+    } elseif ($orig_type == IMAGETYPE_PNG) {
+
+        // Turn off transparency blending (temporarily)
+        imagealphablending($new_img, false);
+
+        // Create a new transparent color for image
+        $color = imagecolorallocatealpha($new_img, 0, 0, 0, 127);
+
+        // Completely fill the background of the new image with allocated
+color.
+        imagefill($this->new_img, 0, 0, $color);
+
+        // Restore transparency blending
+        imagesavealpha($this->new_img, true);
+    }
+}
+?>
+===============================================================================
+
+To resize a transparent image into a thumbnail while keeping its transparency.
+The quality of the thumbnail is pretty bad though.. but it is transparent.
+
+$image = ImageCreateFromGIF('transparentimage.gif');
+$img_width = ImagesX($image);
+$img_height = ImagesY($image);
+
+$new_width = '100';
+$new_height = ($new_width * $img_height) / $img_width;
+
+$resized = imagecreatetruecolor($new_width, $new_height);
+
+$colorTransparent = imagecolortransparent($image);
+imagepalettecopy($image, $resized);
+imagefill($resized, 0, 0, $colorTransparent);
+imagecolortransparent($resized, $colorTransparent);
+
+imagetruecolortopalette($resized, true, 256);
+
+imagecopyresized($resized, $image, 0, 0, 0, 0, $new_width, $new_height,
+$img_width, $img_height);
+===============================================================================
+
+This script creates transparency for a specific RBG color for an already
+created GIF image.
+<?php
+    $im = imagecreatefromgif('trans.gif');
+    $img = imagecreatetruecolor(16,16);
+    $trans = imagecolorallocate($img,255,99,140);
+    imagecolortransparent($img,$trans);
+    imagecopy($img,$im,0,0,0,0,16,16);
+    imagetruecolortopalette($img, true, 256);
+    imageinterlace($img);
+    imagegif($img,'trans.gif');
+    imagedestroy($img);
+?>
+===============================================================================
+
+A negative color number will turn antialiasing off, but even a positive number
+chosen for transparency may affect antialiasing. If the text (created with
+imagettftext) in your image looks horrible, try using a higher color number.
+===============================================================================
+
+Transparent GIF w/ text from TTF Font
+-------------------------------------
+$image = imagecreatetruecolor(192, 36);
+$trans_color = imagecolorallocate($image, 255, 0, 0);
+$color = imagecolorallocate($image, 255, 255, 255);
+imagecolortransparent($image, $trans_color);
+imagettftext($image, 10, 0, 10, 23, $color, "impact.ttf", " MENU ITEM");
+imagegif($image, "output.gif");
+imagedestroy($image);
+===============================================================================
+
+I wanted to have non-rectangular images being displayed on various
+website-backgrounds. piece of cake with png-24 and sane browsers, but not with
+IE. GIF-files are useless since they tend to have ugly edges.
+
+So that's what i came up with, a script to merge a given PNG-24 against a
+background-image. The script only merges areas of partial transparency (think
+anti-aliased edges) of the PNG onto the background-image, leaving 100%
+transparent areas as they are. output is a 256-color gif with transparency.
+
+<?PHP
+  function alphaishMerge(&$img_unten, &$img_oben, &$transCol) {
+    $sx = imagesx($img_unten);
+    $sy = imagesy($img_oben);
+   
+    // just be sure
+    imagealphablending($img_unten, TRUE);
+    imagealphablending($img_oben, TRUE);
+   
+    // imagecopy respects alpha channels
+    imagecopy($img_unten, $img_oben, 0, 0, 0, 0, $sx, $sy);
+   
+    for ($x = 0; $x < $sx; $x++) {
+      for ($y = 0; $y < $sy; $y++) {
+       
+        // get RGBA of upper image
+        $pxloben = imagecolorat($img_oben, $x, $y);
+        $pxloben = imagecolorsforindex($img_oben, $pxloben);
+       
+        if ($pxloben['alpha'] == 127) {
+          // if this pixel is fully transparent...
+          // ...set it to the transparent color
+          imagesetpixel($img_unten,$x,$y,$transCol);
+        }
+      }
+    }
+  }
+ 
+  // images have to be the same size
+  $bg_file = "background.jpg";
+  $png_file ="kauscha.png";
+
+  // background-image (jpg)
+  $img_bg = imagecreatefromjpeg($bg_file);
+ 
+  // image which is supposed to be put on the background (PNG-24)
+  $img_png = imagecreatefrompng($png_file);
+ 
+  // This color is the one getting transparent in the gif-file
+  $transCol = imagecolorallocate($img_bg, 0, 0, 0);
+
+  // magic
+  alphaishMerge($img_bg, $img_png, $transCol);
+ 
+  // reduce color depth
+  imagetruecolortopalette($img_bg, FALSE, 255);
+ 
+  // make it transparent
+  $transCol = imagecolortransparent($img_bg, $transCol);
+ 
+  header("Content-type: image/gif");
+  imagegif($img_bg);
+?>
+
+i hope thats useful for anyone.
+===============================================================================
+
+Fred wrote:
+<?php
+$file['signatur']=      substr($result,0,3);
+             $file['version']=        substr($result,3,3);
+             $file['width']=          ord(substr($result,6,1))+ord(substr(
+$result,7,1))*256;
+             $file['height']=        ord(substr($result,8,1))+ord(substr($rsult
+,9,1))*256;
+             $file['flag']=          ord(substr($result,10,1))>>7;
+             $file['trans_red']=      ord(substr($result,ord(substr($result,11
+))*3,1));
+             $file['trans_green']=    ord(substr($result,ord(substr($result,11
+))*3+1,1));
+             $file['trans_blue']=    ord(substr($result,ord(substr($result,11))
+*3+2,1)) ;
+?>
+
+You should write such code like this:
+
+<?php
+   $file = array(
+      "signatur"           => substr ($result, 0, 3),
+      "version"            => substr ($result, 3, 3),
+      "width"              => ord (substr ($result, 6, 1)) + ord (substr (
+$result, 7, 1)) * 256,
+      "height"             => ord (substr ($result, 8, 1)) + ord(substr (
+$result, 9, 1)) * 256,
+      "flag"               => ord (substr ($result, 10, 1)) >> 7,
+      "trans_red"          => ord (substr ($result, ord (substr ($result, 11))
+* 3,1)),
+      "trans_green"        => ord (substr ($result, ord (substr($result, 11)) *
+3 + 1, 1)),
+      "trans_blue"         => ord (substr ($result, ord (substr($result, 11)) *
+3 + 2, 1))
+      );
+?>
+
+And there's a typo in line 4, sayin "rsult" instead of "result". I've got no
+time for checking your code any further, sorry.
+===============================================================================
+
+it goes also more simply
+i rather work with arrays
+<?php
+if(!function_exists('gif_info'))
+{
+    function gif_info($filename)
+    {
+             $fp=                     fopen($filename,'rb');
+             $result=                 fread($fp,13);
+             $file['signatur']=       substr($result,0,3);
+             $file['version']=        substr($result,3,3);
+             $file['width']=          ord(substr($result,6,1))+ord(substr(
+$result,7,1))*256;
+             $file['height']=         ord(substr($result,8,1))+ord(substr(
+$rsult,9,1))*256;
+             $file['flag']=           ord(substr($result,10,1))>>7;
+             $file['trans_red']=      ord(substr($result,ord(substr($result,11
+))*3,1));
+             $file['trans_green']=    ord(substr($result,ord(substr($result,11
+))*3+1,1));
+             $file['trans_blue']=     ord(substr($result,ord(substr($result,11
+))*3+2,1)) ;
+             fclose($fp);
+             return $file;
+    }
+}
+print_r(gif_info($_FILES['files']['temp_name']));
+?>
+===============================================================================
+
+Wow! I am actually surprized there are no functions to retrieve transparency
+information from the image. I assume I'm not missing anything since there are
+all kinds of notes about how to get around this limitation. At any rate, here
+is some code to read the gif file and retrieve the missing information. The
+code will speak volumes.
+
+<?php
+
+    class GifInfo
+    {
+        var $m_transparentRed;
+        var $m_transparentGreen;
+        var $m_transparentBlue;
+        var $m_signature;
+        var $m_version;
+        var $m_width;
+        var $m_height;
+        var $m_width;
+        var $m_height;
+        var $m_colorFlag;
+        var $m_backgroundIndex;
+       
+       
+        function GifInfo($filename)
+        {
+
+            $fp                         = fopen($filename,"rb");
+            $result                     = fread($fp,13);
+            $this->m_signature     = substr($result,0,3);
+            $this->m_version         = substr($result,3,3);
+            $this->m_width         = ord(substr($result,6,1)) + ord(substr(
+$result,7,1)) * 256;
+            $this->m_height         = ord(substr($result,8,1)) + ord(substr(
+$result,9,1)) * 256;
+            $this->m_colorFlag    = ord(substr($result,10,1)) >> 7;
+            $this->m_background     = ord(substr($result,11));
+   
+            if($this->m_colorFlag)
+            {
+                $tableSizeNeeded = ($this->m_background + 1) * 3;
+                $result = fread($fp,$tableSizeNeeded);
+                $this->m_transparentRed     = ord(substr($result,$this->
+m_background * 3,1));
+                $this->m_transparentGreen     = ord(substr($result,$this->
+m_background * 3 + 1,1));       
+                $this->m_transparentBlue     = ord(substr($result,$this->
+m_background * 3 + 2,1));           
+            }
+            fclose($fp);
+        }
+    }
+?>
+
+And to use this class....
+
+<?php
+   $size = getimagesize($userfile);
+
+   $img2 = ImageCreate($w,$h);           
+   $gi = new GifInfo($userfile);
+
+   if($gi->m_version == '89a' && $gi->m_colorFlag == 1)
+   {
+      $transparent = imagecolorallocate($img2,
+      $gi->m_transparentRed,
+      $gi->m_transparentGreen,
+      $gi->m_transparentBlue);           
+
+      imagecolortransparent ($img2,$transparent);
+   }
+?>
+===============================================================================
+
+I'm feeling particularly altruistic today, so here is the code to accompany the
+text I submitted about a script that 'intelligently' detects if an uploaded GIF
+has transparency or not, and creates a thumbnail accordingly:
+
+    if (move_uploaded_file($_FILES['userfile']['tmp_name'], $uploadfile))
+    {
+      $note = "Image was successfully uploaded.\n";
+      // Now create thumbnail version of the uploaded image and save it to
+      // folder "$fixPath/images/thumbs". First, we need to create a
+      // resource "handle" for a copy of the uploaded image
+      $img_error = false;
+      list($width, $height, $type) = getimagesize($uploadfile);
+      switch($type) // Allowed types: image/gif,image/jpeg,image/x-png
+      {
+        case 1: // GIF
+          $src = @imagecreatefromgif($uploadfile);
+          if (!$src)
+            $img_error = true;
+          break;
+        case 2: // JPEG
+         .
+         .
+         .
+      case 3: // PNG
+        .
+        .
+        .
+       default:
+          $img_error = true;
+      }
+      // resource handle for source image now in $src
+      // Now calculate scaling factor and put in $sf
+      if(!$img_error)
+      {
+        if($width >= $height && $width > 100)
+          $sf = $width / 100;
+        elseif($height > 100)
+          $sf = $height / 100;
+        else
+          $sf = 1;
+        $newwidth = intval($width / $sf);
+        $newheight = intval($height / $sf);
+ 
+        switch($type) // Allowed types: image/gif,image/jpeg,image/x-png
+        {
+          case 1: // GIF
+            $tpcolor = imagecolorat($src, 0, 0);
+            // in the real world, you'd better test all four corners, not just
+one!
+            $dest = imagecreate($newwidth, $newheight);
+            // $dest automatically has a black fill...
+            imagepalettecopy($dest, $src);
+            imagecopyresized($dest, $src, 0, 0, 0, 0, $newwidth, $newheight,
+              $width, $height);
+            $pixel_over_black = imagecolorat($dest, 0, 0);
+            // ...but now make the fill white...
+            $bg = imagecolorallocate($dest, 255, 255, 255);
+            imagefilledrectangle($dest, 0, 0, $newwidth, $newheight,
+              $bg);
+            imagecopyresized($dest, $src, 0, 0, 0, 0, $newwidth, $newheight,
+              $width, $height);
+            $pixel_over_white = imagecolorat($dest, 0, 0);
+            // ...to test if transparency causes the fill color to show
+through:
+            if($pixel_over_black != $pixel_over_white)
+            {
+              // Background IS transparent
+              imagefilledrectangle($dest, 0, 0, $newwidth, $newheight,
+                $tpcolor);
+              imagecopyresized($dest, $src, 0, 0, 0, 0, $newwidth,
+                $newheight, $width, $height);
+              imagecolortransparent($dest, $tpcolor);
+              imagegif($dest, "$fixPath/images/thumbs/$userfile");
+            }
+            else // Background (most probably) NOT transparent
+              imagegif($dest, "$fixPath/images/thumbs/$userfile");
+            break;
+          case 2: // JPEG
+          .
+          .
+          .
+          case 3: // PNG
+          .
+          .
+          .
+            break;
+        }
+        imagedestroy($src);
+        imagedestroy($dest);
+      }
+      else
+        $note = "Error: Uploaded image but could not create thumbnail";
+      header("location: $fixPath/index.php?next=$next&nb=$nb&userfile=
+$userfile");
+    }
+    else
+      $note = "Could not find anything to upload\n";
+===============================================================================
+
+It took me a while to figure this out. I added visual web thumbnail preview
+graphic from http://www.thumbshots.org and http://www.thumbshots.com to my
+customer sites to visualize web pages. Then I needed to create a small blank
+transparent PNG image if the thumbshot is not available. You can do this easily
+using imagecolortransparent function. It came out really nice and fast. It's
+very cool stuff and highly recommended library for all your web site needs!
+
+// Use GD library to create transparent color PNG image of the pixel size
+$ImgGD = imagecreate(120, 90);
+$ImgWhite = imagecolorallocate($ImgGD, 255, 255, 255);
+imagefill($ImgGD, 0, 0, $ImgWhite);
+imagecolortransparent($ImgGD, $ImgWhite);
+
+// Capture STDOUT to buffer
+ob_start();
+imagepng($ImgGD);
+$Image = ob_get_contents();
+ob_end_clean();
+
+// Remember to free your memory
+imagedestroy($ImgGD);
+
+// Print image to web browser.
+print $Image
+===============================================================================
+
+here's a little snippet of code that i got for getting images to overlay with
+transparency(based off text overlay above).
+
+$olay_img = imagecreatefromPNG("overlay.png); //NOTE I recomment you use png
+for this, artifacts from jpeg images can look bad when you overlay them
+$src_img = ImageCreateFromJPEG("image.jpg");
+$src_w = ImageSX($src_img);
+$src_h = ImageSY($src_img);
+
+$can_img = imagecreatetruecolor($src_w, $src_h);
+
+$black = ImageColorAllocate ($olay_img, 0, 0, 0);
+
+ImageColorTransparent($olay_img, $black);
+
+imagecopy($can_img, $src_img, 0,0,0,0, $src_w, $src_h);
+imagecopymerge($can_img, $olay_img, 0,0,0,0, ImageSX($olay_img), ImageSY
+($olay_img),100); //Imagecopy won't work, you must used imagecopymerge
+
+ImageJPEG($can_img,'',100);
+
+imagedestroy($src_img);
+imagedestroy($olay_img);
+imagedestroy($can_img);
+===============================================================================
+
+when a color is defined as transparent, anytime that color is used in another
+function (before or after transparency definition) will be transparent
+
+ex:
+$red = ImageColorAllocate ($im, 233, 14, 91);
+$blue = ImageColorAllocate ($im, 0x20, 0x60, 0xaa);
+imagefilledarc ($im, 100, 100, 80, 80, 0, 60, $blue, IMG_ARC_PIE);//arc is
+transparent even though is not defined yet
+$trans=imagecolortransparent($im,$blue);//affects all occurances of blue,
+before and after this line
+
+ALSO:
+ImageString ($im, 10, 5, 5,  "Transparent Text String", $blue);
+---is equivalent to----
+ImageString ($im, 10, 5, 5,  "Transparent Text String", $trans);
+===============================================================================
+
+I was searching for a PHP code that makes transparent rounded corners and found
+none. So had to write my own:
+
+<?php
+
+$image = "v.png";
+$corner = 40;
+
+file_exists($image) or die("No such file: ".$image); //check if image exists
+before processing
+
+$dim = getimagesize($image);
+
+//create from type handle
+if($dim[2] == 1) $new = imagecreatefromjpeg($image);
+elseif($dim[2] == 2) $new = imagecreatefromgif($image);
+elseif($dim[2] == 3) $new = imagecreatefrompng($image);
+else die("Unsupported format: ".$dim[2]);
+
+//find colorcode
+$palette = imagecreatetruecolor($dim[0], $dim[1]);
+$found = false;
+while($found == false) {
+   
+    $r = rand(0, 255);
+    $g = rand(0, 255);
+    $b = rand(0, 255);
+   
+    if(imagecolorexact($new, $r, $g, $b) != (-1)) {
+       
+        $colorcode = imagecolorallocate($palette, $r, $g, $b);
+        $found = true;
+           
+    }
+   
+}
+
+//draw corners
+imagearc($new, $corner-1, $corner-1, $corner*2, $corner*2, 180, 270, $colorcode
+);
+imagefilltoborder($new, 0, 0, $colorcode, $colorcode);
+
+imagearc($new, $dim[0]-$corner, $corner-1, $corner*2, $corner*2, 270, 0, 
+$colorcode);
+imagefilltoborder($new, $dim[0], 0, $colorcode, $colorcode);
+
+imagearc($new, $corner-1, $dim[1]-$corner, $corner*2, $corner*2, 90, 180, 
+$colorcode);
+imagefilltoborder($new, 0, $dim[1], $colorcode, $colorcode);
+
+imagearc($new, $dim[0]-$corner, $dim[1]-$corner, $corner*2, $corner*2, 0, 90, 
+$colorcode);
+imagefilltoborder($new, $dim[1], $dim[1], $colorcode, $colorcode);
+
+imagecolortransparent($new, $colorcode); //make corners transparent
+
+//display rounded image
+header("Content: image/png");
+imagepng($new);
+imagedestroy($new);
+
+?>
+
+It draws an arc and fills to border with a colorcode - a color that doesnot
+exist in current image, to make it transparent in the end.
+===============================================================================
+
+I came across some images that have transparent color allocated even if they
+don't have any transparent pixels (transparent color is unused).

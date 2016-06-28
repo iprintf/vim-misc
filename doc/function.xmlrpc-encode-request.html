@@ -1,0 +1,248 @@
+
+xmlrpc_encode_request
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+xmlrpc_encode_request — 为 PHP 的值生成 XML
+
+说明
+
+string xmlrpc_encode_request ( string $method , mixed $params [, array
+$output_options ] )
+Warning
+
+此函数是实验性的。此函数的表象，包括名称及其相关文档都可能在未来的 PHP 发布版本
+中未通知就被修改。使用本函数风险自担。
+
+参数
+
+method
+
+    Name of the method to call.
+
+params
+
+    Method parameters compatible with method signature.
+
+output_options
+
+    Array specifying output options may contain (default values are
+    emphasised):
+      □ output_type: php, xml
+
+      □ verbosity: no_white_space, newlines_only, pretty
+
+      □ escaping: cdata, non-ascii, non-print, markup (may be a string with one
+        value or an array with multiple values)
+
+      □ version: simple, xmlrpc, soap 1.1, auto
+
+      □ encoding: iso-8859-1, other character set supported by iconv
+
+返回值
+
+Returns a string containing the XML representation of the request.
+
+范例
+
+Example #1 XMLRPC client functions example
+
+<?php
+$request = xmlrpc_encode_request("method", array(1, 2, 3));
+$context = stream_context_create(array('http' => array(
+    'method' => "POST",
+    'header' => "Content-Type: text/xml",
+    'content' => $request
+)));
+$file = file_get_contents("http://www.example.com/xmlrpc", false, $context);
+$response = xmlrpc_decode($file);
+if ($response && xmlrpc_is_fault($response)) {
+    trigger_error("xmlrpc: $response[faultString] ($response[faultCode])");
+} else {
+    print_r($response);
+}
+?>
+
+参见
+
+  • stream_context_create() - 创建资源流上下文
+  • file_get_contents() - 将整个文件读入一个字符串
+  • xmlrpc_decode() - 将 XML 译码为 PHP 本身的类型
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+It should be noted that encoding does not seem to encode anything, just specify
+what goes into the XML header.
+
+We had problems with double-encoded UTF strings being saved to database when
+using this function, sending it of to a apache xml-rpc servlet and storing it
+in mysql database. It was solved by setting 'escaping' to just 'markup' and
+'encoding' to 'UTF-8' (don't forget to set 'utf-8' in xmlrpc_decode too).
+
+It seems that UTF-8 encoded strings gets escaped with their bytes as entities
+instead of their characters as entites.
+===============================================================================
+
+The example above is incorrect - the header needs to be an array, see post by
+"chris dot vigelius at gmx dot net": http://au.php.net/manual/en/
+function.stream-context-create.php#74431
+His post also shows how to do browser authentication, as below:
+<?php
+   $request = xmlrpc_encode_request("methodName", array("methodParam"));
+   $auth = base64_encode($username.":".$password);
+   $header = (version_compare(phpversion(), '5.2.8'))
+     ? array("Content-Type: text/xml","Authorization: Basic $auth")
+     : "Content-Type: text/xml\r\nAuthorization: Basic $auth" ; //[1]
+   $context = stream_context_create(array('http' => array(
+      'method' => "POST",
+      'header' => $header,
+      'content' => $request
+   )));
+   $webservice="http://www.example.com/rpc";
+   $file = file_get_contents($webservice, false, $context);
+   $response = xmlrpc_decode($file);
+   if (xmlrpc_is_fault($response)) {
+      return "xmlrpc: $response[faultString] ($response[faultCode])";
+   } else {
+      return $response;
+   }
+?>
+
+1 - EDITOR NOTE: THIS IS A FIX FROM "SandersWang dt php at gmail dot com"
+===============================================================================
+
+Simple OO client with function Overload :
+
+the php metho test_helloworld is translated to xmlrpc method test.helloworld.
+
+class RpcClient {
+   
+    private $_methods;
+    private $_context;
+    private $_url;
+   
+    function __construct ($url, $user, $passwd) {
+        $auth = base64_encode(sprintf('%s:%s', $user,$passwd));
+        $this->_context = stream_context_create(array(
+            'http' => array(
+                'method' => 'POST',
+                'header' => "Content-Type: text/xml\r\n".
+                            "Authorization: Basic $auth" ,
+               
+            )
+        ));
+        $this->_url = $url;
+       
+        $this->registerMethod ("Test_HelloWorld");
+       
+    }
+   
+   
+    function __call($methodName, $params) {
+        if (array_key_exists($methodName,$this->_methods)) {
+            // on appelle la fonction RPC
+            $m = str_replace('_', '.', $methodName);
+            $r = xmlrpc_encode_request($m, $params,array('verbosity'=>
+'newlines_only'));
+            $c = $this->_context;
+            stream_context_set_option($c,'http','content',$r);
+            $f = file_get_contents($this->_url,false,$c);
+            $resp = xmlrpc_decode($f);
+            return $resp;
+        } else {
+            // on appelle la fonction de l'objet
+            call_user_method_array($methodName, $this,$params);
+        }
+    }
+   
+    private function registerMethod ($method) {
+        $this->_methods[$method] = true;
+    }
+   
+}
+===============================================================================
+
+Binary strings (set with xmlrpc_set_type) go into a <base64>...</base64> block
+like you'd expect. But after every 80th character, this function inserts the
+XML entity "&#10;", which is a Unicode newline, as if to cause a line-wrap,
+which is admittedly silly.
+
+Silly though it may be, it causes real problems for some XML-RPC servers, such
+as http://jakarta.apache.org/xmlrpc/ (nee Helma). Stripping out those entities
+with something like
+
+$req = preg_replace('/&#10;/', '', xmlrpc_encode_request("my.method", $args));
+
+works around the problem.
+===============================================================================
+
+Note that as far as I can tell, the &#10; characters generated by PHP in the
+base64 fields don't appear to violate the XML-RPC standard at all.  XML-RPC
+messages *are* in XML format, and as such, the XML entities should be getting
+decoded before being passed to a base64 decoder.  So, the previously-mentioned
+Jakarta-based XML-RPC server appears to violate the XML spec.  i.e. There's
+nothing here that needs to be "fixed" in PHP.
+===============================================================================
+
+ever tried transmitting an array like the following with xmlrpc?
+$var1=array(7=>14,9=>18);
+
+The output array looks quite different! It will look like that:
+$var2=array(14,18);
+
+The only solution i found is to prepend a space to the index:
+$var3=array(' 7'=>14,' 9'=>18);
+
+Using that method you'll get the right result. ($var1)
+===============================================================================
+
+Take care that this function will generate invalid xmlrpc content when invoked
+with certain parameters (said content will be happily parsed by the lib itself,
+but not by other implementations).
+
+xmlrpc_encode_request(null, null)
+will generate a response without a value
+
+xmlrpc_encode_request('myfunc', array('faultCode' => 666, 'faultString' =>
+'hello world')
+will generated a request containing a <fault> member instead of <params>
+===============================================================================
+
+For examples / documentation of the array output_options, see http://
+xmlrpc-epi.sourceforge.net/main.php?t=php_api#output_options
+
+In short, output_options lets you send compact xmlrpc (without all the "pretty
+whitespace" xmlrpc_encode adds normally), apply an own escaping table prior to
+sending, set the encoding, and a couple of other things (the page even says
+something about soap 1.1 ... I don't know details).
+===============================================================================
+
+This function should be used by an XML-RPC client to create an XML payload for
+an XML-RPC request;
+
+<?php
+$params = "system.methodSignature";
+$method = "system.methodHelp";
+$request = xmlrpc_encode_request($method,$params);
+echo ( $request );
+?>
+
+Produces;
+
+<?xml version='1.0' encoding="iso-8859-1" ?>
+<methodCall>
+<methodName>system.methodHelp</methodName>
+<params>
+<param>
+  <value>
+   <string>system.methodSignature</string>
+  </value>
+</param>
+</params>
+</methodCall>
+
+The second argument recognises the type of variable and generates the correct
+XML-RPC structure. See xmlrpc_encode() for more details.

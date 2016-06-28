@@ -1,0 +1,229 @@
+
+sem_acquire
+
+(PHP 4, PHP 5, PHP 7)
+
+sem_acquire — Acquire a semaphore
+
+说明
+
+bool sem_acquire ( resource $sem_identifier [, bool $nowait = false ] )
+
+sem_acquire() by default blocks (if necessary) until the semaphore can be
+acquired. A process attempting to acquire a semaphore which it has already
+acquired will block forever if acquiring the semaphore would cause its maximum
+number of semaphore to be exceeded.
+
+After processing a request, any semaphores acquired by the process but not
+explicitly released will be released automatically and a warning will be
+generated.
+
+参数
+
+sem_identifier
+
+    sem_identifier is a semaphore resource, obtained from sem_get().
+
+nowait
+
+    Specifies if the process shouldn't wait for the semaphore to be acquired.
+    If set to true, the call will return false immediately if a semaphore
+    cannot be immediately acquired.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                说明
+5.6.1 The $nowait parameter was added.
+
+参见
+
+  • sem_get() - Get a semaphore id
+  • sem_release() - Release a semaphore
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+sem_acquire() is blocking, meaning that subsequent calls with the same
+semaphore will block indefinitely until the semaphore is released. This ensures
+serialization, but it is not very practical if all you want to do is check if
+you should proceed or not. Unfortunately, PHP does not yet support any method
+of querying the state of a semaphore in a non-blocking manner.
+
+It may seem possible to put together such a mechanism by hand, using shared
+memory (shm_ functions). However, be warned that it is not trivial and
+ultimately non-productive. You cannot, for example, simply pick a shared mem
+var, store the semaphore key and query it. Such an operation would be
+non-transactional and non-atomic ie. it is possible for two or more parallel
+processes to manage to read "not locked" from the shared mem var before one of
+them manages to mark it "locked". You would have to use a (blocking) semaphore
+to serialize access to the shared mem var, thus recreating the very problem you
+are trying to solve.
+
+In other words, if non-blocking queries are crucial to you, you need to either
+request that this issue be solved by the PHP designers, or pick another
+mechanism to do your locking, one that already has this feature.
+===============================================================================
+
+Just to clarify what is meant by "process" above:
+
+On the Apache webserver, many PHP requests will be executed within the same
+process space because it is multithreaded. However, any semaphores got and
+acquired by a script and not released and removed will still be automatically
+cleaned up by the PHP interpreter each time the script terminates.
+
+Remove any trash before emailing!
+===============================================================================
+
+Note that when you reset $sem_identifier the semaphore won't block anymore!
+
+This code does NOT work:
+    $key     = ftok(__FILE__,'m');
+    $a        = sem_get($key);
+    sem_acquire($a);
+    $a = false;
+
+while this one does:
+
+    $key     = ftok(__FILE__,'m');
+    $a        = sem_get($key);
+    sem_acquire($a);
+    //$a = false;
+
+So: use unique var names for your identifier!
+===============================================================================
+
+In my tests sem_acquire() is 150 times faster than flock()
+===============================================================================
+
+If you need non-blocking semaphores, here is an example how you may implement
+it. Use a shared memory variable to mark whether or not a lock exists and then
+use a semaphore around operations against that variable. I'll call my shared
+variable as 'token'.
+
+<?php
+echo '<pre>';
+
+$resourceSemaphore = sem_get(7);
+$tokenSemaphore = sem_get(8);
+$tokenValue = shm_attach(9, 100);
+
+function myEcho($v) {
+    echo microtime() . ' ' . $v . "\n";
+}
+
+// sem_remove($resourceSemaphore);
+// sem_remove($tokenSemaphore);
+// exit();
+
+function try_lock() {
+    global $resourceSemaphore, $tokenSemaphore, $tokenValue;
+    myEcho('begin try_lock()');
+    myEcho('acquire token semaphore');
+    sem_acquire($tokenSemaphore);
+    myEcho('    token semaphore acquired');
+    $tmp = shm_get_var($tokenValue, 6);
+    myEcho('    token value: ' . var_export($tmp, true));
+    $exit = $tmp;
+    if (!$exit) {
+        $tmp = shm_put_var($tokenValue, 6, true);
+        $tmp = shm_get_var($tokenValue, 6);
+        myEcho('    token new value: ' . var_export($tmp, true));
+    }
+    myEcho('release token semaphore');
+    sem_release($tokenSemaphore);
+    if ($exit) return false;
+    myEcho('acquire resource semaphore');
+    sem_acquire($resourceSemaphore);
+    myEcho('    resource semaphore acquired');
+    return true;
+}
+
+function release() {
+    global $resourceSemaphore, $tokenSemaphore, $tokenValue;
+    myEcho('release resource semaphore');
+    sem_release($resourceSemaphore);
+    myEcho('acquire token semaphore');
+    sem_acquire($tokenSemaphore);
+    myEcho('    token semaphore acquired');
+    $tmp = shm_get_var($tokenValue, 6);
+    myEcho('    token value: ' . var_export($tmp, true));
+    $tmp = shm_put_var($tokenValue, 6, false);
+    $tmp = shm_get_var($tokenValue, 6);
+    myEcho('    token new value: ' . var_export($tmp, true));
+    myEcho('release token semaphore');
+    sem_release($tokenSemaphore);
+}
+
+for ($triesLeft = 5; $triesLeft > 0 && !try_lock(); $triesLeft--) {
+    myEcho('failed to acquire resource');
+    myEcho('wait for 1 sec');
+    sleep(1);
+    myEcho('try again');
+}
+myEcho('    access the resource for 4 sec');
+//paste here your code, accessing your resource
+sleep(4);
+release();
+myEcho('the end');
+?>
+When I execute this script in two parallel instances, I get the following
+output:
+-------(first instance)----------------------------------------
+... 482 begin try_lock()
+... 482 acquire token semaphore
+... 482     token semaphore acquired
+... 482     token value: false
+... 482     token new value: true
+... 482 release token semaphore
+... 482 acquire resource semaphore
+... 482     resource semaphore acquired
+... 482     access the resource for 4 sec
+... 486 release resource semaphore
+... 486 acquire token semaphore
+... 486     token semaphore acquired
+... 486     token value: true
+... 486     token new value: false
+... 486 release token semaphore
+... 486 the end
+-------(second instance)----------------------------------------
+... 485 begin try_lock()
+... 485 acquire token semaphore
+... 485     token semaphore acquired
+... 485     token value: true
+... 485 release token semaphore
+... 485 failed to acquire resource
+... 485 wait for 1 sec
+...
+... 486 wait for 1 sec
+... 487 try again
+... 487 begin try_lock()
+... 487 acquire token semaphore
+... 487     token semaphore acquired
+... 487     token value: false
+... 487     token new value: true
+... 487 release token semaphore
+... 487 acquire resource semaphore
+... 487     resource semaphore acquired
+... 487     access the resource for 4 sec
+... 491 release resource semaphore
+... 491 acquire token semaphore
+... 491     token semaphore acquired
+... 491     token value: true
+... 491     token new value: false
+... 491 release token semaphore
+... 491 the end
+===============================================================================
+
+Unfortunately, PHP does not currently support non-blocking semaphores.
+
+If something like this is necessary you can utilize semaphores together with
+shared memory to create your own non-blocking lock mechanisms.
+
+Use a shared memory variable to mark whether or not a lock exists and then use
+a semaphore around operations against that variable.

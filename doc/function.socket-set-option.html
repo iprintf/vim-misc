@@ -1,0 +1,181 @@
+
+socket_set_option
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+socket_set_option — Sets socket options for the socket
+
+说明
+
+bool socket_set_option ( resource $socket , int $level , int $optname , mixed
+$optval )
+
+The socket_set_option() function sets the option specified by the optname
+parameter, at the specified protocol level, to the value pointed to by the
+optval parameter for the socket.
+
+参数
+
+socket
+
+    A valid socket resource created with socket_create() or socket_accept().
+
+level
+
+    The level parameter specifies the protocol level at which the option
+    resides. For example, to retrieve options at the socket level, a level
+    parameter of SOL_SOCKET would be used. Other levels, such as TCP, can be
+    used by specifying the protocol number of that level. Protocol numbers can
+    be found by using the getprotobyname() function.
+
+optname
+
+    The available socket options are the same as those for the 
+    socket_get_option() function.
+
+optval
+
+    The option value.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 socket_set_option() example
+
+<?php
+$socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+
+if (!is_resource($socket)) {
+    echo 'Unable to create socket: '. socket_strerror(socket_last_error()) . 
+PHP_EOL;
+}
+
+if (!socket_set_option($socket, SOL_SOCKET, SO_REUSEADDR, 1)) {
+    echo 'Unable to set option on socket: '. socket_strerror(socket_last_error
+()) . PHP_EOL;
+}
+
+if (!socket_bind($socket, '127.0.0.1', 1223)) {
+    echo 'Unable to bind socket: '. socket_strerror(socket_last_error()) . 
+PHP_EOL;
+}
+
+$rval = socket_get_option($socket, SOL_SOCKET, SO_REUSEADDR);
+
+if ($rval === false) {
+    echo 'Unable to get socket option: '. socket_strerror(socket_last_error())
+ . PHP_EOL;
+} else if ($rval !== 0) {
+    echo 'SO_REUSEADDR is set on socket !' . PHP_EOL;
+}
+?>
+
+参见
+
+  • socket_create() - 创建一个套接字（通讯节点）
+  • socket_bind() - 给套接字绑定名字
+  • socket_strerror() - Return a string describing a socket error
+  • socket_last_error() - Returns the last error on the socket
+  • socket_get_option() - Gets socket options for the socket
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+To expand a bit more on what "tim at e2-media dot co dot nz" started.
+
+SO_SNDTIMEO is one of the many constants you can use with socket_set_option.
+
+See http://ca.php.net/manual/en/ref.sockets.php for the available Predefind
+Constants and visit http://man.he.net/man2/setsockopt for the meaning of the
+ones relevant.
+
+Tim's example might seem at first a bit non-intuitive since he is using the
+SO_SNDTIMEO constant. Which means, if the socket has to send out data, it must
+do it within the limit specified - in his case 10 seconds. Usually you won't
+set a timeout for sending out data. Nevertheless, the example is valid, and
+there are situations where you need to do so.
+
+A more intuitive use of socket_set_option would be to set a time out for a
+blocking socket (a socket that waits for data to be receive when read from).
+You would do this like so:
+
+socket_set_option($socket,SOL_SOCKET, SO_RCVTIMEO, array("sec"=>0, "usec"=>
+100));
+
+Notice that sec= 0 and usec= 100; Depending on how long you want your program
+to wait to recieve data, you might want to change these values.
+
+Regards,
+  drenintell
+===============================================================================
+
+Setting the socket timeout microseconds ('usec') does not work under Windows,
+at least under PHP/5.2.9:
+
+<?php
+
+  $timeout = array('sec'=>1,'usec'=>500000);
+  socket_set_option($socket,SOL_SOCKET,SO_RCVTIMEO,$timeout);
+  var_dump(socket_set_option($socket,SOL_SOCKET,SO_RCVTIMEO));
+
+?>
+
+Output on Windows box:
+
+array(2) {
+  ["sec"]=>
+  int(1)
+  ["usec"]=>
+  int(0)
+}
+
+Output on Linux box:
+
+array(2) {
+  ["sec"]=>
+  int(1)
+  ["usec"]=>
+  int(500000)
+}
+===============================================================================
+
+Lingering will sometimes not work when you're working with non-blocking
+sockets. Even if the socket is set to linger and you keep tying to close until
+the socket doesn't return an error and the resource is no longer identifiable
+as type 'Socket', the socket may STILL close without sending everything.
+
+Therefore, in the event that you are using non-blocking sockets (which is
+preferable if you care at all about signaling), you should set the socket as
+blocking (socket_set_block()) before calling to close it. This will allow
+everything to flush before it returns.
+
+Dustin Oprea
+===============================================================================
+
+I would like to comment on the previous note regarding blocking sockets.
+There is more to blocking sockets than waiting for data to be received when
+trying to be read upon, just to make example, a listening blocking socket will
+wait for a client to try to connect before it returns when you socket_accept()
+it.
+===============================================================================
+
+To set a socket timeout value (assuming you've set it blocking) use:
+
+socket_set_option(
+  $socket,
+  SOL_SOCKET,  // socket level
+  SO_SNDTIMEO, // timeout option
+  array(
+    "sec"=>10, // Timeout in seconds
+    "usec"=>0  // I assume timeout in microseconds
+    )
+  );
+===============================================================================
+
+It appears that Winsock does not acknowledge timeout (send and receive) on
+Windows.

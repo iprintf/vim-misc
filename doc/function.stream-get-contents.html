@@ -1,0 +1,178 @@
+
+stream_get_contents
+
+(PHP 5, PHP 7)
+
+stream_get_contents — 读取资源流到一个字符串
+
+说明
+
+string stream_get_contents ( resource $handle [, int $maxlength = -1 [, int
+$offset = -1 ]] )
+
+与 file_get_contents() 一样，但是 stream_get_contents() 是对一个已经打开的资源
+流进行操作，并将其内容写入一个字符串返回。返回的内容取决于 maxlength 字节长度和
+offset 指定的起始位置。
+
+参数
+
+handle (resource)
+
+    一个资源流（例如 fopen() 操作之后返回的结果）
+
+maxlength (integer)
+
+    需要读取的最大的字节数。默认是-1（读取全部的缓冲数据）。
+
+offset (integer)
+
+    在读取数据之前先查找指定的偏移量。如果这个数字是负数，就不进行查找，直接从
+    当前位置开始读取。
+
+返回值
+
+返回一个字符串或者在失败时返回 FALSE.
+
+更新日志
+
+版本         说明
+5.1.0 增加参数 offset 。
+
+范例
+
+Example #1 stream_get_contents() 例子
+
+<?php
+
+if ($stream = fopen('http://www.example.com', 'r')) {
+    // print all the page starting at the offset 10
+    echo stream_get_contents($stream, -1, 10);
+
+    fclose($stream);
+}
+
+
+if ($stream = fopen('http://www.example.net', 'r')) {
+    // print the first 5 bytes
+    echo stream_get_contents($stream, 5);
+
+    fclose($stream);
+}
+
+?>
+
+注释
+
+    Note: 此函数可安全用于二进制对象。
+
+参见
+
+  • fgets() - 从文件指针中读取一行
+  • fread() - 读取文件（可安全用于二进制文件）
+  • fpassthru() - 输出文件指针处的所有剩余数据
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+It is important to know that stream_get_contents behaves differently with
+different versions of PHP. Consider the following
+
+<?php
+
+$handle = fopen('file', 'w+'); // truncate + attempt to create
+fwrite($handle, '12345'); // file position > 0
+rewind($handle); // position = 0
+$content = stream_get_contents($handle); // file position = 0 in PHP 5.1.6,
+file position > 0 in PHP 5.2.17!
+fwrite($handle, '6789');
+fclose($handle);
+
+/**
+*
+* 'file' content
+*
+* PHP 5.1.6:
+* 67895
+*
+* PHP 5.2.17:
+* 123456789
+*
+*/
+?>
+
+As a result, stream_get_contents() affects file position in 5.1, and do not
+affect file position in 5.2 or better.
+===============================================================================
+
+When omitting the parameter $maxlength, any received bytes are stacked up until
+the underlying stream is not readable anymore, the the function returns that
+stack in one piece.
+===============================================================================
+
+In that case when stream_get_contents/fread/fgets or other stream reading
+functions block indefinitely your script because they don't reached the limit
+of bytes to read use the socket_get_meta_data function to figure out the number
+of the bytes to read. It returns an array that contains a key named
+'unread_bytes' and then pass that number to your favourite stream reading
+functions second parameter to read from the stream.
+
+Maybe a good workaround to use the stream_select function, and set the socket
+to non-blocking mode with the use of stream_set_blocking($stream, 0). In this
+case the socket reading functions work properly.
+
+Cheers, Ervin
+===============================================================================
+
+/*
+* problem: stream_get_contents blocks / is very slow.
+* I have tried
+* 1: stream_set_blocking, doesn't make a difference.
+* 2: stream_get_meta_data['unread_bytes'] = ITS BUGGED, ALWAYS SAYS 0.
+* 3: feof(): ALSO EFFING BLOCKING
+* 4: my_stream_get_contents hack... kinda working! :D
+*/
+function my_stream_get_contents ($handle, $timeout_seconds = 0.5)
+{
+    $ret = "";
+    // feof ALSO BLOCKS:
+    // while(!feof($handle)){$ret.=stream_get_contents($handle,1);}
+    while (true) {
+        $starttime = microtime(true);
+        $new = stream_get_contents($handle, 1);
+        $endtime = microtime(true);
+        if (is_string($new) && strlen($new) >= 1) {
+            $ret .= $new;
+        }
+        $time_used = $endtime - $starttime;
+        // var_dump('time_used:',$time_used);
+        if (($time_used >= $timeout_seconds) || ! is_string($new) ||
+                 (is_string($new) && strlen($new) < 1)) {
+            break;
+        }
+    }
+    return $ret;
+}
+===============================================================================
+
+It seems that using fiddler as a proxy in the stream context options causes
+this function to throw a warning:
+
+Warning: stream_get_contents() [function.stream-get-contents]: SSL: An existing
+connection was forcibly closed by the remote host.
+===============================================================================
+
+some times this functions cause an max execution time time error, Why?
+
+Simple, if you use it the function wait for have the specified byte  length
+into the resource or the end of file, but, several times this not happend, so
+we need implement an artificial flag like this:
+
+$tmp = stream_get_contents($this->socket, 42);
+while($tmp[42] != 'N'){
+
+//Your code...
+
+$tmp = stream_get_contents($this->socket, 42);
+}

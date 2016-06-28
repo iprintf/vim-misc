@@ -1,0 +1,328 @@
+
+PDOStatement::bindValue
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 1.0.0)
+
+PDOStatement::bindValue — 把一个值绑定到一个参数
+
+说明
+
+bool PDOStatement::bindValue ( mixed $parameter , mixed $value [, int
+$data_type = PDO::PARAM_STR ] )
+
+绑定一个值到用作预处理的 SQL 语句中的对应命名占位符或问号占位符。
+
+参数
+
+parameter
+
+    参数标识符。对于使用命名占位符的预处理语句，应是类似 :name 形式的参数名。对
+    于使用问号占位符的预处理语句，应是以1开始索引的参数位置。
+
+value
+
+    绑定到参数的值
+
+data_type
+
+    使用 PDO::PARAM_* 常量明确地指定参数的类型。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 执行一条使用命名占位符的预处理语句
+
+<?php
+/* 通过绑定的 PHP 变量执行一条预处理语句 */
+$calories = 150;
+$colour = 'red';
+$sth = $dbh->prepare('SELECT name, colour, calories
+    FROM fruit
+    WHERE calories < :calories AND colour = :colour');
+$sth->bindValue(':calories', $calories, PDO::PARAM_INT);
+$sth->bindValue(':colour', $colour, PDO::PARAM_STR);
+$sth->execute();
+?>
+
+Example #2 执行一条使用问号占位符的预处理语句
+
+<?php
+/* 通过绑定的 PHP 变量执行一条预处理语句 */
+$calories = 150;
+$colour = 'red';
+$sth = $dbh->prepare('SELECT name, colour, calories
+    FROM fruit
+    WHERE calories < ? AND colour = ?');
+$sth->bindValue(1, $calories, PDO::PARAM_INT);
+$sth->bindValue(2, $colour, PDO::PARAM_STR);
+$sth->execute();
+?>
+
+参见
+
+  • PDO::prepare() - Prepares a statement for execution and returns a statement
+    object
+  • PDOStatement::execute() - 执行一条预处理语句
+  • PDOStatement::bindParam() - 绑定一个参数到指定的变量名
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+What the bindValue() docs fail to explain without reading them _very_ carefully
+is that bindParam() is passed to PDO byref - whereas bindValue() isn't.
+
+Thus with bindValue() you can do something like $stmt->bindValue(":something",
+"bind this"); whereas with bindParam() it will fail because you can't pass a
+string by reference, for example.
+===============================================================================
+
+Although bindValue() escapes quotes it does not escape "%" and "_", so be
+careful when using LIKE. A malicious parameter full of %%% can dump your entire
+database if you don't escape the parameter yourself. PDO does not provide any
+other escape method to handle it.
+===============================================================================
+
+Note that the third parameter ($data_type) in the majority of cases will not
+type cast the value into anything else to be used in the query, nor will it
+throw any sort of error if the type does not match up with the value provided.
+This parameter essentially has no effect whatsoever except throwing an error if
+it is set and is not a float, so do not think that it is adding any extra level
+of security to the queries.
+
+The two exceptions where type casting is performed:
+
+- if you use PDO::PDO_PARAM_INT and provide a boolean, it will be converted to
+a long
+- if you use PDO::PDO_PARAM_BOOL and provide a long, it will be converted to a
+boolean
+
+<?php
+
+$query = 'SELECT * FROM `users` WHERE username = :username AND `password` =
+ENCRYPT( :password, `crypt_password`)';
+
+$sth= $dbh->prepare($query);
+
+// First try passing a random numerical value as the third parameter
+var_dump($sth->bindValue(':username','bob', 12345.67)); // bool(true)
+
+// Next try passing a string using the boolean type
+var_dump($sth->bindValue(':password','topsecret_pw', PDO::PARAM_BOOL)); // bool
+(true)
+
+$sth->execute(); // Query is executed successfully
+$result = $sth->fetchAll(); // Returns the result of the query
+
+?>
+===============================================================================
+
+bindValue with data_type depend parameter name
+
+<?php
+
+$db = new PDO (...);
+$db -> setAttribute (PDO::ATTR_STATEMENT_CLASS, array ('MY_PDOStatement ',
+array ($db)));
+
+class MY_PDOStatement extends PDOStatement {
+
+  public function execute ($input = array ()) {
+    foreach ($input as $param => $value) {
+      if (preg_match ('/_id$/', $param))
+        $this -> bindValue ($param, $value, PDO::PARAM_INT);
+      else
+        $this -> bindValue ($param, $value, PDO::PARAM_STR);
+    }
+    return parent::execute ();
+  }
+
+}
+
+?>
+===============================================================================
+
+This function is useful for bind value on an array. You can specify the type of
+the value in advance with $typeArray.
+
+<?php
+/**
+* @param string $req : the query on which link the values
+* @param array $array : associative array containing the values ​​to bind
+* @param array $typeArray : associative array with the desired value for its
+corresponding key in $array
+* */
+function bindArrayValue($req, $array, $typeArray = false)
+{
+    if(is_object($req) && ($req instanceof PDOStatement))
+    {
+        foreach($array as $key => $value)
+        {
+            if($typeArray)
+                $req->bindValue(":$key",$value,$typeArray[$key]);
+            else
+            {
+                if(is_int($value))
+                    $param = PDO::PARAM_INT;
+                elseif(is_bool($value))
+                    $param = PDO::PARAM_BOOL;
+                elseif(is_null($value))
+                    $param = PDO::PARAM_NULL;
+                elseif(is_string($value))
+                    $param = PDO::PARAM_STR;
+                else
+                    $param = FALSE;
+                   
+                if($param)
+                    $req->bindValue(":$key",$value,$param);
+            }
+        }
+    }
+}
+
+/**
+* ## EXEMPLE ##
+* $array = array('language' => 'php','lines' => 254, 'publish' => true);
+* $typeArray = array('language' => PDO::PARAM_STR,'lines' =>
+PDO::PARAM_INT,'publish' => PDO::PARAM_BOOL);
+* $req = 'SELECT * FROM code WHERE language = :language AND lines = :lines AND
+publish = :publish';
+* You can bind $array like that :
+* bindArrayValue($array,$req,$typeArray);
+* The function is more useful when you use limit clause because they need an
+integer.
+* */
+?>
+===============================================================================
+
+<?php
+/**
+* Bind bit value.
+*/
+
+$sql = 'SELECT * FROM myTable WHERE level & ?';
+$sth = \App::pdo()->prepare($sql);
+$sth->bindValue(1, 0b0101, \PDO::PARAM_INT);
+$sth->execute();
+$result = $sth->fetchAll(\PDO::FETCH_ASSOC);
+===============================================================================
+
+PDO lacks methods to check if values can be bound to a parameter, e.g.,
+
+if ($statement->hasParameter(':param'))
+{
+    $statement->bindValue(':param', $value);
+}
+
+ATM you *have to know* which parameters exist in the SQL-statement. Otherwise
+you get an error. You cannot test for them.
+===============================================================================
+
+When binding parameters, apparently you can't use a placeholder twice (e.g.
+"select * from mails where sender=:me or recipient=:me"), you'll have to give
+them different names otherwise your query will return empty handed (but not
+fail, unfortunately).  Just in case you're struggling with something like this.
+===============================================================================
+
+The parameter must names like a php variable.
+e.g.
+<?php
+$dbh = new PDO("mysql:dbname=test;host=127.0.0.1", "user", "password");
+
+$sth = $dbh->prepare("SELECT * FROM `table` WHERE `last-name`=:last-name");
+
+if($sth !== false && $sth->bindValue(":last-name", "Ngo")) {
+    $sth->execute();
+}
+
+// output: PHP Warning:  PDOStatement::execute(): SQLSTATE[HY093]: Invalid
+parameter number: parameter was not defined
+?>
+===============================================================================
+
+This actually works to bind NULL on an integer field in MySQL :
+
+$stm->bindValue(':param', null, PDO::PARAM_INT);
+===============================================================================
+
+For bind whole array at once
+
+<?php
+
+function PDOBindArray(&$poStatement, &$paArray){
+
+  foreach ($paArray as $k=>$v){
+
+    @$poStatement->bindValue(':'.$k,$v);
+
+  } // foreach
+ 
+} // function
+
+// example
+
+$stmt = $dbh->prepare("INSERT INTO tExample (id,value) VALUES (:id,:value)");
+
+$taValues = array(
+'id' => '1',
+'value' => '2'
+); // array
+
+PDOBindArray($stmt,$taValues);
+
+$stmt->execute();
+
+?>
+===============================================================================
+
+The reason that we cannot define the value variable for bindValue() after
+calling it, is because that it binds the value to the prepared statement
+immediately and does not wait until the execute() to happen.
+
+The following code will issue a notice and prevent the query from taking place:
+<?php
+    $st = $db->prepare ("SELECT * FROM posts WHERE id= :val ");
+    $st->bindValue(':val',$val);
+
+    $val = '2';
+    $st->execute();
+?>
+The output:
+Notice: Undefined variable: val.
+
+Whereas in the case of bindParam, the evaluation of the value to the parameter
+will not be performed until the call of execute(). And that's to gain the
+benefit of reference passing.
+<?php
+    $st = $db->prepare ("SELECT * FROM posts WHERE id = :val ");
+    $st->bindParam(':val',$val);
+
+    $val = '2';
+    //
+    // some code
+    //
+    $val = '3'; // re-assigning the value variable
+    $st->execute();
+?>
+works fine.
+===============================================================================
+
+If you want to bind a null value to a database field you must use 'NULL' in
+quotes (for MySQL):
+
+<?php
+
+$stmt->bindValue(:fieldName, 'NULL');
+
+// not
+$stmt->bindValue(:fieldName, NULL);
+// or
+$stmt->bindValue(:fieldName, null);
+
+?>
+
+Using PHP's null/NULL as a value doesn't work.

@@ -1,0 +1,315 @@
+
+shm_get_var
+
+(PHP 4, PHP 5, PHP 7)
+
+shm_get_var — Returns a variable from shared memory
+
+说明
+
+mixed shm_get_var ( resource $shm_identifier , int $variable_key )
+
+shm_get_var() returns the variable with a given variable_key, in the given
+shared memory segment. The variable is still present in the shared memory.
+
+参数
+
+shm_identifier
+
+    Shared memory segment, obtained from shm_attach().
+
+variable_key
+
+    The variable key.
+
+返回值
+
+Returns the variable with the given key.
+
+参见
+
+  • shm_has_var() - Check whether a specific entry exists
+  • shm_put_var() - Inserts or updates a variable in shared memory
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+hello everyone i came up with some sort of solution to the shm_get_var()
+returns false on error/returns a boolean false variable problem.
+
+test script
+
+<?php
+   
+    error_reporting(E_ALL);
+    ini_set('display_errors', '1');
+   
+    echo '<pre>';
+    echo ini_get('sysvshm.init_mem');
+   
+    require_once('ClassShmWrapper.php5');
+   
+    $nKey = ftok(__FILE__,'x');
+   
+    $myShm = new ClassShmWrapper($nKey);
+   
+    $myShm->attachToSegment();
+   
+    #$mValue = range(1,rand(3,10));
+    #$myShm->nVarKey = count($mrValue);
+   
+    #$mValue = FALSE;
+   
+    /*
+    $mValue = TRUE;
+    $myShm->nVarKey = 1;
+    $myShm->mVar = $mValue;
+    $myShm->putVarToSegment();
+    */
+   
+    #$myShm->nVarKey = 2;
+    $myShm->nVarKey = 1;
+   
+    if ($myShm->getVarFromSegment()) {
+        echo "found var in shm\n";
+    }
+    else {
+        echo "could NOT find var in shm\n";
+    }
+   
+    $myShm->detachFromSegment();
+   
+    echo "\ndumping " . '$myShm->mVar' . "\n";
+    var_dump($myShm->mVar);
+   
+?>
+
+class for using the shm_ functions & class for storing boolean values
+
+<?php
+   
+    class ClassShmWrapper {
+       
+        public $nPermissions;
+        public $nKey;
+        public $nBytesMemorySize;
+       
+        public $nShmId;
+       
+        public $nVarKey;
+        public $mVar;
+       
+       
+       
+        public function __construct($nKey,$nBytesMemorySize=50000,$nPermissions
+=0666) {
+           
+            $this->nKey = $nKey;
+            $this->nBytesMemorySize = $nBytesMemorySize;
+            $this->nPermissions = $nPermissions;
+        }
+       
+       
+        public function attachToSegment() {
+            $this->nShmId = shm_attach($this->nKey,$this->nBytesMemorySize,
+$this->nPermissions);
+        }
+       
+       
+        public function detachFromSegment() {
+            shm_detach($this->nShmId);
+        }
+       
+       
+        public function removeSegment() {
+            shm_remove($this->nShmId);
+        }
+       
+       
+        public function getVarFromSegment() {
+           
+            $mVar = NULL;
+           
+            if (($mVar = @shm_get_var($this->nShmId,$this->nVarKey)) !== FALSE)
+{
+               
+                $this->mVar = $mVar;
+               
+                unset($mVar);
+               
+                /*
+                    For variables of type boolean we need to access an object
+property which stores the boolean value.
+                    This is needed as shm_get_var() could return FALSE when
+returning a boolean variable set to FALSE
+                    or when a non-existing variable key was tried to access!
+                */
+               
+                if ($this->mVar instanceof ClassShmBooleanWrapper) {
+                    $this->mVar = $this->mVar->bVal;
+                }
+               
+                return TRUE;
+            }
+            else {
+               
+                return FALSE;
+            }
+           
+        }
+       
+       
+        /**
+        * Puts a PHP variable into shared memory (or updates an existing one
+for the given variable key).
+        *
+        * @return boolean returns TRUE on success/FALSE on error
+        */
+        public function putVarToSegment() {
+           
+            // cmp -> comment getVarFromSegment()
+            if (is_bool($this->mVar)) {
+               
+                return shm_put_var($this->nShmId,$this->nVarKey,new 
+ClassShmBooleanWrapper($this->mVar));
+               
+            }
+            else {
+                return shm_put_var($this->nShmId,$this->nVarKey,$this->mVar);
+            }
+           
+        }
+       
+       
+        public function removeVarFromSgement() {
+           
+            shm_remove_var($this->nShmId,$this->nVarKey);
+        }
+       
+    } // end class
+   
+   
+    class ClassShmBooleanWrapper {
+       
+        public $bVal;
+       
+        public function __construct($bVal) {
+            $this->bVal = $bVal;
+        }
+       
+    } // end class
+   
+?>
+===============================================================================
+
+A fully functional sample  ...
+
+<?php
+echo "<PRE>\n";
+
+define("FOPEN_RESOURCE", 1);
+
+$shm_id = shm_attach(FOPEN_RESOURCE);
+if ($shm_id === false) {
+    exit("Fail to attach shared memory.\n");
+}
+
+$fopen_resource = fopen("/tmp/phpSharedMemory.bin", "w");
+
+$a =  array("Teste1", 1);
+if (!shm_put_var($shm_id, $a, $a)) {
+    exit("Failed to put var 1 in shared memory $shm_id.\n");
+}
+
+echo "F: ".$a[0].":".$a[1]."\n";
+$pid = pcntl_fork();
+
+if($pid == -1) {
+  die("could not fork\n");
+}
+else if ($pid) {
+    $a = array("Teste2", 3);
+    if (!shm_put_var($shm_id, $a, $a)) {
+        exit("Failed to put var 1 in shared memory $shm_id.\n");
+    }
+    echo "P1: ".$a[0].":".$a[1]."\n";
+} else {
+    sleep(2);
+    $a = shm_get_var($shm_id, $a);
+    echo "P2: ".$a[0].":".$a[1]."\n";
+}
+pcntl_wait($status);
+exit();
+?>
+===============================================================================
+
+To follow up on the posts by anonymous, Bob Van Zant and chris at free-source
+dot com below (or, as must people inexplicably write, above) regarding the PHP
+warning and FALSE that shm_get_var returns if the variable key doesn't exist:
+
+My tests (with PHP4.3.4) show that defined() is useless here. Because the
+function defined(string) checks whether the constant whose name is string
+exists, the code
+<?php
+if ( defined(@shm_get_var($mutex, $mutex_key)) {
+   ...
+}
+?>
+acts the same ("..." does not get executed) whether the variable is defined or
+not--unless $mutex_key happens to identify a valid string that happens to be
+the name of a constant. :)
+
+Rather,
+<?php
+if ( @shm_get_var($mutex, $mutex_key) === FALSE ) {
+   ...
+}
+?>
+works, provided the object that was stored isn't actually FALSE (via <?php
+shm_put_var($mutex, $mutex_key, FALSE); ?>)
+
+It would be nice to have a completely air-tight solution, though.  D'oh!
+===============================================================================
+
+You will still receive a notice use @:
+
+if(!defined(@shm_get_var($mutex, $mutex_key))) {
+       shm_put_var($mutex, $mutex_key, 0);
+}
+===============================================================================
+
+This seems to work fine to detect the lack of presence of a key in shared
+memory and then init it to 0 when found:
+
+if(!defined(shm_get_var($mutex, $mutex_key))) {
+        shm_put_var($mutex, $mutex_key, 0);
+}
+===============================================================================
+
+I was annoyed by this warning when using shm_get_var():
+
+Warning: shm_get_var() [function.shm-get-var]: variable key 2 doesn't exist in
+PATH_TO_FILE on line 64.
+
+You can suppress the warning by changing the error reporting level. To do this
+for just the page in question, include the following line:
+
+<?php
+    error_reporting(E_ERROR);
+?>
+
+For more info: http://us.php.net/error_reporting
+===============================================================================
+
+If any body has problem with shm_get_var();
+
+this code correctly work with boolean-values^
+<?php
+if(shm_has_var ($this->shm_mem_id, $_varno)){
+            $_value = shm_get_var($this->shm_mem_id, $_varno);
+        }else{
+            $_value = NULL;
+        }
+?>

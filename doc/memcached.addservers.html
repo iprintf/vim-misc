@@ -1,0 +1,94 @@
+
+Memcached::addServers
+
+(PECL memcached >= 0.1.1)
+
+Memcached::addServers — 向服务器池中增加多台服务器
+
+说明
+
+public bool Memcached::addServers ( array $servers )
+
+Memcached::addServers()向服务器池中增加servers参数指定的服务器。 servers中的每
+一条都是一个包含主机名，端口以及可选的权重等服务器参数。此时并不会与这些服务端
+建立连接。
+
+同一台服务器可以在服务器池中多次出现，因为这里没有做重复检测。但这是不推荐的做
+法，对于期望提高某台服务器权重的需求，请使用weight参数。
+
+参数
+
+array
+
+    将要增加到池中的服务器列表数组。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Memcached::addServers()示例
+
+<?php
+$m = new Memcached();
+
+$servers = array(
+    array('mem1.domain.com', 11211, 33),
+    array('mem2.domain.com', 11211, 67)
+);
+$m->addServers($servers);
+?>
+
+参见
+
+  • Memcached::addServer() - 向服务器池中增加一个服务器
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+See the note for __construct()
+
+Important to not call ->addServers() every run -- only call it if no servers
+exist (check getServerList() ); otherwise, since addServers() does not check
+for dups, it will let you add the same server again and again and again,
+resultings in hundreds if not thousands of connections to the MC daemon.
+===============================================================================
+
+For a proper FailOver mechanism:
+
+$memcached = new Memcached();
+$memcached->setOption(Memcached::OPT_CONNECT_TIMEOUT, 10);
+$memcached->setOption(Memcached::OPT_DISTRIBUTION,
+Memcached::DISTRIBUTION_CONSISTENT);
+$memcached->setOption(Memcached::OPT_SERVER_FAILURE_LIMIT, 2);
+$memcached->setOption(Memcached::OPT_REMOVE_FAILED_SERVERS, true);
+$memcached->setOption(Memcached::OPT_RETRY_TIMEOUT, 1);
+$memcached->addServers($servers);
+
+Memcached::OPT_DISTRIBUTION: set it to consistent hashing. If one memcached
+node is dead, its keys (and only its keys) will be evenly distributed to other
+nodes. This is where the magic is done. This is really different from removing
+one server in your ->addServers() call.
+
+Memcached::OPT_SERVER_FAILURE_LIMIT: number of connection issues before a
+server is marked as DEAD, and removed from the list of servers (default: 5).
+
+Memcached::OPT_REMOVE_FAILED_SERVERS: set it to «true», to enable the removal
+of dead servers.
+
+Memcached::OPT_RETRY_TIMEOUT: after a node is declared DEAD, libmemcached will
+try it again after that many seconds. Here I've set it to 1 second, but I'm
+working on PHP scripts that run for less than 100ms most of the time. That
+would only be useful for cron/daemonize scripts.
+
+Memcached::OPT_CONNECT_TIMEOUT: the timeout after which a server is considered
+DEAD. As my servers are on the same LAN, ping is ~0.5ms, so 10ms is large
+enough to consider the server is DEAD. Note that you have to wait twice that
+time before a node is marked DEAD, so if it's 1000ms, your script will lock for
+2 seconds before ignoring the DEAD server. That may affect your response times
+a lot, and that's why I've set it very low
+
+Author of this is Yvan from Dugwood

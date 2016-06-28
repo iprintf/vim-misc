@@ -1,0 +1,1449 @@
+
+odbc_connect
+
+(PHP 4, PHP 5, PHP 7)
+
+odbc_connect — Connect to a datasource
+
+说明
+
+resource odbc_connect ( string $dsn , string $user , string $password [, int
+$cursor_type ] )
+
+The connection id returned by this functions is needed by other ODBC functions.
+You can have multiple connections open at once as long as they either use
+different db or different credentials.
+
+With some ODBC drivers, executing a complex stored procedure may fail with an
+error similar to: "Cannot open a cursor on a stored procedure that has anything
+other than a single select statement in it". Using SQL_CUR_USE_ODBC may avoid
+that error. Also, some drivers don't support the optional row_number parameter
+in odbc_fetch_row(). SQL_CUR_USE_ODBC might help in that case, too.
+
+参数
+
+dsn
+
+    The database source name for the connection. Alternatively, a DSN-less
+    connection string can be used.
+
+user
+
+    The username.
+
+password
+
+    The password.
+
+cursor_type
+
+    This sets the type of cursor to be used for this connection. This parameter
+    is not normally needed, but can be useful for working around problems with
+    some ODBC drivers.
+
+    The following constants are defined for cursortype:
+
+      □ SQL_CUR_USE_IF_NEEDED
+      □ SQL_CUR_USE_ODBC
+      □ SQL_CUR_USE_DRIVER
+
+返回值
+
+Returns an ODBC connection or (FALSE) on error.
+
+范例
+
+Example #1 DSN-less connections
+
+<?php
+//
+ Microsoft SQL Server using the SQL Native Client 10.0 ODBC Driver - allows connection to SQL 7, 2000, 2005 and 2008
+$connection = odbc_connect("Driver={SQL Server Native Client 10.0};Server=
+$server;Database=$database;", $user, $password);
+
+// Microsoft Access
+$connection = odbc_connect("Driver={Microsoft Access Driver (*.mdb)};Dbq=
+$mdbFilename", $user, $password);
+
+// Microsoft Excel
+$excelFile = realpath('C:/ExcelData.xls');
+$excelDir = dirname($excelFile);
+$connection = odbc_connect("Driver={Microsoft Excel Driver (*.xls)};DriverId=
+790;Dbq=$excelFile;DefaultDir=$excelDir" , '', '');
+?>
+
+参见
+
+  • For persistent connections: odbc_pconnect() - Open a persistent database
+    connection
+
+
+User Contributed Notes 65 notes
+
+===============================================================================
+
+To make a DSN-less connection using ODBC to MS-SQL:
+
+<?php
+
+$connection_string = 'DRIVER={SQL Server};SERVER=<servername>;DATABASE=
+<databasename>';
+
+$user = 'username';
+$pass = 'password';
+
+$connection = odbc_connect( $connection_string, $user, $pass );
+
+?>
+
+servername is the name of the database server
+
+databasename is the name of the database
+
+Note, I've only tried this from a windows box using the Microsoft ODBC drivers.
+===============================================================================
+
+As always Microsoft is clueless... I've been trying to connect to an Access
+database on a W2K on the network (not a local file, but mapped on the V:
+drive), via ODBC.
+
+All I got is this message:
+Warning: SQL error: [Microsoft][ODBC Microsoft Access Driver] '(unknown)' is
+not a valid path. Make sure that the path name is spelled correctly and that
+you are connected to the server on which the file resides., SQL state S1009 in
+SQLConnect in d:\apache\cm\creaart.php on line 13
+
+So... I started looking al around and looks like the ODBC driver has some
+severe problems:
+
+1. It cannot access a Access database via a mapped drive. And this is for ANY
+application, name it PHP, Coldfusion, whatever
+2. You cannot make a system DSN with a UNC (\\Server\resource), so you must map
+the drive
+
+Cute isn't it?
+
+So... I quit on ODBC and went via ADO, this is the code that works:
+
+=== CODE ===
+
+$db = '\\\\server\\resource\\db.mdb';
+$conn = new COM('ADODB.Connection');
+$conn->Open("DRIVER={Driver do Microsoft Access (*.mdb)}; DBQ=$db");
+
+// Driver do Microsoft Access (*.mdb)
+// must be the name in your odbc drivers, the one you get
+// from the Data Sources (ODBC).
+// In this case, I'm in Mexico but the driver name is in portuguese, thanks
+Microsoft.
+
+$sql = 'SELECT username FROM tblUsuarios';
+$res = $conn->Execute($sql);
+while (!$res->EOF)
+{
+    print $res->Fields['username']->Value . "<br>";
+    $res->MoveNext();
+}
+
+$res->Close();
+$conn->Close();
+$res = null;
+$conn = null;
+
+=== /CODE ===
+===============================================================================
+
+After doing "harald dot angel at gmail dot com" suggestion, you may still
+receive this error:
+
+"Warning: odbc_connect() [function.odbc-connect]: SQL error: [Microsoft][ODBC
+Microsoft Access Driver] The Microsoft Jet database engine cannot open the file
+'(unknown)'. It is already opened exclusively by another user, or you need
+permission to view its data., SQL state S1000 in SQLConnect in... "
+
+You may need to include the <computer name> of the machine where the ODBC is,
+to the <local group> of the machine where the *.mdb is stored. And make sure
+that the <local group> has enough permission to access the *.mdb.
+
+hope this make somebody more happy!
+
+more power to opensource.
+===============================================================================
+
+- Windows - OS
+- Apache
+- ODBC-Connction to MS-Access DB on a:
+- Network Share
+
+After many hours searching here´s how it works:
+
+- Map the Network Drive where the mdb is located
+- Setup System DSN in Control Panel with mapped Drive
+- Open Registry at:
+HKEY_LOCAL_MACHINE\SOFTWARE\ODBC\ODBC_INI
+- Edit the for example "M:\" to "\\server\..."
+- Close Regedit
+- The Apache-Service must run with a Domain (network)-User!!
+- After that you can connect using:
+
+$conn = odbc_connect('your-dsn-name','','');
+
+hope that makes someone happy :)
+bye
+===============================================================================
+
+Two additional notes regarding ODBC connections to a Network Sybase SQL
+Anywhere 8 Server..
+
+I wrote a script using the PHP5 CLI binary that monitors a directory for
+changes, then updates a Network Server SQL Anywhere 8 database when a change
+was detected. Idealy, my program would run indefinately, and issue odbc_connect
+()/odbc_close() when appropriate. However, it seems that once connected, your
+odbc session is limited to 30 seconds of active time, after which, the
+connection becomes stale, and no further queries can be executed.  Instead, it
+returns a generic "Authentication violation"  error from the odbc driver.
+
+Here's an example:
+
+<?php
+  $conn=odbc_connect($connect_string,'','');
+  $result=odbc_exec($qry,$conn);  //returns data
+  sleep(31);
+  $result=odbc_exec($qry,$conn);  //"Authentication Violation"
+?>
+
+Additionally, it seems that odbc_close() doesn't truely close the connection
+(at least not using Network SQL Anywhere 8). The resource is no longer usable
+after the odbc_close() is issued, but as far as the server is concerned, there
+is still a connection present. The connection doesn't truely close until after
+the php script has ended, which is unfortunate, because a subsequent
+odbc_connect() commands appear to reuse the existing stale connection, which
+was supposedly closed.
+
+My workaround was to design my script exit entirely after a the database update
+had completed.  I then called my script whithin a batch file and put it inside
+an endless loop.
+
+I'm not sure if this is a bug with PHP or what, but I thought I'd share in case
+someone else is pulling their hair out trying to figure this one out...
+===============================================================================
+
+To connect to a SQL DB on a unix srv via odbc one can use one of the following
+solutions.
+
+1. having an odbc.ini (~/.odbc.ini)
+
+[PostgreSQL]
+Description         = PostgreSQL template1
+Driver              = PostgreSQL
+Trace               = Yes
+TraceFile           = /tmp/odbc.log
+Database            = PerfTest
+Servername          = localhost
+UserName            = boss
+Password            = BigBoss
+Port                = 5432
+Protocol            = 6.4
+ReadOnly            = Yes
+ConnSettings        =
+
+[Default]
+Driver = /local/lib/libodbc.so
+
+2. specifying a DSN
+
+function DBCALL($SQL)
+{       
+$U = "boss";
+$DB = "PerfTest";
+$P = "BigBoss";
+$Srv = "llocalhost";
+$DSN = "Driver=PostgreSQL;Server=$Srv;Database=$DB";
+       
+echo "Trying to connect to $DSN\n";   
+if ($CID = odbc_connect ("$DSN","$U","$P",SQL_CUR_USE_ODBC))
+{
+    echo "still trying CID = $CID\n";
+    if ($RES = odbc_exec($CID, $SQL))
+    {
+        echo "RES = $RES\n";
+        print_r($RES);
+        echo "\n";
+           
+        $NR = odbc_num_rows($RES);
+
+<snip>
+
+Hope this helps.
+===============================================================================
+
+Connect to an MS-Access Database on the Network via ODBC
+
+Apache 2.0.47 with PHP 4.3.4 running on Windows XP Pro
+
+If you encounter the error
+"[Microsoft][ODBC Driver Manager] Data source name not found and no default
+driver specified, SQL state IM002 in SQLConnect"
+
+you should make sure to have the following done:
+
+The ODBC-link must be a System-DNS and not a User-DNS. Configure your ODBC-link
+and then modify your configuration with regedt32. Go to HKEY_LOCAL_MACHINE\
+SOFTWARE\ODBC\ODBC_INI and open your ODBC-link. The field DBQ contains the path
+to your database. This path must be without Drive-names (e. g. "M:") so change
+it to "\\Server\folder\database.mdb". This setting is changed each time you
+modify your ODBC-configuration using the Windows-tool, so make sure you do this
+afterwards.
+
+Then you go to the Services-Section in your Systemmanagement. Select the
+properties of your Apache module. In the login-section you have to make sure
+you login with a valid User-Account for your Network-Server.
+
+Please note that this way you still have no permission to access linked tables
+within the linked database
+
+Funny enough all this is not necessary on Win98.
+===============================================================================
+
+If you encounter the error:
+
+"[Microsoft][ODBC Driver Manager] Data source name not found and no default
+driver specified, SQL state IM002 in SQLConnect"
+
+Windows with PHP, running under IIS/PWS, PHP runs under the anonymous user,
+INET_USR_"server" (were "server" is your servername).
+This user has no read access in the ODBC System DSN tree in the registry.
+
+With regedt32 open HKEY_LOCAL_MACHINE\SOFTWARE\ODBC\ODBC_INI and give read
+access to every ODBC entry you want to use with PHP.
+
+Beware: With every change to a ODBC system DSN, the rights on that ODBC system
+DSN are gone again, and you have to change the rights again manualy.
+
+Under Apache, PHP runs under the System account and you wont have this problem.
+===============================================================================
+
+Connecting with SQL in a ODBC source
+
+2 ways, one is if your SQL server is runign in your machine
+
+$ser="LOCALMACHINE"; #the name of the SQL Server
+$db="mydatabase"; #the name of the database
+$user="myusername"; #a valid username
+$pass="my pass"; #a password for the username
+
+# one line
+$conn=odbc_connect("Driver={SQL Server};Server=".$ser.";Database=
+".$db,$user,$pass);
+# one line
+
+the second way is if the SQL Server is runing in other machine but in the same
+network
+
+$ser="LOCALMACHINE"; #the name of the SQL Server
+$db="mydatabase"; #the name of the database
+$user="myusername"; #a valid username
+$pass="my pass"; #a password for the username
+
+#one line
+$conn=odbc_connect("DRIVER=SQL Server;SERVER=".$ser.";UID=".$user.";PWD=
+".$pass.";
+DATABASE=".$db.";
+Address=".$ser.",1433","","");
+#one line
+===============================================================================
+
+Because the dsn needs to be system-wide, you will also need write access to the
+registry to set it up.
+===============================================================================
+
+I fighted with the "Data source name not found and no
+default driver specified, SQL state IM002 in SQLConnect"
+error for a while trying to connect via ODBC to a SQL Server
+2000. Finally I found this workaround:
+
+$cn = odbc_connect("Driver={SQL Server};Server=MyServer;Database=MyDatabase",
+"MyUser","MyPassword")
+
+Change "MyServer", "MyDatabase", "MyUser" and "MyPassword" to the right values.
+
+I guess that adding the "Integrated Security=YES" will work too.
+
+Regards,
+
+Yvan Ecarri, MCDBA, MCSD
+===============================================================================
+
+here's a quick note about using php and db2 that cost me a couple of hours and
+several recompiles trying to figure out why it didn't work.
+
+put the below line in any script
+
+     putenv("DB2INSTANCE=db2inst1");
+
+Or, set that in your webserver environment somehow.
+===============================================================================
+
+If you encounter the error:
+
+"[Microsoft][ODBC Driver Manager] Data source name not found and no default
+driver specified, SQL state IM002 in SQLConnect"
+
+make sure you have the correct permission to your database file (e.g. if using
+Win2k, might want to set the "Everyone" group to "Full Control").  For Windows,
+I find that I have to sometimes use the registry editor (e.g. RegEdt32.exe) to
+set the database file's permission because for some unknown reason, setting the
+permission from the file's "Properties" option does not work.
+===============================================================================
+
+If you have problem to connect to sybase with an ODBC driver, try to set up
+your SYBASE environment variable to the correct directory.
+([ODBC SQL Server driver]Allocation of a Sybase Open Client Context failed)
+
+Ex : Here is a connection to a DSN
+
+putenv("SYBASE=c:\sybase");
+
+$conn  =  odbc_connect("DSN1","USER","PASSWORD");
+echo  "conn:  $conn";
+if  ($conn  <=  0)  {
+        echo  "Error  in  connection";
+        exit;
+} else  {
+        echo  "<P>Connection  successful\n";
+};
+===============================================================================
+
+Thought I'd add a note here on this. I'm using Apache 2.0.39 on Windows XP and
+PHP 4.2.2.
+
+It helps a lot if you don't use capital letters in your dsn string.
+
+Thought I also comment on the posts about using system dsns over file dsns.
+There are lots of posts saying use systems not files, but none (that I have
+seen) which explain why.
+
+Essentially: File DSNs are specific to the current user, therefore the Internet
+Guest User Account doesn't have rights to them. Systems are available to
+everyone.
+
+Regards
+
+Osiris :)
+===============================================================================
+
+_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+odbc_connect ERRO at DB2
+_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+To Solve the problem with DB2 + PHP folow this steps!
+
+INSTALL THE PROGRAM LIKE THIS!
+
+-- DB2 --
+Install the DataBank
+Install Application Tools
+-- END DB2 --
+
+--- APACHE ---
+cd ../mod_ssl-2.8.5-1.3.22/
+./configure  --enable-module=so --with-apache=../apache_1.3.22/  --with-ssl=../
+openssl-0.9.6c/
+cd ../apache_1.3.22/
+make
+make certificate TYPE=custom
+make install
+--- END APACHE ---
+
+-- PHP --
+cd ../php-4.1.1/
+./configure  --with-apxs=/usr/local/apache/bin/apxs --with-pgsql --with-mysql
+--with-ibm-db2=/usr/IBMdb2/V7.1
+make
+make install
+-- END PHP ---
+
+-- LIB --
+vim /etc/ld.so.conf
+add line: /usr/IBMdb2/V7.1/lib
+execute: ldconfig
+-- END LIB --
+
+To Solve the error ODBC_CONNECT exec the db2profile at the apachectl!!! Like
+this!
+
+-- APACHE EDIT TO RUN DB2 --
+vim /usr/local/apache/bin/apachectl
+add line: . /usr/home/db2inst1/sqllib/db2profile
+-- END APACHE EDIT TO RUN DB2 --
+
+NOW run /usr/local/apache/bin/apachectl startssl
+
+DONE !!!!!
+
+You have a DB2 + APACHE + SSL + PHP + MYSQL + POSTGRES .
+
+Enjoy
+
+[] s
+Helio Ferenhof
+===============================================================================
+
+If you (still) get that annoying error like and you're using Access:
+
+MSaccess DSN(Microsoft Jet engine couldn't open the database 'Unknow'.
+Another user is using it exclusively, or you dont have permission to use
+it).
+
+Make sure your access *.mdb file is not on a network drive. Put it on C: or D:
+disable all security first so you can test the connection. Once you can verify
+that you can connect add appropriate passwords, group access, etc.
+
+-=WH=-
+===============================================================================
+
+odbc connect to Oracle 8.0.xxx / NT4 / IIS4 / php.exe (4.1.0)
+had a lot of trouble connecting kept receiving the 12154 TNS error. 
+Found a really useful hint in a mail msg on phpbuilder.  http://
+www.phpbuilder.com/mail/php-db/2001051/0192.php
+Had to strip the <cr>'s out of both sqlnet.ora and tnsnames.ora to get a
+connection established.  Also had trouble in php.ini need to
+fully qualify extension_dir on NT if you leave the last \ on the dir
+name it is replaced with a /
+===============================================================================
+
+WINNT 4 Workstation, PHP4
+
+odbc_connect() kept giving me weird errors when trying to connect to a MSaccess
+DSN(Microsoft Jet engine couldn't open the database 'Unknow'. Another user is
+using it exclusively, or you dont have permission to use it).
+
+After going nuts for a while, I realized that my database name had a space in
+it (course surveys.mdb), I shortened the name to eliminate the space .. and
+everything worked fine.
+===============================================================================
+
+// simple conection
+
+
+$cnx = odbc_connect('cliente','Administrador',''); 
+//query
+$SQL_Exec_String =  "select * from Clientes";   
+//ejecucion query
+$cur= odbc_exec( $cnx, $SQL_Exec_String ); 
+echo  "<table border=1><tr><th>Dni</th><th>Nombre</th>". 
+         "<th>codigo</th><th>ciudad</th></tr>\n"; 
+    while( odbc_fetch_row( $cur ) ) { 
+       $Dni= odbc_result( $cur, 1 ); 
+       $Nombre= odbc_result( $cur, 2 ); 
+       $codigo= odbc_result( $cur, 3 );
+       $ciudad= odbc_result( $cur, 4 );
+        echo  "<tr><td>$Dni</td><td>$Nombre</td>". 
+             "<td>$codigo</td><td>$ciudad</td></tr>\n"; 
+    } 
+    echo  "</table>";
+===============================================================================
+
+We've tried hard to connect from php to our IBM DB2 RS/6000 Server. It worked
+after we compiled with --ibm-db2= option, but it was unbelievable
+slow.
+
+No, just testing some options, we found out that it went from very slow
+(getting 100 records lasts 1 till 10 seconds) to fast access (almost same speed
+as with using JDBC from Servlets) to 0.2 till 0.3 seconds.
+
+We simply added the optional parameter Cursortype to odbc_connect, and with the
+cursortype SQL_CUR_USE_ODBC it changed in that way!
+
+Hope this helps anybody who must connect to db2 ;)
+===============================================================================
+
+If you don't want to specify your login credentials on your web server, you can
+leave the login fields blank to use the integrated windows security like here:
+
+odbc_connect("DSN=DataSource","","");
+
+Make sure you have switched your system dsn to integrated security, too !
+
+(works on windows machines only, of course)
+
+flo.
+===============================================================================
+
+If like me you are using openlink from unix to access an MS Access database on
+an NT/Win2k machine and find out that your INSERT queries don't do anything and
+don't report any errors, use odbc_pconnect().
+
+I couldn't understand what was going on and after a bit of research I found out
+that with MySQL they recommended using mysql_pconnect() for INSERT queries. I
+tried the same thing with odbc and it worked.
+===============================================================================
+
+If you're connecting to a SQL server database through ODBC, you must set the
+default database of the ODBC DSN to the database you want to use.
+
+There is no way to specify the database name in odbc_connect or odbc_pconnect,
+just the DSN name, username, and password.
+===============================================================================
+
+If using Openlink to connect to a Microsoft Access database, you will most
+likely fine tha odbd_connect() works fine, but discover that ANY query will
+produce odd results; with SELECT queries failing with "[OpenLink][ODBC][Driver]
+Driver not capable, SQL state
+S1C00 in SQLExecDirect in xxxx.php on line xx" and INSERT / DELETE queries
+warning "No tuples available at this result index".
+
+In this case, use the SQL_CUR_USE_ODBC cursor!
+
+This had me stumped for quite some time; because it was the odbc_exec() which
+was seemingly at fault... :)
+
+Siggy
+===============================================================================
+
+Alot of people share the same kind of problems getting this setup on linux.  I
+was assigned this problem 2 days ago and I was successful.  My combination was
+PHP4 RC2, Easysoft OOB, and unixODBC.  These three products work very well
+together and are real easy to install.  More info http://www.easysoft.com/
+products/oob/main.phtml. ps also works good with Perl's DBI.
+===============================================================================
+
+/* Connecting to Microsoft Access with PHP
+   $conn = odbc_connect("Driver={Microsoft Access Driver (*.mdb)};
+   Dbq=$mdb_Filename", $user, $password);
+  
+This does NOT work on Windows servers.
+Instead, it needs
+   $conn->Open("Provider=Microsoft,.Jet.OLEDB.4.0; Data Source=......
+
+Point the variable $mdb_Filename to...
+   Data Source=C:\inetpub\wwwroot\php\mdb_Filename
+   or wherever the virtual directory points.
+===============================================================================
+
+http://www.microsoft.com/en-us/download/details.aspx?id=13255 for the latest
+odbc driver for .accdb files.
+===============================================================================
+
+This might be obvious to some, but here is a quick tidbit that might save you
+some time if you're using FreeTDS in Linux:
+
+Be sure that you have these two lines in freetds.conf:
+dump file = /tmp/freetds.log
+dump file append = yes
+
+so you can tail -f it in the background of debugging the problem.  This helped
+me find my issue on on CentOS Linux: 
+
+1) tsql test works
+2) isql test works
+3) odbc connection in php also works WHEN RUN FROM THE SHELL
+4) running PHP through apache does NOT work.
+
+my /tmp/freetds.log file told me:
+net.c:168:Connecting to MYDBSERVER port MYDBPORT
+net.c:237:tds_open_socket: MYDBSERVER:MYDBPORT: Permission denied
+
+and the answer was my firewall/SELinux was denying the Apache processes access
+to connect to the remote MSSQL DB port, but my shell accounts were fine.
+===============================================================================
+
+I have used mdbtools to access .mdb file on my ubuntu box, as ODBC driver (and
+PHP)
+It has very few features, and practically unusable.
+===============================================================================
+
+"Returns an ODBC connection id or 0 (FALSE) on error."
+
+Keep in mind that the following code in PHP5 will not work properly:
+
+<?php
+
+if( odbc_connect("test", "test", "test") === false ) {
+    // Your error reporting/handling here..
+}
+
+?>
+
+odbc_connect() returns an integer, and not a PHP5 boolean!
+===============================================================================
+
+Following  simonr at no2sp at m dot cogapp dot com contribution (thank you), I
+tried to connect to a local MS SQL Server 2014 Express database by creating a
+DSN-less connection using ODBC. It worked, here's the code.
+
+<?php
+// Replace the value of these variables with your own data
+$user = 'username';
+$pass = 'password';
+$server = 'serverName\instanceName';
+$database = 'database';
+
+// No changes needed from now on
+$connection_string = "DRIVER={SQL Server};SERVER=$server;DATABASE=$database";
+$conn = odbc_connect($connection_string,$user,$pass);
+
+if ($conn) {
+    echo "Connection established.";
+} else{
+    die("Connection could not be established.");
+}
+?>
+===============================================================================
+
+Hi,
+
+Instructions on how to connect to a Progress database on Linux using the Merant
+ODBC driver can be found at http://www.progteg.com/english/documents.html.
+
+Kind regards,
+
+Sven Delmeiren
+Computers & Communications NV
+===============================================================================
+
+To use MySQL via ODBC:
+<?php
+    $db_host        = "server.mynetwork";
+    $db_user        = "dbuser";
+    $db_pass        = "dbpass";
+    $dsn =         "DRIVER={MySQL ODBC 3.51 Driver};" .
+            "CommLinks=tcpip(Host=$db_host);" .
+            "DatabaseName=$db_name;" .
+            "uid=$db_user; pwd=$db_pass";
+
+    odbc_connect($dsn, $db_user, $db_pass);
+?>
+===============================================================================
+
+I also had a problem with this message: ([ODBC SQL Server driver]Allocation of
+a Sybase Open Client Context failed). The message only appeared after the
+server had run for a few hours, so I expected resource starvation. However it
+was a settings problem and I thought this might benefit others too.
+
+In addition to putting a <?php putenv ("SYBASE=c:\sybase"); ?>  as described by
+oottavi above, I also had so specify a locale by setting <?php putenv ("LC_ALL=
+default"); ?>.
+
+Even though my locale was already set to a valid one (en_US) I had to set this
+environment variable to make it work anyhow.
+===============================================================================
+
+Concerning the note posted by Grisu on the 23-Dec-2003 11:51: Connect to an
+MS-Access Database on the Network via ODBC,
+
+PLEASE dont forget to put double slashes as follows:
+
+"\\\\Server\\folder\\database.mdb"
+
+when setting up the registry key as indicated...
+===============================================================================
+
+For anyone having problems with WHERE clauses in their MS Access ODBC requests
+here s what I found: SQL requests sent to Access must include quotes around the
+criteria.
+
+$sel = "SELECT * FROM table1 WHERE cust_id = 'cust1'";
+outputs:
+SELECT * FROM table1 WHERE cust_id = 'cust1'
+And works.
+
+$sel =  SELECT * FROM table1 WHERE cust_id = cust1 ;
+outputs:
+SELECT * FROM table1 WHERE cust_id = cust1
+And doesn t work.
+
+Here s the whole block of code:
+$conn = odbc_connect("database1","","");
+$sel = "SELECT * FROM table1 WHERE cust_id = 'cust1'";
+$exec = odbc_exec($conn,$sel);
+while($row = (odbc_fetch_array($exec)))
+$serv[odbc_result($exec,'label')] = $row;
+print_r($serv);
+===============================================================================
+
+For three days I fought to be able to connect our Linux intranet server to our
+AS400 database through ODBC and PHP on Mandrake. I installed everything I
+thought would work but I still got a: odbc_connect(): SQL error: Missing server
+name, port, or database name in call to CC_connect., SQL state IM002 in
+SQLConnect
+
+Note that isql was working great but php was failing to connect.
+
+The solution:
+I located and found a PHP module called php-unixODBC (to oppose with php-odbc).
+Once installed (even though it wasn't for the right version of PHP), I realised
+it didn't place the file properly. The ini file was in /etc/php/ instead of /
+etc/php.d/, so I moved it there and renamed the old /etc/php.d/36_odbc.ini to /
+etc/php.d/36_odbc.ini.sav, so that I now had /etc/php.d/36_unixodbc.ini. I
+restarted the httpd server and now I was able to access the as400.
+
+If you have questions, email _artaxerxes2_at_iname_dot_com (sans the
+underscore).
+===============================================================================
+
+A VERY IMPORTANT NOTE OF CAUTION FOR WINDOWS USERS DEVELOPING ON NON-NETWORKED
+SYSTEMS
+
+If like me you are developing on a stand-alone system (Windows XP professional
+running IIS).  Make sure that the the folder your database resides in is
+shared, otherwise you will get the following type of message:
+
+Current Recordset does not support updating. This may be a limitation of the
+provider, or of the selected locktype.'
+
+and you will spend 2 days (as I did) looking for the right combination of
+settings to write the record properly.
+===============================================================================
+
+_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+Compiling Apache + PHP + DB2 8.1  without the DATABASE instaled at the
+WebServer Machine!
+_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
+
+Go to the machine that you have DB2 DATABASE instaled and COPY the include
+files from the DB2 8.1 DataBase to the PHP source directory:
+
+Sample:
+[root@DB2_SERVER/usr/opt/db2_08_01/include]# scp * user@webserver:/usr/src/
+php-4.3.7/ext/odbc/.
+
+INSTALLING THE WEBSERVER!
+Enter in the WebServer as root and ...
+
+-- DB2 --
+Install Administration Client
+Catalog the DataBases
+-- END DB2 --
+
+-- LIB --
+vi /etc/ld.so.conf
+add line: /opt/IBM/db2/V8.1/lib
+execute: ldconfig
+-- END LIB --
+
+Download PHP + MODSSL + OPENSSL + APACHE!
+
+--- APACHE ---
+cd ../mod_ssl-2.8.18-1.3.31
+./configure  --enable-module=so --with-apache=../apache_1.3.31 --with-ssl=../
+openssl-0.9.7d
+cd ../apache_1.3.31/
+make
+make certificate TYPE=custom
+make install
+--- END APACHE ---
+
+OBS:  CRIPT the CA.key
+    DO NOT CRYPT server.key
+
+-- PHP --
+cd ../php-4.3.7
+./configure  --with-apxs=/usr/local/apache/bin/apxs --with-mysql --with-pgsql
+--with-zip=/usr/local/lib --with-ibm-db2=/opt/IBM/db2/V8.1
+make
+make install
+-- END PHP ---
+
+-- APACHE EDIT TO RUN DB2 --
+vim /usr/local/apache/bin/apachectl
+add line: . /home/db2inst1/sqllib/db2profile
+-- END APACHE EDIT TO RUN DB2 --
+NOW run /usr/local/apache/bin/apachectl startssl
+
+DONE !!!!!
+
+You have a WebServer with PHP with DB2,MYSQL,POSTGRES and SSL Support.
+
+Enjoy IT!
+
+[] s
+Helio Ferenhof
+===============================================================================
+
+If you have switched to a new Version of PHP (from 4.1 to 4.3) and at the same
+time have upgraded your Apache server (from 1.x to 2.x) and suddenly get the
+error:
+
+"[Microsoft][ODBC Driver Manager] Data source name not found and no default
+driver specified, SQL state IM002 in SQLConnect"
+
+It may be because you have your ODBC connections listed (Control Panel | ODBC)
+as User DSN rather than System DSN.  They need to be System DSN in order for
+the PHP in the Apache service to access to them.
+===============================================================================
+
+Due to multiple requests, more for DSN-less connections:
+
+<?php
+$db_connection = new COM("ADODB.Connection");
+
+$db_connstr = "DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=". realpath("../
+databases/database.mdb") ." ;DefaultDir=". realpath("../databases");
+$db_connection->open($db_connstr);
+$rs = $db_connection->execute("SELECT * FROM Table");
+$rs_fld0 = $rs->Fields(0);
+$rs_fld1 = $rs->Fields(1);
+while (!$rs->EOF) {
+  print "$rs_fld0->value $rs_fld1->value\n";
+  $rs->MoveNext(); /* updates fields! */
+}
+$rs->Close();
+$db_connection->Close();
+?>
+
+(Prints first 2 columns for each row.)
+===============================================================================
+
+After much testing, and I think supported by a comment I found in the code, I
+have come to a disturbing conclusion: odbc_connect() in PHP4.04pl1 is really an
+odbc_pconnect(), with all the implications for transaction scoping. 
+Specifically, each time you call odbc_connect( "X", "" "" ), you will get the
+same physical ODBC Connection, and odbc_commit() and odbc_rollback() will
+affect all copies.  The only solution I could find was to use several different
+DSNs to access the database.
+===============================================================================
+
+[Microsoft][ODBC Driver Manager] Data source name not found and no default
+driver specified
+
+If you keep running  into this on the 64 bit versions of windows, ie server
+2008,  and none of the other solutions helped.
+
+In a 64 bit windows server operating system, there are TWO odbc managers. When
+you pull up the usual menu for the odbc / dsn system, it is for the 64 bit odbc
+manager, and 32 bit applications (vb 6.0, PHP 5) will not work using these
+dsn's.
+
+This is where the 32 bit odbc manager is:
+
+C:\Windows\SysWOW64\odbcad32.exe
+===============================================================================
+
+Hi Mario, I changed a bit your script to suit my configuration,
+I also included a lines to close the connection.
+Thanks for the script
+I am running apache 2.0.52 and PHP 5.0.2. Windows 2000
+SQL 2000
+
+<head>
+<title>Untitled Document</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+</head>
+
+<body bgcolor="#FFFFFF">
+<table width="75%" border="1" cellspacing="1" cellpadding="1" bgcolor="#
+FFFFFF">
+  <tr bgcolor="#CCFFFF">
+    <td height="22"><b>Tipo</b></td>
+    <td height="22"><b>Marca</b></td>
+    <td height="22"><b>Modelo</b></td>
+  </tr>
+
+<?php
+$cx=odbc_pconnect("RAMPANT","Invent","pass","");
+$cur=odbc_exec($cx,"select tipo,marca,modelo from inv_equipos");
+while(odbc_fetch_row($cur))
+{
+//collect results
+$tipo=odbc_result($cur,1);
+$marca=odbc_result($cur,2);
+$modelo=odbc_result($cur,3);
+//format and display results
+    print ("<tr>");
+    print ("<td>$tipo</td>");
+    print ("<td>$marca</td>");
+    print ("<td>$modelo</td>");
+    print ("</tr>");
+    }
+
+//disconnect from database
+    odbc_close($cx);
+
+    ?>
+   
+ 
+</table>
+</body>
+</html>
+===============================================================================
+
+In newer versions you may need: odbc_connect("Driver={Microsoft Access Driver
+(*.mdb, *.accdb)};Dbq=C:/Folder/database.mdb", "", "");
+===============================================================================
+
+To connect and show tables in a Microsoft Access data base (created in *.asp
+pages)...
+
+$dbq    =    str_replace("/", "\\", $_SERVER["DOCUMENT_ROOT"]) . "\\path\\to\\
+database.mdb";
+if    (!file_exists($dbq)) { echo "Crap!<br />No such file as $dbq"; }
+
+$db_connection = odbc_connect("DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=
+$dbq", "ADODB.Connection", "password", "SQL_CUR_USE_ODBC");
+
+$result = odbc_tables($db_connection);
+
+while (odbc_fetch_row($result)) {
+    if(odbc_result($result,"TABLE_TYPE")=="TABLE") {
+        echo "<br />" . odbc_result($result,"TABLE_NAME");
+    }
+}
+===============================================================================
+
+Connecting to ADS (Advantage Database Server) using Windows. When you setup
+data source in ODBC Manager (PHP_SERVER) don't use a mapped drive in Database
+or Data Dictionary Path, or you cannot connect:
+
+Lets suppose that you share C:\ADS_SERVER\ADS as ADS.
+Mapping to a drive X: in PHP_SERVER
+
+Instead of:
+
+X:\APP\DATA\APP.ADD
+
+use UNC:
+
+\\ADS_SERVER\ADS\APP\DATA\APP.ADD
+
+if the ADS ODBC dialog don t let you to browse a Network Drive type it manually
+===============================================================================
+
+Pls ensure that the MSAccess database format is ".mdb".
+If it is ".accdb" it will not work!
+===============================================================================
+
+Here is my successful odbc_connect with mysql on Ubuntu. It took me a while to
+figure this out.
+
+Installed following packages using apt-get.
+
+apache2
+apache2-mpm-prefork
+apache2-utils
+apache2.2-common
+libapache2-mod-php5
+libdbd-mysql-perl
+libmyodbc
+libmysqlclient15off
+mysql-client-5.0
+mysql-common
+mysql-server-5.0
+mysql-server-core-5.0
+odbcinst1debian1
+php5
+php5-cli
+php5-common
+php5-odbc
+unixodbc
+
+/etc/odbc.ini
+------------
+myodbc3      = MySQL ODBC 3.51 Driver
+
+[myodbc3]
+Driver         = /usr/lib/odbc/libmyodbc.so
+Description  = MySQL ODBC 3.51 Driver
+Server        = localhost
+Port           = 3306
+User           = shyam
+Password    = mypass
+Database    = mysql
+Option        = 3  
+Socket       = /var/run/mysqld/mysqld.sock
+
+/etc/odbcinst.ini
+----------------
+[MySQL ODBC 3.51 Driver]
+Description    = MySQL driver
+Driver        = /usr/lib/odbc/libmyodbc.so
+Setup        = /usr/lib/odbc/libodbcmyS.so
+CPTimeout    =
+CPReuse    =
+UsageCount    = 1
+
+my php script
+------------
+
+<html>
+<body>
+<?
+$conn = odbc_connect("DRIVER={MySQL ODBC 3.51 Driver};Server=localhost;Database
+=mysql", "shyam", "mypass");
+
+$sql = "SELECT user from user";
+$rs = odbc_exec($conn,$sql);
+echo "<table><tr>";
+echo "<th>User Name</th></tr>";
+while (odbc_fetch_row($rs))
+{
+$user = odbc_result($rs,"user");
+echo "<tr><td>$user</td></tr>";
+}
+odbc_close($conn);
+echo "</table>";
+?>
+
+</body>
+</html>
+===============================================================================
+
+I was having trouble connecting to a MSSQL database using FreeTDS and a DSN
+string with the error message:
+"Warning: odbc_connect(): SQL error: [unixODBC][Driver Manager]Data source name
+not found, and no default driver specified, SQL state IM002 in SQLConnect"
+
+The problem was with specifying the driver. Many examples show the driver name
+surrounded by { }
+
+The solution was to remove the braces.
+
+Example:
+<?php
+$user = "username";
+$pass = "password";
+// Some examples show "Driver={FreeTDS};" but this will not work
+$dsn = "Driver=FreeTDS;Server=some.server.com;Port=1433;Database=mydatabase;";
+$cx = odbc_connect($dsn,$user,$pass);
+// Get the error message
+if($cx === false) {
+    throw new ErrorExcpetion(odbc_errormsg());
+}
+?>
+===============================================================================
+
+Once you've set up a UnixODBC connection to Informix (as described elsewhere,
+for example in http://www.unixodbc.org/), the following PHP code will access a
+database via its DSN:
+
+<?php
+// We must set these environment variables for Informix to work.  Either
+// do it here or in php.ini.
+putenv("INFORMIXDIR=/usr/share/informix");
+putenv("ODBCINI=/usr/local/unixODBC/etc/odbc.ini");
+
+// Open up a connection to the database.
+if (!($con = odbc_connect("CollectOh", "", "")))
+  echo "<p>Connection to CollectOh failed.</p>\n";
+else
+  {
+  // Let's try enumerating all of the tables in the database (there ain't
+  // no "show tables" here).
+  if (($res = odbc_exec($con, "select * from SYSTABLES")))
+    {
+    echo "<p>\n";
+    odbc_result_all($res);
+    echo "</p>\n";
+    }
+
+  // Close up shop, like good dobies.
+  odbc_close($con);
+  }
+?>
+===============================================================================
+
+To connect to Sybase SQL Server Anywhere 8.0 on Windows use the following:
+
+<?php
+//================================================================
+
+  // Configure connection parameters
+  $db_host        = "server.mynetwork";
+  $db_server_name = "Dev_Server";
+  $db_name        = "Dev_Data";
+  $db_file        = 'c:\dbstorage\dev.db';
+  $db_conn_name   = "php_script";
+  $db_user        = "dbuser";
+  $db_pass        = "dbpass";
+
+//================================================================
+  $connect_string = "Driver={Adaptive Server Anywhere 8.0};".
+                    "CommLinks=tcpip(Host=$db_host);".
+                    "ServerName=$db_server_name;".
+                    "DatabaseName=$db_name;".
+                    "DatabaseFile=$db_file;".
+                    "ConnectionName=$db_conn_name;".
+                    "uid=$db_user;pwd=$db_pass";
+
+  // Connect to DB
+  $conn = odbc_connect($connect_string,'','');
+
+  // Query
+  $qry = "SELECT * FROM my_table";
+
+  // Get Result
+  $result = odbc_exec($conn,$qry);
+
+  // Get Data From Result
+  while ($data[] = odbc_fetch_array($result));
+
+  // Free Result
+  odbc_free_result($result);
+
+  // Close Connection
+  odbc_close($conn);
+
+  // Show data
+  print_r($data);
+
+//================================================================
+?>
+===============================================================================
+
+I found that on Windows I am able to connect to a FoxPro free table directory
+on a password-protected mapped network drive without having a domain controller
+(as posted in the solution below from harald).
+Trying to connect to the mapped drive returned the error "tablename does not
+exist."  The same code worked correctly if the ODBC resource was located
+locally on my machine.
+
+As a workaround, I specified the datasource explicitly in the connection, but
+pointed the source at a shortcut to the same mapped directory:
+<?php
+$dsn = "Driver={Microsoft Visual FoxPro Driver};SourceType=DBF;SourceDB=c:\\
+shortcut;Exclusive=NO;collate=Machine;NULL=NO;DELETED=NO;BACKGROUNDFETCH=NO;";
+$conn=odbc_connect($dsn,"","");
+?>
+and the connection completed.  My guess is that the credentials needed to
+access the drive weren't accessible to apache (I tried changing the user apache
+ran as to no avail), and the shortcut put that responsibility on Windows.
+===============================================================================
+
+how to solve Error SQL state S1009 connecting to an access database in a
+network with odbc
+
+1 - if you dont have access installed in your computer, you will need the
+access driver for odbc conection...install with mdactypex (just for 32 bits)...
+or AccessDatabaseEngine_X64.exe for 64bits
+
+2 - give needed rights to a windows user profile to run as a service: Control
+panel, Administrative tools, in the left treeview panel, select Local Security
+Policies, User Rights Assignment, and in the right panel find and select 'Logon
+as a service', right button click and properties-> Search and add the user User
+in your computer you want to Apache use to login at service start
+
+3 - Go to Windows Services admin, select Apache, edit properties, select login
+tab, and set the previuos user you use (write his windows login password)
+
+4- Use php code like this:
+$user="your_db_user";
+$password="your_db_password";
+
+// Conexion Access con ODBC
+// Important: (4 initial slashes!) \\\\network_path\dir_name\...
+$mdbFilename='\\\\servidor\data\AccessBD.mdb';
+
+$conn_access = odbc_connect("Driver={Microsoft Access Driver (*.mdb)};Dbq=
+$mdbFilename", $user, $password);
+===============================================================================
+
+<?php
+//create an instance of the ADO connection object
+$conn = new COM ("ADODB.Connection") or die("Cannot start ADO");
+
+//define connection string, specify database driver
+$connStr = "PROVIDER=Microsoft.Jet.OLEDB.4.0; Data Source= c:\inetpub\wwwroot\
+db\examples.mdb";
+  $conn->open($connStr); //Open the connection to the database
+
+//declare the SQL statement that will query the database
+$query = "SELECT * FROM cars";
+
+//execute the SQL statement and return records
+$rs = $conn->execute($query);
+
+$num_columns = $rs->Fields->Count();
+echo $num_columns . "<br />";
+
+for ($i=0; $i < $num_columns; $i++) {
+    $fld[$i] = $rs->Fields($i);
+}
+echo "<table>";
+while (!$rs->EOF)  //carry on looping through while there are records
+{
+    echo "<tr>";
+    for ($i=0; $i < $num_columns; $i++) {
+        echo "<td>" . $fld[$i]->value . "</td>";
+    }
+    echo "</tr>";
+    $rs->MoveNext(); //move on to the next record
+}
+echo "</table>";
+//close the connection and recordset objects freeing up resources
+$rs->Close();
+$conn->Close();
+$rs = null;
+$conn = null;
+?>
+===============================================================================
+
+Found a fresh list of ODBC drivers which are mostly free now http://
+www.devart.com/odbc/
+===============================================================================
+
+Short tutorial on how to connect to the IBM Tivoli Netcool ObjectServer (based
+on Sybase):
+
+http://nuqm.micromuse.com/wiki/index.php/ObjectServer_PHP
+
+Hopefully this will save some people precious time..
+
+Cheers,
+Pimmy
+===============================================================================
+
+This is the typical solution with the steps to follow if someone wants to
+connect MS Access to PHP. it took me a couple of hours actually till i reached
+it. i just wanted to ease the hassle for my colleagues in order not to waste
+their time as i did. this is the duty of every programmer towards his/her peers
+:p
+here you are the CAKE :)
+
+<?php
+
+// to have this working:
+// 1- u  have first to creat ur access database using MS
+//     Access  (i asume u know how to do this). My database
+//     that i used in my example is called "Questionaire.mdb".
+//     the table in it is called "Results"
+//
+// 2- then u have to add this database to ODBC in the
+//     control panel.
+//
+// 3- the adition happens by adding "MS Access Driver" to the
+//     "System DNS" tab in ODBC Data Source Administrator. if
+//     u have that "MS Access Driver" in "User DNS" tab, then
+//     u have to delete it.
+//
+// 4- click on Add in the "System DNS" tab.
+//
+// 5- choose "MS Access Driver" from the "Creat New
+//     Database Source" window and click finish.
+//
+// 6- then the "ODBC MS Access Setup" window will pop-up.
+//
+// 7- give the driver the name that you want to use in your
+//     PHP scripting. i used here "MSAccessDriver".
+
+// 8- after this, choose the "Select" button in "ODBC MS
+//     Access Setup" to set the path of your Access database.
+//
+// 9-then u r done!!
+
+// this odbc_connect does the connection to the driver i
+// created in the ODBC Administrator
+$con = odbc_connect('MSAccessDriver','',''); 
+
+if ($con)
+{
+  echo "odbc connected<br>";
+  $sql =  "select * from Results";
+
+  //this function will execute the sql satametn in  
+  //correspondance to the table in the db
+  $exc = odbc_exec($con,$sql);  
+}
+else
+  echo "odbc not connected<br>";
+
+if($exc)
+{
+  echo "selection completed<br>";
+  while($row = odbc_fetch_row($exc) )
+       echo $row->id."<br>";
+}
+else
+  echo "selection failed<br>";
+       
+?>
+===============================================================================
+
+While Installing PHP  + Apache + DB2 some time it give problem with
+odbc_connect(). . to solve this problem
+
+make sure that u have made following entry in /etc/ld.so.conf
+
+/usr/IBMdb2/V7.1/lib
+/usr/IBMdb2/V7.1/include
+/usr/lib
+
+please add following line on line no 25 in /etc/rc.d/init.d/httpd
+
+./home/db2inst1/sqllib/db2profile
+(i.e /home/(instant name)/sqllib/db2profile
+
+for more detail please visit to IBM site
+
+it will work
+===============================================================================
+
+To connect to a PROGRESS database using ODBC you must have SQL_CUR_USE_ODBC  as
+the 4th parameter eg odbc_connect(DSN,uname,password,SQL_CUR_USE_ODBC )
+otherwise you can pass queries but no results are ever returned .
+===============================================================================
+
+It is indeed possible to read the data stored in an MSAccess .mdb file while
+remaining entirely within Linux. It is thanks to the mdbtools project, which
+created an MDB driver for unix.
+
+Up to you to get PHP to move this data around. Here are the links to get you
+started:
+
+Documentation:
+ftp://kalamazoolinux.org/pub/pdf/dbaccess.pdf
+
+ODBC on Linux:
+http://www.unixodbc.org/
+
+MDB driver for the odbc system created above:
+http://mdbtools.sourceforge.net/
+
+Note that on most modern Linux boxen, you can bypass the (documented)
+command-line configuration and installation of these projects; simply use
+apt-get or some similar package installer.
+
+The documentation link covers more than the mdb driver and is a good place to
+start for all data access in Linux. Much thanks to the hard work which went
+into these three projects.
+
+-Jared
+===============================================================================
+
+I've been having trouble displaying Russian characters from Access database
+using ODBC. You might try this solution, though it is using ADODB.Connection
+COM connection with added charset setting.
+
+<?php
+$db_connection = new COM("ADODB.Connection", NULL, 1251);
+$db_connstr = "DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=C:\DataDir\
+Employee.mdb;DefaultDir=C:\DataDir";
+
+$db_connection->open($db_connstr);
+$rs = $db_connection->execute("SELECT EmpNameLocal, EmpPosLocal FROM
+tbl_Employee WHERE ID='$IDNo'");
+$rs_fld0 = $rs->Fields(0);
+$rs_fld1 = $rs->Fields(1);
+while (!$rs->EOF) {
+    $empNameLoc    = $rs_fld0->value;
+    $empWPPos    = $rs_fld1->value;
+    $rs->MoveNext();
+}
+
+$rs->Close();
+$db_connection->Close();
+?>
+===============================================================================
+
+To connect a SQLite database in Linux I used the following function call
+
+<?php $db = odbc_connect('Driver=SQLite3;Database=' . Database::DATABASE, '', 
+'') or die('could not open database!'); ?>
+
+In Debian or Ubuntu package libsqliteodbc is requried. Check /etc/odbc.ini and
+/etc/odbcinst.ini.
+===============================================================================
+
+Connecting to an access database was as simple as the following line for me.
+
+odbc_connect("DRIVER={Microsoft Access Driver (*.mdb)}; DBQ=" . str_replace("/
+", "\\", $_SERVER["DOCUMENT_ROOT"]) . "\_database\dbname.mdb", "", "")

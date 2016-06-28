@@ -1,0 +1,262 @@
+
+openssl_x509_parse
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+openssl_x509_parse — Parse an X509 certificate and return the information as an
+array
+
+说明
+
+array openssl_x509_parse ( mixed $x509cert [, bool $shortnames = true ] )
+
+openssl_x509_parse() returns information about the supplied x509cert, including
+fields such as subject name, issuer name, purposes, valid from and valid to
+dates etc.
+
+参数
+
+x509cert
+
+shortnames
+
+    shortnames controls how the data is indexed in the array - if shortnames is
+    TRUE (the default) then fields will be indexed with the short name form,
+    otherwise, the long name form will be used - e.g.: CN is the shortname form
+    of commonName.
+
+返回值
+
+The structure of the returned data is (deliberately) not yet documented, as it
+is still subject to change.
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+The identifier for the email portion of certificates in the name and subject
+array have changed since PHP4.  In PHP 4.3.0 the following array was returned
+(displayed my print_r())
+
+[name] => /O=Grid/O=Globus/O=CCR Grid Portal/OU=Portal User/CN=Test User/Email=
+test@nospam.buffalo.edu
+[subject] => Array
+(
+   [O] => Grid/O=Globus/O=CCR Grid Portal
+   [OU] => Portal User
+   [CN] => Test User
+   [Email] => test@nospam.buffalo.edu
+...
+
+The result in PHP5 is (note Email -> emailAddress):
+
+[name] => /O=Grid/O=Globus/O=CCR Grid Portal/OU=Portal User/CN=Test User/
+emailAddress=test@nospam.buffalo.edu
+[subject] => Array
+(
+   [O] => Grid/O=Globus/O=CCR Grid Portal
+   [OU] => Portal User
+   [CN] => Test User
+   [emailAddress] => test@nospam.buffalo.edu
+...
+
+Of course, the manual DOES say this could happen.  :)
+===============================================================================
+
+Alternative subjects can read as extensions.
+
+[extensions]
+            [subjectAltName] => DNS:*.cacert.org, DNS:cacert.org,
+DNS:*.cacert.net, DNS:cacert.net, DNS:*.cacert.com, DNS:cacert.com
+===============================================================================
+
+When dealing with the purposes of a x509 crt file
+the output of openssl_x509_parse gives an array with following for the
+purposes:
+each new array ([purposes][1], [purposes][2] for example) is a new purpose
+check
+I compared this output with the output of the command
+# openssl x509 -purpose -in <x509crt_file>
+the result i got was that
+[purposes][x][2] quite obviously is the name of the purpose checked
+[purposes][x][1] corresponds to the tested purpose (as named in [purposes][x]
+[2]) acting as CA
+[purposes][x][0] corresponds to the general availability of the purpose
+
+[purposes] => Array
+    (
+        [1] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => sslclient
+            )
+
+        [2] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => sslserver
+            )
+
+        [3] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => nssslserver
+            )
+
+        [4] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => smimesign
+            )
+
+        [5] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => smimeencrypt
+            )
+
+        [6] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => crlsign
+            )
+
+        [7] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => any
+            )
+
+        [8] => Array
+            (
+                [0] => 1
+                [1] => 1
+                [2] => ocsphelper
+            )
+
+    )
+===============================================================================
+
+Re: the previous note: support for the x509v3 extensions was added in PHP 5.2.
+Also in PHP5 prior to 5.2.4 the values of the x509v3 extensions were not
+decoded and were returned in the DER binary representation. Therefore in order
+to read the contents of the v3 extensions you have to parse the relevant ASN.1
+structures yourself.
+
+For example if one needs to read an IA5STRING value in a private extension with
+the OID 1.3.6.1.4.1.7782.3.3 one can do :
+
+<?php
+
+/* parse a DER encoded representation
+   of a IA5STRING of length < 127 */
+function asn1der_ia5string($str)
+{
+    $len=strlen($str)-2;
+    if ($len < 0 && $len > 127) {
+        return false;
+    }
+
+    /* check tag and len */
+    if (22 != (ord($str[$pos++]) & 0x1f) &&
+    ord($str[$pos++]) != $len) {
+    /* not a valid DER encoding of an IA5STRING */
+    return false;
+    }
+
+    return substr($str, 2,  $len);
+}
+$cert = openssl_x509_parse($pemcert);
+print (asn1der_ia5string($cert['extensions']['1.3.6.1.4.1.7782.3.3'])); //
+prints decoded ascii string
+
+?>
+
+In newer versions (>5.2.3) the extensions are returned in a 'readable format'.
+For example:
+
+<?php print_r(openssl_x509_parse(...)); ?>
+will result in
+<?
+Array
+(
+    [name] => /C=GR/O=SOMETHING/CN=ME/
+    ...
+    [extensions] => Array
+        (
+            [basicConstraints] => CA:FALSE
+            [keyUsage] => Digital Signature, Non Repudiation, Key Encipherment
+            [extendedKeyUsage] => E-mail Protection, TLS Web Client
+Authentication
+            [nsCertType] => SSL Client, S/MIME
+            ....
+?>
+===============================================================================
+
+At this time very useful X509 oids (like streetAddress, postalCode and others)
+are missing. You can find a list of them at http://www.alvestrand.no/objectid/
+2.5.4.html, I hope they get included to openssl-x509-parse soon.
+
+Until then you can get these oids anyway like this:
+
+<?
+  function getOID($OID, $ssl)
+  {
+    preg_match('/\/' . $OID  . '=([^\/]+)/', $ssl, $matches);
+    return $matches[1];
+  }
+
+  $cert = file_get_contents('test.crt');
+  $ssl = openssl_x509_parse($cert);
+  $Address = getOID('2.5.4.9', $ssl['name']);
+  $ZipCode = getOID('2.5.4.17', $ssl['name']);
+  $Postbox = getOID('2.5.4.18', $ssl['name']);
+?>
+
+The parseCert function from the Horde framework can be usefull for this too.
+===============================================================================
+
+The valid from/to info is returned twice, in two different formats. They can be
+converted to normal datetime objects like this:
+
+$x509_data = openssl_x509_parse($cert);
+date_create_from_format('ymdHise', $x509_data['validFrom'])->format('c');
+date_create( '@' .  $x509_data['validFrom_time_t'])->format('c');
+/* these give the same result */
+
+To get a human-readable format directly (or any other formatted string) instead
+of a datetime object, use this:
+
+date_create_from_format('ymdHise', $x509_data['validFrom'])->format('c');
+or
+date_create( '@' .  $x509_data['validFrom_time_t'])->format('c');
+
+The same applies to validTo and validTo_time_t
+===============================================================================
+
+To read an extension from a X.509 certificate, you can proceed like this if you
+know the OID
+
+//Read the certificate from file
+$cert = file_get_contents('test.crt');
+$ssl = openssl_x509_parse($cert);
+
+$ext_value =  $ssl['extensions']['1.2.3.4.5.6'];
+echo $ext_value
+
+--------------------------------
+
+Because the $ssl array is not documented, you can easily see its contents like
+this:
+
+  //To print out all the array!
+  print_r(array_values($ssl));
+  print_r(array_keys($ssl));

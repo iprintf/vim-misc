@@ -1,0 +1,718 @@
+
+iptcembed
+
+(PHP 4, PHP 5, PHP 7)
+
+iptcembed — 将二进制 IPTC 数据嵌入到一幅 JPEG 图像中
+
+说明
+
+mixed iptcembed ( string $iptcdata , string $jpeg_file_name [, int $spool ] )
+
+Embeds binary IPTC data into a JPEG image.
+
+参数
+
+iptcdata
+
+    The data to be written.
+
+jpeg_file_name
+
+    Path to the JPEG image.
+
+spool
+
+    Spool flag. If the spool flag is over 2 then the JPEG will be returned as a
+    string.
+
+返回值
+
+If success and spool flag is lower than 2 then the JPEG will not be returned as
+a string, FALSE on errors.
+
+范例
+
+Example #1 Embedding IPTC data into a JPEG
+
+<?php
+
+// iptc_make_tag() function by Thies C. Arntzen
+function iptc_make_tag($rec, $data, $value)
+{
+    $length = strlen($value);
+    $retval = chr(0x1C) . chr($rec) . chr($data);
+
+    if($length < 0x8000)
+    {
+        $retval .= chr($length >> 8) .  chr($length & 0xFF);
+    }
+    else
+    {
+        $retval .= chr(0x80) . 
+                   chr(0x04) . 
+                   chr(($length >> 24) & 0xFF) . 
+                   chr(($length >> 16) & 0xFF) . 
+                   chr(($length >> 8) & 0xFF) . 
+                   chr($length & 0xFF);
+    }
+
+    return $retval . $value;
+}
+
+// Path to jpeg file
+$path = './phplogo.jpg';
+
+//
+ We need to check if theres any IPTC data in the jpeg image. If there is then 
+// bail out because we cannot embed any image that already has some IPTC data!
+$image = getimagesize($path, $info);
+
+if(isset($info['APP13']))
+{
+    die('Error: IPTC data found in source image, cannot continue');
+}
+
+// Set the IPTC tags
+$iptc = array(
+    '2#120' => 'Test image',
+    '2#116' => 'Copyright 2008-2009, The PHP Group'
+);
+
+// Convert the IPTC tags into binary code
+$data = '';
+
+foreach($iptc as $tag => $string)
+{
+    $tag = substr($tag, 2);
+    $data .= iptc_make_tag(2, $tag, $string);
+}
+
+// Embed the IPTC data
+$content = iptcembed($data, $path);
+
+// Write the new image data out to the file.
+$fp = fopen($path, "wb");
+fwrite($fp, $content);
+fclose($fp);
+?>
+
+注释
+
+    Note:
+
+    此函数不需要 GD 图象库。
+
+
+User Contributed Notes 17 notes
+
+===============================================================================
+
+If you want just to copy the IPTC data, eg. at the thumbnail creation, you
+don't have to parse the binary IPTC data into array and back; just do this:
+
+<?php
+$fullFilePath='photo1.jpg';
+$fullPathThumb = 'photo1thumb.jpg';
+$imagesize        =    getImageSize($fullFilePath, $info);
+if(isset($info['APP13'])){
+    $content    =    iptcembed($info['APP13'], $fullPathThumb);
+   @unlink($fullPathThumb);
+   $fw = fopen($fullPathThumb, 'w');
+   fwrite($fw, $content);
+   fclose($fw);
+}
+?>
+===============================================================================
+
+A class I recently wrote for manipulating IPTC data in an jpeg images. It does
+the job for editing exisiting data too, in easy manner. It is just a
+compilation of examples into single class.
+
+<?
+
+    /************************************************************\
+   
+        IPTC EASY 1.0 - IPTC data manipulator for JPEG images
+           
+        All reserved www.image-host-script.com
+       
+        Sep 15, 2008
+   
+    \************************************************************/
+
+    DEFINE('IPTC_OBJECT_NAME', '005');
+    DEFINE('IPTC_EDIT_STATUS', '007');
+    DEFINE('IPTC_PRIORITY', '010');
+    DEFINE('IPTC_CATEGORY', '015');
+    DEFINE('IPTC_SUPPLEMENTAL_CATEGORY', '020');
+    DEFINE('IPTC_FIXTURE_IDENTIFIER', '022');
+    DEFINE('IPTC_KEYWORDS', '025');
+    DEFINE('IPTC_RELEASE_DATE', '030');
+    DEFINE('IPTC_RELEASE_TIME', '035');
+    DEFINE('IPTC_SPECIAL_INSTRUCTIONS', '040');
+    DEFINE('IPTC_REFERENCE_SERVICE', '045');
+    DEFINE('IPTC_REFERENCE_DATE', '047');
+    DEFINE('IPTC_REFERENCE_NUMBER', '050');
+    DEFINE('IPTC_CREATED_DATE', '055');
+    DEFINE('IPTC_CREATED_TIME', '060');
+    DEFINE('IPTC_ORIGINATING_PROGRAM', '065');
+    DEFINE('IPTC_PROGRAM_VERSION', '070');
+    DEFINE('IPTC_OBJECT_CYCLE', '075');
+    DEFINE('IPTC_BYLINE', '080');
+    DEFINE('IPTC_BYLINE_TITLE', '085');
+    DEFINE('IPTC_CITY', '090');
+    DEFINE('IPTC_PROVINCE_STATE', '095');
+    DEFINE('IPTC_COUNTRY_CODE', '100');
+    DEFINE('IPTC_COUNTRY', '101');
+    DEFINE('IPTC_ORIGINAL_TRANSMISSION_REFERENCE',     '103');
+    DEFINE('IPTC_HEADLINE', '105');
+    DEFINE('IPTC_CREDIT', '110');
+    DEFINE('IPTC_SOURCE', '115');
+    DEFINE('IPTC_COPYRIGHT_STRING', '116');
+    DEFINE('IPTC_CAPTION', '120');
+    DEFINE('IPTC_LOCAL_CAPTION', '121');
+
+    class iptc {
+        var $meta=Array();
+        var $hasmeta=false;
+        var $file=false;
+       
+       
+        function iptc($filename) {
+            $size = getimagesize($filename,$info);
+            $this->hasmeta = isset($info["APP13"]);
+            if($this->hasmeta)
+                $this->meta = iptcparse ($info["APP13"]);
+            $this->file = $filename;
+        }
+        function set($tag, $data) {
+            $this->meta ["2#$tag"]= Array( $data );
+            $this->hasmeta=true;
+        }
+        function get($tag) {
+            return isset($this->meta["2#$tag"]) ? $this->meta["2#$tag"][0] :
+false;
+        }
+       
+        function dump() {
+            print_r($this->meta);
+        }
+        function binary() {
+            $iptc_new = '';
+            foreach (array_keys($this->meta) as $s) {
+                $tag = str_replace("2#", "", $s);
+                $iptc_new .= $this->iptc_maketag(2, $tag, $this->meta[$s][0]);
+            }       
+            return $iptc_new;   
+        }
+        function iptc_maketag($rec,$dat,$val) {
+            $len = strlen($val);
+            if ($len < 0x8000) {
+                   return chr(0x1c).chr($rec).chr($dat).
+                   chr($len >> 8).
+                   chr($len & 0xff).
+                   $val;
+            } else {
+                   return chr(0x1c).chr($rec).chr($dat).
+                   chr(0x80).chr(0x04).
+                   chr(($len >> 24) & 0xff).
+                   chr(($len >> 16) & 0xff).
+                   chr(($len >> 8 ) & 0xff).
+                   chr(($len ) & 0xff).
+                   $val;
+                  
+            }
+        }   
+        function write() {
+            if(!function_exists('iptcembed')) return false;
+            $mode = 0;
+            $content = iptcembed($this->binary(), $this->file, $mode);   
+            $filename = $this->file;
+               
+            @unlink($filename); #delete if exists
+           
+            $fp = fopen($filename, "w");
+            fwrite($fp, $content);
+            fclose($fp);
+        }   
+       
+        #requires GD library installed
+        function removeAllTags() {
+            $this->hasmeta=false;
+            $this->meta=Array();
+            $img = imagecreatefromstring(implode(file($this->file)));
+            @unlink($this->file); #delete if exists
+            imagejpeg($img,$this->file,100);
+        }
+    };
+   
+   
+?>
+
+Example read copyright string:
+
+$i = new iptc("test.jpg");
+echo $i->get(IPTC_COPYRIGHT_STRING);
+
+Update copyright statement:
+$i = new iptc("test.jpg");
+echo $i->set(IPTC_COPYRIGHT_STRING,"Here goes the new data");
+$i->write();
+
+NOTE1: Data may be anything, even a binary file. I have so far tested and
+embedded an MS-Excel file directly to jpeg and it worked just perfect.
+
+NOTE2: The writing purpose, it uses GD Library.
+
+Further imporvements / changes may be followed at www.image-host-script.com
+
+I hope it helps.
+Ali..
+===============================================================================
+
+The following code embeds both IPTC APP segment 13 and EXIF APP segment 1 data
+from a source file and embeds it into a destination file.  This overcomes the
+limitation where the iptcembed statement does not seem to embed EXIF data, only
+IPTC data.
+
+function transferIptcExif2File($srcfile, $destfile) {
+    // Function transfers EXIF (APP1) and IPTC (APP13) from $srcfile and adds
+it to $destfile
+    // JPEG file has format 0xFFD8 + [APP0] + [APP1] + ... [APP15] + <image
+data> where [APPi] are optional
+    // Segment APPi (where i=0x0 to 0xF) has format 0xFFEi + 0xMM + 0xLL +
+<data> (where 0xMM is
+    //   most significant 8 bits of (strlen(<data>) + 2) and 0xLL is the least
+significant 8 bits
+    //   of (strlen(<data>) + 2) 
+
+    if (file_exists($srcfile) && file_exists($destfile)) {
+        $srcsize = @getimagesize($srcfile, $imageinfo);
+        // Prepare EXIF data bytes from source file
+        $exifdata = (is_array($imageinfo) && key_exists("APP1", $imageinfo)) ?
+$imageinfo['APP1'] : null;
+        if ($exifdata) {
+            $exiflength = strlen($exifdata) + 2;
+            if ($exiflength > 0xFFFF) return false;
+            // Construct EXIF segment
+            $exifdata = chr(0xFF) . chr(0xE1) . chr(($exiflength >> 8) & 0xFF)
+. chr($exiflength & 0xFF) . $exifdata;
+        }
+        // Prepare IPTC data bytes from source file
+        $iptcdata = (is_array($imageinfo) && key_exists("APP13", $imageinfo)) ?
+$imageinfo['APP13'] : null;
+        if ($iptcdata) {
+            $iptclength = strlen($iptcdata) + 2;
+            if ($iptclength > 0xFFFF) return false;
+            // Construct IPTC segment
+            $iptcdata = chr(0xFF) . chr(0xED) . chr(($iptclength >> 8) & 0xFF)
+. chr($iptclength & 0xFF) . $iptcdata;
+        }
+        $destfilecontent = @file_get_contents($destfile);
+        if (!$destfilecontent) return false;
+        if (strlen($destfilecontent) > 0) {
+            $destfilecontent = substr($destfilecontent, 2);
+            $portiontoadd = chr(0xFF) . chr(0xD8);          // Variable
+accumulates new & original IPTC application segments
+            $exifadded = !$exifdata;
+            $iptcadded = !$iptcdata;
+
+            while ((substr($destfilecontent, 0, 2) & 0xFFF0) === 0xFFE0) {
+                $segmentlen = (substr($destfilecontent, 2, 2) & 0xFFFF);
+                $iptcsegmentnumber = (substr($destfilecontent, 1, 1) & 0x0F);  
+// Last 4 bits of second byte is IPTC segment #
+                if ($segmentlen <= 2) return false;
+                $thisexistingsegment = substr($destfilecontent, 0, $segmentlen
++ 2);
+                if ((1 <= $iptcsegmentnumber) && (!$exifadded)) {
+                    $portiontoadd .= $exifdata;
+                    $exifadded = true;
+                    if (1 === $iptcsegmentnumber) $thisexistingsegment = '';
+                }
+                if ((13 <= $iptcsegmentnumber) && (!$iptcadded)) {
+                    $portiontoadd .= $iptcdata;
+                    $iptcadded = true;
+                    if (13 === $iptcsegmentnumber) $thisexistingsegment = '';
+                }
+                $portiontoadd .= $thisexistingsegment;
+                $destfilecontent = substr($destfilecontent, $segmentlen + 2);
+            }
+            if (!$exifadded) $portiontoadd .= $exifdata;  //  Add EXIF data if
+not added already
+            if (!$iptcadded) $portiontoadd .= $iptcdata;  //  Add IPTC data if
+not added already
+            $outputfile = fopen($destfile, 'w');
+            if ($outputfile) return fwrite($outputfile, $portiontoadd .
+$destfilecontent); else return false;
+        } else {
+            return false;
+        }
+    } else {
+        return false;
+    }
+}
+===============================================================================
+
+If you have a file without any IPTC record, you can add a new, empty one by
+calling iptcembed with an empty string as first argument, like this:
+
+$buffer = iptcembed("",$imagename,0);
+$fp = fopen($imagename,"w");
+fwrite($fp,$buffer);
+fclose($fp);
+===============================================================================
+
+Windows makes a distinction between 'text' and 'binary' files. So if you run
+the above code on a windows platform, it will produce a garbled image. To
+overcome this problem put the file mode in fopen() as 'wb' instead of 'w'.
+
+Cheerio !!
+
+Rupinder
+===============================================================================
+
+For everybody having issues with unicode (UTF-8) text in IPTC fields, set the
+"Coded Character Set"-field in the envelop (1:90, see http://www.iptc.org/std/
+IIM/4.1/specification/IIMV4.1.pdf).
+
+This can be accomplished by starting the $data-block with the following lines:
+
+<?php
+// These two lines ensure that UTF8-Encoding will work (set the 1:90 field in
+the envelop)
+// @see http://cpanforum.com/threads/2114 for a hint
+$utf8seq = chr(0x1b) . chr(0x25) . chr(0x47);
+$length = strlen($utf8seq);
+$data = chr(0x1C) . chr(1) . chr('090') . chr($length >> 8) . chr($length & 
+0xFF) . $utf8seq;
+?>
+
+After that you can continue like in the example:
+
+<?php
+foreach($iptc as $tag => $string)
+{
+    $tag = substr($tag, 2);
+    $data .= iptc_make_tag(2, $tag, $string);
+}
+?>
+===============================================================================
+
+While using the class file noted below you'll notice setting an array of
+keywords with the set() function will not work.  Try this instead:
+<?php
+        function set($tag, $data) {
+            if(is_array($data)){
+                $c = count($data);
+                for ($i=0; $i <$c; $i++){
+                       $this->meta["2#$tag"][$i] = $data[$i];
+                }               
+                $this->hasmeta=true;
+            } else {
+                $this->meta["2#$tag"]= Array( $data );
+                $this->hasmeta=true;
+            }
+        }
+?>
+===============================================================================
+
+I just found an error while trying to write several keywords (an array) with
+the binary function... please consider using the following:
+
+<?php
+function binary() {
+            $iptc_new = '';
+            foreach (array_keys($this->meta) as $s) {
+                $tag = str_replace("2#", "", $s);
+                if(count($this->meta[$s])>1){
+                    foreach ($this->meta[$s] as $row){
+                        $iptc_new .= $this->iptc_maketag(2, $tag, $row);
+                    }
+                }else {
+                    $iptc_new .= $this->iptc_maketag(2, $tag, $this->meta[$s][0
+]);
+                }
+            }
+            return $iptc_new;
+        }
+?>
+===============================================================================
+
+In Thomas's wonderful code snippet below, the second parameter needs to be
+changed to "$filename", otherwise the script has no write the file. So the code
+should read:
+
+<?php
+//This function removes all header data from a JPG
+function remove_XMP($image_in, $filename) {
+  $filename_in = addslashes($image_in);
+  list($width, $height) = getimagesize($filename_in);
+  $image_dest = imagecreatetruecolor($width, $height);
+  $image = imagecreatefromjpeg($filename_in);
+  imagecopyresampled($image_dest, $image, 0, 0, 0, 0,  $width, $height,$width, 
+$height);
+  imagejpeg($image_dest, $filename);
+}
+?>
+===============================================================================
+
+Pay attention not add codes with length of value equal to 0; the behavior could
+be strange...
+(e.g. $iptc_old["2#015"][0] = "")
+===============================================================================
+
+You might have noticed that several metadata fields in Photoshop are not
+available via IPTC.
+Also, Photoshop now uses XMP for it's primary metadata, meaning IPTC is only
+read by Photoshop if XMP is not present.
+
+I have written a library "PHP JPEG Metadata Toolkit" which bypasses this
+problem as it allows reading, writing and interpreting of virtually any type of
+metadata, including XMP, IPTC and EXIF.
+
+Try it out, and download it at:
+http://www.ozhiker.com/electronics/pjmt/index.html
+===============================================================================
+
+I've spent a whole day debugging my code (that was based on the example below,
+posted by knut) until I found out, that iptcembed() only works if the image
+specified in jpeg_file_name already has IPTC fields included.
+
+That means that you cannot write IPTC fields in a jpeg file without preexisting
+IPTC information in it.
+
+Updating of IPTC fields also worked only with a few files, I don't really know
+what it depends on whether it works or not. (Well, it depends on the IPTC
+header, that's for sure :-)
+
+I'm using PHP 4.2.1, maybe this is fixed in more recent versions, but I don't
+believe...
+
+Nevertheless, here's some piece of code I tried:
+
+I replaced the line
+
+<?
+$iptc_old = iptcparse ($info["APP13"]);
+?>
+
+from knut's example below with
+
+<?
+$iptc_old["2#000"][0] = chr(0) . chr(2);
+?>
+
+This creates just an empty "Header" according to the IPTC spec. This one also
+is included when getting IPTC info using iptcparse(). So my intention was to
+create a fully new header, but when using iptcembed() afterwards, the file size
+of the new file was a little smaller than the original but without any IPTC
+info stored in it.
+===============================================================================
+
+I've a problem with the ltrim fucntion: sometimes it remove more characters
+than it must, so it's better to delete the line
+
+<?
+//   $image = rtrim ($image, $endchar);
+?>
+
+in the XMP_remove_from_jpeg function
+===============================================================================
+
+Yep it's me again :-) After some time I spent searching around for other
+possibilities to write IPTC fields to JPEG files I found this one:
+
+http://www.zonageek.com/software/php/jpeg/index.php
+
+This one seems to work pretty fine, remember that you have to install PEAR to
+get this running (Debian package php4-pear).
+===============================================================================
+
+Reading and changing IPTC make no problem with the PEAR function, but recent
+Adobe software add XMP datas on JPEG files and read them instead of IPTC datas.
+If you need to change IPTC on a JPEG file and want Adobe PS7 read them, you
+have two solutions:
+- writing XMP and IPTC datas
+- writing IPTC datas and removing XMP datas
+
+Because I've not enough time to work on XMP datas, I've choosen the second
+solution. Here is the result of this work:
+
+<?php
+// removing XMP datas from a JPEG file
+// (c) Patrick Premartin 19/02/2004
+
+function XMP_remove_from_jpeg (&$image) {
+  $xmp_str = "http://ns.adobe.com/xap/1.0/";
+  $xmp_end = "<?xpacket end='w'?>";
+  $n_str = strpos ($image, $xmp_str);
+  $n_end = strpos ($image, $xmp_end);
+  if (($n_str !== false) && ($n_end !== false) && ($n_str < $n_end)) {
+    $n_str -= 4; // FF E1 .x. .y. (xy is the length of the XMP block -> first
+char of this block
+    $n_end += strlen ($xmp_end)-1; // last char of this block
+    $endchar = $image [$n_str-1];
+    if ($endchar == " ") {
+      $endchar = "A";
+    } else {
+      $endchar = " ";
+    }
+    $xmp_len = $n_end-$n_str+1;
+    $img_len = strlen ($image);
+    $len = $img_len - $xmp_len;
+    for ($i = $n_str; $i < $img_len; $i ++) {
+      if ($i < $len) {
+        $image [$i] = $image [$i+$xmp_len];
+      } else {
+        $image [$i] = $endchar;
+      }
+    }
+    $image = rtrim ($image, $endchar);
+    return true;
+  } else {
+    return false;
+  }
+}
+
+function XMP_remove_from_jpegfile ($filename_in, $filename_out="") {
+  if (""==$filename_out) {
+    $filename_out = $filename_in;
+  }
+  if ((""!=$filename_in) && (file_exists ($filename_in)) && (($len_in = 
+filesize ($filename_in)) > 0)) {
+    // chargement du fichier en m moire
+    $f_in = fopen ($filename_in, "rb");
+    $img = fread ($f_in, $len_in);
+    fclose ($f_in);
+    // suppression du XMP de l'image
+    if (XMP_remove_from_jpeg ($img)) {
+      // enregistrement du fichier sur disque
+      $f_out = fopen ($filename_out, "wb");
+      fwrite ($f_out, $img, strlen ($img));
+      fclose ($f_out);
+    }
+  }
+}
+
+XMP_remove_from_jpegfile ("ps7_hr.jpg", "ps7_hr_.jpg"); // create a new picture
+without XMP datas
+
+XMP_remove_from_jpegfile ("ps8_hr.jpg"); // replace the existing file
+?>
+
+In the future, I'll work on changing XMP datas and IPTC in the same way and
+will publish it ther or as a in PEAR.
+
+May the force be with us :-)
+===============================================================================
+
+Example to read IPTC text from an image, changing the text an write to a new
+file using the functions iptcparse and iptcembed.
+
+Also a list of the most common IPTC fields.
+
+<?
+// original file name
+$image_name_old = "test.jpg";
+
+// New file name
+$image_name_new = "test2.jpg";
+
+// Reads the IPTC text in to the array '$iptc'
+// The number after the '#' is the IPTC field
+// Ex: $iptc["2#120"][0] is Caption
+// $iptc["2#055"][0]; is Creation date
+$size = GetImageSize ("$image_name_old",&$info);
+$iptc_old = iptcparse ($info["APP13"]);
+
+// Adding or replacing IPTC text
+   // This ex. replace the original category or create it if it dos not exist
+   $iptc_old["2#015"][0] = "Sport";
+   // .. and adding more text to the original caption
+   $iptc_old["2#120"][0] .= " More caption text";
+
+   // Making the new IPTC string
+   foreach (array_keys($iptc_old) as $s){
+      // Finds the IPTC numbers
+      $tag = str_replace("2#", "", $s);
+      // Creating the string
+      $iptc_new .= iptc_maketag(2, $tag, $iptc_old[$s][0]);
+   }
+
+// The original file and the new IPTC Text into $content
+// Mode 0 - puts the image file into $content
+// Mode 1 - puts the image file into $content and directly to the web client
+// Mode 2 - puts the image file to web client
+$mode = 0;
+$content = iptcembed($iptc_new, $image_name_old, $mode);
+
+// writes the new file
+$fp = fopen($image_name_new, "w");
+fwrite($fp, $content);
+fclose($fp);
+
+// Function to format the new IPTC text, (thanks to Thies C. Arntzen)
+function iptc_maketag($rec,$dat,$val){
+         $len = strlen($val);
+         if ($len < 0x8000)
+                  return chr(0x1c).chr($rec).chr($dat).
+                  chr($len >> 8).
+                  chr($len & 0xff).
+                  $val;
+         else
+                  return chr(0x1c).chr($rec).chr($dat).
+                  chr(0x80).chr(0x04).
+                  chr(($len >> 24) & 0xff).
+                  chr(($len >> 16) & 0xff).
+                  chr(($len >> 8 ) & 0xff).
+                  chr(($len ) & 0xff).
+                  $val;
+}
+
+?>
+
+--- The most common IPTC Fileds
+005 - Object Name
+007 - Edit Status
+010 - Priority
+015 - Category
+020 - Supplemental Category
+022 - Fixture Identifier
+025 - Keywords
+030 - Release Date
+035 - Release Time
+040 - Special Instructions
+045 - Reference Service
+047 - Reference Date
+050 - Reference Number
+055 - Created Date
+060 - Created Time
+065 - Originating Program
+070 - Program Version
+075 - Object Cycle
+080 - Byline
+085 - Byline Title
+090 - City
+095 - Province State
+100 - Country Code
+101 - Country
+103 - Original Transmission Reference
+105 - Headline
+110 - Credit
+115 - Source
+116 - Copyright String
+120 - Caption
+121 - Local Caption
+===============================================================================
+
+To remove all EXIF, XMP etc. tags from a jpeg file you need no resampling
+(which, by the way, may give you memory problems). It's just enough to recreate
+the image, presumably with 100% quality in order not to loose anything. The
+code is as simple as that:
+
+<?php
+    $img = imagecreatefromjpeg ($path);
+    imagejpeg ($img, $path, 100);
+    imagedestroy ($img);
+?>

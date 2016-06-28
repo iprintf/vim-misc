@@ -1,0 +1,210 @@
+
+stream_socket_recvfrom
+
+(PHP 5, PHP 7)
+
+stream_socket_recvfrom — Receives data from a socket, connected or not
+
+说明
+
+string stream_socket_recvfrom ( resource $socket , int $length [, int $flags =
+0 [, string &$address ]] )
+
+stream_socket_recvfrom() accepts data from a remote socket up to length bytes.
+
+参数
+
+socket
+
+    The remote socket.
+
+length
+
+    The number of bytes to receive from the socket.
+
+flags
+
+    The value of flags can be any combination of the following:
+
+                           Possible values for flags
+    STREAM_OOB  Process OOB (out-of-band) data.
+                Retrieve data from the socket, but do not consume the buffer.
+    STREAM_PEEK Subsequent calls to fread() or stream_socket_recvfrom() will
+                see the same data.
+
+address
+
+    If address is provided it will be populated with the address of the remote
+    socket.
+
+返回值
+
+Returns the read data, as a string
+
+范例
+
+Example #1 stream_socket_recvfrom() example
+
+<?php
+/* Open a server socket to port 1234 on localhost */
+$server = stream_socket_server('tcp://127.0.0.1:1234');
+
+/* Accept a connection */
+$socket = stream_socket_accept($server);
+
+/* Grab a packet (1500 is a typical MTU size) of OOB data */
+echo "Received Out-Of-Band: '" . stream_socket_recvfrom($socket, 1500, 
+STREAM_OOB) . "'\n";
+
+/* Take a peek at the normal in-band data, but don't comsume it. */
+echo "Data: '" . stream_socket_recvfrom($socket, 1500, STREAM_PEEK) . "'\n";
+
+/* Get the exact same packet again, but remove it from the buffer this time. */
+echo "Data: '" . stream_socket_recvfrom($socket, 1500) . "'\n";
+
+/* Close it up */
+fclose($socket);
+fclose($server);
+?>
+
+注释
+
+    Note:
+
+    If a message received is longer than the length parameter, excess bytes may
+    be discarded depending on the type of socket the message is received from
+    (such as UDP).
+
+    Note:
+
+    Calls to stream_socket_recvfrom() on socket-based streams, after calls to
+    buffer-based stream functions (like fread() or stream_get_line()) read data
+    directly from the socket and bypass the stream buffer.
+
+参见
+
+  • stream_socket_sendto() - Sends a message to a socket, whether it is
+    connected or not
+  • stream_socket_client() - Open Internet or Unix domain socket connection
+  • stream_socket_server() - Create an Internet or Unix domain server socket
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+Note that stream_socket_recvfrom() bypasses stream wrappers including TLS/SSL.
+While reading from an encrypted stream with fread() will return decrypted data,
+using stream_socket_recvfrom() will give you the original encrypted bytes.
+===============================================================================
+
+Basically there is currently no real way to determine what the position of the
+Out of band data is in the tcp/ip stream.
+
+However, it seems that In my current environment (winsock: Windows / PHP 5.3.0)
+you do not peek beyond the OOB byte unless the buffer is empty
+reads do read beyond the OOB data. (I'll check my linux box later)
+
+You should be able to figure out the position of the OOB data by peeking and
+reading from the regular stream
+although it would not be 100% reliable as we do read beyond the OOB data when
+nothing is in front of it.
+depending on the high level protocol it might be possible
+to handle the specific "no data in front of out-of-band data" case
+
+<?php
+echo "<pre>";
+$sockets = stream_socket_pair(STREAM_PF_INET, STREAM_SOCK_STREAM, 
+STREAM_IPPROTO_IP);
+$reader=$sockets[0];
+$writer=$sockets[1];
+
+stream_socket_sendto($writer,"abc");
+stream_socket_sendto($writer,"xyZ",STREAM_OOB); // ONLY THE LAST BYTE IS MARKED
+AS OOB DATA
+stream_socket_sendto($writer,"def");
+
+echo "\r\n";
+echo "Test 1, Peeking beyond oob when the read buffer becomes empty\r\n";
+echo "The data order is 'abcxyZdef'\r\n";
+stream_select($r=array($reader), $w=array(), $x=array($reader),5);
+echo "has regular:";var_dump(count($r)!==0);
+echo "has oobData:";var_dump(count($x)!==0);
+echo "<span style='color:blue' >Peek (9) regular:".stream_socket_recvfrom(
+$reader,9,STREAM_PEEK)."</span>\r\n";
+echo "<span style='color:green'>Peek (1) OobData:".stream_socket_recvfrom(
+$reader,9,STREAM_OOB|STREAM_PEEK)."</span>\r\n";
+echo "<span style='color:black'>READ (4) regular:".stream_socket_recvfrom(
+$reader,4)."</span>\r\n";
+echo "<span style='color:blue' >Peek (9) regular:".stream_socket_recvfrom(
+$reader,9,STREAM_PEEK)."</span>\r\n";
+echo "<span style='color:black'>READ (1) regular:".stream_socket_recvfrom(
+$reader,1)."</span>\r\n";
+echo "<span style='color:blue' >Peek (9) regular:".stream_socket_recvfrom(
+$reader,9,STREAM_PEEK)."</span>\r\n";
+// read the OOB data
+echo "<span style='color:red'  >READ (9) OobData:".stream_socket_recvfrom(
+$reader,9,STREAM_OOB)."</span>\r\n";
+
+echo "<span style='color:blue' >Peek (9) regular:".stream_socket_recvfrom(
+$reader,9,STREAM_PEEK)."</span>\r\n";
+
+fclose($sockets[0]);
+fclose($sockets[1]);
+echo "</pre>";
+?>
+outputs:
+Test 1, Peeking beyond oob when the read buffer becomes empty
+The data order is 'abcxyZdef'
+has regular:bool(true)
+has oobData:bool(true)
+Peek (9) regular:abcxy
+Peek (1) OobData:Z
+READ (4) regular:abcx
+Peek (9) regular:y
+READ (1) regular:y
+Peek (9) regular:def
+READ (9) OobData:Z
+Peek (9) regular:def
+
+<?php
+echo "<pre>";
+$sockets = stream_socket_pair(STREAM_PF_INET, STREAM_SOCK_STREAM, 
+STREAM_IPPROTO_IP);
+$reader=$sockets[0];
+$writer=$sockets[1];
+
+stream_socket_sendto($writer,"Z",STREAM_OOB); // ONLY THE LAST BYTE IS MARKED
+AS OOB DATA
+stream_socket_sendto($writer,"abcxydef");
+
+echo "<hr/>";
+echo "\r\n";
+echo "Test 2, peek if there is nothing in front of the OOB data\r\n";
+echo "The data order is 'Zabcxydef'\r\n";
+stream_select($r=array($reader), $w=array(), $x=array($reader),5);
+echo "has regular:";var_dump(count($r)!==0);
+echo "has oobData:";var_dump(count($x)!==0);
+echo "<span style='color:blue'>peek (9) regular:".stream_socket_recvfrom(
+$reader,9,STREAM_PEEK)."</span>\r\n";
+echo "<span style='color:red' >Peek (9) OobData:".stream_socket_recvfrom(
+$reader,9,STREAM_OOB)."</span>\r\n";
+echo "<span style='color:blue'>peek (9) regular:".stream_socket_recvfrom(
+$reader,9,STREAM_PEEK)."</span>\r\n";
+echo "</pre>";
+?>
+Outputs:
+Test 2, peek if there is nothing in front of the OOB data
+The data order is 'Zabcxydef'
+has regular:bool(true)
+has oobData:bool(true)
+peek (9) regular:abcxydef
+Peek (9) OobData:Z
+peek (9) regular:abcxydef
+===============================================================================
+
+This method may return a peer address not compatible with stream_socket_sendto
+() if in ipv6.
+
+The ip returned by recvfrom is not within brackets ([]), and has the port
+appended, which makes it look like ::1:1234. To cut it properly, use strrpos()

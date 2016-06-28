@@ -1,0 +1,1430 @@
+
+str_getcsv
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+str_getcsv — 解析 CSV 字符串为一个数组
+
+说明
+
+array str_getcsv ( string $input [, string $delimiter = "," [, string
+$enclosure = '"' [, string $escape = "\\" ]]] )
+
+以 CSV 字段格式解析字符串输入，并返回包含读取字段的数组。
+
+参数
+
+input
+
+    待解析的字符串。
+
+delimiter
+
+    设定字段界定符（仅单个字符）。
+
+enclosure
+
+    设定字段包裹字符（仅单个字符）。
+
+escape
+
+    设置转义字符（仅单个字符）。默认为反斜线（\）。
+
+返回值
+
+返回一个包含读取到的字段的索引数组。
+
+参见
+
+  • fgetcsv() - 从文件指针中读入一行并解析 CSV 字段
+
+
+User Contributed Notes 35 notes
+
+===============================================================================
+
+Handy one liner to parse a CSV file into an array
+
+<?php
+
+$csv = array_map('str_getcsv', file('data.csv'));
+
+?>
+===============================================================================
+
+As the str_getcsv(), unlike to fgetcsv(), does not parse the rows in CSV
+string, I have found following easy workaround:
+
+<?php
+$Data = str_getcsv($CsvString, "\n"); //parse the rows
+foreach($Data as &$Row) $Row = str_getcsv($Row, ";"); //parse the items in rows
+?>
+
+Why not use explode() instead of str_getcsv() to parse rows? Because explode()
+would not treat possible enclosured parts of string or escaped characters
+correctly.
+===============================================================================
+
+Based on James' line, this will create an array of associative arrays with the
+first row column headers as the keys.
+
+<?php
+    $csv = array_map('str_getcsv', file($file));
+    array_walk($csv, function(&$a) use ($csv) {
+      $a = array_combine($csv[0], $a);
+    });
+    array_shift($csv); # remove column header
+?>
+
+This will yield something like
+    [2] => Array
+        (
+            [Campaign ID] => 295095038
+            [Ad group ID] => 22460178158
+            [Keyword ID] => 3993587178
+===============================================================================
+
+@normadize - that is a nice start, but it fails on situations where a field is
+empty but quoted (returning a string with one double quote instead of an empty
+string) and cases like """""foo""""" that should result in ""foo"" but instead
+return "foo". I also get a row with 1 empty field at the end because of the
+final CRLF in the CSV. Plus, I don't really like the !!Q!! magic or urlencoding
+to get around things. Also, \R doesn't work in pcre on any of my php
+installations.
+
+Here is my take on this, without anonymous functions (so it works on PHP <
+5.3), and without your options (because I believe the only correct way to parse
+according to the RFC would be $skip_empty_lines = false and $trim_fields =
+false).
+
+//parse a CSV file into a two-dimensional array
+//this seems as simple as splitting a string by lines and commas, but this only
+works if tricks are performed
+//to ensure that you do NOT split on lines and commas that are inside of double
+quotes.
+function parse_csv($str)
+{
+    //match all the non-quoted text and one series of quoted text (or the end
+of the string)
+    //each group of matches will be parsed with the callback, with $matches[1]
+containing all the non-quoted text,
+    //and $matches[3] containing everything inside the quotes
+    $str = preg_replace_callback('/([^"]*)("((""|[^"])*)"|$)/s',
+'parse_csv_quotes', $str);
+
+    //remove the very last newline to prevent a 0-field array for the last line
+    $str = preg_replace('/\n$/', '', $str);
+
+    //split on LF and parse each line with a callback
+    return array_map('parse_csv_line', explode("\n", $str));
+}
+
+//replace all the csv-special characters inside double quotes with markers
+using an escape sequence
+function parse_csv_quotes($matches)
+{
+    //anything inside the quotes that might be used to split the string into
+lines and fields later,
+    //needs to be quoted. The only character we can guarantee as safe to use,
+because it will never appear in the unquoted text, is a CR
+    //So we're going to use CR as a marker to make escape sequences for CR, LF,
+Quotes, and Commas.
+    $str = str_replace("\r", "\rR", $matches[3]);
+    $str = str_replace("\n", "\rN", $str);
+    $str = str_replace('""', "\rQ", $str);
+    $str = str_replace(',', "\rC", $str);
+
+    //The unquoted text is where commas and newlines are allowed, and where the
+splits will happen
+    //We're going to remove all CRs from the unquoted text, by normalizing all
+line endings to just LF
+    //This ensures us that the only place CR is used, is as the escape
+sequences for quoted text
+    return preg_replace('/\r\n?/', "\n", $matches[1]) . $str;
+}
+
+//split on comma and parse each field with a callback
+function parse_csv_line($line)
+{
+    return array_map('parse_csv_field', explode(',', $line));
+}
+
+//restore any csv-special characters that are part of the data
+function parse_csv_field($field) {
+    $field = str_replace("\rC", ',', $field);
+    $field = str_replace("\rQ", '"', $field);
+    $field = str_replace("\rN", "\n", $field);
+    $field = str_replace("\rR", "\r", $field);
+    return $field;
+}
+===============================================================================
+
+Here is a quick and easy way to convert a CSV file to an associated array:
+
+<?php
+/**
+* @link http://gist.github.com/385876
+*/
+function csv_to_array($filename='', $delimiter=',')
+{
+    if(!file_exists($filename) || !is_readable($filename))
+        return FALSE;
+
+    $header = NULL;
+    $data = array();
+    if (($handle = fopen($filename, 'r')) !== FALSE)
+    {
+        while (($row = fgetcsv($handle, 1000, $delimiter)) !== FALSE)
+        {
+            if(!$header)
+                $header = $row;
+            else
+                $data[] = array_combine($header, $row);
+        }
+        fclose($handle);
+    }
+    return $data;
+}
+
+?>
+===============================================================================
+
+Like some other users here noted, str_getcsv() cannot be used if you want to
+comply with either the RFC or with most spreadsheet tools like Excel or Google
+Docs.
+
+These tools do not escape commas or new lines, but instead place double-quotes
+(") around the field. If there are any double-quotes in the field, these are
+escaped with another double-quote (" becomes ""). All this may look odd, but it
+is what the RFC and most tools do ...
+
+For instance, try exporting as .csv a Google Docs spreadsheet (File > Download
+as > .csv) which has new lines and commas as part of the field values and see
+how the .csv content looks, then try to parse it using str_getcsv() ... it will
+spectacularly regardless of the arguments you pass to it.
+
+Here is a function that can handle everything correctly, and more:
+
+- doesn't use any for or while loops,
+- it allows for any separator (any string of any length),
+- option to skip empty lines,
+- option to trim fields,
+- can handle UTF8 data too (although .csv files are likely non-unicode).
+
+Here is the more human readable version of the function:
+
+<?php
+
+// returns a two-dimensional array or rows and fields
+
+function parse_csv ($csv_string, $delimiter = ",", $skip_empty_lines = true, 
+$trim_fields = true)
+{
+    $enc = preg_replace('/(?<!")""/', '!!Q!!', $csv_string);
+    $enc = preg_replace_callback(
+        '/"(.*?)"/s',
+        function ($field) {
+            return urlencode(utf8_encode($field[1]));
+        },
+        $enc
+    );
+    $lines = preg_split($skip_empty_lines ? ($trim_fields ? '/( *\R)+/s' : '/\
+R+/s') : '/\R/s', $enc);
+    return array_map(
+        function ($line) use ($delimiter, $trim_fields) {
+            $fields = $trim_fields ? array_map('trim', explode($delimiter, 
+$line)) : explode($delimiter, $line);
+            return array_map(
+                function ($field) {
+                    return str_replace('!!Q!!', '"', utf8_decode(urldecode(
+$field)));
+                },
+                $fields
+            );
+        },
+        $lines
+    );
+}
+
+?>
+
+Since this is not using any loops, you can actually write it as a one-line
+statement (one-liner).
+
+Here's the function using just one line of code for the function body,
+formatted nicely though:
+
+<?php
+
+// returns the same two-dimensional array as above, but with a one-liner code
+
+function parse_csv ($csv_string, $delimiter = ",", $skip_empty_lines = true, 
+$trim_fields = true)
+{
+    return array_map(
+        function ($line) use ($delimiter, $trim_fields) {
+            return array_map(
+                function ($field) {
+                    return str_replace('!!Q!!', '"', utf8_decode(urldecode(
+$field)));
+                },
+                $trim_fields ? array_map('trim', explode($delimiter, $line)) : 
+explode($delimiter, $line)
+            );
+        },
+        preg_split(
+            $skip_empty_lines ? ($trim_fields ? '/( *\R)+/s' : '/\R+/s') : '/\R
+/s',
+            preg_replace_callback(
+                '/"(.*?)"/s',
+                function ($field) {
+                    return urlencode(utf8_encode($field[1]));
+                },
+                $enc = preg_replace('/(?<!")""/', '!!Q!!', $csv_string)
+            )
+        )
+    );
+}
+
+?>
+
+Replace !!Q!! with another placeholder if you wish.
+
+Have fun.
+===============================================================================
+
+str_getcsv can be really fussy about trailing spaces - it will not necessarily
+recognise a final element in a quote delimited set of strings with a space
+following the final string for example. Using trim() before str_getcsv()
+quickly fixes this.
+===============================================================================
+
+Drawing inspiration from daniel dot oconnor at gmail dot com, here's an
+alternative str_putcsv() that leverages existing PHP core functionality
+(5.1.0+) to avoid re-inventing the wheel.
+
+<?php
+if(!function_exists('str_putcsv')) {
+    function str_putcsv($input, $delimiter = ',', $enclosure = '"') {
+        // Open a memory "file" for read/write...
+        $fp = fopen('php://temp', 'r+');
+        // ... write the $input array to the "file" using fputcsv()...
+        fputcsv($fp, $input, $delimiter, $enclosure);
+        // ... rewind the "file" so we can read what we just wrote...
+        rewind($fp);
+        // ... read the entire line into a variable...
+        $data = fgets($fp);
+        // ... close the "file"...
+        fclose($fp);
+        // ... and return the $data to the caller, with the trailing newline
+from fgets() removed.
+        return rtrim( $data, "\n" );
+    }
+}
+?>
+===============================================================================
+
+Note that this function can also be used to parse other types of constructions.
+For example, I have used to parse .htaccess AddDescription lines:
+
+    AddDescription "My description to the file." filename.jpg
+
+Those lines can be parsed like this:
+
+<?php
+
+$line = 'AddDescription "My description to the file." filename.jpg';
+
+$parsed = str_getcsv(
+    $line, # Input line
+    ' ',   # Delimiter
+    '"',   # Enclosure
+    '\\'   # Escape char
+);
+
+var_dump( $parsed );
+
+?>
+
+The output:
+
+array(3) {
+  [0]=>
+  string(14) "AddDescription"
+  [1]=>
+  string(27) "My description to the file."
+  [2]=>
+  string(12) "filename.jpg"
+}
+===============================================================================
+
+I found myself wanting to parse a CSV and didn't have access to str_getcsv, so
+I wrote substitute for PHP < 5.3, hope it helps someone out there stuck in the
+same situation.
+
+<?php
+if (!function_exists('str_getcsv')) {
+    function str_getcsv($input, $delimiter = ',', $enclosure = '"', $escape = '
+\\', $eol = '\n') {
+        if (is_string($input) && !empty($input)) {
+            $output = array();
+            $tmp    = preg_split("/".$eol."/",$input);
+            if (is_array($tmp) && !empty($tmp)) {
+                while (list($line_num, $line) = each($tmp)) {
+                    if (preg_match("/".$escape.$enclosure."/",$line)) {
+                        while ($strlen = strlen($line)) {
+                            $pos_delimiter       = strpos($line,$delimiter);
+                            $pos_enclosure_start = strpos($line,$enclosure);
+                            if (
+                                is_int($pos_delimiter) && is_int(
+$pos_enclosure_start)
+                                && ($pos_enclosure_start < $pos_delimiter)
+                                ) {
+                                $enclosed_str = substr($line,1);
+                                $pos_enclosure_end = strpos($enclosed_str,
+$enclosure);
+                                $enclosed_str = substr($enclosed_str,0,
+$pos_enclosure_end);
+                                $output[$line_num][] = $enclosed_str;
+                                $offset = $pos_enclosure_end+3;
+                            } else {
+                                if (empty($pos_delimiter) && empty(
+$pos_enclosure_start)) {
+                                    $output[$line_num][] = substr($line,0);
+                                    $offset = strlen($line);
+                                } else {
+                                    $output[$line_num][] = substr($line,0,
+$pos_delimiter);
+                                    $offset = (
+                                                !empty($pos_enclosure_start)
+                                                && ($pos_enclosure_start < 
+$pos_delimiter)
+                                                )
+                                                ?$pos_enclosure_start
+                                                :$pos_delimiter+1;
+                                }
+                            }
+                            $line = substr($line,$offset);
+                        }
+                    } else {
+                        $line = preg_split("/".$delimiter."/",$line);
+   
+                        /*
+                         * Validating against pesky extra line breaks creating
+false rows.
+                         */
+                        if (is_array($line) && !empty($line[0])) {
+                            $output[$line_num] = $line;
+                        } 
+                    }
+                }
+                return $output;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+}
+?>
+===============================================================================
+
+After using several methods in the past to create CSV strings without using
+files (disk IO sucks), I finally decided it's time to write a function to
+handle it all. This function could use some cleanup, and the variable type test
+might be overkill for what is needed, I haven't thought about it too much.
+
+Also, I took the liberty of replacing fields with certain data types with
+strings which I find much easier to work with. Some of you may not agree with
+those. Also, please note that the type "double" or float has been coded
+specifically for two digit precision because if I am using a float, it's most
+likely for currency.
+
+I am sure some of you out there would appreciate this function.
+
+<?php
+    function str_putcsv($array, $delimiter = ',', $enclosure = '"', $terminator
+= "\n") {
+        # First convert associative array to numeric indexed array
+        foreach ($array as $key => $value) $workArray[] = $value;
+
+        $returnString = '';                 # Initialize return string
+        $arraySize = count($workArray);     # Get size of array
+       
+        for ($i=0; $i<$arraySize; $i++) {
+            # Nested array, process nest item
+            if (is_array($workArray[$i])) {
+                $returnString .= str_putcsv($workArray[$i], $delimiter, 
+$enclosure, $terminator);
+            } else {
+                switch (gettype($workArray[$i])) {
+                    # Manually set some strings
+                    case "NULL":     $_spFormat = ''; break;
+                    case "boolean":  $_spFormat = ($workArray[$i] == true) ? 
+'true': 'false'; break;
+                    # Make sure sprintf has a good datatype to work with
+                    case "integer":  $_spFormat = '%i'; break;
+                    case "double":   $_spFormat = '%0.2f'; break;
+                    case "string":   $_spFormat = '%s'; break;
+                    # Unknown or invalid items for a csv - note: the datatype
+of array is already handled above, assuming the data is nested
+                    case "object":
+                    case "resource":
+                    default:         $_spFormat = ''; break;
+                }
+                                $returnString .= sprintf('%2$s'.$_spFormat.
+'%2$s', $workArray[$i], $enclosure);
+$returnString .= ($i < ($arraySize-1)) ? $delimiter : $terminator;
+            }
+        }
+        # Done the workload, return the output information
+        return $returnString;
+    }
+
+?>
+===============================================================================
+
+I always use this:
+
+function convert_to_csv($input_array, $output_file_name, $delimiter)
+{
+    /** open raw memory as file, no need for temp files */
+    $temp_memory = fopen('php://memory', 'w');
+    /** loop through array */
+    foreach ($input_array as $line) {
+        /** default php csv handler **/
+        fputcsv($temp_memory, $line, $delimiter);
+    }
+    /** rewrind the "file" with the csv lines **/
+    fseek($temp_memory, 0);
+    /** modify header to be downloadable csv file **/
+    header('Content-Type: application/csv');
+    header('Content-Disposition: attachement; filename="' . $output_file_name .
+'";');
+    /** Send file to browser for download */
+    fpassthru($temp_memory);
+}
+
+/** Array to convert to csv */
+$array_to_csv = Array(Array(12566, 'Enmanuel', 'Corvo'), Array(56544, 'John',
+'Doe'), Array(78550, 'Mark', 'Smith'));
+convert_to_csv($array_to_csv, 'report.csv', ',');
+
+you can read the full post here:
+
+<a href="http://webtricksandtreats.com/export-to-csv-php/">PHP to CSV  Download
+</a>
+===============================================================================
+
+You can parse a full standard csv string (i.e. a form posted textarea with csv
+lines) in one easy step:
+
+<?php
+$fullcsv = array_map('str_getcsv', str_getcsv($str_csv,"\n"));
+?>
+===============================================================================
+
+I wanted the best of the 2 solutions by james at moss dot io and Jay Williams
+(csv_to_array()) - create associative array from a CSV file with a header row.
+
+<?php
+
+$array = array_map('str_getcsv', file('data.csv'));
+
+$header = array_shift($array);
+
+array_walk($array, '_combine_array', $header);
+
+function _combine_array(&$row, $key, $header) {
+  $row = array_combine($header, $row);
+}
+
+?>
+
+Then I thought why not try some benchmarking? I grabbed a sample CSV file with
+50,000 rows (10 columns each) and Vulcan Logic Disassembler (VLD) which hooks
+into the Zend Engine and dumps all the opcodes (execution units) of a script -
+see http://pecl.php.net/package/vld and example here: http://
+fabien.potencier.org/article/8/print-vs-echo-which-one-is-faster
+
+Result:
+
+array_walk() and array_map() - 39 opcodes
+csv_to_array() - 69 opcodes
+===============================================================================
+
+> 49 durik at 3ilab dot net /  4 years ago
+$rows = str_getcsv($csv_data, "\n");
+- bug, data in csv can have "\n"
+'aaa','bb
+b','ccc'
+===============================================================================
+
+An alternative for 'str_getcsv'
+
+if (!function_exists('str_getcsv')) {
+    function str_getcsv($str, $length = 8096, $delimiter = ',', $enclosure =
+'"', $escape = '\\') {
+        $handle = fopen('data://text/plain;base64,' . base64_encode($str),
+'r');
+        $data = array();
+        $i = 0;
+
+        while (($line = fgetcsv($handle, $length, $delimiter, $enclosure)) !==
+false) {
+            foreach ($line as $value) {
+                $data[$i] = $value;
+                $i ++;
+            }
+        }
+
+        fclose($handle);
+       
+        return $data;
+    }
+}
+===============================================================================
+
+I prepared some better function for parsing CSV string.
+
+function csv_to_array($string='', $row_delimiter=PHP_EOL, $delimiter = "," ,
+$enclosure = '"' , $escape = "\\" )
+{
+    $rows = array_filter(explode($row_delimiter, $string));
+    $header = NULL;
+    $data = array();
+
+    foreach($rows as $row)
+    {
+        $row = str_getcsv ($row, $delimiter, $enclosure , $escape);
+
+        if(!$header)
+            $header = $row;
+        else
+            $data[] = array_combine($header, $row);
+    }
+
+    return $data;
+}
+===============================================================================
+
+PHP is failing when parsing UTF-8 with Byte Order Mark. Strip it with this one
+from string before passing it to csv parser:
+
+<?php
+        $bom = pack('CCC', 0xEF, 0xBB, 0xBF);
+        if (strncmp($yourString, $bom, 3) === 0) {
+            $body = substr($yourString, 3);
+        }
+?>
+===============================================================================
+
+`durik at 3ilab dot net` brings up a good point but the solution provided may
+fail in certain (very rare) edge cases. I believe a more perfect solution is as
+follows:
+
+<?php
+// Use an I/O stream instead of an actual file.
+$handle = fopen('php://temp/myCSV', 'w+b');
+
+// Write all the data to it
+fwrite($handle, $CSVString);
+
+// Rewind for reading
+rewind($handle);
+
+// use fgetcsv which tends to work better than str_getcsv in some cases
+$rows = array();
+while ($row = fgetcsv($handle)) $rows[] = $row;
+?>
+
+A variation on this technique can also be used to implement an 'str_putcsv'
+which PHP lacks.
+===============================================================================
+
+Quick and proper way:
+
+    $temp = fopen('php://temp', 'r+');
+    fputs($csvString, $temp);
+    rewind($temp);
+
+    $csvArray = array();
+
+    while( $csvRow = fgetcsv($temp) )
+        $csvArray[] = $csvRow;
+    fclose($temp);
+===============================================================================
+
+Optimized JayWilliams function a little bit:
+
+<?php
+function csv_to_array($filename, $delimiter=',', $enclosure='"', $escape = '\\'
+)
+{
+  if(!file_exists($filename) || !is_readable($filename)) return false;
+
+  $header = null;
+  $data = array();
+  $lines = file($filename);
+
+  foreach($lines as $line) {
+    $values = str_getcsv($line, $delimiter, $enclosure, $escape);
+    if(!$header) $header = $values;
+    else $data[] = array_combine($header, $values);
+  }
+
+  return $data;
+}
+?>
+===============================================================================
+
+<?php
+Note: The function trims all values unlike  str_getcsv (v5.3).
+/**
+  * @link https://github.com/insteps/phputils (for updated code)
+  * Parse a CSV string into an array for php 4+.
+  * @param string $input String
+  * @param string $delimiter String
+  * @param string $enclosure String
+  * @return array
+  */
+function str_getcsv4($input, $delimiter = ',', $enclosure = '"') {
+
+    if( ! preg_match("/[$enclosure]/", $input) ) {
+      return (array)preg_replace(array("/^\\s*/", "/\\s*$/"), '', explode(
+$delimiter, $input));
+    }
+
+    $token = "##"; $token2 = "::";
+    //alternate tokens "\034\034", "\035\035", "%%";
+    $t1 = preg_replace(array("/\\\[$enclosure]/", "/$enclosure{2}/",
+         "/[$enclosure]\\s*[$delimiter]\\s*[$enclosure]\\s*/", "/\\s*[
+$enclosure]\\s*/"),
+         array($token2, $token2, $token, $token), trim(trim(trim($input), 
+$enclosure)));
+
+    $a = explode($token, $t1);
+    foreach($a as $k=>$v) {
+        if ( preg_match("/^{$delimiter}/", $v) || preg_match("/{$delimiter}$/",
+$v) ) {
+            $a[$k] = trim($v, $delimiter); $a[$k] = preg_replace("/$delimiter/"
+, "$token", $a[$k]); }
+    }
+    $a = explode($token, implode($token, $a));
+    return (array)preg_replace(array("/^\\s/", "/\\s$/", "/$token2/"), array(''
+, '', $enclosure), $a);
+
+}
+
+if ( ! function_exists('str_getcsv')) {
+  function str_getcsv($input, $delimiter = ',', $enclosure = '"') {
+    return str_getcsv4($input, $delimiter, $enclosure);
+  }
+}
+?>
+===============================================================================
+
+Note: The function trims all values unlike  str_getcsv (v5.3).
+/**
+  * @link https://github.com/insteps/phputils (for updated code)
+  * Parse a CSV string into an array for php 4+.
+  * @param string $input String
+  * @param string $delimiter String
+  * @param string $enclosure String
+  * @return array
+  */
+function str_getcsv4($input, $delimiter = ',', $enclosure = '"') {
+
+    if( ! preg_match("/[$enclosure]/", $input) ) {
+      return (array)preg_replace(array("/^\\s*/", "/\\s*$/"), '', explode
+($delimiter, $input));
+    }
+
+    $token = "##"; $token2 = "::";
+    //alternate tokens "\034\034", "\035\035", "%%";
+    $t1 = preg_replace(array("/\\\[$enclosure]/", "/$enclosure{2}/",
+         "/[$enclosure]\\s*[$delimiter]\\s*[$enclosure]\\s*/", "/\\s*
+[$enclosure]\\s*/"),
+         array($token2, $token2, $token, $token), trim(trim(trim($input),
+$enclosure)));
+
+    $a = explode($token, $t1);
+    foreach($a as $k=>$v) {
+        if ( preg_match("/^{$delimiter}/", $v) || preg_match("/{$delimiter}$/",
+$v) ) {
+            $a[$k] = trim($v, $delimiter); $a[$k] = preg_replace("/$delimiter/
+", "$token", $a[$k]); }
+    }
+    $a = explode($token, implode($token, $a));
+    return (array)preg_replace(array("/^\\s/", "/\\s$/", "/$token2/"), array
+('', '', $enclosure), $a);
+
+}
+
+if ( ! function_exists('str_getcsv')) {
+  function str_getcsv($input, $delimiter = ',', $enclosure = '"') {
+    return str_getcsv4($input, $delimiter, $enclosure);
+  }
+}
+===============================================================================
+
+I've written this to handle :
+- fields with or without enclosure;
+- escape and enclosure characters using the same character (ie <<">> in Excel)
+
+<?php
+/**
+             * Converts a csv file into an array of lines and columns.
+             * khelibert@gmail.com
+             * @param $fileContent String
+             * @param string $escape String
+             * @param string $enclosure String
+             * @param string $delimiter String
+             * @return array
+             */
+            function csvToArray($fileContent,$escape = '\\', $enclosure = '"', 
+$delimiter = ';')
+            {
+                $lines = array();
+                $fields = array();
+
+                if($escape == $enclosure)
+                {
+                    $escape = '\\';
+                    $fileContent = str_replace(array('\\',$enclosure.$enclosure
+,"\r\n","\r"),
+                                array('\\\\',$escape.$enclosure,"\\n","\\n"),
+$fileContent);
+                }
+                else
+                    $fileContent = str_replace(array("\r\n","\r"),array("\\n","
+\\n"),$fileContent);
+
+                $nb = strlen($fileContent);
+                $field = '';
+                $inEnclosure = false;
+                $previous = '';
+
+                for($i = 0;$i<$nb; $i++)
+                {
+                    $c = $fileContent[$i];
+                    if($c === $enclosure)
+                    {
+                        if($previous !== $escape)
+                            $inEnclosure ^= true;
+                        else
+                            $field .= $enclosure;
+                    }
+                    else if($c === $escape)
+                    {
+                        $next = $fileContent[$i+1];
+                        if($next != $enclosure && $next != $escape)
+                            $field .= $escape;
+                    }
+                    else if($c === $delimiter)
+                    {
+                        if($inEnclosure)
+                            $field .= $delimiter;
+                        else
+                        {
+                            //end of the field
+                            $fields[] = $field;
+                            $field = '';
+                        }
+                    }
+                    else if($c === "\n")
+                    {
+                        $fields[] = $field;
+                        $field = '';
+                        $lines[] = $fields;
+                        $fields = array();
+                    }
+                    else
+                        $field .= $c;
+                    $previous = $c;
+                }
+                //we add the last element
+                if(true || $field !== '')
+                {
+                    $fields[] = $field;
+                    $lines[] = $fields;
+                }
+                return $lines;
+            }
+?>
+===============================================================================
+
+If your version of PHP doesn't have `str_getcsv` and you don't need custom
+$escape or $eol values, try this:
+
+<?php if (!function_exists('str_getcsv')) {
+
+function str_getcsv($input, $delimiter=',', $enclosure='"', $escape=null, $eol=
+null) {
+  $temp=fopen("php://memory", "rw");
+  fwrite($temp, $input);
+  fseek($temp, 0);
+  $r = array();
+  while (($data = fgetcsv($temp, 4096, $delimiter, $enclosure)) !== false) {
+    $r[] = $data;
+  }
+  fclose($temp);
+  return $r;
+}
+
+} ?>
+
+[EDIT BY danbrown AT php DOT net: Contains a bugfix provided by (depely AT
+IAMNOTABOT prestaconcept.net) on 04-MAR-2011 with the following note: "The
+previous anonymous function only read the first line".]
+===============================================================================
+
+Here's a little function to convert a multi-line CSV string to an array:
+
+<?php
+function csv_to_array($csv, $delimiter = ',', $enclosure = '"', $escape = '\\',
+$terminator = "\n") {
+    $r = array();
+    $rows = explode($terminator,trim($csv));
+    $names = array_shift($rows);
+    $names = str_getcsv($names,$delimiter,$enclosure,$escape);
+    $nc = count($names);
+    foreach ($rows as $row) {
+        if (trim($row)) {
+            $values = str_getcsv($row,$delimiter,$enclosure,$escape);
+            if (!$values) $values = array_fill(0,$nc,null);
+            $r[] = array_combine($names,$values);
+        }
+    }
+    return $r;
+}
+?>
+===============================================================================
+
+Just to clarify, my str_putcsv() function was only ever designed to complement
+the functionality of the str_getcsv() built-in function, which can only handle
+converting one line of input into a single level array. For example, this code:
+
+<?php
+    var_dump( str_getcsv( "a,b,c\nd,e,f", "," ));
+?>
+
+generates this output:
+
+array(5) {
+    [0]=>
+    string(1) "a"
+    [1]=>
+    string(1) "b"
+    [2]=>
+    string(3) "c
+    d"
+    [3]=>
+    string(1) "e"
+    [4]=>
+    string(1) "f"
+}
+
+Even fgetcsv() and fputcsv() only work with a single line. All the examples
+show them being used within a loop of some sort.
+
+I was also avoiding the artificial restriction on the length of the CSV string
+introduced by Ulf's modification.
+===============================================================================
+
+For some reason o'connor's code only reads one line of a csv for me... I had to
+replace the line
+
+      $data = fgetcsv($fp, 1000, $delimiter, $enclosure); //  $escape only got
+added in 5.3.0
+
+with this:
+
+      $data;
+      while (!feof($fp))
+      {
+        $data[] = fgetcsv($fp, 0, $delimiter, $enclosure); //  $escape only got
+added in 5.3.0
+      }
+
+...to get all of the data out of my string (some post data pasted into a
+textbox and processed only with stripslashes).
+===============================================================================
+
+Don't have this? Ask fgetcsv() to do it for you.
+
+5.1.0+
+
+<?php
+if (!function_exists('str_getcsv')) {
+    function str_getcsv($input, $delimiter = ",", $enclosure = '"', $escape = "
+\\") {
+        $fiveMBs = 5 * 1024 * 1024;
+        $fp = fopen("php://temp/maxmemory:$fiveMBs", 'r+');
+        fputs($fp, $input);
+        rewind($fp);
+
+        $data = fgetcsv($fp, 1000, $delimiter, $enclosure); //  $escape only
+got added in 5.3.0
+
+        fclose($fp);
+        return $data;
+    }
+}
+?>
+===============================================================================
+
+If your happy enough having just a multi-dimensional array, this should work
+fine. I had wanted to use the one provided by keananda but it was choking on pr
+($lines).
+
+<?php
+function f_parse_csv($file, $longest, $delimiter) {
+  $mdarray = array();
+  $file    = fopen($file, "r");
+  while ($line = fgetcsv($file, $longest, $delimiter)) {
+    array_push($mdarray, $line);
+    }
+  fclose($file);
+  return $mdarray;
+  }
+?>
+
+$longest is a number that represents the longest line in the csv file as
+required by fgetcsv().  The page for fgetcsv() said that the longest line could
+be set to 0 or left out, but I couldn't get it to work without. I just made it
+extra large when I had to use it.
+===============================================================================
+
+For those who need this function but not yet installed in their environment,
+you can use my function bellow.
+
+You can parse your csv file into an associative array (by default) for each
+lines, or into an object.
+<?php
+function parse_csv($file, $options = null) {
+    $delimiter = empty($options['delimiter']) ? "," : $options['delimiter'];
+    $to_object = empty($options['to_object']) ? false : true;
+    $str = file_get_contents($file);
+    $lines = explode("\n", $str);
+    pr($lines);
+    $field_names = explode($delimiter, array_shift($lines));
+    foreach ($lines as $line) {
+        // Skip the empty line
+        if (empty($line)) continue;
+        $fields = explode($delimiter, $line);
+        $_res = $to_object ? new stdClass : array();
+        foreach ($field_names as $key => $f) {
+            if ($to_object) {
+                $_res->{$f} = $fields[$key];
+            } else {
+                $_res[$f] = $fields[$key];
+            }
+        }
+        $res[] = $_res;
+    }
+    return $res;
+}
+?>
+
+NOTE:
+Line number 1 of the csv file will be considered as header (field names).
+
+TODO:
+- Enclosure handling
+- Escape character handling
+- Other features/enhancements as you need
+
+EXAMPLE USE:
+Content of /path/to/file.csv:
+CODE,COUNTRY
+AD,Andorra
+AE,United Arab Emirates
+AF,Afghanistan
+AG,Antigua and Barbuda
+
+<?php
+$arr_csv = parse_csv("/path/to/file.csv");
+print_r($arr_csv);
+?>
+// Output:
+Array
+(
+    [0] => Array
+        (
+            [CODE] => AD
+            [COUNTRY] => Andorra
+        )
+    [1] => Array
+        (
+            [CODE] => AE
+            [COUNTRY] => United Arab Emirates
+        )
+    [2] => Array
+        (
+            [CODE] => AF
+            [COUNTRY] => Afghanistan
+        )
+    [3] => Array
+        (
+            [CODE] => AG
+            [COUNTRY] => Antigua and Barbuda
+        )
+)
+
+<?php
+$obj_csv = parse_csv("/path/to/file.csv", array("to_object" => true));
+print_r($obj_csv);
+?>
+// Output:
+Array
+(
+    [0] => stdClass Object
+        (
+            [CODE] => AD
+            [COUNTRY] => Andorra    
+        )
+    [1] => stdClass Object
+        (
+            [CODE] => AE
+            [COUNTRY] => United Arab Emirates    
+        )
+    [2] => stdClass Object
+        (
+            [CODE] => AF
+            [COUNTRY] => Afghanistan    
+        )
+    [3] => stdClass Object
+        (
+            [CODE] => AG
+            [COUNTRY] => Antigua and Barbuda    
+        )
+    [4] => stdClass Object
+        (
+            [CODE] =>
+            [COUNTRY] =>
+        )
+)
+
+// If you use character | (pipe) as delimiter in your csv file, use:
+<?php
+$arr_csv = parse_csv("/path/to/file.csv", array("delimiter"=>"|"));
+?>
+
+==NSD==
+===============================================================================
+
+RFC 4180 which deals with CSVs states the escape character is supposed to be a
+double quotation mark: (page 2)
+   7.  If double-quotes are used to enclose fields, then a double-quote
+       appearing inside a field must be escaped by preceding it with
+       another double quote.  For example:
+
+       "aaa","b""bb","ccc"
+===============================================================================
+
+CSV parsing and storage is not that hard to implement - see my example
+functions ( I believe they do a pretty good job - I use them in a production
+environment ):
+
+<?php
+
+if( !function_exists("parse_csv") ){
+    function parse_csv($string){
+/* Author : Alexander Peev, posted at PHP.NET */
+        if( !function_exists("parse_csv_aux") ){
+            function parse_csv_aux( $string ){
+                $product = "";
+                $in_quote = FALSE;
+                $skipped_quote = FALSE;
+                for(  $i = 0 ; $i < strlen($string) ; $i++  ){
+                    if( $string{$i} == "\"" ){
+                        if($in_quote){
+                            if($skipped_quote){
+                                $product .= "\"";
+                                $skipped_quote = FALSE;
+                            }
+                            else if( !$skipped_quote ){
+                                $skipped_quote = TRUE;
+                            }
+                        }
+                        else{
+                            if($skipped_quote) $skipped_quote = FALSE;
+                            $in_quote = TRUE;
+                        }
+                    }
+                    else if( $string{$i} == ";" ){
+                        if($in_quote){
+                            $product .= ";";
+                        }
+                        else{
+                            $product .= " ; ";
+                        }
+                    }
+                    else{
+                        if($in_quote){
+                            $in_quote = FALSE;
+                            $product .= $string{$i};
+                        }
+                        else{
+                            $product .= $string{$i};
+                        }
+                    }
+                }
+                return $product;
+            }
+        }
+        $data = array();
+        if(  is_string($string) && ( stripos($string, "\n") !== FALSE )  ){
+            $data = explode("\n", parse_csv_aux($string) );
+            foreach($data as $key => $row){
+                $columns = array();
+                //$row = strtr(  $row, array( "\";\"" => "\";\"", ";" => " ; "
+)  );
+                if( stripos($row, " ; ") !== FALSE ){
+                    $columns = explode( " ; ", $row );
+                    if( !is_array($columns) )$columns = array( strval($columns)
+);
+                    $data[$key] = $columns;
+                }
+            }
+            return $data;
+        }
+        else if(  is_string($string) && ( stripos( ($string =  parse_csv_aux(
+$string)), " ; ") !== FALSE )  ){
+            $columns = explode( " ; ", $string );
+            if( !is_array($columns) )$columns = array( strval($columns) );
+            return array($columns);
+        }
+        else return strval($string);
+    } /* end function parse_csv */
+} /* end not function exists parse_csv */
+
+if( !function_exists("store_csv") ){
+    function store_csv($data){
+/* Author : Alexander Peev, posted at PHP.NET */
+        if( !function_exists("store_csv_aux") ){
+            function store_csv_aux( $string ){
+                $string = strtr( $string, array( "\n" => "" ) );
+                $product = "";
+                $in_quote = FALSE;
+                for(  $i = 0 ; $i < strlen($string) ; $i++  ){
+                    if( $string{$i} == "\"" ){
+                        if($in_quote){
+                            $product .= "\"\"";
+                        }
+                        else{
+                            $product .= "\"\"\"";
+                            $in_quote = TRUE;
+                        }
+                    }
+                    else if( $string{$i} == ";" ){
+                        if($in_quote){
+                            $product .= ";";
+                        }
+                        else{
+                            $product .= "\";";
+                            $in_quote = TRUE;
+                        }
+                    }
+                    else{
+                        if($in_quote){
+                            $product .= "\"";
+                            $in_quote = FALSE;
+                            $product .= $string{$i};
+                        }
+                        else{
+                            $product .= $string{$i};
+                        }
+                    }
+                }
+                if($in_quote)$product .= "\"";
+                return $product;
+            }
+        }
+        if(!is_array($data))return strval($data);
+        $passed_rows = FALSE;
+        $product = "";
+        foreach($data as $row){
+            if( $passed_rows )$product .= "\n";
+            if( is_array($row) ){
+                $columns = "";
+                $passed_cols = FALSE;
+                foreach($row as $column){
+                    if( $passed_cols )$columns .= ";";
+                    $columns .= store_csv_aux( $column );
+                    $passed_cols =TRUE;
+                }
+                $product .= strval($columns);
+            }
+            else{
+                $product .= strtr( strval($row), array("\n" => "") );
+            }
+            $passed_rows = TRUE;
+        }
+        return $product;
+    } /* end function store_csv */
+} /* end not function exists store_csv */
+
+?>
+===============================================================================
+
+<?php
+
+/**
+* This is the simplest way to do a csv line getter i could imagine.
+* It's not perfect at all, but will do the job.
+* There are indeed some error checks for very badly formated csv lines.
+* It will not, for example, handle the last field if it's empty,
+*  and it will omit repeated enclosures inside quoted fields if
+*  they are not escaped, but I tried to do it very clearly
+*  so everyone could change it for your own necessities.
+* @param string $str String
+* @param string $delimiter String
+* @param string $enclosure String
+* @param string $escape String
+* @return array
+*/
+function user_str_getcsv($str, $delimiter=',', $enclosure='"', $escape='\\') {
+    $return = array();
+    $fields = 0;
+    $inside = false;
+    $quoted = false;
+    $char = '';
+   
+    //Let's go through the string
+    for ($i=0; $i<mb_strlen($str); $i++) {
+        $char = mb_substr($str, $i, 1, 'UTF-8');
+       
+        if (!$inside) { //Check if we are not inside a field
+            if ($char == $delimiter) { //Check if the current char is the
+delimiter
+                //Tells the function that we are not inside a field anymore
+                $inside = false;
+                $quoted = false;
+               
+                //Jumps to the next field
+                $fields++;
+               
+            } elseif($char == $escape) { //Check if the current char is the
+escape
+                //Error, because it isn't inside a field and there is a escape
+here
+                return false;
+               
+            } elseif($char != ' ') { //Check if the current char isn't a blank
+space
+                //Tells the function that a field starts
+                $inside = true;
+               
+                //Check if the current char is the enclosure, indicating that
+this field is quoted
+                if ($char == $enclosure) {
+                    $quoted= true;
+                } else {
+                    $return[$fields] .= $char;
+                }
+            }
+        } else { //Here we are inside a field
+            //Check if the current char is the escape
+            if ($char == $escape) {
+                //Check if the string has one more char beyond the current one
+                if (mb_strlen($str)>$i+1) {
+                    //Tells the function we will treat the next char
+                    $i++;
+                    $char = mb_substr($str, $i, 1, 'UTF-8');
+                   
+                    //Check if our new char is the enclosure
+                    if ($char == $enclosure) {
+                        //Check if the field is a quoted one
+                        if ($quoted) {
+                            $return[$fields] .= $enclosure;
+                        } else {
+                            //Error, because we have an escape and then we have
+an enclosure and we are not inside a quoted field
+                            return false;
+                        }
+                    } elseif ($char == $escape) {
+                        $return[$fields] .= $char;
+                    } else {
+                        eval("\$return[\$fields] .= \"\\".$char."\";");
+                    }
+                   
+                } else {
+                    //Error, because there is an escape and nothing more then
+                    return false;
+                }
+            } elseif ($char == $enclosure) { //Check if the current char is the
+enclosure
+                //Check if we are in a quoted field
+                if ($quoted) {
+                    //Tells the function that we are not inside a field anymore
+                    $inside = false;
+                    $quoted = false;
+                } else {
+                    //Error, because there is an enclosure inside a non quoted
+field
+                    return false;
+                }
+            } elseif ($char == $delimiter) { //Check if it is the delimiter
+                //Check if we are inside a quoted field
+                if ($quoted) {
+                    $return[$fields] .= $char;
+                } else {
+                    //Tells the function that we are not inside a field anymore
+                    $inside = false;
+                    $quoted = false;
+                   
+                    //Jumps to the next field
+                    $fields++;
+                }
+            } else {
+                $return[$fields] .= $char;
+            }
+        }
+    }
+    return $return;
+}
+
+print_r(user_str_getcsv("test,1,\"B,C,D\",\"with a escape\\\\\", \"with an
+enter\\n\", \"with an enclusure enclosure\\\"\""));
+exit(0);
+
+?>
+
+The response will be:
+Array
+(
+    [0] => test
+    [1] => 1
+    [2] => B,C,D
+    [3] => with a escape\
+    [4] => with an enter
+
+    [5] => with an enclusure enclosure"
+)
+===============================================================================
+
+As Dave's function also had the problem with only one line being returned
+here's a slightly changed version:
+
+<?php
+function str_putcsv($input, $delimiter = ',', $enclosure = '"') {
+  // Open a memory "file" for read/write...
+  $fp = fopen('php://temp', 'r+');
+  // ... write the $input array to the "file" using fputcsv()...
+  fputcsv($fp, $input, $delimiter, $enclosure);
+  // ... rewind the "file" so we can read what we just wrote...
+  rewind($fp);
+  // ... read the entire line into a variable...
+  $data = fread($fp, 1048576); // [changed]
+  // ... close the "file"...
+  fclose($fp);
+  // ... and return the $data to the caller, with the trailing newline from
+fgets() removed.
+  return rtrim( $data, "\n" );
+}
+?>
+It assumes that one line won't exceed 1Mb of data. That should be more than
+enough.

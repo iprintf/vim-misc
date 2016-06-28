@@ -1,0 +1,283 @@
+
+syslog
+
+(PHP 4, PHP 5, PHP 7)
+
+syslog — Generate a system log message
+
+说明
+
+bool syslog ( int $priority , string $message )
+
+syslog() generates a log message that will be distributed by the system logger.
+
+For information on setting up a user defined log handler, see the syslog.conf 
+(5) Unix manual page. More information on the syslog facilities and option can
+be found in the man pages for syslog (3) on Unix machines.
+
+参数
+
+priority
+
+    priority is a combination of the facility and the level. Possible values
+    are:
+
+    syslog() Priorities (in descending order)
+     Constant              Description
+    LOG_EMERG   system is unusable
+    LOG_ALERT   action must be taken immediately
+    LOG_CRIT    critical conditions
+    LOG_ERR     error conditions
+    LOG_WARNING warning conditions
+    LOG_NOTICE  normal, but significant, condition
+    LOG_INFO    informational message
+    LOG_DEBUG   debug-level message
+
+message
+
+    The message to send, except that the two characters %m will be replaced by
+    the error message string (strerror) corresponding to the present value of 
+    errno.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Using syslog()
+
+<?php
+// open syslog, include the process ID and also send
+// the log to standard error, and use a user defined
+// logging mechanism
+openlog("myScriptLog", LOG_PID | LOG_PERROR, LOG_LOCAL0);
+
+// some code
+
+if (authorized_client()) {
+    // do something
+} else {
+    // unauthorized client!
+    // log the attempt
+    $access = date("Y/m/d H:i:s");
+    syslog(LOG_WARNING, "Unauthorized client: $access {$_SERVER['REMOTE_ADDR']}
+ ({$_SERVER['HTTP_USER_AGENT']})");
+}
+
+closelog();
+?>
+
+注释
+
+On Windows NT, the syslog service is emulated using the Event Log.
+
+    Note:
+
+    Use of LOG_LOCAL0 through LOG_LOCAL7 for the facility parameter of openlog
+    () is not available in Windows.
+
+参见
+
+  • openlog() - Open connection to system logger
+  • closelog() - 关闭系统日志链接
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+If anyone is wondering why their log messages are appearing in multiple log
+files, here is one answer applying to *nix systems:
+
+If your syslog.conf looks like this (assuming you use LOG_LOCAL0 for web app
+logging) :
+
+local0.info    /var/log/web/info.log
+
+This will collect *all* messages of LOG_INFO level and higher, i.e everything
+except debug messages
+
+Try this instead to ensure that only messages of the named log level go into
+the relevant log file:
+
+local0.=info    /var/log/web/info.log
+
+Additionally, you may like to add this to ensure your messages don't end up in
+generic log files like "messages"  "all" "syslog" and "debug":
+
+local0.none    /var/log/messages
+local0.none    /var/log/debug
+etc
+
+saves disk space among other things - more at "man syslog.conf"
+===============================================================================
+
+A word of warning; if you use openlog() to ready syslog() and your Apache
+threads accept multiple requests, you *must* call closelog() if Apache's error
+log is configured to write to syslog.  Failure to do so will cause Apache's
+error log to write to whatever facility/ident was used in openlog.
+
+Example, in httpd.conf you have:
+
+ErrorLog syslog:local7
+
+and in php you do:
+
+<?php
+openlog("myprogram", 0, LOG_LOCAL0);
+syslog("My syslog message");
+?>
+
+From here on out, this Apache thread will write ErrorLog to local0 and under
+the process name "myprogram" and not httpd!  Calling closelog() will fix this.
+===============================================================================
+
+If you are using syslog-ng and want errors send to syslog then use ini setting
+"error_log = syslog" and add something like the following to your
+syslog-ng.conf:
+
+destination php { file("/var/log/php.log" owner(root) group(devel) perm(0620));
+};
+log { source(src); filter(f_php); destination(php); };
+===============================================================================
+
+For those who want to simultaneously write to multiple syslog facilities :
+
+syslog(LOG_INFO|LOG_LOCAL0, "message for local0");
+syslog(LOG_INFO|LOG_LOCAL1, "message for local1");
+===============================================================================
+
+This *does* actually goto the system log as configured in /etc/syslog.conf
+(such as /var/log/messages), it doesn't goto Apache's ErrorLog (such as /var/
+log/httpd/error_log). At least under my Debian Potato with Apache 1.3.23.
+
+Use error_log() to be sure it gets into Apache's ErrorLog.
+===============================================================================
+
+This work for me, to redirect  logs to a separate syslog file
+
+put this line in your /etc/syslog.conf :
+
+local0.debug   /var/log/php.log
+
+Then restart syslogd:
+
+/etc/init.d/syslog restart
+
+php example:
+
+<?php
+define_syslog_variables();
+openlog("TextLog", LOG_PID, LOG_LOCAL0);
+
+$data = date("Y/m/d H:i:s");
+syslog(LOG_DEBUG,"Messagge: $data");
+
+closelog();
+?>
+===============================================================================
+
+The documentation is incorrect when it says "Priorities (in descending order)",
+as the table that follows is actually in **ascending** order.
+
+For example my output says:
+LOG_ERR : 4
+LOG_WARNING : 5
+LOG_DEBUG : 6
+
+An important difference, that caused me some pain!
+===============================================================================
+
+I had a problem trying to issue a syslog message with IIS 5.1 under Windows XP.
+The function call seemed to succeed, but the event viewer showed that no entry
+was made.
+Finally I found out that the user account used for the webserver (IUSR_
+<Computername>) did not have enough permissions to issue syslog alerts. I
+changed this by adding this user to the Users group instead of only Guest.
+===============================================================================
+
+The message string sent to the log file is limited to 500 characters.
+===============================================================================
+
+To set up a custom log file via the syslog daemon (FreeBSD in this case)...
+
+Add to /etc/syslog.conf a line that says all errors from the httpd process are
+to go to a file called (for example) /var/log/httpd-php.log
+
+!httpd
+*.*   {tab}   /var/log/httpd-php.log
+
+Note the tab, being a tab character! Next create a blank file to be written to.
+I'm sure there are 1e+6 ways to do this, but I choose
+
+# cat > httpd-php.log << EOF
+? EOF
+
+Finally find your syslog daemon and send it a sighup to inform it of the
+change:
+
+# ps ax | grep syslogd
+  133  ??  Ss     0:07.23 syslogd -s
+# kill -1 133
+
+Et voila! Php syslog calls will now arrive in /var/log/httpd-php.log
+===============================================================================
+
+With FreeBSD I can use: syslog(LOG_INFO,"test");
+
+BSD/OS does not support this, I had to use the literal values for the priority
+(158: local3.info):
+syslog(158,"test");
+===============================================================================
+
+For the-header-file-enabled:
+
+man 3 syslog defines the priorities, but not the integer values. For that
+you'll need to read your system header file.
+
+Let's suppose I want to log an informational message in the mail log (which
+happens to be true). The man page tells me I want LOG_MAIL|LOG_INFO. So I look
+in /usr/include/sys/syslog.h and find (this happens to be Linux, your system
+could be different):
+
+#define LOG_INFO        6       /* informational */
+#define LOG_MAIL        (2<<3)  /* mail system */
+
+2<<3 means shift 3 bits left, which means multiply by 8. So I want 2*8 + 6 =
+22. syslog(22,"this message will appear in the mail log"); And indeed it does.
+===============================================================================
+
+In Windows NT, use the following values of priority:
+1 = error,
+6 = info
+===============================================================================
+
+Be aware when using syslog() that if you set the timezone of environment to be
+something other than the standard, syslog() may log the time to the log(s) with
+the wrong time zone information. For example:
+
+<?php
+
+openlog('mylog', LOG_PID | LOG_ODELAY,LOG_LOCAL4);
+
+putenv('TZ=UTC');
+syslog(LOG_INFO, 'UTC Log line');
+
+putenv('TZ=US/Pacific');
+syslog(LOG_INFO, 'US/Pacific Log line');
+
+closelog();
+
+?>
+
+Viewing the /usr/log/messages log will display these two lines:
+
+Apr 11 01:25:39 hostname mylog[1400]: UTC Log line
+Apr 10 18:25:39 hostname mylog[1400]: US/Pacific Log line
+
+Adam.
+===============================================================================
+
+Example of where to look for syslog's output:   /var/log/httpd/access_log
+(on Red Hat Linux Secure Server v6.2).

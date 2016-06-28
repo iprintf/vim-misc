@@ -1,0 +1,323 @@
+
+array_replace_recursive
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+array_replace_recursive — 使用传递的数组递归替换第一个数组的元素
+
+说明
+
+array array_replace_recursive ( array $array1 , array $array2 [, array $... ] )
+
+array_replace_recursive() 使用后面数组元素的值替换数组 array1 的值。如果一个键
+存在于第一个数组同时也存在于第二个数组，它的值将被第二个数组中的值替换。如果一
+个键存在于第二个数组，但是不存在于第一个数组，则会在第一个数组中创建这个元素。
+如果一个键仅存在于第一个数组，它将保持不变。如果传递了多个替换数组，它们将被按
+顺序依次处理，后面的数组将覆盖之前的值。
+
+array_replace_recursive() 是递归的：它将遍历数组并将相同的处理应用到数组的内部
+值。
+
+如果数组 array1 中的值是标量，它的值将被第二个数组 array2 中的值替换，它可能是
+一个标量或者数组。如果 array1 和 array2 中的值都是数组，array_replace_recursive
+() 函数将递归地替换它们各自的值。
+
+参数
+
+array1
+
+    替换该数组的值。
+
+array2
+
+    从此数组中提取替换值。
+
+...
+
+    可选项。更多包含要提取元素的数组。
+
+返回值
+
+返回一个数组。如果发生错误，将返回 NULL。
+
+范例
+
+Example #1 array_replace_recursive() 范例
+
+<?php
+$base = array('citrus' => array( "orange") , 'berries' => array("blackberry", 
+"raspberry"), );
+$replacements = array('citrus' => array('pineapple'), 'berries' => array(
+'blueberry'));
+
+$basket = array_replace_recursive($base, $replacements);
+print_r($basket);
+
+$basket = array_replace($base, $replacements);
+print_r($basket);
+?>
+
+以上例程会输出：
+
+Array
+(
+    [citrus] => Array
+        (
+            [0] => pineapple
+        )
+
+    [berries] => Array
+        (
+            [0] => blueberry
+            [1] => raspberry
+        )
+
+)
+Array
+(
+    [citrus] => Array
+        (
+            [0] => pineapple
+        )
+
+    [berries] => Array
+        (
+            [0] => blueberry
+        )
+
+)
+
+
+Example #2 array_replace_recursive() 及其递归表现
+
+<?php
+$base = array('citrus' => array("orange") , 'berries' => array("blackberry", 
+"raspberry"), 'others' => 'banana' );
+$replacements = array('citrus' => 'pineapple', 'berries' => array('blueberry'
+), 'others' => array('litchis'));
+$replacements2 = array('citrus' => array('pineapple'), 'berries' => array(
+'blueberry'), 'others' => 'litchis');
+
+$basket = array_replace_recursive($base, $replacements, $replacements2);
+print_r($basket);
+
+?>
+
+以上例程会输出：
+
+Array
+(
+    [citrus] => Array
+        (
+            [0] => pineapple
+        )
+
+    [berries] => Array
+        (
+            [0] => blueberry
+            [1] => raspberry
+        )
+
+    [others] => litchis
+)
+
+参见
+
+  • array_replace() - 使用传递的数组替换第一个数组的元素
+  • array_merge_recursive() - 递归地合并一个或多个数组
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Nice that this function finally found its was to the PHP core! If you want to
+use it also with older PHP versions before 5.3.0, you can define it this way:
+
+<?php
+if (!function_exists('array_replace_recursive'))
+{
+  function array_replace_recursive($array, $array1)
+  {
+    function recurse($array, $array1)
+    {
+      foreach ($array1 as $key => $value)
+      {
+        // create new key in $array, if it is empty or not an array
+        if (!isset($array[$key]) || (isset($array[$key]) && !is_array($array[
+$key])))
+        {
+          $array[$key] = array();
+        }
+ 
+        // overwrite the value in the base array
+        if (is_array($value))
+        {
+          $value = recurse($array[$key], $value);
+        }
+        $array[$key] = $value;
+      }
+      return $array;
+    }
+ 
+    // handle the arguments, merge one by one
+    $args = func_get_args();
+    $array = $args[0];
+    if (!is_array($array))
+    {
+      return $array;
+    }
+    for ($i = 1; $i < count($args); $i++)
+    {
+      if (is_array($args[$i]))
+      {
+        $array = recurse($array, $args[$i]);
+      }
+    }
+    return $array;
+  }
+}
+?>
+
+I called this function array_merge_recursive_overwrite() in my older projects,
+but array_replace_recursive() sounds quite better while they do the same.
+
+If you implemented such a compatible function before and don't want to refactor
+all your code, you can update it with the following snippet to use the native
+(and hopefully faster) implementation of PHP 5.3.0, if available. Just start
+your function with these lines:
+
+<?php
+  // as of PHP 5.3.0 array_replace_recursive() does the work for us
+  if (function_exists('array_replace_recursive'))
+  {
+    return call_user_func_array('array_replace_recursive', func_get_args());
+  }
+?>
+===============================================================================
+
+This is a fairly concise version which does not rely on traditional recursion:
+
+<?php
+    function array_replace_recursive($base, $replacements)
+    {
+        foreach (array_slice(func_get_args(), 1) as $replacements) {
+            $bref_stack = array(&$base);
+            $head_stack = array($replacements);
+
+            do {
+                end($bref_stack);
+
+                $bref = &$bref_stack[key($bref_stack)];
+                $head = array_pop($head_stack);
+
+                unset($bref_stack[key($bref_stack)]);
+
+                foreach (array_keys($head) as $key) {
+                    if (isset($key, $bref) && is_array($bref[$key]) && is_array
+($head[$key])) {
+                        $bref_stack[] = &$bref[$key];
+                        $head_stack[] = $head[$key];
+                    } else {
+                        $bref[$key] = $head[$key];
+                    }
+                }
+            } while(count($head_stack));
+        }
+
+        return $base;
+    }
+?>
+===============================================================================
+
+This might help out people who don't have 5.3 running:
+
+<?php
+
+// Joins two or more arrays together recursively; key/value pairs of the first
+// array are replaced with key/value pairs from the subsequent arrays.  Any
+// key/value pair not present in the first array is added to the final array
+function array_join()
+{
+    // Get array arguments
+    $arrays = func_get_args();
+
+    // Define the original array
+    $original = array_shift($arrays);
+
+    // Loop through arrays
+    foreach ($arrays as $array)
+    {
+        // Loop through array key/value pairs
+        foreach ($array as $key => $value)
+        {
+            // Value is an array
+            if (is_array($value))
+            {
+                // Traverse the array; replace or add result to original array
+                $original[$key] = array_join($original[$key], $array[$key]);
+            }
+
+            // Value is not an array
+            else
+            {
+                // Replace or add current value to original array
+                $original[$key] = $value;
+            }
+        }
+    }
+
+    // Return the joined array
+    return $original;
+}
+
+?>
+===============================================================================
+
+If you came here looking for a function to recursively find and replace
+(scalar) values in an array (also recurses through objects):
+
+<?php
+define('RECURSIVE_REPLACE_MARKER', 
+'recursive_replace_r47yr74yr7623t74r3645236rtvghdcbnsgxbt67g5e21873891');
+/**
+* Recursively replaces scalar values in objects and arrays. The passed array or
+object is altered in place.
+* @param mixed $data An object or array.
+* @param mixed $find The scalar value to find.
+* @param mixed $replace The value to replace with (need not be a scalar).
+*/
+function recursive_replace(&$data, $find, $replace){
+  if(is_array($data)) {
+    if (!isset($data[RECURSIVE_REPLACE_MARKER])) {
+      $data[RECURSIVE_REPLACE_MARKER] = TRUE;
+      foreach($data as $key=>$val) {
+        if(is_array($data[$key]) || is_object($data[$key])) {
+          recursive_replace($data[$key], $find, $replace);
+        }
+        else{
+          if($data[$key] === $find) {
+            $data[$key] = $replace;
+          }
+        }
+      }
+      unset($data[RECURSIVE_REPLACE_MARKER]);
+    }
+  }
+  elseif (is_object($data)) {
+    if (!isset($data->RECURSIVE_REPLACE_MARKER)) {
+      $data->RECURSIVE_REPLACE_MARKER = TRUE;
+      foreach($data as $key=>$val) {
+        if(is_array($data->$key) || is_object($data->$key)){
+          recursive_replace($data->$key, $find, $replace);
+        }else{
+          if($data->$key === $find) {
+            $data->$key = $replace;
+          }
+        }
+      }
+      unset($data->RECURSIVE_REPLACE_MARKER);
+    }
+  }
+}
+?>

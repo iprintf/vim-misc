@@ -1,0 +1,386 @@
+
+imap_getmailboxes
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_getmailboxes — Read the list of mailboxes, returning detailed information
+on each one
+
+说明
+
+array imap_getmailboxes ( resource $imap_stream , string $ref , string $pattern
+)
+
+Gets information on the mailboxes.
+
+参数
+
+imap_stream
+
+    由 imap_open() 返回的 IMAP 流。
+
+ref
+
+    ref should normally be just the server specification as described in 
+    imap_open()
+
+pattern
+
+    指定在邮箱层级的何处开始查找。
+
+    在组成 pattern 的字符中可使用两个特殊字符： '*' 和 '%'。 '*' 是指返回所有邮
+    箱目录. 如果将 '*' 作为 pattern 参数时, 则会返回整个邮箱层级结构。 '%' 是指
+    只返回当前级次。 '%' 作为 pattern 参数则只会返回顶层邮箱； '~/mail/%' 用于
+    UW_IMAPD 则会返回名为 ~/mail 的目录, 但不包含其子目录。
+
+返回值
+
+Returns an array of objects containing mailbox information. Each object has the
+attributes name, specifying the full name of the mailbox; delimiter, which is
+the hierarchy delimiter for the part of the hierarchy this mailbox is in; and
+attributes. Attributes is a bitmask that can be tested against:
+
+  • LATT_NOINFERIORS - This mailbox contains, and may not contain any
+    "children" (there are no mailboxes below this one). Calling 
+    imap_createmailbox() will not work on this mailbox.
+
+  • LATT_NOSELECT - This is only a container, not a mailbox - you cannot open
+    it.
+
+  • LATT_MARKED - This mailbox is marked. This means that it may contain new
+    messages since the last time it was checked. Not provided by all IMAP
+    servers.
+
+  • LATT_UNMARKED - This mailbox is not marked, does not contain new messages.
+    If either MARKED or UNMARKED is provided, you can assume the IMAP server
+    supports this feature for this mailbox.
+
+范例
+
+Example #1 imap_getmailboxes() example
+
+<?php
+$mbox = imap_open("{imap.example.org}", "username", "password", OP_HALFOPEN)
+      or die("can't connect: " . imap_last_error());
+
+$list = imap_getmailboxes($mbox, "{imap.example.org}", "*");
+if (is_array($list)) {
+    foreach ($list as $key => $val) {
+        echo "($key) ";
+        echo imap_utf7_decode($val->name) . ",";
+        echo "'" . $val->delimiter . "',";
+        echo $val->attributes . "<br />\n";
+    }
+} else {
+    echo "imap_getmailboxes failed: " . imap_last_error() . "\n";
+}
+
+imap_close($mbox);
+?>
+
+参见
+
+  • imap_getsubscribed() - List all the subscribed mailboxes
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+i am currently develop a simple IMAP client, when i call imap_getmailboxes() i
+receive a different values in attributes property of the mailbox object the
+problem is how can i manipulate these attributes to get a meaningful value,
+if you make a hard search to find a solution for this, you will
+not find any useful documents for this problem, let us take a closer look for
+this problem.
+
+when i call imap_getmailboxes() against different IMAP servers i got these
+attribute values
+
+[attributes] => 9
+[attributes] => 1
+[attributes] => 64
+[attributes] => 32
+[attributes] => 40
+
+the documentation tell us that we check this attributes against four constants,
+these contents are
+
+LATT_NOINFERIORS
+LATT_NOSELECT
+LATT_MARKED
+LATT_UNMARKED
+
+the value of these constants are
+
+LATT_NOINFERIORS = 1
+LATT_NOSELECT = 2
+LATT_MARKED = 4
+LATT_UNMARKED = 8
+
+you can got this result by echo each constant, unfortunately the documentation
+not explain how we can check the attributes against the constants, after a long
+time of searching i find the answer in source code of c-client
+(you can get the source from ftp://ftp.cac.washington.edu/imap/)
+under \src\c-client you will find mail.h open it and you will find this
+
+                               /* terminal node in hierarchy */
+#define LATT_NOINFERIORS (long) 0x1
+                /* name can not be selected */
+#define LATT_NOSELECT (long) 0x2
+                /* changed since last accessed */
+#define LATT_MARKED (long) 0x4
+                /* accessed since last changed */
+#define LATT_UNMARKED (long) 0x8
+                /* name has referral to remote mailbox */
+#define LATT_REFERRAL (long) 0x10
+                /* has selectable inferiors */
+#define LATT_HASCHILDREN (long) 0x20
+                /* has no selectable inferiors */
+#define LATT_HASNOCHILDREN (long) 0x40
+
+as you notice here these are our four constants and three additional constants
+
+LATT_REFERRAL
+LATT_HASCHILDREN
+LATT_HASNOCHILDREN
+
+then what is the value of these 3 attributes
+LATT_REFERRAL 0x10 = 00010000 in binary, the bitmask value is 2^4 = 16 and so
+on, or simply echo this constant to get the value, then
+
+LATT_REFERRAL = 16
+LATT_HASCHILDREN = 32
+LATT_HASNOCHILDREN = 64
+
+finally the full list of constants will be
+LATT_NOINFERIORS = 1
+LATT_NOSELECT = 2
+LATT_MARKED = 4
+LATT_UNMARKED = 8
+LATT_REFERRAL = 16
+LATT_HASCHILDREN = 32
+LATT_HASNOCHILDREN = 64
+
+ok let's back to our attributes
+[attributes] => 9
+[attributes] => 1
+[attributes] => 64
+[attributes] => 32
+[attributes] => 40
+
+[attributes] => 9 this mean it's LATT_UNMARKED and LATT_NOINFERIORS 1+8 =9
+
+[attributes] => 1 this mean LATT_NOINFERIORS
+
+[attributes] => 64 this mean LATT_HASNOCHILDREN
+
+[attributes] => 32 this mean LATT_HASCHILDREN
+
+[attributes] => 40 this mean LATT_HASCHILDREN and LATT_UNMARKED 32+8=40
+
+this just like linux file permission 7 mean read, write, and execute 4+2+1 read
+=4 write=2 execute=1
+
+that is what i found, i hope this can help
+
+Mohamed Abbas
+Nileweb Egypt
+===============================================================================
+
+The list of mailbox attributes in this document is very misleading. In
+particular the explanation of noinferiors is just wrong. It does not mean that
+the mailbox currently has no children, it means that it *cannot* have children
+ever. Also, it is untrue that marked and unmarked are only used by UW-IMAP.
+They are in the official IMAP specification and are used by at least
+Courier-imap as well.
+
+One thing to watch out for, however, is broken IMAP servers which do send \
+Noinferiors when they mean that there are currently no children.
+
+From the IMAP4rev1 specs (RFC 2060):
+      \Noinferiors
+
+         It is not possible for any child levels of hierarchy to exist
+         under this name; no child levels exist now and none can be
+         created in the future.
+
+      \Noselect
+
+         It is not possible to use this name as a selectable mailbox.
+
+      \Marked
+
+         The mailbox has been marked "interesting" by the server; the
+         mailbox probably contains messages that have been added since
+         the last time the mailbox was selected.
+
+      \Unmarked
+
+         The mailbox does not contain any additional messages since the
+         last time the mailbox was selected.
+===============================================================================
+
+In case you print_r() or var_dump() the object and see an int for attribute,
+these are the constant integers for the bitmask.
+
+1 LATT_NOINFERIORS
+2 LATT_NOSELECT
+4 LATT_MARKED
+8 LATT_UNMARKED
+===============================================================================
+
+i was looking for a function to test the attributes.
+and it was hard to find an answer or code.
+
+Maybe there is a function availeble, but i couldn't find it.
+
+the first function: returns all mailboxes in on the server
+
+The second function: returns a bitstring from the attr_number returned by
+getmailboxes()
+
+The tirth function: returns an array with the active attributes on the specific
+mailbox
+
+Last Line: is a combination of the functions: the output is, any map witch can
+hold no mail but only sub boxes...
+
+<?php
+function getFolders($mailbox, $serverString) {
+
+    $list = imap_getmailboxes($mailbox, $serverString, "*");
+    if (is_array($list)) {
+        foreach ($list as $key => $val) {
+           $mapname = str_replace($serverString, "", imap_utf7_decode($val->
+name));
+           if ($mapname[0] != ".") {
+               $list_folders[$key]['name'] = $mapname;
+               $list_folders[$key]['delimiter'] = $val->delimiter;
+               $list_folders[$key]['attributes'] = $val->attributes;
+           }
+           
+        }
+    } else {
+        echo "imap_getmailboxes failed: " . imap_last_error() . "\n";
+    }
+
+    return $list_folders;
+}
+
+function IntToBin($number) {
+    $BitWaarde = 1;
+    $IntNum = $number;
+    $BinString = "";
+
+    if ($IntNum > 0) {
+    
+        // bepaal de max bitwaarde aan de hand van $IntNum
+        while ($IntNum > $BitWaarde) {
+            $BitWaarde = $BitWaarde * 2;
+        }
+    
+    
+    
+        // maken van een binaire string.
+        while ($BitWaarde >= 1 ) {
+            if ($IntNum < $BitWaarde) {
+                if ($BinString != "") $BinString .= "0";
+            } else {
+                $BinString .= "1";
+                $IntNum = $IntNum-$BitWaarde;
+            }
+            $BitWaarde = $BitWaarde / 2;
+        }
+   
+    }
+   
+   
+    return $BinString;
+}
+
+function Attributes($BinString) {
+
+    $BinInt = (int)$BinString;
+    if ($BinInt >=1000){
+        $setAttribute['LATT_UNMARKED'] = true;
+        $BinInt = $BinInt-1000;
+    } else $setAttribute['LATT_UNMARKED'] = false;
+
+    if ($BinInt >=100){
+        $setAttribute['LATT_MARKED'] = true;
+        $BinInt = $BinInt-100;
+    } else $setAttribute['LATT_MARKED'] = false;
+   
+    if ($BinInt >=10){
+        $setAttribute['LATT_NOSELECT'] = true;
+        $BinInt = $BinInt-10;
+    } else $setAttribute['LATT_NOSELECT'] = false;
+   
+    if ($BinInt >=1){
+        $setAttribute['LATT_NOINFERIORS'] = true;
+        $BinInt = $BinInt-1;
+    } else $setAttribute['LATT_NOINFERIORS'] = false;
+
+    return $setAttribute;
+}
+
+foreach (getFolders($mailbox, $config['Server_string']) as $key => $val) {
+                        $Attr = Attributes(IntToBin((int)$val['attributes']));
+                        if (!$Attr['LATT_NOINFERIORS']) {
+                            echo "<option value='".$val['name']."'>".$val[
+'name']."</option>";
+                        }
+                    }
+?>
+===============================================================================
+
+For the purposes of passing along the attributes as a json array, I wanted to
+pass the attributes as an indexed array to save on bandwidth and session
+storage.  The human readable translation is then performed in javascript by
+relating each key to the proper attribute label.  I also wanted a cleaner way
+of converting the attributes without calling another function or using a
+complex iteration. This puts each binary attribute into it's own array element
+for easy testing.
+
+<?php
+$mailboxes = imap_getmailboxes($mailbox, $username, $password);
+
+foreach($mailboxes as $key=>$mailbox){
+   ...
+   $attrs =  preg_split('//',str_pad(decbin($mailbox->attributes),7,"0",
+STR_PAD_LEFT),8);  // convert decimal to an array of attributes
+   array_shift($attrs); // Remove the extra element at the front of the array
+in position 0
+   ...
+}
+?>
+
+With temporary variables, the conversion would look like this.
+
+<?php
+$attr_binary = decbin($mailbox->attributes);  // convert decimal to binary
+$attr_binary = str_pad($attr_binary,7,"0",STR_PAD_LEFT);  // pad with 0's on
+the left
+$attrs = $preg_split('//',$attr_binary,8);  // split into an array after each
+character
+array_shift($attrs);  // Remove the extra element at the front of the array in
+position 0
+?>
+
+By defining the attributes as a map to the array index, you can test as
+follows.
+
+<?php
+define("ATTR_NOINFERIORS",6);
+define("ATTR_NOSELECT "5);
+define("ATTR_MARKED ",4);
+define("ATTR_UNMARKED ",3);
+define("ATTR_REFERRAL ",2);
+define("ATTR_HASCHILDREN ",1);
+define("ATTR_HASNOCHILDREN ",0);
+
+if ($attrs[ATTR_HASCHILDREN]){
+// do something
+}
+?>

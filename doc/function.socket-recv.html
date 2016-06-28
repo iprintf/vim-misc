@@ -1,0 +1,420 @@
+
+socket_recv
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+socket_recv — 从已连接的socket接收数据
+
+说明
+
+int socket_recv ( resource $socket , string &$buf , int $len , int $flags )
+
+函数 socket_recv() 从 socket 中接受长度为 len 字节的数据，并保存在 buf 中。 
+socket_recv() 用于从已连接的socket中接收数据。除此之外，可以设定一个或多个
+flags 来控制函数的具体行为。
+
+buf 以引用形式传递，因此必须是一个以声明的有效的变量。从 socket 中接收到的数据
+将会保存在 buf 中。
+
+参数
+
+socket
+
+    参数 socket 必须是一个由 socket_create() 创建的socket资源。
+
+buf
+
+    从socket中获取的数据将被保存在由 buf 制定的变量中。如果有错误发生，如链接被
+    重置，数据不可用等等， buf 将被设为 NULL。
+
+len
+
+    长度最多为 len 字节的数据将被接收。
+
+flags
+
+    flags 的值可以为下列任意flag的组合。使用按位或运算符(|)来组合不同的flag。
+
+                                可用的 flags 值
+        Flag                                  描述
+    MSG_OOB      处理超出边界的数据
+    MSG_PEEK     从接受队列的起始位置接收数据，但不将他们从接受队列中移除。
+                 在接收到至少 len 字节的数据之前，造成一个阻塞，并暂停脚本运行
+    MSG_WAITALL  （block）。但是，如果接收到中断信号，或远程服务器断开连接，该
+                 函数将返回少于 len 字节的数据。
+    MSG_DONTWAIT 如果制定了该flag，函数将不会造成阻塞，即使在全局设置中指定了阻
+                 塞设置。
+
+返回值
+
+socket_recv() 返回一个数字，表示接收到的字节数。如果发生了错误，则返回 FALSE 错
+误码可使用 socket_last_error() 接收。也可使用函数 socket_strerror() 来取得关于
+错误的文字描述。
+
+范例
+
+Example #1 socket_recv() 范例
+
+该范例简单地使用 socket_recv() 重写了范例中的第一个例子。
+
+<?php
+error_reporting(E_ALL);
+
+echo "<h2>TCP/IP Connection</h2>\n";
+
+/* Get the port for the WWW service. */
+$service_port = getservbyname('www', 'tcp');
+
+/* Get the IP address for the target host. */
+$address = gethostbyname('www.example.com');
+
+/* Create a TCP/IP socket. */
+$socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+if ($socket === false) {
+    echo "socket_create() failed: reason: " . socket_strerror(socket_last_error
+()) . "\n";
+} else {
+    echo "OK.\n";
+}
+
+echo "Attempting to connect to '$address' on port '$service_port'...";
+$result = socket_connect($socket, $address, $service_port);
+if ($result === false) {
+    echo "socket_connect() failed.\nReason: ($result) " . socket_strerror(
+socket_last_error($socket)) . "\n";
+} else {
+    echo "OK.\n";
+}
+
+$in = "HEAD / HTTP/1.1\r\n";
+$in .= "Host: www.example.com\r\n";
+$in .= "Connection: Close\r\n\r\n";
+$out = '';
+
+echo "Sending HTTP HEAD request...";
+socket_write($socket, $in, strlen($in));
+echo "OK.\n";
+
+echo "Reading response:\n\n";
+$buf = 'This is my buffer.';
+if (false !== ($bytes = socket_recv($socket, $buf, 2048, MSG_WAITALL))) {
+    echo "Read $bytes bytes from socket_recv(). Closing socket...";
+} else {
+    echo "socket_recv() failed; reason: " . socket_strerror(socket_last_error(
+$socket)) . "\n";
+}
+socket_close($socket);
+
+echo $buf . "\n";
+echo "OK.\n\n";
+?>
+
+The above example will produce something like:
+
+<h2>TCP/IP Connection</h2>
+OK.
+Attempting to connect to '208.77.188.166' on port '80'...OK.
+Sending HTTP HEAD request...OK.
+Reading response:
+
+Read 123 bytes from socket_recv(). Closing socket...HTTP/1.1 200 OK
+Date: Mon, 14 Sep 2009 08:56:36 GMT
+Server: Apache/2.2.3 (Red Hat)
+Last-Modified: Tue, 15 Nov 2005 13:24:10 GMT
+ETag: "b80f4-1b6-80bfd280"
+Accept-Ranges: bytes
+Content-Length: 438
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+OK.
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+I've used socket_select and socket_recv with a while loop and found myself in
+trouble when remote side closed connection. The code below produced infinite
+loop and socket_select returned immediately (which lead to high cpu time
+consumption).
+
+<?
+
+socket_set_nonblock($my_socket);
+$streams = array($my_socket/*, ... */);
+
+$lastAccess = time();
+while (socket_select($streams, $write = NULL, $except = NULL,
+SLEEP_TIME_SECONDS, SLEEP_TIME_MILLISECONDS) !== FALSE) {
+    if (in_array($my_socket, $streams)) {
+        while (@socket_recv($my_socket, $data, 8192, 0)) {
+            echo $data;
+        }
+        $lastAccess = time();
+    } else {
+        if (time()-$lastAccess > LAST_ACCESS_TIMEOUT) {
+            break;
+        }
+    }
+    // ...
+    $streams = array($my_socket/*, ... */);
+}
+
+?>
+
+The solution was simple, but quite hard to find because socket_recv is not
+documented. socket_recv returns FALSE if there is no data and 0 if the socket
+is widowed (disconnected by remote side). So I had just to check return value
+of socket_recv. The problem now sounds stupid, but I've spend some time to find
+it out.
+I hope this will save some of somebody's hair ;)
+===============================================================================
+
+Workaround for the missing MSG_DONTWAIT flag according to the bug report page:
+
+<?php if(!defined('MSG_DONTWAIT')) define('MSG_DONTWAIT', 0x40); ?>
+===============================================================================
+
+<?php
+$er = error_reporting(0);
+$bytes    = socket_recv($socket,$buffer,1,MSG_WAITALL);
+error_reporting($er);
+
+// MEGA BUG HERE
+// this statuses are wrong and swapped, closed socket must be with "FALSE"
+// but in fact he swap the values:
+// http://php.net/manual/en/function.socket-recv.php
+//
+if($bytes===false){ // no data available, socket not closed
+    echo 'WS_READ_ERR1: '.socket_strerror(socket_last_error($socket)).PHP_EOL;
+    // print when no data available:
+    // WS_READ_ERR1: Resource temporarily unavailable
+    continue;
+}else if($bytes===0){ // socket closed
+    echo 'WS_READ_ERR2: '.socket_strerror(socket_last_error($socket)).PHP_EOL;
+    // print when socket closed:
+    // WS_READ_ERR2: Success
+    $process->close();
+}
+
+?>
+===============================================================================
+
+In PHP version 5.* there is a bug: MSG_DONTWAIT flag is not defined (see https:
+//bugs.php.net/bug.php?id=48326)
+===============================================================================
+
+It looks like that mysterious flags are just the recv(2) flags passed to your
+OS syscall and nothing more...
+
+ext/sockets/sockets.c:PHP_FUNCTION(socket_recv)
+...
+        if ((retval = recv(php_sock->bsd_socket, recv_buf, len, flags)) < 1) {
+                efree(recv_buf);
+...
+
+for linux you can type `man 2 recv' and you will see complete description of
+thouse flags.
+
+Sergey S. Kosrtyliov <rathamahata@rathamahata.net>
+http://www.rathamahata.net/
+===============================================================================
+
+socket_recv()
+returns FALSE if client returned no data
+returns 0 (zero) if client disconnected
+
+also (asuming case socket_select() "gave" us a "changed" socket):
+if
+socket_recv() returned FALSE
+and no bytes were received
+then
+client "crashed" (call it disconnected).
+
+else if
+socket_recv() returned 0 (zero)
+and no bytes were received
+then
+client "normaly" disconnected.
+
+Im pretty sure -- 99.99%.
+Example:
+<?php
+function receive($socket)
+{
+    // !
+    // on all following cases we assume that
+    // socket_select() returned the current socket as "changed"
+    // !
+
+    $timeout = 3; // set your timeout
+
+    /* important */
+    $socket_recv_return_values['no_data_received'] = false;
+    $socket_recv_return_values['client_disconnected'] = 0;
+
+    $start = time();
+    $received_data = null;
+    $received_bytes = null;
+    socket_set_nonblock($socket);
+    socket_clear_error();
+    while(
+        ($t_out=((time()-$start) >= $timeout)) === false
+        and ($read=@socket_recv($socket, $buf, 4096, 0)) >= 1
+    ){
+        $received_data  = (isset($received_data)) ? $received_data . $buf : 
+$buf;
+        $received_bytes = (isset($received_bytes)) ? $received_bytes + $read : 
+$read;
+    }
+    $last_error = socket_last_error($socket);
+    socket_set_block($socket);
+
+    if($t_out === true){
+        throw new Exception(
+            'timeout after ' . ((!$received_bytes) ? 0 : $received_bytes) . '
+bytes',
+            0 // your eCode here
+        );
+    }
+    elseif($last_error !== false and $last_error !== 0){
+        throw new Exception(
+            socket_strerror($last_error),
+            $last_error
+        );
+    }
+    else{
+        if($read === $socket_recv_return_values['no_data_received']){
+            // client returned NO DATA
+            // but we were in a loop and could have got some data before:
+            if($received_bytes < 1){
+                // client is connected but sent NO DATA ?
+                // no:
+                // in this case the client must be "crashed" because -
+                // it is not possible to "send no data" (zero bytes)
+                // socket_select() now returns this socket as "changed"
+"forever"
+                throw new Exception(
+                    'client crashed',
+                    0 // your eCode here
+                );
+            }else{
+                // client returned DATA
+                return $received_data;
+            }
+        }
+        elseif($read === $socket_recv_return_values['client_disconnected']){
+            // client disconnected
+            if($received_bytes < 1){
+                // client disconnected before/without sending any bytes
+                throw new Exception(
+                    'client disconnected',
+                    0 // your eCode here
+                );
+            }
+            else{
+                // *this value* ^= $socket_recv_return_values
+['client_disconnected']
+                //
+                // client disconnected AFTER sending data (we were in a loop!)
+                // socket_select() will return this socket "forever" as
+"changed" and -
+                // socket_recv() will return *this value* "forever".
+                // we will be "back" again "very soon" to see:
+                //  socket_recv() returns *this value* AND no bytes received
+                //  which results in disconnect-exception above
+                return $received_data;
+            }
+        }
+    }
+}
+?>
+===============================================================================
+
+My last post was incorrect. The int flag set to 2 apparently reset the file
+position pointer so what I was reading was the first record repeatedly.
+
+My workaroud ended up being the following:
+
+for($ct=1; $ct<=$numrecs; $ct++) {
+    $rec = "";
+    $nr=socket_recv($fp,$rec,76,0);
+       
+    //grab the extra bytes.
+    $terminator = "";
+    while ($terminator != ".") {
+        $nr=socket_recv($fp,$terminator,1,0);
+    }
+   
+     $custarray[]=substr($rec,0,76);        
+}
+
+Martin K.
+===============================================================================
+
+I'm glad that Bastion left the above post about the mysterious int flag. He
+just helped to fix a problem that I've spent six hours on. Here's my code:
+
+for($ct=1; $ct<=$numrecs; $ct++) {
+     $rec = "";
+     $nr=socket_recv($fp,$rec,77,0);
+     print "Rec # $ct -->";
+         print "$rec";
+         print "<br>";
+      }
+
+The code is pretty simple, it just loops through all my records and prints them
+out. All records are 77 bytes and all end with a period. The first 36 records
+print perfectly then at 37 things go bad. The records start to get offset. The
+last few characters of the 37th record end up printing on the 38th record. The
+data on the sending side was perfect, so I knew that the problem was with
+socked_recv.
+
+After reading the above post I tried changing the int flag. Changing the flag
+to 2 worked:
+$nr=socket_recv($fp,$rec,77,2);
+
+Now everything lines up perfectly. I had always left int flag as 0 since it's
+undocumented.
+
+Martin K.
+===============================================================================
+
+To read from socket both on linux and windows OS having  flash as a client I
+use function bellow. $length is the size of  a chunk, not the max length to
+read. It will continue reading until EOL char  occures or client disconnects
+(or in case of error), so it works for bigger packets as well.
+
+     function read($descriptor, $length = 1024) {
+            $this->method = "read";
+            if(!$client){
+                echo("No valid socket descriptor !\n");
+                return false;
+            }
+            $read ='';
+        while(($flag=socket_recv($descriptor, $buf, $length,0))>0){
+              $asc=ord(substr($buf, -1));
+            if ($asc==0) {
+                $read.=substr($buf,0,-1);
+                break;
+            }else{
+                $read.=$buf;
+            }
+        }
+           if ($flag<0){
+            //error
+            return false;
+        }elseif ($flag==0){
+            //Client disconnected
+            return  false;
+        }else{
+              return $read;
+        }
+
+     }
+===============================================================================
+
+in case you want to empty/unset $buffer, but failing to do so, try using 0 as
+flag.
+PHP_NORMAL_READ and PHP_BINARY_READ respectively hold 1 and 2 as value.

@@ -1,0 +1,641 @@
+
+ZipArchive::addFile
+
+(PHP 5 >= 5.2.0, PHP 7, PECL zip >= 1.1.0)
+
+ZipArchive::addFile — Adds a file to a ZIP archive from the given path
+
+说明
+
+bool ZipArchive::addFile ( string $filename [, string $localname = NULL [, int
+$start = 0 [, int $length = 0 ]]] )
+
+Adds a file to a ZIP archive from a given path.
+
+参数
+
+filename
+
+    The path to the file to add.
+
+localname
+
+    If supplied, this is the local name inside the ZIP archive that will
+    override the filename.
+
+start
+
+    This parameter is not used but is required to extend ZipArchive.
+
+length
+
+    This parameter is not used but is required to extend ZipArchive.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+This example opens a ZIP file archive test.zip and add the file /path/to/
+index.txt. as newname.txt.
+
+Example #1 Open and add
+
+<?php
+$zip = new ZipArchive;
+if ($zip->open('test.zip') === TRUE) {
+    $zip->addFile('/path/to/index.txt', 'newname.txt');
+    $zip->close();
+    echo 'ok';
+} else {
+    echo 'failed';
+}
+?>
+
+注释
+
+    Note:
+
+    When a file is set to be added to the archive, PHP will lock the file. The
+    lock is only released once the ZipArchive object has been closed, either
+    via ZipArchive::close() or the ZipArchive object being destroyed. This may
+    prevent you from being able to delete the file being added until after the
+    lock has been released.
+
+
+User Contributed Notes 29 notes
+
+===============================================================================
+
+It is not obvious, since there are no noticeable examples around, but you can
+use $localname (second parameter) to define and control file/directory
+structure inside the zip. Use it if you do not want files to be included with
+their absolute directory tree.
+
+<?php
+
+$zip->addFile($abs_path, $relative_path);
+
+?>
+===============================================================================
+
+When adding a file to your zip, the file is opened and stays open.
+When adding over 1024 files (depending on your open files limit) the server
+stops adding files, resulting in a status 11 in your zip Archive. There is no
+warning when exceeding this open files limit with addFiles.
+
+Check your open files with ulimit -a
+
+This kept me busy for some time.
+===============================================================================
+
+Beware: calling $zip->addFile() on a file that doesn't exist will succeed and
+return TRUE, delaying the failure until you make the final $zip->close() call,
+which will return FALSE and potentially leave you scratching your head.
+
+If you're adding multiple files to a zip and your $zip->close() call is
+returning FALSE, ensure that all the files you added actually exist.
+
+It's also a good idea to check each file with file_exists() or is_readable()
+before calling $zip->addFile() on it.
+===============================================================================
+
+If you have problem with windows explorer reading zipfile created by linux,
+try:
+$oZip->addFile ( $file_name, " " . basename ( $file_name ) )
+That space " " should solve.
+===============================================================================
+
+I had a huge number of files and folders that I needed to zip on a linux web
+server. I was running into timeout problems and file enumerator issues, as well
+as file handler limit issues (ulimit). I used a script to solve u limit offered
+by Farzad Ghanei first (ZipArchiveImproved), but closing and reopening his way
+didn't do the trick for me.
+
+I eventually did a simple call to a $filelimit variable I created that records
+file handler limit I want my script to hit before it closes and reopens the
+file.
+<?php
+$filelimit = 255;
+
+if ($zip->numFiles == $filelimit) {$zip->close(); $zip->open($file) or die (
+"Error: Could not reopen Zip");}
+?>
+
+This made some progress for me, timeouts were gone, but when calling
+<?php $zip->addFile($filepath, $archivefilepath); ?>
+after the reopening of the Zip, I got an error. I echoed the <?php $zip->
+numFiles; ?> and found that after reopening, the numFile enum reset to '0'.
+
+A few more goose-chases later, I tried addFromString with some better results,
+but did not get it working 100% until I actually coupled addFromString with
+addFile! My working scripting for the add files function on massive file-folder
+structures looks like so:
+
+<?php
+$sourcefolder = /rel/path/to/source/folder/on/server/
+
+$dirlist = new RecursiveDirectoryIterator($sourcefolder);
+
+$filelist = new RecursiveIteratorIterator($dirlist);
+
+//how many file can be added before a reopen is forced?
+$filelimit = 245;
+
+// Defines the action
+$file = tempnam("tmp", "zip");
+$zip = new ZipArchive();
+
+// This creates and then gives the option to save the zip file
+
+if ($zip->open($file, ZipArchive::OVERWRITE) !== TRUE) {
+
+    die ("Could not open archive");
+
+}
+
+// adds files to the file list
+foreach ($filelist as $key=>$value) {
+
+    //fix archive paths
+    $path = str_replace($sourcefolder, "", $key); //remove the source path from
+the $key to return only the file-folder structure from the root of the source
+folder
+    if (!file_exists($key)) { die($key.' does not exist. Please contact your
+administrator or try again later.'); }
+      if (!is_readable($key)) { die($key.' not readable. Please contact your
+administrator or try again later.'); }    
+          if ($zip->numFiles == $filelimit) {$zip->close(); $zip->open($file)
+or die ("Error: Could not reopen Zip");}
+
+    $zip->addFromString($path, $key) or die ("ERROR: Could not add file: $key
+</br> numFile:".$zip->numFiles);
+    $zip->addFile(realpath($key), $path) or die ("ERROR: Could not add file: 
+$key </br> numFile:".$zip->numFiles);
+   
+}
+
+// closes the archive
+$zip->close();
+
+//make local temp file a .zip, rename, and move to output dir
+rename ($file, "./" . $outputfolder . "/" . $zipfilename);
+?>
+I hope this may help someone else.
+===============================================================================
+
+The workaround above (file_get_contents) is very dangerous if you pack large
+files. (see memory limit).
+Close/open the zip archive periodically instead of using file_get_contents().
+===============================================================================
+
+What is worse is that when you run out of filedescriptors it seems to fail
+silently, I have not been able to find any errors in any logfiles.
+===============================================================================
+
+On my system (Windows), I found that ZipArchive uses IBM850 encoding for
+filenames (localname). For filenames with special characters such as (é) &
+eacute; which appears at 0xE9 in the ISO-8859-1, it is at 0x82 in IBM850. I had
+to call iconv('ISO-8859-1', 'IBM850', 'Québec') to get correct file names.
+===============================================================================
+
+If you add files that have an absolut path, like for example:
+/mnt/repository/my_file.pdf
+the standard windows zip utility will not be able to extract the files. The
+first slash trips the zip utility. You have to add relative file paths or use a
+symbolic link.
+===============================================================================
+
+Here's a little extension to ZipArchive that handles directories recursively:
+
+<?php
+
+class Zipper extends ZipArchive {
+   
+public function addDir($path) {
+    print 'adding ' . $path . '<br>';
+    $this->addEmptyDir($path);
+    $nodes = glob($path . '/*');
+    foreach ($nodes as $node) {
+        print $node . '<br>';
+        if (is_dir($node)) {
+            $this->addDir($node);
+        } else if (is_file($node))  {
+            $this->addFile($node);
+        }
+    }
+}
+   
+} // class Zipper
+
+?>
+===============================================================================
+
+Another surprise, which took a lot of trouble. So that after you add a file to
+the archive it can be safely removed, took advantage of such construction:
+
+if (!is_file ($archive)) :
+    $result = $zip->open ($archive, ZipArchive::CREATE);
+else :
+    $result = $zip->open ($archive);
+endif;
+if ($result === TRUE) :
+    if (($zip->addFile ($file, $filename)) === TRUE) :
+        $theoreticaly_added = TRUE;
+    endif;
+    if ((($zip->close ()) === TRUE) && $theoreticaly_added) :
+        unlink ($file);
+    endif;
+endif;
+
+Now the files will not disappear. But perhaps there is a simpler solution,
+which gives 100% guarantee?
+===============================================================================
+
+In some versions of this library you NEED to add the "localfile" parameter or
+the file will not show in the Zip folder.
+===============================================================================
+
+Do NOT use ZipArchive::addFile() to append a folder.
+
+When a folder's path is passed to ZipArchive::addFile(), the method returns
+true, but ZipArchive can neither create a zip archive nor can it make any
+change to a existing file.
+
+<?php
+    $z = new ZipArchive();
+    if(true === ($z->open('./foo.zip', ZipArchive::CREATE | ZipArchive::
+OVERWRITE))){
+        $z->setArchiveComment('Interesting!');
+        $z->addFromString('domain.txt', 'wuxiancheng.cn');
+        $folder = './test';
+        !is_dir($folder) && mkdir($folder); // Create an folder for testing
+        if(true === $z->addFile($folder)){
+            echo 'success'; // !!!
+        }
+        rmdir($folder);
+        $z->close();
+        // foo.zip will NOT be saved on disk.
+        // If foo.zip already exists before we run this script, the file will
+remain unchanged.
+    }
+?>
+===============================================================================
+
+Note that using addFile() will change the order of the files within the zip, in
+fact within the index of the zip. Does not matter much, except if you loop the
+index and use addFile() within that loop : it will likely give messy results.
+
+Example :
+<?php
+$zip = new ZipArchive;
+if ($zip->open('somefile.zip') === TRUE) {
+  for ($i = 0; $i < $zip->numFiles; $i++) {
+    if (forsomereason()) {
+      addFile('./somenewfile.ext', $zip->getNameIndex($i));
+    }
+  }
+}
+$zip->close();
+?>
+
+This code may loop for ever, depending on your forsomereason() function, or at
+least you're at risk.
+
+Try something like this instead :
+
+<?php
+$zip = new ZipArchive;
+if ($zip->open('somefile.zip') === TRUE) {
+  for ($i = 0; $i < $zip->numFiles; $i++) {
+    if (forsomereason()) {
+      $couples[]=array('filename'=>'./somenewfile.ext','localname'=>$zip->
+getNameIndex($i));
+    }
+  }
+}
+foreach ($couples as $couple) $zip->addFile($couple['filename'],$couple[
+'localname']);
+$zip->close();
+?>
+
+Hope it helps ;-)
+===============================================================================
+
+The manual is lying.
+
+"In short, it means you can first delete an added file after the archive is
+closed. "
+
+Thats true but not by locking the file...
+Warning! This method works asynchronous!
+
+It seems that addFile() will return TRUE if the file stat command returns
+correctly, but the operation itself will not happen yet.
+
+Instead, deleting a file is always possible. I have discovered this behaviour
+by using a temporary file and deleting it immediately after addFile() returns.
+The result was that no archive was created nor any file was added although
+every operation (creating,open(),addFile()) returned true before. The operation
+silenty fails.
+===============================================================================
+
+Note that there is no concept of "folders" for ZIP files. If you need to store
+data into folders, use forward slashes ("/") in $localname to separate folder
+(s) and the file name.
+
+Example:
+$zip->addFile("test.txt", "mainfolder/subfolder/test.txt");
+===============================================================================
+
+It should be noted that the example provided above is not accurate.
+
+Unlike extractTo, zip_open does not return a boolean result, so the above
+example will always fail.
+===============================================================================
+
+2 tips:
+
+- The example in on this page is a bit misleading for new programmers. It works
+only if the ZIP archive file exists already. Don't forget to use
+ZipArchive::CREATE and optionally ZipArchive::OVERWRITE in the second optional
+parameter in the open() function.
+
+- If you want to add files and directories recursively (see some examples from
+other comments here on this page) use scandir() instead of blob() because blob
+() does not list hidden files like ".htaccess" for example.
+===============================================================================
+
+The addFile() method does not accept the "file://" protocol. Strip away "file:/
+/" and use the absolute path instead.
+
+I assume that it also does not accept any other protocols, I was having issues
+trying to add files, other functions within the application I was building
+required the use of the protocol.
+
+Also to note, the status code returned did not match any of the predefined
+error codes, and the status code was never the same. My assumption was a
+overflow on the variable as the status codes were around the minimum and
+maximum INT values.
+===============================================================================
+
+Currently the number of files that can be added using addFile to the ZIP
+archive (until it is closed) is limited by file descriptors limit. This is an
+easy workaround (on the bug links below you can find another workarounds):
+<?php
+    /** work around file descriptor number limitation (to avoid failure
+     * upon adding more than typically 253 or 1024 files to ZIP) */
+    function addFileToZip( $zip, $path, $zipEntryName ) {
+        // this would fail with status ZIPARCHIVE::ER_OPEN
+        // after certain number of files is added since
+        // ZipArchive internally stores the file descriptors of all the
+        // added files and only on close writes the contents to the ZIP file
+        // see: http://bugs.php.net/bug.php?id=40494
+        // and: http://pecl.php.net/bugs/bug.php?id=9443
+        // return $zip->addFile( $path, $zipEntryName );
+
+        $contents = file_get_contents( $path );
+        if ( $contents === false ) {
+            return false;
+        }
+        return $zip->addFromString( $zipEntryName, $contents );
+    }
+?>
+===============================================================================
+
+Note that ZipArchive::open() not return boolean value, but integer, for example
+:
+$zip = new ZipArchive();
+$filename = '/tmp/test.zip';
+var_dum($zip->open($filename)); // return's : int (11)
+===============================================================================
+
+If you have some warnings with ZipArchiveImproved since the last Ubuntu update,
+replace "self::CREATE" by "self::CREATE | self::OVERWRITE" in the reopen
+function
+
+christophe
+===============================================================================
+
+This add directory function does not require that you create a new wrapper
+class, and also does not add the entire file directory tree into your zip file.
+
+<?php
+
+public function addDirectoryToZip($zip, $dir, $base)
+{
+    $newFolder = str_replace($base, '', $dir);
+    $zip->addEmptyDir($newFolder);
+    foreach(glob($dir . '/*') as $file)
+    {
+        if(is_dir($file))
+        {
+            $zip = $this->addDirectoryToZip($zip, $file, $base);
+        }
+        else
+        {
+            $newFile = str_replace($base, '', $file);
+            $zip->addFile($file, $newFile);
+        }
+    }
+    return $zip;
+}
+
+?>
+===============================================================================
+
+Note that the file isn't actually added to the archive until the $zip->close()
+method is called. I spent a lot of time trying to figure out why no time() went
+by after adding large files via $zip->addFile() but would then time out the
+script.
+===============================================================================
+
+here is a basic class that extends the ZipArchive to:
+  * add a functionality to report the ZIP file address (I needed it and I could
+not find out how in ZipArchive documentation).
+  * resolve the problem of adding so many files to the archive due file
+descriptor limit. the ZipArchiveImproved::addFile() handles this.
+
+<?php
+/**
+* ZipArchiveImproved extends ZipArchive to add some information about the zip
+file and some functionality.
+*
+*
+*
+* @author Farzad Ghanei
+* @uses ZipArchive
+* @version 1.0.0 2009-01-18
+*/
+
+class ZipArchiveImproved extends ZipArchive {
+    protected $_archiveFileName = null;
+    protected $_newAddedFilesCounter = 0;
+    protected $_newAddedFilesSize = 100;
+   
+    /**
+     * returns the name of the archive file.
+     *
+     * @return string
+     */
+    public function getArchiveFileName() {
+        return $this->_archiveFileName;
+    }
+
+    /**
+     * returns the number of files that are going to be added to ZIP
+     * without reopenning the stream to file.
+     *
+     * @return int
+     */
+    public function getNewAddedFilesSize() {
+        return $this->_newAddedFilesSize;
+    }
+
+    /**
+     * sets the number of files that are going to be added to ZIP
+     * without reopenning the stream to file. if no size is specified, default
+is 100.
+     *
+     * @param int
+     * @return ZipArchiveImproved self reference
+     */
+    public function setNewlAddedFilesSize($size=100) {
+        if ( empty($size) || !is_int($size) || $size < 1) {
+            $size = 100;
+        }
+        $this->_newAddedFilesSize = $size;
+        return $this;
+    }
+
+    /**
+     * opens a stream to a ZIP archive file. calls the ZipArchive::open()
+internally.
+     * overwrites ZipArchive::open() to add the archiveFileName functionality.
+     *
+     * @param string $fileName
+     * @param int $flags
+     * return mixed
+     */
+    public function open($fileName, $flags) {
+        $this->_archiveFileName = $fileName;
+        $this->_newAddedFilesCounter = 0;
+        return parent::open($fileName,$flags);
+    }
+
+    /**
+     * closes the stream to ZIP archive file. calls the ZipArchive::close()
+internally.
+     * overwrites ZipArchive::close() to add the archiveFileName functionality.
+     *
+     * @return bool
+     */
+    public function close() {
+        $this->_archiveFileName = null;
+        $this->_newAddedFilesCounter = 0;
+        return parent::close();
+    }
+
+    /**
+     * closes the connection to ZIP file and openes the connection again.
+     *
+     * @return bool
+     */
+    public function reopen() {
+        $archiveFileName = $this->_archiveFileName;
+        if ( !$this->close() ) {
+            return false;
+        }
+        return $this->open($archiveFileName,self::CREATE);
+    }
+
+    /**
+     * adds a file to a ZIP archive from the given path. calls the
+ZipArchive::addFile() internally.
+     * overwrites ZipArchive::addFile() to handle maximum file connections in
+operating systems.
+     *
+     * @param string $fileName the path to file to be added to archive
+     * @param string [optional] $localname the name of the file in the ZIP
+archive
+     * @return bool
+     */
+    public function addFile( $fileName ) {
+        if ($this->_newAddedFilesCounter >= $this->_newAddedFilesSize) {
+            $this->reopen();
+        }
+        if ( func_num_args() > 1 ) {
+            $flags = func_get_arg(1);
+            $added = parent::addFile($fileName,$flags);
+            if ($added) {
+                $this->_newAddedFilesCounter++;
+            }
+            return $added;
+        }
+        $added = parent::addFile($fileName);
+        if ($added) {
+            $this->_newAddedFilesCounter++;
+        }
+        return $added;
+    } // public function addFile()
+}
+?>
+===============================================================================
+
+This is my workaround for the file descriptor limit by closing/opening the
+archive file periodically.
+
+<?php
+if($backup = new ZipArchive()) {
+    if($backup->open($zip, ZIPARCHIVE::OVERWRITE) === true) {
+        $backup->addFile($file['realpath'], $file['path']);
+        if(($count++) == 200) { // the file descriptor limit
+            $backup->close();
+            if($backup = new ZipArchive()) {
+                $backup->open($zip);
+                $count = 0;
+            }
+        }
+    }
+    $backup->close();
+}
+?>
+
+Hope it helps someone.
+===============================================================================
+
+thought it might come in handy
+recursively adds all directories and files within a directory
+
+class zip extends ZipArchive {
+   
+    public function addDirectory($dir) { // adds directory
+        foreach(glob($dir . '/*') as $file) {
+            if(is_dir($file))
+                $this->addDirectory($file);
+            else
+                $this->addFile($file);
+        }
+    }
+}
+===============================================================================
+
+<?php
+$zip=new ZipArchive;
+$zip->addFile('path to the file', 'new name of the file');
+?>
+
+What I have to do, when I wan't to have the file in the zip archive with it's
+name before archiving?
+(Sorry, I'm from Czech Republic and I can't speak English very well, if I did
+anywhere mistake, so ignore that pease :-)
+===============================================================================
+
+I have had several problems trying adding files, because of a path problem. The
+error gived was this:
+
+ZipArchive::addFile() [function.ZipArchive-addFile]: Unable to access <path>
+
+I used an absolute root starting by "/", and it didn't work. Try starting your
+path with "./" (referencing the root of your site).

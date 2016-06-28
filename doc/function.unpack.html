@@ -1,0 +1,843 @@
+
+unpack
+
+(PHP 4, PHP 5, PHP 7)
+
+unpack — Unpack data from binary string
+
+说明
+
+array unpack ( string $format , string $data )
+
+Unpacks from a binary string into an array according to the given format.
+
+The unpacked data is stored in an associative array. To accomplish this you
+have to name the different format codes and separate them by a slash /. If a
+repeater argument is present, then each of the array keys will have a sequence
+number behind the given name.
+
+参数
+
+format
+
+    See pack() for an explanation of the format codes.
+
+data
+
+    The packed data.
+
+返回值
+
+Returns an associative array containing unpacked elements of binary string.
+
+更新日志
+
+版本                                    说明
+      Changes were made to bring this function into line with Perl:
+
+      The "a" code now retains trailing NULL bytes.
+
+5.5.0 The "A" code now strips all trailing ASCII whitespace (spaces, tabs,
+      newlines, carriage returns, and NULL bytes).
+
+      The "Z" code was added for NULL-padded strings, and removes trailing NULL
+      bytes.
+
+范例
+
+Example #1 unpack() example
+
+<?php
+$binarydata = "\x04\x00\xa0\x00";
+$array = unpack("cchars/nint", $binarydata);
+print_r($array);
+?>
+
+以上例程会输出：
+
+Array
+(
+    [chars] => 4
+    [int] => 160
+)
+
+Example #2 unpack() example with a repeater
+
+<?php
+$binarydata = "\x04\x00\xa0\x00";
+$array = unpack("c2chars/nint", $binarydata);
+print_r($array);
+?>
+
+以上例程会输出：
+
+Array
+(
+    [chars1] => 4
+    [chars2] => 0
+    [int] => 40960
+)
+
+注释
+
+Caution
+
+Note that PHP internally stores integral values as signed. If you unpack a
+large unsigned long and it is of the same size as PHP internally stored values
+the result will be a negative number even though unsigned unpacking was
+specified.
+
+Caution
+
+Be aware that if you do not name an element, an empty string is used. If you do
+not name more than one element, this means that some data is overwritten as the
+keys are the same such as in:
+
+Example #3 unpack() example with unnamed keys
+
+<?php
+$binarydata = "\x32\x42\x00\xa0";
+$array = unpack("c2/n", $binarydata);
+var_dump($array);
+?>
+
+以上例程会输出：
+
+array(2) {
+  [1]=>
+  int(160)
+  [2]=>
+  int(66)
+}
+
+Note that the first value from the c specifier is overwritten by the first
+value from the n specifier.
+
+参见
+
+  • pack() - Pack data into binary string
+
+
+User Contributed Notes 25 notes
+
+===============================================================================
+
+I had a situation where I had to unpack a file filled with little-endian order
+double-floats in a way that would work on either little-endian or big-endian
+machines.  PHP doesn't have a formatting code that will change the byte order
+of doubles, so I wrote this workaround.
+
+<?php
+/*The following code is a workaround for php's unpack function
+which does not have the capability of unpacking double precision
+floats that were packed in the opposite byte order of the current
+machine.
+*/
+function big_endian_unpack ($format, $data) {
+    $ar = unpack ($format, $data);
+    $vals = array_values ($ar);
+    $f = explode ('/', $format);
+    $i = 0;
+    foreach ($f as $f_k => $f_v) {
+    $repeater = intval (substr ($f_v, 1));
+    if ($repeater == 0) $repeater = 1;
+    if ($f_v{1} == '*')
+    {
+        $repeater = count ($ar) - $i;
+    }
+    if ($f_v{0} != 'd') { $i += $repeater; continue; }
+    $j = $i + $repeater;
+    for ($a = $i; $a < $j; ++$a)
+    {
+        $p = pack ('d',$vals[$i]);
+        $p = strrev ($p);
+        list ($vals[$i]) = array_values (unpack ('d1d', $p));
+        ++$i;
+    }
+    }
+    $a = 0;
+    foreach ($ar as $ar_k => $ar_v) {
+    $ar[$ar_k] = $vals[$a];
+    ++$a;
+    }
+    return $ar;
+}
+
+list ($endiantest) = array_values (unpack ('L1L', pack ('V',1)));
+if ($endiantest != 1) define ('BIG_ENDIAN_MACHINE',1);
+if (defined ('BIG_ENDIAN_MACHINE')) $unpack_workaround = 'big_endian_unpack';
+else $unpack_workaround = 'unpack';
+?>
+
+This workaround is used like this:
+
+<?php
+
+function foo() {
+        global $unpack_workaround;
+    $bar = $unpack_workaround('N7N/V2V/d8d',$my_data);
+//...
+}
+
+?>
+
+On a little endian machine, $unpack_workaround will simply point to the
+function unpack.  On a big endian machine, it will call the workaround
+function.
+
+Note, this solution only works for doubles.  In my project I had no need to
+check for single precision floats.
+===============================================================================
+
+This is about the last example of my previous post. For the sake of clarity,
+I'm including again here the example, which expands the one given in the formal
+documentation:
+
+<?
+  $binarydata = "AA\0A";
+  $array = unpack("c2chars/nint", $binarydata);
+  foreach ($array as $key => $value)
+     echo "\$array[$key] = $value <br>\n";
+?>
+
+This outputs:
+
+$array[chars1] = 65
+$array[chars2] = 65
+$array[int] = 65
+
+Here, we assume that the ascii code for character 'A' is decimal 65.
+
+Remebering that the format string structure is:
+<format-code> [<count>] [<array-key>] [/ ...],
+in this example, the format string instructs the function to
+  1. ("c2...") Read two chars from the second argument ("AA ...),
+  2. (...chars...) Use the array-keys "chars1", and "chars2" for
+      these two chars read,
+  3. (.../n...) Read a short int from the second argument (...\0A"),
+  4. (...int") Use the word "int" as the array key for the just read
+      short.
+
+I hope this is clearer now,
+
+Sergio.
+===============================================================================
+
+Suppose we need to get some kind of internal representation of an integer, say
+65, as a four-byte long. Then we use, something like:
+
+<?
+  $i = 65;
+  $s = pack("l", $i); // long 32 bit, machine byte order
+  echo strlen($s) . "<br>\n";
+  echo "***$s***<br>\n";
+?>
+
+The output is:
+
+X-Powered-By: PHP/4.1.2
+Content-type: text/html
+
+4
+***A***
+
+(That is the string "A\0\0\0")
+
+Now we want to go back from string "A\0\0\0" to number 65. In this case we can
+use:
+
+<?
+  $s = "A\0\0\0"; // This string is the bytes representation of number 65
+  $arr = unpack("l", $s);
+  foreach ($arr as $key => $value)
+     echo "\$arr[$key] = $value<br>\n";
+?>
+
+And this outpus:
+X-Powered-By: PHP/4.1.2
+Content-type: text/html
+
+$arr[] = 65
+
+Let's give the array key a name, say "mykey". In this case, we can use:
+
+<?
+  $s = "A\0\0\0"; // This string is the bytes representation of number  65
+  $arr = unpack("lmykey", $s);
+  foreach ($arr as $key => $value)
+     echo "\$arr[$key] = $value\n";
+?>
+
+An this outpus:
+X-Powered-By: PHP/4.1.2
+Content-type: text/html
+
+$arr[mykey] = 65
+
+The "unpack" documentation is a little bit confusing. I think a more complete
+example could be:
+
+<?
+  $binarydata = "AA\0A";
+  $array = unpack("c2chars/nint", $binarydata);
+  foreach ($array as $key => $value)
+    echo "\$array[$key] = $value <br>\n";
+?>
+
+whose output is:
+
+X-Powered-By: PHP/4.1.2
+Content-type: text/html
+
+$array[chars1] = 65 <br>
+$array[chars2] = 65 <br>
+$array[int] = 65 <br>
+
+Note that the format string is something like
+<format-code> [<count>] [<array-key>] [/ ...]
+
+I hope this clarifies something
+
+Sergio
+===============================================================================
+
+The documentation is clear that an integer read using an unsigned format
+character will still be stored as a signed integer.  The often-cited
+work-around is to use sprintf('%u', $bigint) to properly display integers with
+the MSB set.
+
+In the case where the numeric value is more important than how it's displayed,
+you can still work with other large integers using intval() to "upgrade" your
+existing unsigned integers.
+
+I had a problem comparing 32-bit integers read from files with hard-coded
+constants (file signatures tend to need this).  Here's what I did to avoid
+converting everything into strings:
+
+<?php
+
+$bigint = 0x89504E47;
+
+$packed = pack('N', $bigint);
+
+list($unpacked) = array_values(unpack('N', $packed));
+
+//The $bigint remains an unsigned integer.
+//Even though their bit-wise values are identical, comparison fails.
+
+echo 'bigint ',
+  ($bigint == $unpacked ? '==' : '!='),
+  " unpacked\n";
+
+//intval() triggers a re-interpretation of $bigint.
+//$bigint is internally compared as a signed integer.
+//Since the bit-wise value of $bigint never changes, comparison succeeds.
+
+echo 'intval(bigint) ',
+  (intval($bigint) == $unpacked ? '==' : '!='),
+  " unpacked\n";
+
+?>
+
+It works, but it's a little backwards.  If anyone has any ideas on how to
+"downgrade" a signed integer into an unsigned integer without using strings,
+that would be a valuable note to add to the documentation.
+===============================================================================
+
+If having a zero-based index is useful/necessary, then instead of:
+
+$int_list = unpack("s*", $some_binary_data);
+
+try:
+
+$int_list = array_merge(unpack("s*", $some_binary_data));
+
+This will return a 0-based array:
+
+$int_list[0] = x
+$int_list[1] = y
+$int_list[2] = z
+...
+
+rather than the default 1-based array returned from unpack when no key is
+supplied:
+
+$int_list[1] = x
+$int_list[2] = y
+$int_list[3] = z
+...
+
+It's not used often, but array_merge() with only one parameter will compress a
+sequentially-ordered numeric-index, starting with an index of [0].
+===============================================================================
+
+be aware of the behavior of your system that PHP resides on.
+
+On x86, unpack MAY not yield the result you expect for UInt32
+
+This is due to the internal nature of PHP, being that integers are internally
+stored as SIGNED!
+
+For x86 systems, unpack('N', "\xff\xff\xff\xff") results in -1
+For (most?) x64 systems, unpack('N', "\xff\xff\xff\xff") results in 4294967295.
+
+This can be verified by checking the value of PHP_INT_SIZE.
+If this value is 4, you have a PHP that internally stores 32-bit.
+A value of 8 internally stores 64-bit.
+
+To work around this 'problem', you can use the following code to avoid problems
+with unpack.
+The code is for big endian order but can easily be adjusted for little endian
+order (also, similar code works for 64-bit integers):
+
+<?php
+function _uint32be($bin)
+{
+    // $bin is the binary 32-bit BE string that represents the integer
+    if (PHP_INT_SIZE <= 4){
+        list(,$h,$l) = unpack('n*', $bin);
+        return ($l + ($h*0x010000));
+    }
+    else{
+        list(,$int) = unpack('N', $bin);
+        return $int;
+    }
+}
+?>
+
+Do note that you *could* also use sprintf('%u', $x) to show the unsigned real
+value.
+Also note that (at least when PHP_INT_SIZE = 4) the result WILL be a float
+value when the input is larger then 0x7fffffff (just check with gettype);
+
+Hope this helps people.
+===============================================================================
+
+As stated above, "if you unpack a large unsigned long and it is of the same
+size as PHP internally stored values the result will be a negative number even
+though unsigned unpacking was specified."
+
+To restore the original unsigned value, you could do this :
+
+if ($unpackedVal <0)
+{
+      $unpackedVal += 4294967296;
+}
+
+Hope this helps !
+
+Cheers
+===============================================================================
+
+A helper class to convert integer to binary strings and vice versa. Useful for
+writing and reading integers to / from files or sockets.
+
+<?php
+
+    class int_helper
+    {
+        public static function int8($i) {
+            return is_int($i) ? pack("c", $i) : unpack("c", $i)[1];
+        }
+
+        public static function uInt8($i) {
+            return is_int($i) ? pack("C", $i) : unpack("C", $i)[1];
+        }
+
+        public static function int16($i) {
+            return is_int($i) ? pack("s", $i) : unpack("s", $i)[1];
+        }
+
+        public static function uInt16($i, $endianness=false) {
+            $f = is_int($i) ? "pack" : "unpack";
+
+            if ($endianness === true) {  // big-endian
+                $i = $f("n", $i);
+            }
+            else if ($endianness === false) {  // little-endian
+                $i = $f("v", $i);
+            }
+            else if ($endianness === null) {  // machine byte order
+                $i = $f("S", $i);
+            }
+
+            return is_array($i) ? $i[1] : $i;
+        }
+
+        public static function int32($i) {
+            return is_int($i) ? pack("l", $i) : unpack("l", $i)[1];
+        }
+
+        public static function uInt32($i, $endianness=false) {
+            $f = is_int($i) ? "pack" : "unpack";
+
+            if ($endianness === true) {  // big-endian
+                $i = $f("N", $i);
+            }
+            else if ($endianness === false) {  // little-endian
+                $i = $f("V", $i);
+            }
+            else if ($endianness === null) {  // machine byte order
+                $i = $f("L", $i);
+            }
+
+            return is_array($i) ? $i[1] : $i;
+        }
+
+        public static function int64($i) {
+            return is_int($i) ? pack("q", $i) : unpack("q", $i)[1];
+        }
+
+        public static function uInt64($i, $endianness=false) {
+            $f = is_int($i) ? "pack" : "unpack";
+
+            if ($endianness === true) {  // big-endian
+                $i = $f("J", $i);
+            }
+            else if ($endianness === false) {  // little-endian
+                $i = $f("P", $i);
+            }
+            else if ($endianness === null) {  // machine byte order
+                $i = $f("Q", $i);
+            }
+
+            return is_array($i) ? $i[1] : $i;
+        }
+    }
+?>
+
+Usage example:
+<?php
+    Header("Content-Type: text/plain");
+    include("int_helper.php");
+
+    echo int_helper::uInt8(0x6b) . PHP_EOL;  // k
+    echo int_helper::uInt8(107) . PHP_EOL;  // k
+    echo int_helper::uInt8("\x6b") . PHP_EOL . PHP_EOL;  // 107
+
+    echo int_helper::uInt16(4101) . PHP_EOL;  // \x05\x10
+    echo int_helper::uInt16("\x05\x10") . PHP_EOL;  // 4101
+    echo int_helper::uInt16("\x05\x10", true) . PHP_EOL . PHP_EOL;  // 1296
+
+    echo int_helper::uInt32(2147483647) . PHP_EOL;  // \xff\xff\xff\x7f
+    echo int_helper::uInt32("\xff\xff\xff\x7f") . PHP_EOL . PHP_EOL;  //
+2147483647
+
+    // Note: Test this with 64-bit build of PHP
+    echo int_helper::uInt64(9223372036854775807) . PHP_EOL;  // \xff\xff\xff\
+xff\xff\xff\xff\x7f
+    echo int_helper::uInt64("\xff\xff\xff\xff\xff\xff\xff\x7f") . PHP_EOL . 
+PHP_EOL;  // 9223372036854775807
+
+?>
+===============================================================================
+
+Reading a text cell from an Excel spreadsheet returned a string with low-order
+embedded nulls: 0x4100 0x4200 etc. To remove the nulls, used
+
+<?php
+$strWithoutNulls = implode( '', explode( "\0", $strWithNulls ) );
+?>
+
+(unpack() didn't seem to help much here; needed chars back to re-constitute the
+string, not integers.)
+===============================================================================
+
+Functions I found useful when dealing with fixed width file processing, related
+to unpack/pack functions.
+<?php
+/**
+* funpack
+* format: array of key, length pairs
+* data: string to unpack
+*/
+function funpack($format, $data){
+    foreach ($format as $key => $len) {
+        $result[$key] = trim(substr($data, $pos, $len));
+        $pos+= $len;
+    }
+    return $result;
+}
+
+/**
+* fpack
+* format: array of key, length pairs
+* data: array of key, value pairs to pack
+* pad: padding direction
+*/
+function fpack($format, $data, $pad = STR_PAD_RIGHT){
+    foreach ($format as $key => $len){
+        $result .= substr(str_pad($data[$key], $len, $pad), 0, $len);
+    }
+    return $result;
+}
+?>
+===============================================================================
+
+The script following is a example how to save more than one values on file
+separating its with "\r\n" and how to recovering its values.
+
+<?php
+// Save two integer values in a binary file
+$nomearq = "./teste.bin";
+$valor = 123;
+$ptrarq = fopen($nomearq, "wb");
+$valorBin = pack("L",$valor);
+echo "First value ($valor) packed with ";
+echo fwrite($ptrarq, $valorBin)." bytes<br>";
+echo "Separator \\r\\n with ";
+echo fwrite($ptrarq, "\r\n")." bytes<br>";
+$valor = 456;
+$valorBin = pack("L",$valor);
+echo "Second value ($valor) packed with ";
+echo fwrite($ptrarq, $valorBin)." bytes<br>";
+fclose($ptrarq);
+
+// Recover the saved values
+$ptrarq = fopen($nomearq, "rb");
+$valorBin = file($nomearq,filesize($nomearq));
+echo "<br>The reading values is:<br>";
+foreach($valorBin as $valor){
+  $valor = unpack("L",$valor);
+  print_r($valor);
+  echo "<br>";
+}
+fclose($ptrarq);
+?>
+
+Results:
+First value (123) packed with 4 bytes
+Separator \r\n with 2 bytes
+Second value (456) packed with 4 bytes
+
+The reading values is:
+Array ( [1] => 123 )
+Array ( [1] => 456 )
+===============================================================================
+
+As with perl, the count for hex is number of nybbles or half-bytes, this
+differs from the other options which count in full bytes.
+===============================================================================
+
+Warning: This unpack function makes the array with keys starting at 1 instead
+of starting at 0.
+
+For example:
+<?php
+function read_field($h) {
+  $a=unpack("V",fread($h,4));
+  return fread($h,$a[1]);
+}
+?>
+===============================================================================
+
+A simpler solution is to mask the value with 0xffffffff. For instance:
+
+<?php
+$rec = unpack(
+  "Vvalue/".
+  "Vhash32/",
+  $recbin);
+$rec['hash32'] &= 0xffffffff;
+$rec['value'] &= 0xffffffff;
+?>
+
+Unlike sprintf(), which converts the value to a string, this preserves the
+numeric type of the value.
+===============================================================================
+
+Above it says this:
+
+  "Note that PHP internally stores integral values as signed. If  you unpack a
+large unsigned long and it is of the same size as PHP internally stored values
+the result will be a negative number even though unsigned unpacking was
+specified."
+
+This happened to me.  I wanted to get a big number from a unsigned long, but it
+kept coming returning a negative.  Happened to notice that sprintf('%u',$dta)
+will take the useless negative and restore it into its large unsigned proper
+magnitude.
+
+Hope this saves someone a little time...
+===============================================================================
+
+If no key name is given [e.g., unpack('C*',$data)], the keys are simply
+integers starting at 1, and you have a standard array. (I know of no way to get
+the array to start at zero.)
+
+If you use multiple types, you must give a key name for all of them (except
+optionally one), because the key counter is reset with each slash. For example,
+in unpack('n2/C*',$data), indices 1 and 2 of the returned array are filled by
+integers ('n'), then overwritten with characters ('C').
+===============================================================================
+
+<?php
+
+function parse_pascalstr($bytes_parsed, $parse_str) {
+    $parse_info = unpack("x$bytes_parsed/cstr_len", $parse_str);
+    $str_len = $parse_info["str_len"];
+    $bytes_parsed = $bytes_parsed + 1;
+    $parse_info = unpack("x$bytes_parsed/A".$str_len."str", $parse_str);
+    $str = $parse_info["str"];
+    $bytes_parsed = $bytes_parsed + strlen($str);
+
+    return array($str, $bytes_parsed);
+}
+
+?>
+===============================================================================
+
+I wrote a quick pair of functions using pack/unpack for converting between raw
+binary (e.g. openssl_random_pseudo_bytes() output) and hexadecimal (e.g. hash()
+output):
+
+<?php
+function raw2hex($raw) {
+  $m = unpack('H*', $raw);
+  return $m[1];
+}
+
+function hex2raw($hex) {
+  return pack('H*', $hex);
+}
+?>
+
+Feel free to suggest any improvements, but I thought this was worth sharing.
+===============================================================================
+
+I hadn't realized that if the number after the unpack type was 1 (i.e.
+"V1page"), that it would behave as if there was no number at all. I had been
+using a variable and didn't think to watch for this. For instance,
+
+<?php
+
+if ($something)
+   $get = 2;
+else
+   $get = 1;
+
+$arr = unpack("V" . $get . "page", $data);
+
+?>
+
+Now if $something was FALSE, then $arr will only have one entry named "page".
+If $something was TRUE, $arr would have "page1" and "page2".
+===============================================================================
+
+If you just want to extract a dword/long int from a binary string, the
+following code works beautifully (intel endian):
+
+$Number = ord($Buffer{0}) | (ord($Buffer{1})<<8) | (ord($Buffer{2})<<16) | (ord
+($Buffer{3})<<24);
+===============================================================================
+
+To convert big endian to little endian or to convert little endian to big
+endian, use the following approach as an example:
+
+<?php
+// file_get_contents() returns a binary value, unpack("V*", _ ) returns an
+unsigned long 32-bit little endian decimal value, but bin2hex() after that
+would just give the hex data in the file if alone, so instead we use:
+// file_get_contents(), unpack("V*", _ ), then dechex(), in that order, to get
+the byte-swapping effect.
+?>
+
+With the logic of the approach in this example, you can discover how to swap
+the endian byte order as you need.
+===============================================================================
+
+Here's a demonstration concerning the speed of unpacking files:
+So let's see which method is fastest between FREAD or SUBSTR?
+
+I was creating a script that could read scenario files from a game, and render
+a preview of its terrain. The terrain structure within each file was huge
+(between 100,000 - 1,000,000 blocks containing 3 bits of data each). Therefore,
+I spent much effort to ensure it was fast and robust.
+
+Method 1: This method retrieves the 3 bits of data found in each block. It uses
+the loop of widthxheight and implode+unpack+substr each block:
+<?php
+for ( $Y = 0 ; $Y < ( $width * $height ) ; $Y ++ ) {
+    $Output [ Map ] [ $Y ] [ TerrainID ] = implode ( null , unpack ( 'c1' , 
+substr ( $Input , $Line ) ) ) ; $Line += 1 ;
+    $Output [ Map ] [ $Y ] [ Elevation ] = implode ( null , unpack ( 'c1' , 
+substr ( $Input , $Line ) ) ) ; $Line += 1 ;
+    $Output [ Map ] [ $Y ] [ Unknown ] = implode ( null , unpack ( 'c1' , 
+substr ( $Input , $Line ) ) ) ; $Line += 1 ;
+}
+//The average microtime was: 2.9 sec
+?>
+Note that it takes even more time if you use a custom function to implement the
+implode+unpack+substr functions.
+
+Now... This method uses the FREAD function:
+<?php
+for ( $Y = 0 ; $Y < ( $width * $height ) ; $Y ++ ) {
+    $Output [ Map ] [ $Y ] = unpack ( 'c3' , fread ( $sc , 3 ) ) ;
+}
+//Average microtime was: 0.7 sec
+?>
+I recommend using the FREAD method instead of SUBSTR.
+
+Another test!!! This method is 10x faster than the above. This does not use the
+FOR loop:
+<?php
+$Output [ Map ] [ Data ] = unpack ( 'c' . ( $width * $height ) , 
+stream_get_contents ( $sc ) ) ;
+//Average microtime: 0.08 - 0.05 sec
+?>
+
+If you want to read files much faster, you should try to reduce the number of
+loops and use the unpack function to its simplest and robust method.
+===============================================================================
+
+Another option for converting binary data into PHP data types, is to use the
+Zend Framework's Zend_Io_Reader class:
+http://bit.ly/9zAhgz
+
+There's also a Zend_Io_Writer class that does the reverse.
+===============================================================================
+
+You might find these functions useful:
+
+<?php
+function byteStr2byteArray($s) {
+        return array_slice(unpack("C*", "\0".$s), 1);
+}
+function byteArray2byteStr(array $t) {
+        return call_user_func_array(pack, array_merge(array("C*"), $t));
+}
+function lsbStr2ushortArray($s) {
+        return array_slice(unpack("v*", "\0\0".$s), 1);
+}
+function ushortArray2lsbStr(array $t) {
+        return call_user_func_array(pack, array_merge(array("v*"), $t));
+}
+function lsbStr2ulongArray($s) {
+        return array_slice(unpack("V*", "\0\0\0\0".$s), 1);
+}
+function ulongArray2lsbStr(array $t) {
+        return call_user_func_array(pack, array_merge(array("V*"), $t));
+}
+?>
+
+Of course, you can address byte strings as if they're arrays with numerical
+indexes, but the other functions are helpful.
+===============================================================================
+
+Here is my solution to reading a Big-Endian formatted double on an
+Little-Endian machine.
+
+<?php
+
+function ToDouble($data) {
+    $t = unpack("C*", pack("S*", 256));
+    if($t[1] == 1) {
+        $a = unpack("d*", $data);
+    } else {
+        $a = unpack("d*", strrev($data));
+    }
+    return (double)$a[1];
+}
+
+?>

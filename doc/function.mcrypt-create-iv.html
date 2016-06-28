@@ -1,0 +1,303 @@
+
+mcrypt_create_iv
+
+(PHP 4, PHP 5, PHP 7)
+
+mcrypt_create_iv — 从随机源创建初始向量
+
+说明
+
+string mcrypt_create_iv ( int $size [, int $source = MCRYPT_DEV_URANDOM ] )
+
+从随机源创建初始向量。
+
+初始向量只是为了给加密算法提供一个可用的种子，所以它不需要安全保护，你甚至可以
+随同密文一起发布初始向量也不会对安全性带来影响。
+
+参数
+
+size
+
+    初始向量大小。
+
+source
+
+    初始向量数据来源。可选值有： MCRYPT_RAND （系统随机数生成器）,
+    MCRYPT_DEV_RANDOM （从 /dev/random 文件读取数据）和 MCRYPT_DEV_URANDOM （从
+    /dev/urandom 文件读取数据）。在 Windows 平台，PHP 5.3.0 之前的版本中，仅支
+    持 MCRYPT_RAND。
+
+    请注意，在 PHP 5.6.0 之前的版本中，此参数的默认值为 MCRYPT_DEV_RANDOM。
+
+        Note: 需要注意的是，如果没有更多可用的用来产生随机数据的信息，那么
+        MCRYPT_DEV_RANDOM 可能进入阻塞状态。
+
+返回值
+
+返回初始向量。如果发生错误，则返回 FALSE。
+
+更新日志
+
+版本                                说明
+5.6.0 source 参数的默认值是 MCRYPT_DEV_URANDOM。
+5.3.0 MCRYPT_DEV_RANDOM 和 MCRYPT_DEV_URANDOM 在 Windows 平台也可用了。
+5.3.0 不再需要提前调用 srand() 函数，由本函数自动完成调用。
+
+范例
+
+Example #1 mcrypt_create_iv() 例程
+
+<?php
+    $size = mcrypt_get_iv_size(MCRYPT_CAST_256, MCRYPT_MODE_CFB);
+    $iv = mcrypt_create_iv($size, MCRYPT_DEV_RANDOM);
+?>
+
+参见
+
+  • » http://www.ciphersbyritter.com/GLOSSARY.HTM#IV
+  • » http://www.quadibloc.com/crypto/co0409.htm
+  • Applied Cryptography by Schneier (ISBN 0-471-11709-9) 9.3 节。
+  • random_bytes() - Generates cryptographically secure pseudo-random bytes
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+In relation to all of the crypto "advice" seen here, my suggestion is that you
+ignore most of it. Some of it is good, some of it is bad, but most of it skips
+the critical issues.
+
+I had hoped to write out a nice long explanation, but PHP's commenting system
+tells me my essay is too long. Instead I will say this:
+
+You should use CBC, with a randomly chosen IV that is unique per key, and you
+should transmit that IV in the clear along with your ciphertext. You should
+also perform an authenticity check of that entire data blob, using something
+like HMAC-SHA256, with another independent key.
+
+Here's the full-text of what I was going to write: http://pastebin.com/sN6buivY
+
+If you're interested in this stuff, or just want more information, check out
+the Wikipedia articles around block cipher modes, block ciphers, HMAC, etc.
+
+I also suggest reading Practical Cryptography by Bruce Schneier, as well as
+Cryptography Engineering by Niels Ferguson, both of which are very
+easy-to-digest books on practical cryptography.
+===============================================================================
+
+>First, the IV should be random and variable. The whole >point of it is to
+ensure that the same plaintext does not >encrypt to the same ciphertext every
+time. You most >certainly do lose security if the IV is constant or public.
+
+Wrong, Wrong WRONG! The initialization vector is ALLOWED to be PUBLIC! It is
+generally sent along with the ciphertext, UNENCRYPTED.
+
+>The ciphertext should be E(IV | plaintext, key)
+
+Wrong again! The initialization vector is NOT prepended to the plaintext before
+encryption. The IV is used to seed the feedback system! (which is why you don't
+need one in ECB mode - there is no feedback)
+
+>Second, the IV should not be part of the decryption >parameters at all. You
+should be able to decrypt the cipher >text, throw away the initial vector at
+the front w/o even >reading it, and have your plaintext:
+
+Nope. You need to seed the feedback mechanism during decryption to the SAME
+state as it was seeded during encryption. This means using the SAME IV!
+===============================================================================
+
+If you use /dev/random you need a well filled entropy pool or the application
+will block until enough good entropy comes available
+===============================================================================
+
+From http://www.ciphersbyritter.com/GLOSSARY.HTM#IV (linked to above):
+
+"While it is often said that IV values need only be random-like or
+unpredictable, and need not be confidential, in the case of CBC mode, that
+advice can lead to man-in-the-middle attacks on the first plaintext block. If a
+MITM opponent knows the usual content of the first block, they can change the
+IV to manipulate that block (and only that block) to deliver a different
+address, or different dollar amounts, or different commands, or whatever. And
+while the conventional advice is to use a MAC at a higher level to detect
+changed plaintext, that is not always desirable or properly executed. But the
+CBC first-block problem is easily solved at the CBC level simply by enciphering
+the IV and otherwise keeping it confidential, and that can be reasonable even
+when a MAC will be used later."
+===============================================================================
+
+It is important to note that all cipher modes except ecb require the same IV to
+be used in decryption as was used in encryption.
+
+You need to pass the key *and* the IV to your decrypt function. Initializing a
+new IV in the decrypt routine will not work.
+
+Since, "you even can send [the IV] along with your ciphertext without  loosing
+security," a nice way to handle this is to prepend your IV to your ciphertext.
+Since the IV is fixed-width, you can then easily recover the IV and original
+ciphertext using mcrypt_get_iv_size() and substr().
+
+Here is an example:
+
+<?PHP
+function my_encrypt($string,$key) {
+   srand((double) microtime() * 1000000); //for sake of MCRYPT_RAND
+   $key = md5($key); //to improve variance
+  /* Open module, and create IV */
+  $td = mcrypt_module_open('des', '','cfb', '');
+  $key = substr($key, 0, mcrypt_enc_get_key_size($td));
+  $iv_size = mcrypt_enc_get_iv_size($td);
+  $iv = mcrypt_create_iv($iv_size, MCRYPT_RAND);
+  /* Initialize encryption handle */
+   if (mcrypt_generic_init($td, $key, $iv) != -1) {
+
+      /* Encrypt data */
+      $c_t = mcrypt_generic($td, $string);
+      mcrypt_generic_deinit($td);
+      mcrypt_module_close($td);
+       $c_t = $iv.$c_t;
+       return $c_t;
+   } //end if
+}
+
+function my_decrypt($string,$key) {
+   $key = md5($key); //to improve variance
+  /* Open module, and create IV */
+  $td = mcrypt_module_open('des', '','cfb', '');
+  $key = substr($key, 0, mcrypt_enc_get_key_size($td));
+  $iv_size = mcrypt_enc_get_iv_size($td);
+  $iv = substr($string,0,$iv_size);
+  $string = substr($string,$iv_size);
+  /* Initialize encryption handle */
+   if (mcrypt_generic_init($td, $key, $iv) != -1) {
+
+      /* Encrypt data */
+      $c_t = mdecrypt_generic($td, $string);
+      mcrypt_generic_deinit($td);
+      mcrypt_module_close($td);
+       return $c_t;
+   } //end if
+}
+// to test:
+//print my_decrypt(my_encrypt("Hello, world.","foo"),"foo");
+?>
+===============================================================================
+
+This does NOT generate randomly distributed IV's on all systems and therefore
+poses a big security risk. Using a script (based on the one that Alex Khimch's
+posted on the rand() page) one can easily check this:
+
+<?php
+
+$td = mcrypt_module_open (MCRYPT_RIJNDAEL_256, "", MCRYPT_MODE_CBC, "");
+$iv = mcrypt_create_iv (mcrypt_enc_get_iv_size ($td), MCRYPT_DEV_RANDOM);
+
+// header("Content-type: image/png");
+$img = imagecreatetruecolor(255,255);
+
+$ink = imagecolorallocate($img,255,255,255);
+for($i=0;$i<255;$i++) {
+  for($j=0;$j<255;$j++) {
+  $twobytes = substr ($iv, 0, 2);
+  $iv = substr ($iv, 2);
+  if (!strlen ($iv)) $iv = mcrypt_create_iv (mcrypt_enc_get_iv_size ($td), 
+MCRYPT_RAND);
+
+  imagesetpixel($img, ord($twobytes[0]), ord($twobytes[1]), $ink);
+  }
+}
+
+imagepng($img);
+imagedestroy($img);
+
+?>
+
+The resulting image should show random noise, but on the windows systems I
+tested (running PHP 5.3.x) it showed very distinct patterns.
+===============================================================================
+
+Block ciphers, at their core, are a pair of transformation algorithms, called
+transforms. One encrypts, one decrypts - in some cases the algorithms are one
+and the same, but that's not important. A block transform takes a fixed-length
+block of plaintext, transforms it using a secret key of some chosen size, and
+produces an identical-length block of ciphertext. Or, of course, vice versa
+(decryption).
+
+The security model of a block cipher is, simplistically at least, defined to be
+"if you encrypt one block of plaintext with a randomly chosen key, it will be
+computationally infeasible for an attacker with knowledge of only the
+ciphertext (i.e. he does not know the key) to discover information about the
+contents of the plaintext". The reality is slightly different - there are also
+clauses around knowing part of the plaintext and not being able to discover any
+more of it - but that's another story.
+
+Once you start encrypting more than one block of plaintext using the same block
+transform and the same key, all bets are off. In the Electronic Codebook (ECB)
+cipher mode, each block of plaintext is independently transformed using the
+same key. This leads to a problem: identical plaintext blocks produce identical
+ciphertext blocks, when the same key is used. This means that "patterns" in the
+data can be seen, especially in data formats that have repeating patterns or
+long sequences of identical data. This is best described visually, with an
+ECB-encrypted bitmap. See the Wikipedia article on ECB for a demonstration of
+this.
+===============================================================================
+
+After profiling a rather large, dynamic website I maintain to determine the
+cause of intermittent freezing in execution, I found that calls to
+mcrypt_create_iv() using MCRYPT_DEV_RANDOM as the source consistently halted
+execution for anywhere from 0.2 to ~12 seconds per call, ironically at random.
+I'm making the assumption that the halts were caused by insufficient random
+input being currently available in /dev/random due to its intended function to
+block until enough random input is provided back to the device. I've found it
+to be sufficient for my needs to use a modified version of the
+alt_mcrypt_create_iv() function found below.
+
+Although untested, I assume using MCRYPT_DEV_URANDOM or a combination of
+MCRYPT_DEV_RAND with srand() would've solved the problem as well; I found out
+after the fact that /dev/urandom's intended function is to seamlessly provide
+cryptographically secure output from the random number generator when the /dev/
+urandom buffer was empty, and MCRYPT_DEV_RAND would simply use the same rand()
+function as alt_mcrypt_create_iv().
+
+-Kevin Kaiser
+===============================================================================
+
+hans at illis dot nl's demonstration code is incorrect. In the loop, he uses:
+
+$iv = mcrypt_create_iv (mcrypt_enc_get_iv_size ($td), MCRYPT_RAND);
+
+When it should actually be:
+
+$iv = mcrypt_create_iv (mcrypt_enc_get_iv_size ($td), MCRYPT_DEV_URANDOM);
+
+This produces consistent results on Windows.
+===============================================================================
+
+I encrypt a few items on a page in a project i am working on and I have found
+the IV create function to introduce huge delays in rendering the page too (I
+noticed someone else here had this problem).
+
+It's quite common for a 4 second render time for what should be a snappy site.
+I would recommend that if speed is essential that an alternative method be used
+to create your IV (such as the one below if you feel it secure enough).
+
+After using an alternative IV creation method my page went from a 4 second
+render to a 0.01 second render time.
+===============================================================================
+
+At:
+edwardzyang at thewritingpot dot com
+19-Jul-2005 10:06
+
+This is because of the fact, that (like described in the manual above) this
+function does NOT reseed the random number generator, in contrary to rand().
+Use srand() like suggested above to get correct IVs.
+===============================================================================
+
+Specify MCRYPT_RAND in the second parameter if this function randomly hangs in
+your requests.
+===============================================================================
+
+note: if you are experiencing a problem about complaining that the second
+parameter has to be a 'long' and you are giving a 'string' (for me, it was
+using MCRYPT_URANDOM) you might want to try MCRYPT_DEV_URANDOM :)

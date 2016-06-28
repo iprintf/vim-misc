@@ -1,0 +1,877 @@
+
+readfile
+
+(PHP 4, PHP 5, PHP 7)
+
+readfile — 输出文件
+
+说明
+
+int readfile ( string $filename [, bool $use_include_path = false [, resource
+$context ]] )
+
+读取文件并写入到输出缓冲。
+
+参数
+
+filename
+
+    要读取的文件名。
+
+use_include_path
+
+    想要在 include_path 中搜索文件，可使用这个可选的第二个参数，设为 TRUE。
+
+context
+
+    Stream 上下文（context） resource。
+
+返回值
+
+返回从文件中读入的字节数。如果出错返回 FALSE 并且除非是以 @readfile() 形式调用
+，否则会显示错误信息。
+
+范例
+
+Example #1 使用 readfile() 强制下载
+
+<?php
+$file = 'monkey.gif';
+
+if (file_exists($file)) {
+    header('Content-Description: File Transfer');
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="'.basename($file).'"');
+    header('Expires: 0');
+    header('Cache-Control: must-revalidate');
+    header('Pragma: public');
+    header('Content-Length: ' . filesize($file));
+    readfile($file);
+    exit;
+}
+?>
+
+以上例程的输出类似于：
+
+打开 / 保存对话框
+
+注释
+
+    Note:
+
+    readfile() 自身不会导致任何内存问题。如果出现内存不足的错误，使用 
+    ob_get_level() 确保输出缓存已经关闭。
+
+Tip
+
+如已启用fopen 包装器，在此函数中， URL 可作为文件名。关于如何指定文件名详见 
+fopen()。各种 wapper 的不同功能请参见支持的协议和封装协议，注意其用法及其可提供
+的预定义变量。
+
+    Note: 在 PHP 5.0.0 中增加了对上下文（Context）的支持。有关上下文（Context）
+    的说明参见 Streams。
+
+参见
+
+  • fpassthru() - 输出文件指针处的所有剩余数据
+  • file() - 把整个文件读入一个数组中
+  • fopen() - 打开文件或者 URL
+  • include - include
+  • require - require
+  • virtual() - 执行 Apache 子请求
+  • file_get_contents() - 将整个文件读入一个字符串
+  • 支持的协议和封装协议
+
+
+User Contributed Notes 31 notes
+
+===============================================================================
+
+if you need to limit download rate, use this code
+
+<?php
+$local_file = 'file.zip';
+$download_file = 'name.zip';
+
+// set the download rate limit (=> 20,5 kb/s)
+$download_rate = 20.5;
+if(file_exists($local_file) && is_file($local_file))
+{
+    header('Cache-control: private');
+    header('Content-Type: application/octet-stream');
+    header('Content-Length: '.filesize($local_file));
+    header('Content-Disposition: filename='.$download_file);
+
+    flush();
+    $file = fopen($local_file, "r");
+    while(!feof($file))
+    {
+        // send the current file part to the browser
+        print fread($file, round($download_rate * 1024));
+        // flush the content to the browser
+        flush();
+        // sleep one second
+        sleep(1);
+    }
+    fclose($file);}
+else {
+    die('Error: The file '.$local_file.' does not exist!');
+}
+
+?>
+===============================================================================
+
+Just a note for those who face problems on names containing spaces (e.g. "test
+test.pdf").
+
+In the examples (99% of the time) you can find
+header('Content-Disposition: attachment; filename='.basename($file));
+
+but the correct way to set the filename is quoting it (double quote):
+header('Content-Disposition: attachment; filename="'.basename($file).'"' );
+
+Some browsers may work without quotation, but for sure not Firefox and as
+Mozilla explains, the quotation of the filename in the content-disposition is
+according to the RFC
+http://kb.mozillazine.org/Filenames_with_spaces_are_truncated_upon_download
+===============================================================================
+
+My script working correctly on IE6 and Firefox 2 with any typ e of files (I
+hope :))
+
+function DownloadFile($file) { // $file = include path
+        if(file_exists($file)) {
+            header('Content-Description: File Transfer');
+            header('Content-Type: application/octet-stream');
+            header('Content-Disposition: attachment; filename='.basename
+($file));
+            header('Content-Transfer-Encoding: binary');
+            header('Expires: 0');
+            header('Cache-Control: must-revalidate, post-check=0, pre-check=
+0');
+            header('Pragma: public');
+            header('Content-Length: ' . filesize($file));
+            ob_clean();
+            flush();
+            readfile($file);
+            exit;
+        }
+
+    }
+
+Run on Apache 2 (WIN32) PHP5
+===============================================================================
+
+To anyone that's had problems with Readfile() reading large files into memory
+the problem is not Readfile() itself, it's because you have output buffering
+on. Just turn off output buffering immediately before the call to Readfile().
+Use something like ob_end_flush().
+===============================================================================
+
+Just a note:  If you're using bw_mod (current version 0.6) to limit bandwidth
+in Apache 2, it *will not* limit bandwidth during readfile events.
+===============================================================================
+
+To avoid the risk of choosing themselves which files to download by messing
+with the request and doing things like inserting "../" into the "filename",
+simply remember that URLs are not file paths, and there's no reason why the
+mapping between them has to be so literal as "download.php?file=thingy.mpg"
+resulting in the download of the file "thingy.mpg".
+
+It's your script and you have full control over how it maps file requests to
+file names, and which requests retrieve which files.
+
+But even then, as ever, never trust ANYTHING in the request. Basic
+first-day-at-school security principle, that.
+===============================================================================
+
+Send file with HTTPRange support (partial download):
+
+<?php
+function smartReadFile($location, $filename, $mimeType='application/
+octet-stream')
+{ if(!file_exists($location))
+  { header ("HTTP/1.0 404 Not Found");
+    return;
+  }
+ 
+  $size=filesize($location);
+  $time=date('r',filemtime($location));
+ 
+  $fm=@fopen($location,'rb');
+  if(!$fm)
+  { header ("HTTP/1.0 505 Internal server error");
+    return;
+  }
+ 
+  $begin=0;
+  $end=$size;
+ 
+  if(isset($_SERVER['HTTP_RANGE']))
+  { if(preg_match('/bytes=\h*(\d+)-(\d*)[\D.*]?/i', $_SERVER['HTTP_RANGE'], 
+$matches))
+    { $begin=intval($matches[0]);
+      if(!empty($matches[1]))
+        $end=intval($matches[1]);
+    }
+  }
+ 
+  if($begin>0||$end<$size)
+    header('HTTP/1.0 206 Partial Content');
+  else
+    header('HTTP/1.0 200 OK'); 
+ 
+  header("Content-Type: $mimeType");
+  header('Cache-Control: public, must-revalidate, max-age=0');
+  header('Pragma: no-cache'); 
+  header('Accept-Ranges: bytes');
+  header('Content-Length:'.($end-$begin));
+  header("Content-Range: bytes $begin-$end/$size");
+  header("Content-Disposition: inline; filename=$filename");
+  header("Content-Transfer-Encoding: binary\n");
+  header("Last-Modified: $time");
+  header('Connection: close'); 
+ 
+  $cur=$begin;
+  fseek($fm,$begin,0);
+
+  while(!feof($fm)&&$cur<$end&&(connection_status()==0))
+  { print fread($fm,min(1024*16,$end-$cur));
+    $cur+=1024*16;
+  }
+}
+?>
+
+Usage:
+
+<?php
+smartReadFile("/tmp/filename","myfile.mp3","audio/mpeg")
+?>
+
+It can be slow for big files to read by fread, but this is a single way to read
+file in strict bounds. You can modify this and add fpassthru instead of fread
+and while, but it sends all data from begin --- it would be not fruitful if
+request is bytes from 100 to 200 from 100mb file.
+===============================================================================
+
+If you are looking for an algorithm that will allow you to download (force
+download) a big file, may this one will help you.
+
+$filename = "file.csv";
+$filepath = "/path/to/file/" . $filename;
+
+// Close sessions to prevent user from waiting until
+// download will finish (uncomment if needed)
+//session_write_close();
+
+set_time_limit(0);
+ignore_user_abort(false);
+ini_set('output_buffering', 0);
+ini_set('zlib.output_compression', 0);
+
+$chunk = 10 * 1024 * 1024; // bytes per chunk (10 MB)
+
+$fh = fopen($filepath, "rb");
+
+if ($fh === false) {
+    echo "Unable open file";
+}
+
+header('Content-Description: File Transfer');
+header('Content-Type: application/octet-stream');
+header('Content-Disposition: attachment; filename="' . $filename . '"');
+header('Expires: 0');
+header('Cache-Control: must-revalidate');
+header('Pragma: public');
+header('Content-Length: ' . filesize($filepath));
+
+// Repeat reading until EOF
+while (!feof($fh)) {
+    echo fread($handle, $chunk);
+   
+    ob_flush();  // flush output
+    flush();
+}
+
+exit;
+===============================================================================
+
+In response to flowbee@gmail.com --
+
+When using the readfile_chunked function noted here with files larger than 10MB
+or so I am still having memory errors. It's because the writers have left out
+the all important flush() after each read. So this is the proper chunked
+readfile (which isn't really readfile at all, and should probably be
+crossposted to passthru(), fopen(), and popen() just so browsers can find this
+information):
+
+<?php
+function readfile_chunked($filename,$retbytes=true) {
+   $chunksize = 1*(1024*1024); // how many bytes per chunk
+   $buffer = '';
+   $cnt =0;
+   // $handle = fopen($filename, 'rb');
+   $handle = fopen($filename, 'rb');
+   if ($handle === false) {
+       return false;
+   }
+   while (!feof($handle)) {
+       $buffer = fread($handle, $chunksize);
+       echo $buffer;
+       ob_flush();
+       flush();
+       if ($retbytes) {
+           $cnt += strlen($buffer);
+       }
+   }
+       $status = fclose($handle);
+   if ($retbytes && $status) {
+       return $cnt; // return num. bytes delivered like readfile() does.
+   }
+   return $status;
+
+}
+?>
+
+All I've added is a flush(); after the echo line. Be sure to include this!
+===============================================================================
+
+If you are lucky enough to not be on shared hosting and have apache, look at
+installing mod_xsendfile.
+This was the only way I found to both protect and transfer very large files
+with PHP (gigabytes). 
+It's also proved to be much faster for basically any file.
+Available directives have changed since the other note on this and
+XSendFileAllowAbove was replaced with XSendFilePath to allow more control over
+access to files outside of webroot.
+
+Download the source.
+
+Install with: apxs -cia mod_xsendfile.c
+
+Add the appropriate configuration directives to your .htaccess or httpd.conf
+files:
+# Turn it on
+XSendFile on
+# Whitelist a target directory.
+XSendFilePath /tmp/blah
+
+Then to use it in your script:
+<?php
+$file = '/tmp/blah/foo.iso';
+$download_name = basename($file);
+if (file_exists($file)) {
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename='.$download_name);
+    header('X-Sendfile: '.$file);
+    exit;
+}
+?>
+===============================================================================
+
+Using pieces of the forced download script, adding in MySQL database functions,
+and hiding the file location for security was what we needed for downloading
+wmv files from our members creations without prompting Media player as well as
+secure the file itself and use only database queries. Something to the effect
+below, very customizable for private access, remote files, and keeping order of
+your online media.
+
+<?
+    # Protect Script against SQL-Injections
+    $fileid=intval($_GET[id]);
+    # setup SQL statement
+    $sql = " SELECT id, fileurl, filename, filesize FROM ibf_movies WHERE id='
+$fileid' ";
+
+    # execute SQL statement
+    $res = mysql_query($sql);
+
+        # display results
+        while ($row = mysql_fetch_array($res)) {
+        $fileurl = $row['fileurl'];
+        $filename= $row['filename'];
+        $filesize= $row['filesize'];
+
+           $file_extension = strtolower(substr(strrchr($filename,"."),1));
+
+           switch ($file_extension) {
+               case "wmv": $ctype="video/x-ms-wmv"; break;
+               default: $ctype="application/force-download";
+           }
+
+// required for IE, otherwise Content-disposition is ignored
+if(ini_get('zlib.output_compression'))
+ini_set('zlib.output_compression', 'Off');
+
+           header("Pragma: public");
+           header("Expires: 0");
+           header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+           header("Cache-Control: private",false);
+           header("Content-Type: video/x-ms-wmv");
+           header("Content-Type: $ctype");
+           header("Content-Disposition: attachment; filename=\"".basename
+($filename)."\";");
+           header("Content-Transfer-Encoding: binary");
+           header("Content-Length: ".@filesize($filename));
+           set_time_limit(0);
+           @readfile("$fileurl") or die("File not found.");
+
+}
+
+$donwloaded = "downloads + 1";
+
+    if ($_GET["hit"]) {
+        mysql_query("UPDATE ibf_movies SET downloads = $donwloaded WHERE id='
+$fileid'");
+
+}
+
+?>
+
+While at it I added into download.php a hit (download) counter. Of course you
+need to setup the DB, table, and columns. Email me for Full setup// Session
+marker is also a security/logging option
+Used in the context of linking:
+http://www.yourdomain.com/download.php?id=xx&hit=1
+
+[Edited by sp@php.net: Added Protection against SQL-Injection]
+===============================================================================
+
+A note on the smartReadFile function from gaosipov:
+
+Change the indexes on the preg_match matches to:
+     
+      $begin = intval($matches[1]);
+      if( !empty($matches[2]) ) {
+        $end = intval($matches[2]);
+      }
+
+Otherwise the $begin would be set to the entire section matched and the $end to
+what should be the begin.
+
+See preg_match for more details on this.
+===============================================================================
+
+Instead of using
+<?php
+header('Content-Type: application/force-download');
+?>
+use
+<?php
+header('Content-Type: application/octet-stream');
+?>
+Some browsers have troubles with force-download.
+===============================================================================
+
+regarding php5:
+i found out that there is already a disscussion @php-dev  about readfile() and
+fpassthru() where only exactly 2 MB will be delivered.
+
+so you may use this on php5 to get lager files
+<?php
+function readfile_chunked($filename,$retbytes=true) {
+    $chunksize = 1*(1024*1024); // how many bytes per chunk
+    $buffer = '';
+    $cnt =0;
+    // $handle = fopen($filename, 'rb');
+    $handle = fopen($filename, 'rb');
+    if ($handle === false) {
+        return false;
+    }
+    while (!feof($handle)) {
+        $buffer = fread($handle, $chunksize);
+        echo $buffer;
+        if ($retbytes) {
+            $cnt += strlen($buffer);
+        }
+    }
+        $status = fclose($handle);
+    if ($retbytes && $status) {
+        return $cnt; // return num. bytes delivered like readfile() does.
+    }
+    return $status;
+
+}
+?>
+===============================================================================
+
+A mime-type-independent forced download can also be conducted by using:
+
+<?
+(...)
+header("Expires: Mon, 26 Jul 1997 05:00:00 GMT"); // some day in the past
+header("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT");
+header("Content-type: application/x-download");
+header("Content-Disposition: attachment; filename={$new_name}");
+header("Content-Transfer-Encoding: binary");
+?>
+
+Cheers,
+
+Peavey
+===============================================================================
+
+@marks suggestion-
+
+That is one way to do it, however this is avoidable.  For example in Zend
+Framework you could do
+
+<?php
+
+// Action controller
+public function someAction() {
+
+    $response = $this->_response;
+
+    // Disable view and layout rendering
+    $this->_helper->viewRenderer->setNoRender();
+    $this->_helper->layout()->disableLayout();
+
+    // Process the file
+    $file = 'whatever.zip';
+    $bits = @file_get_contents($file);
+    if(strlen($bits) == 0) {
+        $response->setBody('Sorry, we could not find requested download file.'
+);
+    }
+    else {
+        $response->setHeader('Content-type', 'application/octet-stream', true);
+        $response->setBody($bits);
+    }
+}
+
+?>
+===============================================================================
+
+I have noticed some unusual behavior with Internet Explorer 6 that’s worth
+taking note of. I have a link on my site to a script that outputs an XML file
+to the browser with the below code:
+
+header('Content-Type: application/octet-stream');
+header('Content-Disposition: attachment; filename="'.$filename.'"');
+@readfile($file);
+
+When the popular IE setting “Reuse Window for Launching Shortcuts” is unchecked
+(access this setting in the Tools Menu > Internet Options > Advanced Tab) this
+script will output the file to the browser and open it in a different window if
+the user clicks the open button on the IE prompt. However, if this setting is
+checked, and browser windows are being re-used, then it will open up on top of
+the page where the link was clicked to access the script.
+
+If I instead set the html link target option to be “_blank”, the script will
+open up in a new window as expected if the “Reuse Window for Launching
+Shortcuts” is checked. But, if the setting is unchecked, the output XML file
+will open up in a new window and there will be another blank window also open
+that has the address of the script, in addition to our original window.
+
+This is far from ideal, and there is no way of knowing whether users have this
+option checked or not. We are stuck with the distinct possibility of half of
+our visitors seeing either an annoying third blank window being opened or the
+script writing over their original window, depending on their “Reuse Window for
+Launching Shortcuts” setting.
+===============================================================================
+
+here is a nice force download scirpt
+
+            $filename = 'dummy.zip';
+            $filename = realpath($filename);
+
+            $file_extension = strtolower(substr(strrchr($filename,"."),1));
+
+            switch ($file_extension) {
+                case "pdf": $ctype="application/pdf"; break;
+                case "exe": $ctype="application/octet-stream"; break;
+                case "zip": $ctype="application/zip"; break;
+                case "doc": $ctype="application/msword"; break;
+                case "xls": $ctype="application/vnd.ms-excel"; break;
+                case "ppt": $ctype="application/vnd.ms-powerpoint"; break;
+                case "gif": $ctype="image/gif"; break;
+                case "png": $ctype="image/png"; break;
+                case "jpe": case "jpeg":
+                case "jpg": $ctype="image/jpg"; break;
+                default: $ctype="application/force-download";
+            }
+
+            if (!file_exists($filename)) {
+                die("NO FILE HERE");
+            }
+
+            header("Pragma: public");
+            header("Expires: 0");
+            header("Cache-Control: must-revalidate, post-check=0, pre-check=
+0");
+            header("Cache-Control: private",false);
+            header("Content-Type: $ctype");
+            header("Content-Disposition: attachment; filename=\"".basename
+($filename)."\";");
+            header("Content-Transfer-Encoding: binary");
+            header("Content-Length: ".@filesize($filename));
+            set_time_limit(0);
+            @readfile("$filename") or die("File not found.");
+===============================================================================
+
+I wasted days trying to figure this out before I found the problem was easily
+solved.
+
+I'm sure many of you out there have had similar problem when trying to use
+readfile to output images with a php file as the "src" of a "img" tag.
+It works fine "as is" in Firefox but not in IE, Safari or g.Chrome.
+
+I found hundreds of results on google all saying things like "there must be
+white space at the end of you code", "you need this header or that header".
+I couldn't believe what the solution was but here it is anyway!
+
+Remove the "Width" and "Height" attributes from your "img" tag
+===============================================================================
+
+Hello,
+
+Here's a simple trick for browsers (FF, IE) address spaces in filenames for
+Content-Disposition:
+
+eg: <?php header ("Content-Disposition:attachment; filename=\"$filename\""); ?>
+
+The \ "before and after the file name makes the difference.
+===============================================================================
+
+In reply to herbert dot fischer at NOSPAM dot gmail dot com:
+
+The streams API in PHP5 tries to make things as efficient as possible; in
+php-5.1.6 on Linux, fpassthru is faster than 'echo fread($fp, 8192)' in a loop,
+and readfile is even faster for files on disk. I didn't benchmark further, but
+I'd be willing to bet non-mmap'able streams still win because they can loop in
+C instead of PHP.
+===============================================================================
+
+Beware of using download managers.. I was trying to use readfile in IE8 and
+kept getting the message "failed to get data for 'type'". Eventually figured
+out the problem was that I had LeechGet installed and it was intercepting the
+download, which in turn prevented the download from taking place.
+===============================================================================
+
+I think that readfile suffers from the maximum script execution time. The
+readfile is always completed even if it exceed the default 30 seconds limit,
+then the script is aborted.
+Be warned that you can get very odd behaviour not only on large files, but also
+on small files if the user has a slow connection.
+
+The best thing to do is to use
+
+<?
+  set_time_limit(0);
+?>
+
+just before the readfile, to disable completely the watchdog if you intend to
+use the readfile call to tranfer a file to the user.
+===============================================================================
+
+Beware - the chunky readfile suggested by Rob Funk can easily exceed you
+maximum script execution time (30 seconds by default).
+
+I suggest you to use the set_time_limit function inside the while loop to reset
+the php watchdog.
+===============================================================================
+
+Remember if you make a "force download" script like mentioned below that you
+SANITIZE YOUR INPUT!
+
+I have seen a lot of  download scripts that does not test so you are able to
+download anything you want on the server.
+
+Test especially for strings like ".." which makes directory traversal possible.
+If possible only permit characters a-z, A-Z and 0-9 and make it possible to
+only download from one "download-folder".
+===============================================================================
+
+To reduce the burden on the server, you might want to output "Etag" and/or
+"Last-Modified" on http response header.  But there are some headers, which PHP
+itself outputs automatically, disturbing this.  So I wrote this function with
+erasing these.
+
+If you guys know how to judge the return values of function "stat", in order to
+avoid using "is_file" or "is_readable" (or "is_dir"), please let me know or
+just write it here.
+
+If you don't have to do anything special on 404, "header('HTTP/1.x xxx xxxxx');
+" can be inside of the function.
+
+<?php
+
+$filename = '/foo/bar/myfeed.rss';
+$http_stat_code = readfile_if_modified($filename, array('Content-Type: text/
+xml'));
+switch($http_stat_code) {
+case 404:
+    header('HTTP/1.0 404 Not Found');
+    echo '<html><head></head><body><a href="http://example.com/">http://
+example.com/<a></body></html>';
+    exit;
+default:
+    header('X-System-Url: http://example.com/', true, $http_stat_code);
+}
+
+function readfile_if_modified($filename, $http_header_additionals = array()) {
+
+    if(!is_file($filename)) {
+//      header('HTTP/1.0 404 Not Found');
+        return 404;
+    }
+
+    if(!is_readable($filename)) {
+//      header('HTTP/1.0 403 Forbidden');
+        return 403;
+    }
+
+    $stat = @stat($filename);
+    $etag = sprintf('%x-%x-%x', $stat['ino'], $stat['size'], $stat['mtime'] * 
+1000000);
+
+    header('Expires: ');
+    header('Cache-Control: ');
+    header('Pragma: ');
+
+    if(isset($_SERVER['HTTP_IF_NONE_MATCH']) && $_SERVER['HTTP_IF_NONE_MATCH']
+== $etag) {
+        header('Etag: "' . $etag . '"');
+//      header('HTTP/1.0 304 Not Modified');
+        return 304;
+    } elseif(isset($_SERVER['HTTP_IF_MODIFIED_SINCE']) && strtotime($_SERVER[
+'HTTP_IF_MODIFIED_SINCE']) >= $stat['mtime']) {
+        header('Last-Modified: ' . date('r', $stat['mtime']));
+//      header('HTTP/1.0 304 Not Modified');
+        return 304;
+    }
+
+    header('Last-Modified: ' . date('r', $stat['mtime']));
+    header('Etag: "' . $etag . '"');
+    header('Accept-Ranges: bytes');
+    header('Content-Length:' . $stat['size']);
+    foreach($http_header_additionals as $header) {
+        header($header);
+    }
+
+    if(@readfile($filename) === false) {
+//      header('HTTP/1.0 500 Internal Server Error');
+        return 500;
+    } else {
+//      header('HTTP/1.0 200 OK');
+        return 200;
+    }
+
+}
+
+?>
+===============================================================================
+
+<form action = "open.php" method = "post" >
+<input ="text" name ="brian" >
+<input type = "submit" name = "download" value = "download">
+</form>
+<?php
+
+if(isset($_POST['download']))
+{
+$img ='img';
+$pic = '\marcus2';
+$fad = 'pdf';
+
+$file = $img.''. $pic .'.'. $fad;
+
+echo $file;
+
+if (file_exists($file)) {
+    header('Content-Description: File Transfer');
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename='.basename($file));
+    header('Expires: 0');
+    header('Cache-Control: must-revalidate');
+    header('Pragma: public');
+    header('Content-Length: ' . filesize($file));
+    readfile($file);
+    exit;
+}
+
+}
+
+?>
+===============================================================================
+
+If you are using the procedures outlined in this article to force sending a
+file to a user, you may find that the "Content-Length" header is not being sent
+on some servers.
+
+The reason this occurs is because some servers are setup by default to enable
+gzip compression, which sends an additional header for such operations.  This
+additional header is "Transfer-Encoding: chunked" which essentially overrides
+the "Content-Length" header and forces a chunked download.  Of course, this is
+not required if you are using the intelligent versions of readfile in this
+article.
+
+A missing Content-Length header implies the following:
+
+1) Your browser will not show a progress bar on downloads because it doesn't
+know their length
+2) If you output anything (e.g. white space) after the readfile function (by
+mistake), the browser will add that to the end of the download, resulting in
+corrupt data.
+
+The easiest way to disable this behaviour is with the following .htaccess
+directive.
+
+SetEnv no-gzip dont-vary
+===============================================================================
+
+In response to "grey - greywyvern - com":
+
+If you know the target _can't_ be a remote file (e.g. prefixing it with a
+directory), you should use include instead.
+If the user manages to set the target to some kinda config-file
+(configuration.php in Joomla!), he will get a blank page - unless readfile() is
+used. Using include will just behave as a normal request (no output).
+For remote files however use readfile().
+===============================================================================
+
+To use readfile() it is absolutely necessary to set the mime-type before. If
+you are using an Apache, it's quite simple to figure out the correct mime type.
+Apache has a file called "mime.types" which can (in normal case) be read by all
+users.
+
+Use this (or another) function to get a list of mime-types:
+
+<?php
+
+    function mimeTypes($file) {
+        if (!is_file($file) || !is_readable($file)) return false;
+        $types = array();
+        $fp = fopen($file,"r");
+        while (false != ($line = fgets($fp,4096))) {
+            if (!preg_match("/^\s*(?!#)\s*(\S+)\s+(?=\S)(.+)/",$line,$match))
+continue;
+            $tmp = preg_split("/\s/",trim($match[2]));
+            foreach($tmp as $type) $types[strtolower($type)] = $match[1];
+        }
+        fclose ($fp);
+       
+        return $types;
+    }
+
+    # [...]
+
+    # read the mime-types
+    $mimes = mimeTypes('/usr/local/apache/current/conf/mime.types');
+
+    # use them ($ext is the extension of your file)
+    if (isset($mimes[$ext])) header("Content-Type: ".$mimes[$ext]);
+    header("Content-Length: ".@filesize($fullpath));
+    readfile($fullpath); exit;
+
+?>
+
+If you do not want to read from the mime.types file directly, you can of course
+make a copy in another folder!
+Cheers Philipp Heckel
+===============================================================================
+
+@Elliott Brueggeman
+What's the point of a user's settings if not to determine their environment? If
+they have it set a specific way, honor their setting.

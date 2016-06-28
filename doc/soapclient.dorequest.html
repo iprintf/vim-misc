@@ -1,0 +1,505 @@
+
+SoapClient::__doRequest
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+SoapClient::__doRequest — Performs a SOAP request
+
+说明
+
+public string SoapClient::__doRequest ( string $request , string $location , 
+string $action , int $version [, int $one_way = 0 ] )
+
+Performs SOAP request over HTTP.
+
+This method can be overridden in subclasses to implement different transport
+layers, perform additional XML processing or other purpose.
+
+参数
+
+request
+
+    The XML SOAP request.
+
+location
+
+    The URL to request.
+
+action
+
+    The SOAP action.
+
+version
+
+    The SOAP version.
+
+one_way
+
+    If one_way is set to 1, this method returns nothing. Use this where a
+    response is not expected.
+
+返回值
+
+The XML SOAP response.
+
+更新日志
+
+版本                说明
+5.1.3 The one_way parameter was added.
+
+范例
+
+Example #1 SoapClient::__doRequest() example
+
+<?php
+function Add($x,$y) {
+  return $x+$y;
+}
+
+class LocalSoapClient extends SoapClient {
+
+  function __construct($wsdl, $options) {
+    parent::__construct($wsdl, $options);
+    $this->server = new SoapServer($wsdl, $options);
+    $this->server->addFunction('Add');
+  }
+
+  function __doRequest($request, $location, $action, $version, $one_way = 0) {
+    ob_start();
+    $this->server->handle($request);
+    $response = ob_get_contents();
+    ob_end_clean();
+    return $response;
+  }
+
+}
+
+$x = new LocalSoapClient(NULL,array('location'=>'test://', 
+                                   'uri'=>'http://testuri.org')); 
+var_dump($x->Add(3,4));
+?>
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Note when extending __doRequest, calling __getLastRequest will probably report
+incorrect information unless you make sure to update the internal
+__last_request variable. Save yourself some headaches.
+
+function __doRequest($request, $location, $action, $version) {
+      $request = preg_replace('/abc/', 'def', $request);
+      $ret = parent::__doRequest($request, $location, $action, $version);
+      $this->__last_request = $request;
+      return $ret;
+}
+===============================================================================
+
+If you want to communicate with a default configured ASP.NET server with SOAP
+1.1 support, override your __doRequest with the following code. Adjust the
+namespace parameter, and all is good to go.
+
+<?php
+class MSSoapClient extends SoapClient {
+
+    function __doRequest($request, $location, $action, $version) {
+        $namespace = "http://tempuri.com";
+
+        $request = preg_replace('/<ns1:(\w+)/', '<$1 xmlns="'.$namespace.'"', 
+$request, 1);
+        $request = preg_replace('/<ns1:(\w+)/', '<$1', $request);
+        $request = str_replace(array('/ns1:', 'xmlns:ns1="'.$namespace.'"'),
+array('/', ''), $request);
+
+        // parent call
+        return parent::__doRequest($request, $location, $action, $version);
+    }
+}
+
+$client = new MSSoapClient(...);
+?>
+
+Hope this will save people endless hours of fiddling...
+===============================================================================
+
+If you happen to get an error during your request which says "SOAP-ERROR:
+Encoding: Can't decode apache map, only Strings or Longs are allowd as keys",
+the reason seems to be the response xml using integer for keys and php failling
+to understand them
+
+Here is something that worked for me (converts integer keys to strings):
+
+<?php
+class mySoap extends SoapClient
+{
+    public function __doRequest($request, $location, $action, $version)
+    {
+        $result = parent::__doRequest($request, $location, $action, $version);
+        $result = str_replace('<key xsi:type="xsd:int">', '<key xsi:type=
+"xsd:string">', $result);
+        return $result;
+    }
+}
+
+// $soap = new mySoap(...
+?>
+===============================================================================
+
+Note that __getLastRequest() data are buffered _before_ the call to __doRequest
+().  Thus any modifications you make to the XML while in __doRequest() will not
+be visible in the output of __getLastRequest().   This is so in at least v5.2.0
+===============================================================================
+
+Note that the SoapClient.__doRequest() method circumvents the throwing of
+SoapFault exceptions.
+
+Specifically, if you call the __doRequest() method and it fails, it would
+normally throw a SoapFault exception.  However, the __doRequest() method
+doesn't actually throw the exception. Instead, the exception is saved in a
+class attribute called SoapFault.__soap_fault, and is actually thrown AFTER the
+__doRequest method completes (but the call stack will show that the exception
+was created inside the __doRequest method.
+
+I successfully used the following code to query the locally cached exception
+object that was not thrown:
+
+<?php
+$exception = null;
+try {
+    $result = parent::__doRequest($request, $location, $action, $version, 
+$one_way);
+}
+catch (SoapFault $sf) {
+    //this code was not reached   
+    $exception = $sf;
+}
+catch (Exception $e) {
+    //nor was this code reached either
+    $exception = $e;
+}
+if((isset($this->__soap_fault)) && ($this->__soap_fault != null)) {
+    //this is where the exception from __doRequest is stored
+    $exception = $this->__soap_fault;
+}
+
+//decide what to do about the exception here
+// [enter code here]
+//or throw the exception
+if($exception != null) {
+    throw $exception;
+}
+//note: you may want to unset the __soap_fault value if you don't want it
+thrown again up the call stack
+?>
+===============================================================================
+
+I was needing to add a blank soap header (<SOAP-ENV:Header /> and found no
+other place that has done this.  The only way I was able to support this was to
+extend SoapClient and re-define __doRequest.  Hope this helps someone or if
+there is support for this in the library, please point me in the right
+direction:
+
+<?php
+class MySoapCli extends SoapClient {
+  function __doRequest($request, $location, $action, $version) {
+    $dom = new DomDocument('1.0', 'UTF-8');
+    $dom->preserveWhiteSpace = false;
+    $dom->loadXML($request);
+    $hdr = $dom->createElementNS('http://schemas.xmlsoap.org/soap/envelope/', 
+'SOAP-ENV:Header');
+    $dom->documentElement->insertBefore($hdr, $dom->documentElement->firstChild
+);
+    $request = $dom->saveXML();
+    return parent::__doRequest($request, $location, $action, $version);
+  }
+}
+?>
+===============================================================================
+
+Beware of PHP incosistent behaviour in __doRequest() method. It seems that some
+arguments passed to this method are passed by reference!
+
+If you try to create your own __doRequest() method and store it's arguments as
+SoapClient properties you will find that after __soapCall all of them will be
+null or unknown.
+
+<?php
+    protected $__soapAction = '';
+
+    public function __doRequest($request, $location, $action, $version, $oneWay
+= 0) {
+        ob_start();
+        $this->server->handle($request);
+        $response = ob_get_contents();
+        ob_end_clean();
+        $this->__soapAction = $action;
+        return $response;
+    }
+?>
+
+In above example $this->__soapAction will be null after $obj->__soapCall()..
+
+To store $action value, you must cast it to a string (so PHP will be forced to
+create a new variable with different memory pointer):
+
+<?php
+    public function __doRequest($request, $location, $action, $version, $oneWay
+= 0) {
+        ob_start();
+        $this->server->handle($request);
+        $response = ob_get_contents();
+        ob_end_clean();
+        $this->__soapAction = (string)$action;
+        return $response;
+    }
+?>
+===============================================================================
+
+Do you have problems with the PHP5 SoapClient when you need to send a request
+to a service with a ComplexType parameter?
+
+Maybe because my service is build in Delphi with REMObjects SDK 3.0 I had the
+problems, maybe not. Anyway, this was my remedy:
+<?php
+$versie = new stdClass();//define a basic class object
+$versie->versieID = $aVersie->versieID();//fill it with the exact attributes as
+your complextype Object in the wsdl is
+$versie->versieNummer = $aVersie->versieNummer();
+$versie->isActief = $aVersie->isActief();     
+    
+$soapVersieType = new SoapVar($versie , SOAP_ENC_OBJECT, "Versie", "http://
+127.0.0.1:8999/SOAP?wsdl"); //create the complex soap type, Versie is the name
+of my complex type in the wsdl, the latter url beeing the location of my wsdl.
+
+try{
+  $result =  $soapClient->BewaarVersie($this->sessieId,$soapVersieType); //
+BewaarVersie is a function derived from my WSDL with two params.
+}
+catch(SoapFault $e){
+  trigger_error('Something soapy went wrong: '.$e->faultstring,E_USER_WARNING);
+            }
+?>
+
+After some more testing i found out that the conversion to the StdClass()
+object was not required. My 'Versie' local object has the attributes for the
+'Versie' wsdl complex type defined as private vars and give no pain when i
+create the SoapVar with an instance of the local 'Versie' Object.
+===============================================================================
+
+Change Blocking mode for Socket stream and set Timeout for Soap requests
+
+<?php
+
+class TimeoutSoapClient extends SoapClient
+{
+    const TIMEOUT = 20;
+    public function __doRequest($request, $location, $action, $version, 
+$one_way = 0)
+    {
+        $url_parts = parse_url($location);
+        $host = $url_parts['host'];
+        $http_req = 'POST '.$location.' HTTP/1.0'."\r\n";
+        $http_req .= 'Host: '.$host."\r\n";
+        $http_req .= 'SoapAction: '.$action."\r\n";
+        $http_req .= "\r\n";
+        $http_req .= $request;
+        $port = 80;
+        if ($url_parts['scheme'] == 'https')
+        {
+            $port = 443;
+            $host = 'ssl://'.$host;
+        }
+        $socket = fsockopen($host, $port);
+        fwrite($socket, $request);
+        stream_set_blocking($socket, false);
+        $response = '';
+        $stop = microtime(true) + self::TIMEOUT;
+        while (!feof($socket))
+        {
+            $response .= fread($socket, 2000);
+            if (microtime(true) > $stop)
+            {
+                throw new SoapFault('Client', 'HTTP timeout');
+            }
+        }
+        return $response;
+    }
+}
+===============================================================================
+
+You can use this method to correct the SOAP request before sending it, if
+necessary. You can use the DOM API to accomplish that.
+
+<?php
+
+public ExtendedClient extends SoapClient {
+
+   function __construct($wsdl, $options = null) {
+      parent::__construct($wsdl, $options);
+   }
+
+   function __doRequest($request, $location, $action, $version) {
+      $dom = new DOMDocument('1.0');
+
+      try {
+
+         //loads the SOAP request to the Document
+         $dom->loadXML($request);
+
+      } catch (DOMException $e) {
+         die('Parse error with code ' . $e->code);
+      }
+
+      //create a XPath object to query the request
+      $path = new DOMXPath($dom);
+
+      //search for a node
+      $nodesToFix = $path->query('//SOAP-ENV:Envelope/SOAP-ENV:Body/path/to/
+node');
+
+      //check if nodes are ok
+      $this->checkNodes($path, $nodesToFix);
+
+      //save the modified SOAP request
+      $request = $dom->saveXML();
+     
+      //doRequest
+      return parent::__doRequest($request, $location, $action, $version);
+   }
+
+   function checkNodes(DOMXPath $path, DOMNodeList $nodes) {
+      //iterate through the node list
+      for ($i = 0; $ < $nodes->length; $i++) {
+         $aNode = $nodes->item($i);
+
+         //just an example
+         if ($node->nodeValue == null) {
+            //do something. For instance, let's remove it.
+            $node->parentNode->removeChild($node);
+         }
+      }
+   }
+}
+?>
+
+This gives the developer the chance to solve interoperability problems with a
+web service.
+===============================================================================
+
+If your application interacts with SOAP services and you wish to cache the
+responses for consumption later, then overriding SoapClient::__doRequest is the
+way to go.
+
+For instance, if you know that the information presented doesn't change that
+often and you don't want to do a superfluous HTTP request, you can grab a
+response from a local cache and let SoapClient do the transformation to PHP
+data types.
+
+<?php
+class YourNamespace_SoapClient_Local extends SoapClient {
+    protected $cacheDocument = "";
+    public function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+    }
+
+    /**
+     * SetCacheDocument() sets the previously cached document contents
+     */
+    public function SetCacheDocument($document) {
+        $this->cacheDocument = $document;
+    }
+
+    /**
+     * __doRequest() overrides the standard SoapClient to handle a local
+request
+     */
+    public function __doRequest() {
+        return $this->cacheDocument;
+    }
+}
+
+//---- code snippet showing usage within a class
+//$document is a cached SOAP response document from a previous request, saved
+with SoapClient::__getLastResponse() to some cache somewhere
+//for the purpose of this example, it is assumed that $this->wsdl, $this->
+options, $this->method and $this->params are set.
+
+public function SoapRequest($document) {
+    $method = $this->method;
+    if($document == "") {
+        //uncached
+        try {
+            //default options
+            $client = new SoapClient($this->wsdl, $this->options);
+            $result = $client->$method($this->params);
+            //send the response to the cache
+            $this->CacheResponse($client->__getLastResponse());
+        } catch(SoapFault $fault) {
+            //log something
+            return FALSE;
+        }
+    } else {
+        //cached document
+        try {
+            /**
+             * the WSDL needs to be set to allow the method to be called on the
+client object
+             * and to trigger SoapClient to decode the response to native data
+types
+             */
+            $client = new YourNamespace_SoapClient_Local($this->wsdl, $this->
+options);
+            $client->SetCacheDocument($document);
+            $result = $client->$method($this->params);
+        } catch (SoapFault $fault) {
+            //log something
+            return FALSE;
+        }
+    }
+    return $result;
+}
+?>
+
+I'll leave you to work out the caching, plenty of options there.. ;)
+===============================================================================
+
+I just wanted to note in plain english how to build up this request, because I
+made some assumptions by just misterpreting the parameters.
+
+This is for future reference(for myself) and others that might end up a bit
+mistified by just not understanding the finesses of soap and are trying to
+learn.
+
+    $this->__doRequest(string $request , string $location , string $action ,
+int $version [, int $one_way = 0 ] );
+
+$request = The XML Soap enveloppe
+$location = The url to the WSDL file. No matter that you defined this before
+when setting up the object, you need to reuse it here.
+$action = the soap action to be performed. This is defined in the wsdl file and
+can be in the form of a single form or an url. it's just a parameter and might
+not be an actual valid url
+$version = SOAP_1_1 =  content headers (Content-Type: text/xml; charset=utf-8␍)
+                  SOAP_1_2 = content headers (Content-Type: application/
+soap+xml; charset=utf-8; action="somesoapaction defined in $action")
+
+If you send a SOAP_1_2 request to a SOAP_1_1 server you might get a reply in
+the following form
+
+    HTTP/1.1 415 Cannot process the message because the content type
+'application/soap+xml; charset=utf-8; action="somesoapaction defined in
+$action"' was not the expected type 'text/xml; charset=utf-8'.
+
+You need to switch down to SOAP_1_1 in that case to get the proper formatting
+the server can understand
+===============================================================================
+
+If you're having trouble connecting to an authenticated SOAP service there's
+something important to note here.
+
+__doRequest() is only used when a SOAPClient function is called, NOT when the
+WSDL if fetched and parsed.  That means if your WSDL file is not publicly
+accessible but also resides behind your authentication it won't be accessible
+by default.  Instead you'll have to create an overloaded stream wrapper and
+register it for whatever protocol (probably HTTP) you'll be using.

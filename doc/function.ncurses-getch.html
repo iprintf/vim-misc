@@ -1,0 +1,138 @@
+
+ncurses_getch
+
+(PHP 4 >= 4.0.7, PHP 5 < 5.3.0, PECL ncurses >= 1.0.0)
+
+ncurses_getch — Read a character from keyboard
+
+说明
+
+int ncurses_getch ( void )
+Warning
+
+此函数是实验性的。此函数的表象，包括名称及其相关文档都可能在未来的 PHP 发布版本
+中未通知就被修改。使用本函数风险自担。
+
+Warning
+
+本函数还未编写文档，仅有参数列表。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+ncurses_getch() will block if there is no input available. Using fgets()
+together with stream_set_blocking() has been proposed for non-blocking input,
+however, fgets() returns escape sequences for cursor, function, and other
+special keys. Interpreting these is not trivial as the escape sequences depend
+on the terminal/emulation used.
+
+A possible solution is to use stream_select() to find out whether input is
+available and then read it with ncurses_getch().
+
+<?php
+function getch_nonblock($timeout) {
+    $read = array(STDIN);
+    $null = null;    // stream_select() uses references, thus variables are
+necessary for the first 3 parameters
+    if(stream_select($read,$null,$null,floor($timeout / 1000000),$timeout % 
+1000000) != 1) return null;
+    return ncurses_getch();
+}
+
+while(true) {
+    $key = getch_nonblock(1000000);
+    if(is_null($key)) {
+        // do something useful here
+        continue;
+    }
+    if($key == NCURSES_KEY_F10) break;    // Quit on F10
+}
+?>
+
+Low timeout values can yield high CPU usage of your script, so set the timeout
+as high as possible for your application.
+===============================================================================
+
+While function ncurses_nodelay() is still not implemented and if you need a
+non-blocking getch,
+following code might help.
+
+<?php
+$init = ncurses_init();
+$full = ncurses_newwin (0,0,0,0);
+ncurses_wborder($full,0,0,0,0,0,0,0,0);
+ncurses_wrefresh($full);
+
+$running = true;
+$fp = fopen("php://stdin","r");     //open direct input stream for reading
+stream_set_blocking($fp,0);        //set non-blocking mode
+
+while ($running) {
+  while (($buf = fgets($fp, 4096)) != false) {  //fgets is required if we want
+to handle escape sequenced keys
+     $buffer .= $buf;
+  }
+  if ($buffer != "") {
+     switch ($buffer) {      
+       case " ": {            //exit on space key
+         ncurses_end();
+        exit;        
+       }
+       default: {
+         ncurses_mvwaddstr($full,2,2,"$buffer");  //display input
+       }
+     }
+    $buffer = ""; //empty buffer
+   }
+
+  // You can do something interesting here, while we're not waiting for an
+input
+  ncurses_mvwaddstr($full,4,4,microtime(true));
+  ncurses_wrefresh($full); 
+
+  usleep(1); //reduce cpu usage
+}
+?>
+===============================================================================
+
+After banging my head over this for awhile, I discovered, you must use
+ncurses_keypad($window, true); to enable the arrow keys and f keys to work
+correctly.
+===============================================================================
+
+When using getch to capture KEY_* events remember that the keypad is arranged
+like this:
+
++-----+------+-------+
+| A1  |  up  |  A3   |
++-----+------+-------+
+|left |  B2  | right |
++-----+------+-------+
+| C1  | down |    C3  |
++-----+------+-------+
+
+You use has_key to capture these and act upon them.
+
+man curs_getch for more info.
+===============================================================================
+
+A custom php ncurses_getstr function..
+
+<?php
+
+function ncurses_getstr($strlen){
+    for ($x=0;$x<$strlen;$x++){
+        $string .= chr(ncurses_getch());
+    }
+    return $string;
+}
+
+ncurses_init();
+ncurses_addstr(ncurses_getstr(6));
+ncurses_refresh();
+ncurses_getch();
+ncurses_end();
+
+?>

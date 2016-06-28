@@ -1,0 +1,163 @@
+
+mysqli::ping
+
+mysqli_ping
+
+(PHP 5, PHP 7)
+
+mysqli::ping -- mysqli_ping — Pings a server connection, or tries to reconnect
+if the connection has gone down
+
+说明
+
+面向对象风格
+
+bool mysqli::ping ( void )
+
+过程化风格
+
+bool mysqli_ping ( mysqli $link )
+
+Checks whether the connection to the server is working. If it has gone down,
+and global option mysqli.reconnect is enabled an automatic reconnection is
+attempted.
+
+This function can be used by clients that remain idle for a long while, to
+check whether the server has closed the connection and reconnect if necessary.
+
+参数
+
+link
+
+    仅以过程化样式：由mysqli_connect() 或 mysqli_init() 返回的链接标识。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 mysqli::ping() example
+
+面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if ($mysqli->connect_errno) {
+    printf("Connect failed: %s\n", $mysqli->connect_error);
+    exit();
+}
+
+/* check if server is alive */
+if ($mysqli->ping()) {
+    printf ("Our connection is ok!\n");
+} else {
+    printf ("Error: %s\n", $mysqli->error);
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+/* check if server is alive */
+if (mysqli_ping($link)) {
+    printf ("Our connection is ok!\n");
+} else {
+    printf ("Error: %s\n", mysqli_error($link));
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Our connection is ok!
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+This does not work with mysqlnd and is marked as wontfix: https://bugs.php.net/
+bug.php?id=52561
+===============================================================================
+
+As jay at grooveshark dot com very helpfully pointed out, the mysqlnd driver
+which is becoming pretty standard does not obey reconnect commands. If you have
+a DB wrapper class (which hopefully you do) you can implement your own version
+of ping() such as:
+
+<?php
+
+class db extends mysqli
+{
+    private $db_host;
+    private $db_user;
+    private $db_pass;
+    private $db_name;
+    private $persistent;
+
+    public function __construct($db_host, $db_user, $db_pass, $db_name, 
+$persistent = true)
+    {
+        $this->db_host = $db_host;
+        $this->db_user = $db_user;
+        $this->db_pass = $db_pass;
+        $this->db_name = $db_name;
+        $this->persistent = $persistent;
+
+        parent::init();
+        parent::options(MYSQLI_OPT_CONNECT_TIMEOUT, 1);
+        @parent::real_connect(($this->persistent ? 'p:' : '') . $this->db_host,
+$this->db_user, $this->db_pass, $this->db_name);
+
+        if ($this->connect_errno)
+            die("All DB servers down!\n");
+    }
+
+    public function ping()
+    {
+        @parent::query('SELECT LAST_INSERT_ID()');
+
+        if ($this->errno == 2006)
+            $this->__construct($this->db_host, $this->db_user, $this->db_pass, 
+$this->db_name, $this->persistent);
+    }
+...
+}
+
+$db = new db(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+// Some code that potentially takes a really long time to execute goes here
+// Ping for safety to try to gracefully reconnect
+$db->ping();
+// Now we should be able to run queries again
+$db->query('SELECT LAST_INSERT_ID()');
+
+?>
+
+If you wanted you could even put "$this->ping();" at the top of db::query() to
+avoid any explicit reconnection calls but I wouldn't recommend it due to the
+(slight) overhead of running the cheap "SELECT LAST_INSERT_ID()" query every
+time prior to running your real intended query. There are probably even cheaper
+queries to run in favor of "SELECT LAST_INSERT_ID()" but it was the first that
+came to mind and is cheap enough for most purposes since you shouldn't be
+calling ping() a whole bunch anyway.
+===============================================================================
+
+The behaviour about the option mysqli.reconnect is default set to Off at Debian
+PHP Packages. So i would recommend to update the first line description about
+the recommendation at the option mysqli.reconnect. (practice note ;))

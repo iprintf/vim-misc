@@ -1,0 +1,428 @@
+
+imap_fetch_overview
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_fetch_overview — Read an overview of the information in the headers of the
+given message
+
+说明
+
+array imap_fetch_overview ( resource $imap_stream , string $sequence [, int
+$options = 0 ] )
+
+This function fetches mail headers for the given sequence and returns an
+overview of their contents.
+
+参数
+
+imap_stream
+
+    由 imap_open() 返回的 IMAP 流。
+
+sequence
+
+    A message sequence description. You can enumerate desired messages with the
+    X,Y syntax, or retrieve all messages within an interval with the X:Y syntax
+
+options
+
+    sequence will contain a sequence of message indices or UIDs, if this
+    parameter is set to FT_UID.
+
+返回值
+
+Returns an array of objects describing one message header each. The object will
+only define a property if it exists. The possible properties are:
+
+  • subject - the messages subject
+  • from - who sent it
+  • to - recipient
+  • date - when was it sent
+  • message_id - Message-ID
+  • references - is a reference to this message id
+  • in_reply_to - is a reply to this message id
+  • size - size in bytes
+  • uid - UID the message has in the mailbox
+  • msgno - message sequence number in the mailbox
+  • recent - this message is flagged as recent
+  • flagged - this message is flagged
+  • answered - this message is flagged as answered
+  • deleted - this message is flagged for deletion
+  • seen - this message is flagged as already read
+  • draft - this message is flagged as being a draft
+
+范例
+
+Example #1 imap_fetch_overview() example
+
+<?php
+$mbox = imap_open("{imap.example.org:143}INBOX", "username", "password")
+     or die("can't connect: " . imap_last_error());
+
+$MC = imap_check($mbox);
+
+// Fetch an overview for all messages in INBOX
+$result = imap_fetch_overview($mbox,"1:{$MC->Nmsgs}",0);
+foreach ($result as $overview) {
+    echo "#{$overview->msgno} ({$overview->date}) - From: {$overview->from}
+    {$overview->subject}\n";
+}
+imap_close($mbox);
+?>
+
+参见
+
+  • imap_fetchheader() - Returns header for a message
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+About the sequence sorting again.
+I've found that there's a significant speed improvement by preparing the
+sequence and then fetch them at once with large mailboxes. On small mailboxes
+wyou will not notice a speed difference.
+
+But then there's the sorting problem. I've spent all night fiuring out how to
+do this myself. I found the solution!
+
+Prepare an array of messages with imap_sort. Create a second array that maps
+the message numbers to the actuall place in the fetched array.
+You know it will be in numeric order so you can make an array map with the sort
+() function sorting it from high to low.
+Then you can proces the array fetched with imap_fetch_overview with the
+array_map and you will have them sorted. If you need an example look in the
+Group-Office code classes/imap.class.inc in a version later then 2.04.
+===============================================================================
+
+Here is a function to get messages from IMAP and sort them for pagination.
+
+<?php
+    /**
+     * Return array of IMAP messages for pagination
+     *
+     * @param   int     $page       page number to get
+     * @param   int     $per_page   number of results per page
+     * @param   array   $sort       array('subject', 'asc') etc
+     *
+     * @return  mixed   array containing imap_fetch_overview, pages, and total
+rows if successful, false if an error occurred
+     * @author  Raja K
+     */
+    public function listMessages($page = 1, $per_page = 25, $sort = null) {
+        $limit = ($per_page * $page);
+        $start = ($limit - $per_page) + 1;
+        $start = ($start < 1) ? 1 : $start;
+        $limit = (($limit - $start) != ($per_page-1)) ? ($start + ($per_page-1
+)) : $limit;
+        $info = imap_check($this->_imap_stream);
+        $limit = ($info->Nmsgs < $limit) ? $info->Nmsgs : $limit;
+
+        if(true === is_array($sort)) {
+            $sorting = array(
+                        'direction' => array(   'asc' => 0,
+                                                'desc' => 1),
+
+                        'by'        => array(   'date' => SORTDATE,
+                                                'arrival' => SORTARRIVAL,
+                                                'from' => SORTFROM,
+                                                'subject' => SORTSUBJECT,
+                                                'size' => SORTSIZE));
+            $by = (true === is_int($by = $sorting['by'][$sort[0]]))
+                            ? $by
+                            : $sorting['by']['date'];
+            $direction = (true === is_int($direction = $sorting['direction'][
+$sort[1]]))
+                            ? $direction
+                            : $sorting['direction']['desc'];
+
+            $sorted = imap_sort($this->_imap_stream, $by, $direction);
+
+            $msgs = array_chunk($sorted, $per_page);
+            $msgs = $msgs[$page-1];
+        }
+        else
+            $msgs = range($start, $limit); //just to keep it consistent
+
+        $result = imap_fetch_overview($this->_imap_stream, implode($msgs, ','),
+0);
+        if(false === is_array($result)) return false;
+
+        //sorting!
+        if(true === is_array($sorted)) {
+            $tmp_result = array();
+            foreach($result as $r)
+                $tmp_result[$r->msgno] = $r;
+
+            $result = array();
+            foreach($msgs as $msgno) {
+                $result[] = $tmp_result[$msgno];
+            }
+        }
+
+        $return = array('res' => $result,
+                        'start' => $start,
+                        'limit' => $limit,
+                        'sorting' => array('by' => $sort[0], 'direction' => 
+$sort[1]),
+                        'total' => imap_num_msg($this->_imap_stream));
+        $return['pages'] = ceil($return['total'] / $per_page);
+        return $return;
+    }
+?>
+===============================================================================
+
+Not that this function and all other imap_fetch*-functions will download the
+whole message and not just the header information.
+===============================================================================
+
+Note that these object-variables only exist when they are actually in the mail.
+
+This means that if a mail has no subject, the property $val->subject will not
+exist.
+
+Calling $val->subject will generate an notice:
+Notice: Undefined property: subject in /home/html/inc/Mbox.php on line xxx
+
+Use this to check it:
+if (array_key_exists( "subject", get_object_vars($val)))
+   $subj=$val->subject;
+else
+   $subj="";
+===============================================================================
+
+Hopefully someone will find this a jumpstarter for a sortable, paginated list:
+
+<?php
+public function listMessages($nStart=0, $nCnt=10) {
+   
+    if (!$this->loaded) {
+        return NULL;
+    }
+   
+    if (($nStart+$nCnt) > $this->getNum()) {
+        $nCnt = $this->getNum()-$nStart;
+    }
+   
+    $aMsgs = imap_fetch_overview($this->rCon, ($nStart+1).':'.($nStart+$nCnt));
+    $aRet = array();
+    if ($aMsgs) {
+        foreach ($aMsgs as $msg) {
+            $aRet[$msg->udate] = $msg;
+        }
+    }
+   
+    krsort($aRet);
+   
+    var_dump($aRet);
+}
+?>
+===============================================================================
+
+This performance hint is useful if you need to print the result of imap_sort():
+
+It's faster to prepare large string with UIDs and then to call
+imap_fetchoverview once than calling imap_fetchoverview in a loop.
+===============================================================================
+
+I think if you go like a list, you can list your "hotmail" messages.
+<?php
+$mbox=imap_open("{imap.server.com}","user","pass");
+$MC=imap_check($mbox);
+$MN=$MC->Nmsgs;
+$overview=imap_fetch_overview($mbox,"1:$MN",0);
+$size=sizeof($overview);
+for($i=$size-1;$i>=0;$i--){
+$val=$overview[$i];
+$msg=$val->msgno;
+$from=$val->from;
+$date=$val->date;
+$subj=$val->subject;
+echo "#$msg: From:'$from' Date:'$date' Subject:'$subj'<BR>";
+imap_close($mbox);
+?>
+===============================================================================
+
+Judging from the comments here, it appears like people are forgetting the
+basics to already-available PHP sorting functions. Use usort(); and the tiniest
+custom function ever to compare them all.
+
+Change the arguments to imap_fetch_overview to your own, obviously.
+
+<?php
+$result = imap_fetch_overview($imap_stream, '1:10', 0);
+
+usort($result, function($a, $b) {
+  return($b->udate-$a->udate);
+});
+?>
+
+This usort function will look at each overview and order them in the exact
+latest to oldest message order as determined by the "udate" value for each
+message. This works. I'm using it. They're sorted in the exact order they
+appear in my actual inbox. Why obfuscate it any more?
+===============================================================================
+
+That's right:
+
+calling imap_fetch_overview() once is faster, than calling it
+in a loop.
+
+But if you want to get a "day sorted" list, you need to call it in a loop,
+cause if you enter a "string" of UIDs, they are always sorted by UID, not by
+the order you entered it.
+
+Heres a little example how to get a date-sorted list:
+
+<?php
+/*Sort all msgs by Arrival Date. Newest = 0, oldest = Array Count*/
+/*returns an array, containing the UIDs of messages*/
+$SortedArray = imap_sort($Handle,SORTARRIVAL,1,SE_UID);
+
+For ($i = $Start; $i< $Start + $Limit; $i++){
+      /*Read UID from Sorted Array*/
+      $UID = $SortedArray[$i];
+     
+      /*Get Detailed MSG Infos*/
+      $Overview = imap_fetch_overview($Handle, $UID, FT_UID);
+
+      [...]
+}
+?>
+===============================================================================
+
+you want a sortet list of mails, but you get always the same order? your
+c-client seems to cause this. i realized this with linux libc6-2.3.6 and
+php-5.2.0
+
+try this little code:
+
+# here you try to sort by your criteria
+$sort=@imap_sort($mbox,SORTDATE,1,SE_UID);
+ 
+# here the order of the messages to fetch should be recognised, but it isn't
+
+$tmp=@imap_fetch_overview($mbox,implode(',',$sort),FT_UID);
+# so try to work around simply:
+for($i=0;$i<count($tmp);$i++)
+{ $liste[$i]=$tmp[array_search($tmp[$i]->uid,$sort)]; }
+
+so now you can use the sort by date, address, and so on.
+===============================================================================
+
+To further explain 'warrenfalk's comment, the following sequences are exactly
+the same, and always returns messages with lowest UID to highest UID:
+
+1:5
+5:1
+1,2,3,4,5
+5,4,3,2,1
+3,2,5,1,4
+
+(always returned as 1,2,3,4,5)
+===============================================================================
+
+The use of the $range parameter is explained in the example at: http://
+www.phpdig.net/ref/rn31re596.html
+
+<?php
+$imap = imap_open("{localhost}INBOX","graeme","inferno");
+
+// fetch message information for message 2
+// and messages 4 to 6
+$info = imap_fetch_overview($imap, "2,4:6");
+
+?>
+
+<table border=1>
+<tr><th>Read</th><th>From</th><th>Date</th><th>Subject</th></tr>
+
+<?php
+// loop through the array
+foreach ($info as $msg) {
+   echo "<tr>";
+
+   // display the seen property nicely
+   if ($msg->seen == 1) {
+      $read = "Yes";
+   } else {
+      $read = "No";
+   }
+
+   // print other message information
+   printf("<td>%s</td>", $read);
+   printf("<td>%s</td>", $msg->from);
+   printf("<td>%s</td>", $msg->date);
+   printf("<td>%s</td>", $msg->subject);
+}
+
+imap_close($imap);
+?>
+===============================================================================
+
+The Remote class here (https://github.com/newscloud/mail_filter/blob/master/app
+/protected/models/Remote.php) has a lot of examples of processing mailbox
+folders with imap-fetch-overview:
+
+        $this->open($account_id,$this->path_inbox);
+         $recent_messages = @imap_search($this->stream, 'SINCE "'.date("j F
+Y",$tstamp).'"',SE_UID); // 30 November 2013
+         if ($recent_messages===false) continue; // to do - continue into next
+account
+         $result = imap_fetch_overview($this->stream, implode(',',array_slice
+($recent_messages,0,$message_limit)),FT_UID);
+         foreach ($result as $item) {        
+           $msg = $this->parseHeader($item);
+===============================================================================
+
+English:
+I've found that for some messages, this function and also function
+imap_headerinfo(), can't decode the message_id information and returns an ID
+like "<xxxxxxxxx@unknownmsgid>"
+
+In these cases, I use the following to get the correct messageid:
+
+$header=imap_rfc822_parse_headers(imap_fetchheader($mbox,$msgno))
+
+Spanish:
+Con algunos mensajes, esta funcion, al igual que la funcion imap_headerinfo(),
+no pueden decodificar correctamente la información del ID de mensaje y
+devuelven un ID como este "<xxxxxxxxx@unknownmsgid>"
+
+En esos casos, uso lo siguiente para obtener el ID de mensaje correcto:
+
+$header=imap_rfc822_parse_headers(imap_fetchheader($mbox,$msgno))
+===============================================================================
+
+If you lost a mail use this
+<?php
+    public function READallUnreadmail(){
+        if ($headers = imap_check($this->msgbox)){
+            $lastnr = $headers->Nmsgs;
+            if ($mails=imap_fetch_overview($this->msgbox,"1:".$lastnr,0)){
+                while (list($key, $val) = each($mails)) {
+                   if (++$key>=0&&$header= imap_header($this->msgbox, $key)){
+                        if($header->Unseen=='U'||$header->Recent=='R'){
+                            echo "<br>".$val->msgno." - ".$val->date." - ".$val
+->subject."\n<br>";
+                            print "IREAD".$header->Msgno;
+                            //$this->getattachmentof($header->Msgno);
+                        }
+                    }
+                }
+            }
+        }
+    }
+?>
+===============================================================================
+
+This seems to retrieve incomplete values for headers, instead of getting the
+entire value, it gets the first. for example, this is a valid To: header
+
+To: foo1@example.com,foo2@example.com
+     foo3@example.com
+
+but imap_fetch_overview will only return:
+foo1@example.com

@@ -1,0 +1,320 @@
+
+odbc_execute
+
+(PHP 4, PHP 5, PHP 7)
+
+odbc_execute — Execute a prepared statement
+
+说明
+
+bool odbc_execute ( resource $result_id [, array $parameters_array ] )
+
+Executes a statement prepared with odbc_prepare().
+
+参数
+
+result_id
+
+    The result id resource, from odbc_prepare().
+
+parameters_array
+
+    Parameters in parameter_array will be substituted for placeholders in the
+    prepared statement in order. Elements of this array will be converted to
+    strings by calling this function.
+
+    Any parameters in parameter_array which start and end with single quotes
+    will be taken as the name of a file to read and send to the database server
+    as the data for the appropriate placeholder.
+
+    If you wish to store a string which actually begins and ends with single
+    quotes, you must add a space or other non-single-quote character to the
+    beginning or end of the parameter, which will prevent the parameter from
+    being taken as a file name. If this is not an option, then you must use
+    another mechanism to store the string, such as executing the query directly
+    with odbc_exec()).
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 odbc_execute() and odbc_prepare() example
+
+In the following code, $success will only be TRUE if all three parameters to
+myproc are IN parameters:
+
+<?php
+$a = 1;
+$b = 2;
+$c = 3;
+$stmt    = odbc_prepare($conn, 'CALL myproc(?,?,?)');
+$success = odbc_execute($stmt, array($a, $b, $c));
+?>
+
+If you need to call a stored procedure using INOUT or OUT parameters, the
+recommended workaround is to use a native extension for your database (for
+example, mssql for MS SQL Server, or oci8 for Oracle).
+
+更新日志
+
+版本                                    说明
+4.2.0 File reading is now subject to 安全模式 and open-basedir restrictions in
+      parameters_array.
+
+参见
+
+  • odbc_prepare() - Prepares a statement for execution
+
+
+User Contributed Notes 17 notes
+
+===============================================================================
+
+odbc has a maximum buffer size, that means it only stores and retrieves a
+limited size of data to/from database each time. The maximum buffer size is
+4096 and set in php.ini (odbc.defaultlrl). You can set it to higher value for
+larger data access.
+===============================================================================
+
+I don't think odbc_prepare and odbc_execute support output parameters for
+stored procedures on MSSQL.  An example of output parameters for MSSQL is at 
+http://support.microsoft.com/support/kb/articles/q174/2/23.asp
+
+Also, my MSSQL driver seems happy only when I use the following incantation:
+
+...code removed...
+$stmt=odbc_prepare($conn_id, "exec my_proc_name ?,?,?");
+$parms=array("fred","password",5);
+if (!odbc_execute($stmt, &$parms)) die("odbc_execute failed");
+===============================================================================
+
+Solid Issue:
+Solid defines CHAR, VARCHAR, LONG VARCHAR, BINARY, VARBINARY, and LONG
+VARBINARY to be a maximum of 2G in length.  However, when creating your tables
+for use with PHP one should choose LONG VARCHAR or LONG VARBINARY for these
+kinds of fields if you are planning on storing really large or lengthy data. 
+IE: Data exceeding 64k in length such as GIF/JPG, or really huge text areas.
+===============================================================================
+
+I've been using odbc functions for quite a while and I was floored when I
+finally read the details about the how the parameters are handled when they
+start and end with single quotes! I assumed that the main reason for
+odbc_execute vs. odbc_exec was to prevent sql injection but apparently this
+added feature actually opens another security hole, perhaps worse. This was my
+fix:
+
+<?php
+
+function odbc_execute_clean_parameters($result_id, $parameters_array){
+  for($i = 0; $i < count($parameters_array); ++$i){
+    if( substr($parameters_array[$i], -1) == "'" && substr($parameters_array[$i
+], 0 ,1) == "'" ){
+      $parameters_array[$i].= " ";
+    }
+  }
+  return odbc_execute($result_id, $parameters_array);
+}
+
+// then call
+$stmt = odbc_prepare($conn, " insert into mytable (col1, col2) values (?, ?) "
+);
+$r = odbc_execute_clean_parameters($stmt, array( $val1, $val2 ) );
+
+?>
+===============================================================================
+
+To use prepared with select queries, the right way is:
+<?PHP
+
+$rConnection = odbc_connect('AS400', 'QSECOFR', 'QSECOFR');
+if($rConnection === false) {
+    throw new ErrorException(odbc_errormsg());
+}
+
+$rResult = odbc_prepare($rConnection, 'SELECT * FROM KMNSH00F WHERE SHTMST > ?'
+);
+if($rResult === false) {
+    throw new ErrorException(odbc_errormsg());
+}
+
+if(odbc_execute($rResult, array('0001-01-01 00:00:00.000000')) === false) {
+    throw new ErrorException(odbc_errormsg());
+}
+
+odbc_result_all($rResult);
+
+odbc_free_result($rResult);
+
+odbc_close($rConnection);
+
+?>
+===============================================================================
+
+if you can't use php_mssql module in your environment (suse linux, apache2,
+php5, FreeTDS, unixODBC) an alternative is to use sql server functions instead
+of procedures. here is my sample code.
+
+<?php
+  $connect        = odbc_connect($myDB, $myUser, $myPass);
+
+  $query = "SELECT dbo.<function>(<column>,<text>) alias";
+
+  // perform the query
+  $result = odbc_exec($connect, $query);
+
+  while(odbc_fetch_row($result)) {
+    $Var1    = odbc_result($result, <column alias>);
+    //echo "Var1: " . $Var1 . "<br>";
+
+        // add additional logic
+
+  }
+?>
+
+Once I figured this out, my app worked perfectly.
+===============================================================================
+
+If you want to use stored procedures with MSSQL over ODBC, please read
+
+http://www.sitepoint.com/article/php-microsoft-sql-server/2
+
+It can you save lots of time ;)
+===============================================================================
+
+Don't miss the part where it says that if your string starts and ends with a
+single quote, the string is interpreted as a filename!
+
+This means that you can't do:
+
+$sth = odbc_prepare($dbh, "INSERT INTO people(name) VALUES(?)");
+$res = odbc_execute($sth, array($name));
+
+without checking the value of $name--if $name is, say, '\\'c:\\passwords.txt\\
+'' the contents of c:\\passwords.txt get inserted into your database as a
+"name".
+
+Also, despite what the documentation suggests, there (incredibly) doesn't
+appear to be any way to escape your single quotes (via experimentation, and
+from reading the source): if your string starts and ends with a single quote
+you cannot use odbc_execute to insert it into the database.
+===============================================================================
+
+In reply to tcmleung at yahoo dot com (09-Nov-2001), I would add a caveat that
+I've found, which is that the odbc.defaultlrl/odbc_longreadlen() values may
+only apply to odbc->php conversion and not php->odbc (though this may be
+database-specific). Hence, if you want to post binary data the 4096 byte limit
+still stands. So you stand a better chance of being able to post binary data
+using the quoted filename upload procedure described above, rather than using
+the prepare... execute method with data held in a php variable.
+===============================================================================
+
+In reply to cpoirier's note from 04-Mar-2001 03:30:
+
+Currently, Access 2000 DOES support parametrized queries via ODBC. It still
+seems to have a problem with Memo and OLE fields, but "normal" types work just
+fine.
+===============================================================================
+
+When running the CGI version of 4.0.6 under windows, I came across this error
+when trying to call a stored procedure in SQL Server using odbc_execute w/ the
+parameter array set:
+
+FATAL:  emalloc():  Unable to allocate 268675669 bytes
+
+Scary error, huh? In my case it just meant that SQL Server couldn't find the
+stored procedure.  Totally my fault, but a rather nondescript error message.
+
+p.
+===============================================================================
+
+A quick note in hopes that my pain will save someone else:  Microsoft Access
+ODBC drivers do not support parameterized queries.
+===============================================================================
+
+When used with parameters and the statement fails, you cannot use different
+arguments anymore, the same arguments as with the failed statement will be
+used.
+===============================================================================
+
+Obdc_prepare and obdc_execute can only be used as an alternative to odbc_exec
+in limited circumstances:
+
+$con = obdc_connect ($dsn, $user, $pass);
+$sql = "select * from TABLE";
+
+$result = obdc_exec ($con, $sql); //this line can be replaced as blow
+//then to see results:
+
+odbc_result_all ($result);
+odbc_free_result ($result);
+odbc_close ($con);
+
+gives the same result with the middle line as:
+
+$result = odbc_prepare ($con, $sql);
+odbc_execute ($result);
+
+as long as $sql contains a well formed and complete query.
+
+There is no point in trying to convert this into a parameter query with
+question marks as placeholders, since code like this will result only in error
+messages:
+
+$sql = "select * from TABLE where needle = ?";
+$result = odbc_prepare ($con, $sql);
+for ($i = 0; $i < 4; $i++)
+{
+  odbc_execute ($result, array ($i));
+  // and whatever you want to do with the result
+  // but all you get is "parameter expected" or "count does not match"
+}
+
+The lack of documentation for such functions should have been an alarm signal.
+===============================================================================
+
+I have a solution for the problem with the strings beeing interpreted as
+filename because of the single quotes:
+
+Just add a blank to the end of the string:
+
+<?php
+function odbc_escape_params ($params) {
+if (!is_array($params) or empty($params)) {
+  return array();
+}
+foreach ($params as $key=>$val) {
+  if (strlen($val) > 1 and $val{0} == "'" and $val{strlen($val)-1} == "'") {
+   $params[$key] .= ' ';
+  }
+}
+return $params;
+}
+?>
+===============================================================================
+
+For a simple database insert to a database that has no password and $from and
+$to are predefined variables.
+
+<?php
+/* get connection */
+$conn=odbc_connect("mydb","","");
+
+/* run insert */
+$stmt = odbc_prepare($conn, "INSERT INTO mytable (jor_from, jor_to) VALUES('
+$from', '$to');" );
+
+/* check for errors */
+if (!odbc_execute($stmt)) {
+    /* error  */
+    echo "Whoops";
+}
+
+/* close connection */
+odbc_close($conn);
+?>
+===============================================================================
+
+When odbc_execute() fails it returns FALSE and triggers a warning but it will
+not necessarily feed odbc_error() and odbc_errormsg().

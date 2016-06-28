@@ -1,0 +1,488 @@
+
+socket_create
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+socket_create — 创建一个套接字（通讯节点）
+
+说明
+
+resource socket_create ( int $domain , int $type , int $protocol )
+
+创建并返回一个套接字，也称作一个通讯节点。一个典型的网络连接由 2 个套接字构成，
+一个运行在客户端，另一个运行在服务器端。
+
+参数
+
+domain
+
+    domain 参数指定哪个协议用在当前套接字上。
+
+                          可用的地址/协议
+     Domain                           描述
+    AF_INET  IPv4 网络协议。TCP 和 UDP 都可使用此协议。
+    AF_INET6 IPv6 网络协议。TCP 和 UDP 都可使用此协议。
+    AF_UNIX  本地通讯协议。具有高性能和低成本的 IPC（进程间通讯）。
+
+type
+
+    type 参数用于选择套接字使用的类型。
+
+                               可用的套接字类型
+         类型                                  描述
+    SOCK_STREAM    提供一个顺序化的、可靠的、全双工的、基于连接的字节流。支持数
+                   据传送流量控制机制。TCP 协议即基于这种流式套接字。
+    SOCK_DGRAM     提供数据报文的支持。(无连接，不可靠、固定最大长度).UDP协议即
+                   基于这种数据报文套接字。
+    SOCK_SEQPACKET 提供一个顺序化的、可靠的、全双工的、面向连接的、固定最大长度
+                   的数据通信；数据端通过接收每一个数据段来读取整个数据包。
+    SOCK_RAW       提供读取原始的网络协议。这种特殊的套接字可用于手工构建任意类
+                   型的协议。一般使用这个套接字来实现 ICMP 请求（例如 ping）。
+    SOCK_RDM       提供一个可靠的数据层，但不保证到达顺序。一般的操作系统都未实
+                   现此功能。
+
+protocol
+
+    protocol 参数，是设置指定 domain 套接字下的具体协议。这个值可以使用 
+    getprotobyname() 函数进行读取。如果所需的协议是 TCP 或 UDP，可以直接使用常
+    量 SOL_TCP 和 SOL_UDP 。
+
+                                   常见协议
+    名称                                  描述
+    icmp Internet Control Message Protocol 主要用于网关和主机报告错误的数据通信
+         。例如“ping”命令（在目前大部分的操作系统中）就是使用 ICMP 协议实现的。
+    udp  User Datagram Protocol 是一个无连接的、不可靠的、具有固定最大长度的报
+         文协议。由于这些特性，UDP 协议拥有最小的协议开销。
+         Transmission Control Protocol 是一个可靠的、基于连接的、面向数据流的全
+         双工协议。TCP 能够保障所有的数据包是按照其发送顺序而接收的。如果任意数
+    tcp  据包在通讯时丢失，TCP 将自动重发数据包直到目标主机应答已接收。因为可靠
+         性和性能的原因，TCP 在数据传输层使用 8bit 字节边界。因此，TCP 应用程序
+         必须允许传送部分报文的可能。
+
+返回值
+
+socket_create() 正确时返回一个套接字，失败时返回 FALSE。要读取错误代码，可以调
+用 socket_last_error()。这个错误代码可以通过 socket_strerror() 读取文字的错误说
+明。
+
+更新日志
+
+版本          说明
+5.0.0 增加 AF_INET6 支持。
+
+错误／异常
+
+如果使用一个无效的 domain 或 type，socket_create() 会使用 AF_INET 和
+SOCK_STREAM 替代无效参数，同时会发出 E_WARNING 警告信息。
+
+参见
+
+  • socket_accept() - Accepts a connection on a socket
+  • socket_bind() - 给套接字绑定名字
+  • socket_connect() - 开启一个套接字连接
+  • socket_listen() - Listens for a connection on a socket
+  • socket_last_error() - Returns the last error on the socket
+  • socket_strerror() - Return a string describing a socket error
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+Took me about 20 minutes to figure out the proper arguments to supply for a
+AF_UNIX socket. Anything else, and I would get a PHP warning about the 'type'
+not being supported. I hope this saves someone else time.
+
+<?php
+$socket = socket_create(AF_UNIX, SOCK_STREAM, 0);
+// code
+?>
+===============================================================================
+
+Note that if you create a socket with AF_UNIX, a file will be created in the
+filesystem. This file is not removed when you call socket_close - you should
+unlink the file after you close the socket.
+===============================================================================
+
+Okay I talked with Richard a little (via e-mail). We agree that getprotobyname
+() and using the constants should be the same in functionality and speed, the
+use of one or the other is merely coding style. Personally, we both think the
+constants are prettier :).
+
+The eight different protocols are the ones implemented in PHP- not the total
+number in existance (RFC 1340 has 98).
+
+All we disagree on is using 0- Richard says that "accordning to the official
+unix/bsd sockets 0 is more than fine." I think that since 0 is a reserved
+number according to RFC 1320, and when used usually refers to IP, not one of
+it's sub-protocols (TCP, UDP, etc.)
+===============================================================================
+
+Here's a ping function that uses sockets instead of exec().  Note: I was unable
+to get socket_create() to work without running from CLI as root.  I've already
+calculated the package's checksum to simplify the code (the message is 'ping'
+but it doesn't actually matter).
+
+<?php
+
+function ping($host) {
+    $package = "\x08\x00\x19\x2f\x00\x00\x00\x00\x70\x69\x6e\x67";
+
+    /* create the socket, the last '1' denotes ICMP */   
+    $socket = socket_create(AF_INET, SOCK_RAW, 1);
+   
+    /* set socket receive timeout to 1 second */
+    socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, array("sec" => 1, 
+"usec" => 0));
+   
+    /* connect to socket */
+    socket_connect($socket, $host, null);
+   
+    /* record start time */
+    list($start_usec, $start_sec) = explode(" ", microtime());
+    $start_time = ((float) $start_usec + (float) $start_sec);
+   
+    socket_send($socket, $package, strlen($package), 0);
+   
+    if(@socket_read($socket, 255)) {
+        list($end_usec, $end_sec) = explode(" ", microtime());
+        $end_time = ((float) $end_usec + (float) $end_sec);
+   
+        $total_time = $end_time - $start_time;
+       
+        return $total_time;
+    } else {
+        return false;
+    }
+   
+    socket_close($socket);
+}
+
+?>
+===============================================================================
+
+Please be aware that RAW sockets (as used for the ping example) are restricted
+to root accounts on *nix systems. Since web servers hardly ever run as root,
+they won't work on webpages.
+
+On Windows based servers it should work regardless.
+===============================================================================
+
+Here is a ping function for PHP without using exec/system/passthrough/etc...
+Very useful to use to just test if a host is online before attempting to
+connect to it. Timeout is in seconds.
+
+<?PHP
+        function ping($host, $timeout = 1) {
+                /* ICMP ping packet with a pre-calculated checksum */
+                $package = "\x08\x00\x7d\x4b\x00\x00\x00\x00PingHost";
+                $socket  = socket_create(AF_INET, SOCK_RAW, 1);
+                socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, array('sec'
+=> $timeout, 'usec' => 0));
+                socket_connect($socket, $host, null);
+
+                $ts = microtime(true);
+                socket_send($socket, $package, strLen($package), 0);
+                if (socket_read($socket, 255))
+                        $result = microtime(true) - $ts;
+                else    $result = false;
+                socket_close($socket);
+
+                return $result;
+        }
+?>
+===============================================================================
+
+On UNIX systems php needs /etc/protocols for constants like SOL_UDP and
+SOL_TCP.
+
+This file was missing on my embedded platform.
+===============================================================================
+
+It took some time to understand how one PHP process can communicate with
+another by means of unix udp sockets. Examples of 'server' and 'client' code
+are given below. Server is assumed to run before client starts.
+
+'Server' code
+<?php
+if (!extension_loaded('sockets')) {
+    die('The sockets extension is not loaded.');
+}
+// create unix udp socket
+$socket = socket_create(AF_UNIX, SOCK_DGRAM, 0);
+if (!$socket)
+        die('Unable to create AF_UNIX socket');
+
+// same socket will be used in recv_from and send_to
+$server_side_sock = dirname(__FILE__)."/server.sock";
+if (!socket_bind($socket, $server_side_sock))
+        die("Unable to bind to $server_side_sock");
+
+while(1) // server never exits
+{
+// receive query
+if (!socket_set_block($socket))
+        die('Unable to set blocking mode for socket');
+$buf = '';
+$from = '';
+echo "Ready to receive...\n";
+// will block to wait client query
+$bytes_received = socket_recvfrom($socket, $buf, 65536, 0, $from);
+if ($bytes_received == -1)
+        die('An error occured while receiving from the socket');
+echo "Received $buf from $from\n";
+
+$buf .= "->Response"; // process client query here
+
+// send response
+if (!socket_set_nonblock($socket))
+        die('Unable to set nonblocking mode for socket');
+// client side socket filename is known from client request: $from
+$len = strlen($buf);
+$bytes_sent = socket_sendto($socket, $buf, $len, 0, $from);
+if ($bytes_sent == -1)
+        die('An error occured while sending to the socket');
+else if ($bytes_sent != $len)
+        die($bytes_sent . ' bytes have been sent instead of the ' . $len . '
+bytes expected');
+echo "Request processed\n";
+}
+?>
+
+'Client' code
+<?php
+if (!extension_loaded('sockets')) {
+    die('The sockets extension is not loaded.');
+}
+// create unix udp socket
+$socket = socket_create(AF_UNIX, SOCK_DGRAM, 0);
+if (!$socket)
+        die('Unable to create AF_UNIX socket');
+
+// same socket will be later used in recv_from
+// no binding is required if you wish only send and never receive
+$client_side_sock = dirname(__FILE__)."/client.sock";
+if (!socket_bind($socket, $client_side_sock))
+        die("Unable to bind to $client_side_sock");
+
+// use socket to send data
+if (!socket_set_nonblock($socket))
+        die('Unable to set nonblocking mode for socket');
+// server side socket filename is known apriori
+$server_side_sock = dirname(__FILE__)."/server.sock";
+$msg = "Message";
+$len = strlen($msg);
+// at this point 'server' process must be running and bound to receive from
+serv.sock
+$bytes_sent = socket_sendto($socket, $msg, $len, 0, $server_side_sock);
+if ($bytes_sent == -1)
+        die('An error occured while sending to the socket');
+else if ($bytes_sent != $len)
+        die($bytes_sent . ' bytes have been sent instead of the ' . $len . '
+bytes expected');
+
+// use socket to receive data
+if (!socket_set_block($socket))
+        die('Unable to set blocking mode for socket');
+$buf = '';
+$from = '';
+// will block to wait server response
+$bytes_received = socket_recvfrom($socket, $buf, 65536, 0, $from);
+if ($bytes_received == -1)
+        die('An error occured while receiving from the socket');
+echo "Received $buf from $from\n";
+
+// close socket and delete own .sock file
+socket_close($socket);
+unlink($client_side_sock);
+echo "Client exits\n";
+?>
+===============================================================================
+
+Sometimes when you are running CLI, you need to know your own ip address.
+
+<?php
+
+  $addr = my_ip();
+  echo "my ip address is $addr\n";
+
+  function my_ip($dest='64.0.0.0', $port=80)
+  {
+    $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+    socket_connect($socket, $dest, $port);
+    socket_getsockname($socket, $addr, $port);
+    socket_close($socket);
+    return $addr;
+  }
+?>
+===============================================================================
+
+I've written the ping() function using socket_create() with SOCK_RAW.
+(on Unix System, you need to have the root acces to execute this function)
+
+<?php
+
+/// start ping.inc.php ///
+
+$g_icmp_error = "No Error";
+
+// timeout in ms
+function ping($host, $timeout)
+{
+        $port = 0;
+        $datasize = 64;
+        global $g_icmp_error;
+        $g_icmp_error = "No Error";
+        $ident = array(ord('J'), ord('C'));
+        $seq   = array(rand(0, 255), rand(0, 255));
+
+     $packet = '';
+     $packet .= chr(8); // type = 8 : request
+     $packet .= chr(0); // code = 0
+
+     $packet .= chr(0); // checksum init
+     $packet .= chr(0); // checksum init
+
+        $packet .= chr($ident[0]); // identifier
+        $packet .= chr($ident[1]); // identifier
+
+        $packet .= chr($seq[0]); // seq
+        $packet .= chr($seq[1]); // seq
+
+        for ($i = 0; $i < $datasize; $i++)
+                $packet .= chr(0);
+
+        $chk = icmpChecksum($packet);
+
+        $packet[2] = $chk[0]; // checksum init
+        $packet[3] = $chk[1]; // checksum init
+
+        $sock = socket_create(AF_INET, SOCK_RAW,  getprotobyname('icmp'));
+        $time_start = microtime();
+    socket_sendto($sock, $packet, strlen($packet), 0, $host, $port);
+   
+
+    $read   = array($sock);
+        $write  = NULL;
+        $except = NULL;
+
+        $select = socket_select($read, $write, $except, 0, $timeout * 1000);
+        if ($select === NULL)
+        {
+                $g_icmp_error = "Select Error";
+                socket_close($sock);
+                return -1;
+        }
+        elseif ($select === 0)
+        {
+                $g_icmp_error = "Timeout";
+                socket_close($sock);
+                return -1;
+        }
+
+    $recv = '';
+    $time_stop = microtime();
+    socket_recvfrom($sock, $recv, 65535, 0, $host, $port);
+        $recv = unpack('C*', $recv);
+       
+        if ($recv[10] !== 1) // ICMP proto = 1
+        {
+                $g_icmp_error = "Not ICMP packet";
+                socket_close($sock);
+                return -1;
+        }
+
+        if ($recv[21] !== 0) // ICMP response = 0
+        {
+                $g_icmp_error = "Not ICMP response";
+                socket_close($sock);
+                return -1;
+        }
+
+        if ($ident[0] !== $recv[25] || $ident[1] !== $recv[26])
+        {
+                $g_icmp_error = "Bad identification number";
+                socket_close($sock);
+                return -1;
+        }
+       
+        if ($seq[0] !== $recv[27] || $seq[1] !== $recv[28])
+        {
+                $g_icmp_error = "Bad sequence number";
+                socket_close($sock);
+                return -1;
+        }
+
+        $ms = ($time_stop - $time_start) * 1000;
+       
+        if ($ms < 0)
+        {
+                $g_icmp_error = "Response too long";
+                $ms = -1;
+        }
+
+        socket_close($sock);
+
+        return $ms;
+}
+
+function icmpChecksum($data)
+{
+        $bit = unpack('n*', $data);
+        $sum = array_sum($bit);
+
+        if (strlen($data) % 2) {
+                $temp = unpack('C*', $data[strlen($data) - 1]);
+                $sum += $temp[1];
+        }
+
+        $sum = ($sum >> 16) + ($sum & 0xffff);
+        $sum += ($sum >> 16);
+
+        return pack('n*', ~$sum);
+}
+
+function getLastIcmpError()
+{
+        global $g_icmp_error;
+        return $g_icmp_error;
+}
+/// end ping.inc.php ///
+?>
+===============================================================================
+
+Seems there aren't any examples of UDP clients out there.  This is a tftp
+client.  I hope this makes someone's life easier.
+
+<?php
+  function tftp_fetch($host, $filename)
+  {
+    $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+
+    // create the request packet
+    $packet = chr(0) . chr(1) . $filename . chr(0) . 'octet' . chr(0);
+    // UDP is connectionless, so we just send on it.
+    socket_sendto($socket, $packet, strlen($packet), 0x100, $host, 69);
+
+    $buffer = '';
+    $port = '';
+    $ret = '';
+    do
+    {
+      // $buffer and $port both come back with information for the ack
+      // 516 = 4 bytes for the header + 512 bytes of data
+      socket_recvfrom($socket, $buffer, 516, 0, $host, $port);
+
+      // add the block number from the data packet to the ack packet
+      $packet = chr(0) . chr(4) . substr($buffer, 2, 2);
+      // send ack
+      socket_sendto($socket, $packet, strlen($packet), 0, $host, $port);
+
+      // append the data to the return variable
+      // for large files this function should take a file handle as an arg
+      $ret .= substr($buffer, 4);
+    }
+    while(strlen($buffer) == 516);  // the first non-full packet is the last.
+    return $ret;
+  }
+?>

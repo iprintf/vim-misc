@@ -1,0 +1,186 @@
+
+The DOMImplementation class
+
+(PHP 5, PHP 7)
+
+简介
+
+The DOMImplementation interface provides a number of methods for performing
+operations that are independent of any particular instance of the document
+object model.
+
+类摘要
+
+DOMImplementation {
+/* 属性 */
+/* 方法 */
+__construct ( void )
+public DOMDocument createDocument ([ string $namespaceURI = NULL [, string
+$qualifiedName = NULL [, DOMDocumentType $doctype = NULL ]]] )
+public DOMDocumentType createDocumentType ([ string $qualifiedName = NULL [, 
+string $publicId = NULL [, string $systemId = NULL ]]] )
+public bool hasFeature ( string $feature , string $version )
+}
+
+Table of Contents
+
+  • DOMImplementation::__construct — Creates a new DOMImplementation object
+  • DOMImplementation::createDocument — Creates a DOMDocument object of the
+    specified type with its document element
+  • DOMImplementation::createDocumentType — Creates an empty DOMDocumentType
+    object
+  • DOMImplementation::hasFeature — Test if the DOM implementation implements a
+    specific feature
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Ok got it working like a charm using "proxy pattern" with traits. The idea
+being declaring the common methods inside a "trait" in order for extended and
+registered Node Classes to have access even if not derived / child of the
+extended DOMNode…
+
+Here a small snippet :
+<?php
+    namespace my;
+
+    trait tNode
+    {    // We need the magic method __get in order to add properties such as
+DOMNode->parentElement
+        public function __get($name)
+        {    if(property_exists($this, $name)){return $this->$name;}
+            if(method_exists($this, $name)){return $this->$name();}
+            throw new \ErrorException('my\\Node property \''.(string) $name.'\'
+not found…', 42, E_USER_WARNING);
+        }
+
+        // parentElement property definition
+        private function parentElement()
+        {    if($this->parentNode === null){return null;}
+            if($this->parentNode->nodeType === XML_ELEMENT_NODE){return $this->
+parentNode;}
+            return $this->parentNode->parentElement();
+        }
+
+        // JavaScript equivalent
+        public function isEqualNode(\DOMNode $node){return $this->isSameNode(
+$node);}
+        public function compareDocumentPosition(\DOMNode $otherNode)
+        {    if($this->ownerDocument !== $otherNode->ownerDocument){return 
+DOCUMENT_POSITION_DISCONNECTED;}
+            $c = strcmp($this->getNodePath(), $otherNode->getNodePath());
+            if($c === 0){return 0;}
+            else if($c < 0){return DOCUMENT_POSITION_FOLLOWING | ($c < -1 ? 
+DOCUMENT_POSITION_CONTAINED_BY : 0);}
+            return DOCUMENT_POSITION_PRECEDING | ($c > 1 ? 
+DOCUMENT_POSITION_CONTAINS : 0);
+        }
+        public function contains(\DOMNode $otherNode){return ($this->
+compareDocumentPosition($otherNode) >= DOCUMENT_POSITION_CONTAINED_BY);}
+    }
+
+    class Document extends \DomDocument
+    {    public function __construct($version=null, $encoding=null)
+        {    parent::__construct($version, $encoding);
+            $this->registerNodeClass('DOMNode', 'my\Node');
+            $this->registerNodeClass('DOMElement', 'my\Element');
+            $this->registerNodeClass('DOMDocument', 'my\Document');
+            /* [...] */
+        }
+    }
+
+    class Element extends \DOMElement
+    {    use tNode;
+        /* [...] */
+    }
+
+    class Node extends \DOMNode
+    {    use tNode;
+        /* [...] */
+    }
+
+?>
+===============================================================================
+
+From what I've seen you must "recode" the "createDocument" method in order to
+call your own object extension…
+
+<?php
+[...]
+    public function createDocument($namespaceURI=null, $qualifiedName=null, 
+DOMDocumentType $docType=null)
+    {    $doc=new Document();
+        $doc->appendChild(parent::createDocumentType('html'));
+        $this->doc->appendChild($namespaceURI ? $this->doc->createElementNS(
+$namespaceURI,$qualifiedName) : $this->doc->createElement($qualifiedName));
+    return $doc;
+    }
+[...]
+?>
+
+Where I am struggling is extending the whole tree so that calling the
+customized Implementation method returns a whole extended tree…
+Expected result : Implementation > Document > DOMDocument > Node > DOMNode
+Actual result : Implementation > Document > DOMDocument > DOMNode :(
+===============================================================================
+
+officially, the w3 specifies that the way to access dom interfaces is through
+this class
+
+so if you use
+
+$doc = new DOMDocument("1.0", "UTF-8");
+
+use instead:
+
+$x = new DOMImplementation();
+$doc = $x->createDocument(NULL,"rootElementName");
+$doc->xmlVersion="1.0";
+$doc->xmlEncoding="UTF-8";
+
+it is not required by php's implementation, but, probably, it is a good
+practice
+
+see:
+
+http://w3.org/TR/DOM-Level-3-Core/core.html#DOMImplementation
+
+http://w3.org/TR/DOM-Level-3-Core/core.html#DOMImplementationList
+
+http://w3.org/TR/DOM-Level-3-Core/core.html#DOMImplementationSource
+===============================================================================
+
+Why not use the DOMImplementation to directly register your DOM Class
+extensions ?
+
+<?php
+namespace My;
+class Implementation extends \DOMImplementation
+{    private $doc;
+    public function __construct(){return $this->createDocument();}
+    public function __get($name){return $this->doc->{$name};}
+    public function __set($name,$value){$this->doc->{$name}=$value;}
+    public function __isset($name){return isset($this->doc->{$name});}
+    public function __unset($name){return $this->doc->__unset($name);}
+    public function __call($name,$args){return call_user_func_array(array($this
+->doc,$name),$args);}
+   
+    public function createDocument($namespaceURI=null,$qualifiedName=null,
+DOMDocumentType $docType=null)
+    {    $this->doc=parent::createDocument($namespaceURI,$qualifiedName,
+$docType);
+        $this->doc->xmlVersion='1.0';
+        $this->doc->xmlEncoding='UTF-8';
+        $this->doc->registerNodeClass('DOMDocument','My\Document');
+        $this->doc->registerNodeClass('DOMDocumentFragment','My\
+DocumentFragment');
+        $this->doc->registerNodeClass('DOMElement','My\Element');
+        $this->doc->registerNodeClass('DOMComment','My\Comment');
+        $this->doc->registerNodeClass('DOMNode','My\Node');
+        /* …, …, … */
+        return $this->doc;
+    }
+}
+?>

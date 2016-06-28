@@ -1,0 +1,151 @@
+
+Imagick::setImageColorspace
+
+(PECL imagick 2.0.0)
+
+Imagick::setImageColorspace — Sets the image colorspace
+
+说明
+
+bool Imagick::setImageColorspace ( int $colorspace )
+
+Sets the image colorspace. This method should be used when creating new images.
+To change the colorspace of an existing image, you should use 
+Imagick::transformImageColorspace().
+
+参数
+
+colorspace
+
+    One of the COLORSPACE constants
+
+返回值
+
+成功时返回 TRUE。
+
+错误／异常
+
+错误时抛出 ImagickException。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+When converting from CMYK to RGB using this function, the image can become
+inverted. To fix this, use a workaround (don't forget to download the .icc
+files online):
+
+<?php
+// don't use this (it inverts the image)
+//    $img->setImageColorspace (imagick::COLORSPACE_RGB);
+
+if ($img->getImageColorspace() == Imagick::COLORSPACE_CMYK) {
+   $profiles = $img->getImageProfiles('*', false);
+   // we're only interested if ICC profile(s) exist
+   $has_icc_profile = (array_search('icc', $profiles) !== false);
+   // if it doesnt have a CMYK ICC profile, we add one
+   if ($has_icc_profile === false) {
+       $icc_cmyk = file_get_contents(dirname(__FILE__).'/USWebUncoated.icc');
+       $img->profileImage('icc', $icc_cmyk);
+       unset($icc_cmyk);
+   }
+   // then we add an RGB profile
+   $icc_rgb = file_get_contents(dirname(__FILE__).'/sRGB_v4_ICC_preference.icc'
+);
+   $img->profileImage('icc', $icc_rgb);
+   unset($icc_rgb);
+}
+
+$img->stripImage (); // this will drop down the size of the image dramatically
+(removes all profiles)
+?>
+===============================================================================
+
+I have a better solution for solving inverted colors on php 5.3.x than posted. 
+All the other solutions I found darkens the image or messes with the colors.
+
+See below (note: my imagick object is $jpeg)
+
+$range = $jpeg->getQuantumRange();
+            $php_vs_arr = preg_split("/\./", phpversion());
+            $php_vs = $php_vs_arr[0] . '.' . $php_vs_arr[1];
+            if ($jpeg->getImageColorspace() == Imagick::COLORSPACE_CMYK) {
+                   
+                //make sure cmyk color-space is set correctly
+                $jpeg->setImageColorspace(12);
+                   
+                // then we add an RGB profile
+                $icc_rgb = file_get_contents(FRAMEWORK_PATH . DS . 'color' . DS
+. 'AdobeRGB1998.icc');
+                $jpeg->profileImage('icc', $icc_rgb);
+                unset($icc_rgb);
+                   
+                //set color space to rgb
+                $jpeg->setImageColorspace(13);
+           
+                //fix gamma, hue, saturation, brightness
+                if($php_vs < 5.3) {
+                    //ADJUST GAMMA BY 20% for 5.2.x
+                    $jpeg->levelImage(0, 2.0, $range['quantumRangeString']);
+                } else {
+                    //php 5.3 hack FOR INVERTED COLORS
+                    $jpeg->negateImage(false, Imagick::CHANNEL_ALL);
+                }
+                   
+            }
+            $jpeg->stripImage();
+            //end convert to RGB=========================|
+===============================================================================
+
+FYI, here is the breakdown for (int $colorspace):
+
+Constants:
+0 - UndefinedColorspace   
+1 - RGBColorspace   
+2 - GRAYColorspace   
+3 - TransparentColorspace   
+4 - OHTAColorspace   
+5 - LABColorspace   
+6 - XYZColorspace   
+7 - YCbCrColorspace   
+8 - YCCColorspace   
+9 - YIQColorspace   
+10 - YPbPrColorspace   
+11 - YUVColorspace   
+12 - CMYKColorspace   
+13 - sRGBColorspace   
+14 - HSBColorspace   
+15 - HSLColorspace   
+16 - HWBColorspace
+===============================================================================
+
+Simlest way converting from CMYK to RGB:
+
+<?php
+if ($jpeg->getImageColorspace() == \Imagick::COLORSPACE_CMYK) {
+    $jpeg->transformimagecolorspace(\Imagick::COLORSPACE_SRGB);
+}
+?>
+
+It is pretty work in current stable Image Magick (6.9.0-4).
+===============================================================================
+
+If your getting strange/bad color rendering from a PDF, after trying the
+colorspace constants noted by jdstraughan, try other values outside that range.
+
+In one case for me only $image->setImageColorSpace(22) provided useful color. I
+have found posts elsewhere using values up to 255.
+===============================================================================
+
+This is how to Monochrome a jpg [on Windows].. since I couldn't find it
+anywhere else.
+
+<?php
+header("Content-type: image/jpeg");
+
+$IMagick = new IMagick('c:\\testing\\fruit.jpg');
+$IMagick->setImageColorSpace(Imagick::COLORSPACE_GRAY);
+
+echo $IMagick;
+?>

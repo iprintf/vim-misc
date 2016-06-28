@@ -1,0 +1,200 @@
+
+time_nanosleep
+
+(PHP 5, PHP 7)
+
+time_nanosleep — 延缓执行若干秒和纳秒
+
+说明
+
+mixed time_nanosleep ( int $seconds , int $nanoseconds )
+
+程序延缓执行指定数量的 seconds 和 nanoseconds。
+
+参数
+
+seconds
+
+    必须是一个非负整数。
+
+nanoseconds
+
+    必须是一个小于1亿的非负整数。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+如果延迟被中断，一个关联数组会返回，内容为：
+
+  • seconds - 延迟剩余未执行的秒数
+  • nanoseconds - 延迟剩余未执行的纳秒数
+
+更新日志
+
+版本                 说明
+5.3.0 至此之后该函数在Windows平台下可用。
+
+范例
+
+Example #1 time_nanosleep() 的例子
+
+<?php
+// Careful! This won't work as expected if an array is returned
+if (time_nanosleep(0, 500000000)) {
+    echo "Slept for half a second.\n";
+}
+
+// This is better:
+if (time_nanosleep(0, 500000000) === true) {
+    echo "Slept for half a second.\n";
+}
+
+// And this is the best:
+$nano = time_nanosleep(2, 100000);
+
+if ($nano === true) {
+    echo "Slept for 2 seconds, 100 microseconds.\n";
+} elseif ($nano === false) {
+    echo "Sleeping failed.\n";
+} elseif (is_array($nano)) {
+    $seconds = $nano['seconds'];
+    $nanoseconds = $nano['nanoseconds'];
+    echo "Interrupted by a signal.\n";
+    echo "Time remaining: $seconds seconds, $nanoseconds nanoseconds.";
+}
+?>
+
+参见
+
+  • sleep() - 延缓执行
+  • usleep() - 以指定的微秒数延迟执行
+  • time_sleep_until() - 使脚本睡眠到指定的时间为止。
+  • set_time_limit() - 设置脚本最大执行时间
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+Just glancing at this - and the note from over a year ago with a implementation
+for windows.. with 5.0.0 and higher it would be simplier to just do something
+like......
+
+<?php
+
+if (!function_exists('time_nanosleep')) {
+
+function time_nanosleep($seconds, $nanoseconds) {
+
+sleep($seconds);
+usleep(round($nanoseconds/100));
+
+return true;
+
+}
+
+}
+
+?>
+
+....off the top of my head - obviously simple enough there should be no
+mistakes.. but those are the ones that always seem to get ya :( .....
+===============================================================================
+
+A response to the note below:
+
+Your function is also useless, as the WinNT 32 kernel only functions at a
+minimum of about 10+ ms (1,000 us), rendering usleep() useless, because usleep
+uses the C function which is provided by the system (in this case,
+kernel32.dll).
+
+You'll want to use a function that does not rely on the kernel, but rather
+something made for precise measurement:
+
+<?php
+function usleep_win( $micro_seconds )
+{
+    if ( @function_exists( "socket_create" ) && @function_exists( 
+"socket_select" ) )
+    {
+        $false = NULL;
+        $socket = array( socket_create( AF_INET, SOCK_RAW, $false ) );
+        socket_select( $false, $false, $socket, 0, $micro_seconds );
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+?>
+
+This function will allow to you sleep for a specified microsecond, although I
+have measured it to be off by ~5 us.
+
+Again, most of this depends on the hardware in your system. If you _REALLY_
+need to be precise to < 10 us, you shouldn't be using WinNT anyways!
+===============================================================================
+
+You should take into account, if you use the function replacement down here,
+the CPU will be in use of 99% for the time of execution...
+
+(A little bit better in this situation is to let the 'full seconds' go by a
+normal sleep command (makes the thread sleep!, and uses minimum cpu))
+
+<?php
+    //THIS IS THE FUNCTION WE ARE TALKIN ABOUT
+    function timeWait($microtime)
+    {
+//optimizations added by me [start]
+//sleep the full seconds
+sleep(intval($microtime));
+//set the microtime to only resleep the last part of the nanos
+$microtime = $microtime - intval($microtime);
+//optimizations added by me [end]
+
+        $timeLimit = $microtime + array_sum(explode(" ",microtime()));
+        while(array_sum(explode(" ",microtime())) < $timeLimit)
+        {/*DO NOTHING*/}
+        return(true);
+    }
+
+    //THIS IS HOW WE CAN USE IT
+    echo "Process started at " . date("H:i:s") . " and " . current(explode(" ",
+microtime())) . " nanoseconds.<br>";
+    timeWait(5.5); //With this call the system will wait 5 seconds and a half.
+You can use either integer or float.
+    echo "Process completed at " . date("H:i:s") . " and " . current(explode("
+",microtime())) . " nanoseconds.";
+?>
+===============================================================================
+
+Documentation states that "seconds" must be positive. This is not correct, 0 is
+possible.
+
+Rather, "seconds" must be non-negative.
+===============================================================================
+
+This is an alternative function to sleep_nanosecond that you can use with PHP
+versions below PHP 5.0. It is not very accurate if we talk about nanoseconds
+but the results are satisfatory. Enjoy!
+
+<?php
+    //THIS IS THE FUNCTION WE ARE TALKIN ABOUT
+    function timeWait($microtime)
+    {
+        $timeLimit = $microtime + array_sum(explode(" ",microtime()));
+        while(array_sum(explode(" ",microtime())) < $timeLimit)
+        {/*DO NOTHING*/}
+        return(true);
+    }
+
+    //THIS IS HOW WE CAN USE IT
+    echo "Process started at " . date("H:i:s") . " and " . current(explode(" ",
+microtime())) . " nanoseconds.<br>";
+    timeWait(5.5); //With this call the system will wait 5 seconds and a half.
+You can use either integer or float.
+    echo "Process completed at " . date("H:i:s") . " and " . current(explode("
+",microtime())) . " nanoseconds.";
+?>

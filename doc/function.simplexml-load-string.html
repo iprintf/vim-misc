@@ -1,0 +1,1018 @@
+
+simplexml_load_string
+
+(PHP 5, PHP 7)
+
+simplexml_load_string — Interprets a string of XML into an object
+
+说明
+
+SimpleXMLElement simplexml_load_string ( string $data [, string $class_name =
+"SimpleXMLElement" [, int $options = 0 [, string $ns = "" [, bool $is_prefix =
+false ]]]] )
+
+Takes a well-formed XML string and returns it as an object.
+
+参数
+
+data
+
+    A well-formed XML string
+
+class_name
+
+    You may use this optional parameter so that simplexml_load_string() will
+    return an object of the specified class. That class should extend the 
+    SimpleXMLElement class.
+
+options
+
+    Since PHP 5.1.0 and Libxml 2.6.0, you may also use the options parameter to
+    specify additional Libxml parameters.
+
+ns
+
+    Namespace prefix or URI.
+
+is_prefix
+
+    TRUE if ns is a prefix, FALSE if it's a URI; defaults to FALSE.
+
+返回值
+
+Returns an object of class SimpleXMLElement with properties containing the data
+held within the xml document, 或者在失败时返回 FALSE.
+
+Warning
+
+此函数可能返回布尔值 FALSE，但也可能返回等同于 FALSE 的非布尔值。请阅读布尔类型
+章节以获取更多信息。应使用 === 运算符来测试此函数的返回值。
+
+错误／异常
+
+Produces an E_WARNING error message for each error found in the XML data.
+
+Tip
+
+Use libxml_use_internal_errors() to suppress all XML errors, and 
+libxml_get_errors() to iterate over them afterwards.
+
+范例
+
+Example #1 Interpret an XML string
+
+<?php
+$string = <<<XML
+<?xml version='1.0'?> 
+<document>
+ <title>Forty What?</title>
+ <from>Joe</from>
+ <to>Jane</to>
+ <body>
+  I know that's the answer -- but what's the question?
+ </body>
+</document>
+XML;
+
+$xml = simplexml_load_string($string);
+
+print_r($xml);
+?>
+
+以上例程会输出：
+
+SimpleXMLElement Object
+(
+  [title] => Forty What?
+  [from] => Joe
+  [to] => Jane
+  [body] =>
+   I know that's the answer -- but what's the question?
+)
+
+At this point, you can go about using $xml->body and such.
+
+参见
+
+  • simplexml_load_file() - Interprets an XML file into an object
+  • SimpleXMLElement::__construct() - Creates a new SimpleXMLElement object
+  • Dealing with XML errors
+  • libxml_use_internal_errors() - Disable libxml errors and allow user to
+    fetch error information as needed
+  • Basic SimpleXML usage
+
+
+User Contributed Notes 40 notes
+
+===============================================================================
+
+There seems to be a lot of talk about SimpleXML having a "problem" with CDATA,
+and writing functions to rip it out, etc. I thought so too, at first, but it's
+actually behaving just fine under PHP 5.2.6
+
+The key is noted above example #6 here:
+http://uk2.php.net/manual/en/simplexml.examples.php
+
+"To compare an element or attribute with a string or pass it into a function
+that requires a string, you must cast it to a string using (string). Otherwise,
+PHP treats the element as an object."
+
+If a tag contains CDATA, SimpleXML remembers that fact, by representing it
+separately from the string content of the element. So some functions, including
+print_r(), might not show what you expect. But if you explicitly cast to a
+string, you get the whole content.
+
+<?php
+$xml = simplexml_load_string('<foo>Text1 &amp; XML entities</foo>');
+print_r($xml);
+/*
+SimpleXMLElement Object
+(
+    [0] => Text1 & XML entities
+)
+*/
+
+$xml2 = simplexml_load_string('<foo><![CDATA[Text2 & raw data]]></foo>');
+print_r($xml2);
+/*
+SimpleXMLElement Object
+(
+)
+*/
+// Where's my CDATA?
+
+// Let's try explicit casts
+print_r( (string)$xml );
+print_r( (string)$xml2 );
+/*
+Text1 & XML entities
+Text2 & raw data
+*/
+// Much better
+?>
+===============================================================================
+
+I had a hard time finding this documented, so posting it here in case it helps
+someone:
+
+If you want to use multiple libxml options, separate them with a pipe, like so:
+
+<?php
+$xml = simplexml_load_string($string, 'SimpleXMLElement', LIBXML_NOCDATA | 
+LIBXML_NOBLANKS);
+?>
+===============================================================================
+
+A simpler way to transform the result into an array (requires json module).
+
+<?php
+function object2array($object) { return @json_decode(@json_encode($object),1);
+}
+?>
+
+Example:
+<?php
+$xml_object=simplexml_load_string('<SOME XML DATA');
+$xml_array=object2array($xml_object);
+?>
+===============================================================================
+
+Wrapper XMLReader class, for simple SAX-reading huge xml:
+https://github.com/dkrnl/SimpleXMLReader
+
+Usage example: http://github.com/dkrnl/SimpleXMLReader/blob/master/examples/
+example1.php
+===============================================================================
+
+<?php
+function XML2Array ( $xml )
+{
+    $array = simplexml_load_string ( $xml );
+    $newArray = array ( ) ;
+    $array = ( array ) $array ;
+    foreach ( $array as $key => $value )
+    {
+        $value = ( array ) $value ;
+        $newArray [ $key] = $value [ 0 ] ;
+    }
+    $newArray = array_map("trim", $newArray);
+  return $newArray ;
+}
+?>
+===============================================================================
+
+Please note that not all LIBXML options are supported with the options
+argument.
+
+For instance LIBXML_XINCLUDE does not work. But there is however a work around:
+
+<?php
+$xml = new DOMDocument();
+$xml->loadXML ($XMLString);
+           
+$xml->xinclude();
+$xml = simplexml_import_dom($xml);
+
+?>
+===============================================================================
+
+Here is my simple SimpleXML wrapper function.
+As far as I can tell, it does the same as Julio Cesar Oliveira's (above).
+It parses an XML string into a multi-dimensional associative array.
+The second argument is a callback that is run on all data (so for example, if
+you want all data trimmed, like Julio does in his function, just pass 'trim' as
+the second arg).
+<?php
+function unserialize_xml($input, $callback = null, $recurse = false)
+/* bool/array unserialize_xml ( string $input [ , callback $callback ] )
+* Unserializes an XML string, returning a multi-dimensional associative array,
+optionally runs a callback on all non-array data
+* Returns false on all failure
+* Notes:
+    * Root XML tags are stripped
+    * Due to its recursive nature, unserialize_xml() will also support
+SimpleXMLElement objects and arrays as input
+    * Uses simplexml_load_string() for XML parsing, see SimpleXML documentation
+for more info
+*/
+{
+    // Get input, loading an xml string with simplexml if its the top level of
+recursion
+    $data = ((!$recurse) && is_string($input))? simplexml_load_string($input): 
+$input;
+    // Convert SimpleXMLElements to array
+    if ($data instanceof SimpleXMLElement) $data = (array) $data;
+    // Recurse into arrays
+    if (is_array($data)) foreach ($data as &$item) $item = unserialize_xml(
+$item, $callback, true);
+    // Run callback and return
+    return (!is_array($data) && is_callable($callback))? call_user_func(
+$callback, $data): $data;
+}
+?>
+===============================================================================
+
+How about a recursive function to reduce the xml hard-coding in your apps? 
+Here is my simple listing routine as an example:
+
+<?php
+function list_xml($str) {
+  $root = simplexml_load_string($str);
+  list_node($root);
+}
+
+function list_node($node) {
+  foreach ($node as $element) {
+    echo $element. "\n";
+    if ($element->children()) {
+      echo "<br/>";
+      list_node($element);
+    }
+  }
+}
+?>
+===============================================================================
+
+It's worth noting that in the example above, $xml->body will actually return an
+object of type SimpleXMLElement, not a string, e.g.
+
+SimpleXMLElement Object (
+       [0] => this is the text in the body tag
+  ) 
+
+If you want to get a string out of it you must explicitly cast it using
+(string) or double quotes, or pass $xml->body (or whatever attribute you want
+to access) to any function that returns a string, such as urldecode() or trim
+().
+===============================================================================
+
+As was said before don't use var_dump() or print_r() to see SimpleXML object
+structure as they do not returns always what you expect.
+Consider the following:
+
+<?php
+
+// data in xml
+$xml_txt = '
+<root>
+  <folder ID="65" active="1" permission="1"><![CDATA[aaaa]]></folder>
+  <folder ID="65" active="1" permission="1"><![CDATA[bbbb]]></folder>
+</root>';
+
+// load xml into SimpleXML object
+$xml = simplexml_load_string($xml_txt, 'SimpleXMLElement', LIBXML_NOCDATA);//
+LIBXML_NOCDATA LIBXML_NOWARNING
+
+// see object structure
+print_r($xml);
+
+/* this prints
+SimpleXMLElement Object
+(
+    [folder] => Array
+        (
+            [0] => aaaa
+            [1] => bbbb
+        )
+
+)
+*/
+
+// but...
+foreach ($xml->folder as $value){
+    print_r($value);
+}
+/* prints complete structure of each folder element:
+SimpleXMLElement Object
+(
+    [@attributes] => Array
+        (
+            [ID] => 65
+            [active] => 1
+            [permission] => 1
+        )
+
+    [0] => aaaa
+)
+
+SimpleXMLElement Object
+(
+    [@attributes] => Array
+        (
+            [ID] => 65
+            [active] => 1
+            [permission] => 1
+        )
+
+    [0] => bbbb
+)
+
+*/
+?>
+===============================================================================
+
+A simple extension that adds a method for retrieving a specific attribute:
+
+<?php
+class simple_xml_extended extends SimpleXMLElement
+{
+    public    function    Attribute($name)
+    {
+        foreach($this->Attributes() as $key=>$val)
+        {
+            if($key == $name)
+                return (string)$val;
+        }
+    }
+
+}
+
+$xml = simplexml_load_string('
+<xml>
+  <dog type="poodle" owner="Mrs Smith">Rover</dog>
+</xml>', 'simple_xml_extended');
+
+echo $xml->dog->Attribute('type');
+
+?>
+
+outputs 'poodle'
+
+I prefer to use this technique rather than typecasting attributes.
+===============================================================================
+
+The XML2Array func now Recursive!
+
+<?php
+function XML2Array ( $xml , $recursive = false )
+{
+    if ( ! $recursive )
+    {
+        $array = simplexml_load_string ( $xml ) ;
+    }
+    else
+    {
+        $array = $xml ;
+    }
+   
+    $newArray = array () ;
+    $array = ( array ) $array ;
+    foreach ( $array as $key => $value )
+    {
+        $value = ( array ) $value ;
+        if ( isset ( $value [ 0 ] ) )
+        {
+            $newArray [ $key ] = trim ( $value [ 0 ] ) ;
+        }
+        else
+        {
+            $newArray [ $key ] = XML2Array ( $value , true ) ;
+        }
+    }
+    return $newArray ;
+}
+?>
+===============================================================================
+
+A looked through a lot of the sample code for reading XML files with CDATA, but
+they didn't work out that well for me.  However, I found that the following
+piece of code worked perfectly for reading through a file using lots of CDATA.
+
+<?php
+$article_string = file_get_contents($path);
+$article_string = preg_replace_callback('/<!\[CDATA\[(.*)\]\]>/', 'filter_xml',
+$article_string);
+$article_xml = simplexml_load_string($article_string); 
+
+function filter_xml($matches) {
+    return trim(htmlspecialchars($matches[1]));
+}
+
+?>
+===============================================================================
+
+Be careful checking for parse errors. An empty SimpleXMLElement may resolve to
+FALSE, and if your XML contains no text or only contains namespaced elements
+your error check may be wrong. Always use `=== FALSE` when checking for parse
+errors.
+
+<?php
+
+$xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<ns1:Root xmlns:ns1="http://example.com/custom">
+<ns1:Node>There's stuff here</ns1:Node>
+</ns1:Root>
+XML;
+
+$simplexml = simplexml_load_string($xml);
+
+// This prints "Parse Error".
+echo ($simplexml ? 'Valid XML' : 'Parse Error'), PHP_EOL;
+
+// But this prints "There's stuff here", proving that
+// the SimpleXML object was created successfully.
+echo $simplexml->children('http://example.com/custom')->Node, PHP_EOL;
+
+// Use this instead:
+echo ($simplexml !== FALSE ? 'Valid XML' : 'Parse Error'), PHP_EOL;
+
+?>
+
+See:
+
+https://bugs.php.net/bug.php?id=31045
+https://bugs.php.net/bug.php?id=30972
+https://bugs.php.net/bug.php?id=69596
+===============================================================================
+
+I wanted to convert an array containing strings and other arrays of the same
+type into a simplexml object.
+
+Here is the code of the function array2xml that I've developed to perform this
+conversion. Please note that this code is simple without any checks.
+
+<?php
+function array2xml($array, $tag) {
+
+    function ia2xml($array) {
+        $xml="";
+        foreach ($array as $key=>$value) {
+            if (is_array($value)) {
+                $xml.="<$key>".ia2xml($value)."</$key>";
+            } else {
+                $xml.="<$key>".$value."</$key>";
+            }
+        }
+        return $xml;
+    }
+
+    return simplexml_load_string("<$tag>".ia2xml($array)."</$tag>");
+}
+
+$test['type']='lunch';
+$test['time']='12:30';
+$test['menu']=array('entree'=>'salad', 'maincourse'=>'steak');
+
+echo array2xml($test,"meal")->asXML();
+?>
+===============================================================================
+
+A small 'n nice function to extract an XML and return it as an array. If there
+is a bug, please let me know here. I testet it for my purposes and it works.
+
+<?php
+
+public function extractXML($xml) {
+       
+if (!($xml->children())) {
+    return (string) $xml;
+}
+       
+foreach ($xml->children() as $child) {
+    $name=$child->getName();
+    if (count($xml->$name)==1) {
+        $element[$name] = $this->extractXML($child);
+    } else {
+        $element[][$name] = $this->extractXML($child);
+    }
+}
+
+return $element;   
+}
+
+// you can call it this way
+
+$xml = false;
+
+$xml = @simplexml_load_string($xmlstring);
+
+// 1)
+
+if ($xml) {
+  $array = extractXML($xml);
+}  else {
+  $array = false;
+}
+
+// 2)
+
+if ($xml) {
+  $array[$xml->getName()] = extractXML($xml);
+}  else {
+  $array = false;
+}
+
+?>
+===============================================================================
+
+It doesn't seem to be documented anywhere, but you can refer to an element
+"value" for the purpose of changing it like so:
+
+<?php
+$xml = simplexml_load_string('<root><number>1</number></root>');
+echo $xml->asXml(). "\n\n";
+
+$xml->number->{0} = $xml->number->{0} + 1;
+
+echo $xml->asXml();
+?>
+
+echos:
+<?xml version="1.0"?>
+<root><number>1</number></root>
+
+<?xml version="1.0"?>
+<root><number>2</number></root>
+
+However, this only works with a direct assignment, not with any of the other
+operators:
+
+<?php
+$xml = simplexml_load_string('<root><number>1</number></root>');
+echo $xml->asXml(). "\n\n";
+
+$xml->number->{0} += 1;
+// Or:
+$xml->number->{0}++;
+
+echo $xml->asXml();
+?>
+
+Both of the above cases would result in:
+
+<?xml version="1.0"?>
+<root><number>1</number></root>
+
+<?xml version="1.0"?>
+<root><number>1<0/></number></root>
+===============================================================================
+
+Attention:
+
+simplexml_load_string has a problem with entities other than (&lt;, &gt;, &
+amp;, &quot; and &apos;).
+
+Use numeric character references instead!
+===============================================================================
+
+Warning:
+
+The parsing of XML-data will stop when reaching character 0.
+Please avoid this character in your XML-data.
+===============================================================================
+
+If you have PHP > 5.1 and LibXML > 2.6, use this function call to have
+simplexml convert CDATA into plain text.
+
+simplexml_load_string($xmlstring, 'SimpleXMLElement', LIBXML_NOCDATA);
+
+Too bad, so sad with PHP < 5.1.
+===============================================================================
+
+after wondering around some time, i just realized something (maybe obvious, not
+very much for me). Hope helps someone to not waste time as i did :-P
+
+when you have something like:
+
+<?php
+$xmlstr = <<<XML
+<?xml version="1.0" encoding="utf-8"?>
+<double xmlns="http://foosite.foo/">2328</double>
+XML;
+?>
+
+you will have the simpleXML object "transformed" to the text() content:
+
+<?php
+$xml = simplexml_load_string($xmlstr);
+echo $xml; // this will echo 2328  (string)
+?>
+===============================================================================
+
+A simple way to merge two SimpleXML objects.
+
+<?php
+/**
+* Pumps all child elements of second SimpleXML object into first one.
+*
+* @param    object      $xml1   SimpleXML object
+* @param    object      $xml2   SimpleXML object
+* @return   void
+*/
+function simplexml_merge (SimpleXMLElement &$xml1, SimpleXMLElement $xml2)
+{
+    // convert SimpleXML objects into DOM ones
+    $dom1 = new DomDocument();
+    $dom2 = new DomDocument();
+    $dom1->loadXML($xml1->asXML());
+    $dom2->loadXML($xml2->asXML());
+
+    // pull all child elements of second XML
+    $xpath = new domXPath($dom2);
+    $xpathQuery = $xpath->query('/*/*');
+    for ($i = 0; $i < $xpathQuery->length; $i++)
+    {
+        // and pump them into first one
+        $dom1->documentElement->appendChild(
+            $dom1->importNode($xpathQuery->item($i), true));
+    }
+    $xml1 = simplexml_import_dom($dom1);
+}
+
+$xml1 = simplexml_load_string('<root><child>child 1</child></root>');
+$xml2 = simplexml_load_string('<root><child>child 2</child></root>');
+simplexml_merge($xml1, $xml2);
+echo($xml1->asXml());
+?>
+
+Will output:
+<?xml version="1.0"?>
+<root>
+    <child>child 1</child>
+    <child>child 2</child>
+</root>
+===============================================================================
+
+<?php
+$xml = json_decode(json_encode((array) simplexml_load_string($string)), 1);
+?>
+
+A reminder that json_encode attempts to convert data to UTF-8 without specific
+knowledge of the source encoding. This method can cause encoding issues if
+you're not working in UTF-8.
+===============================================================================
+
+Use libxml_disable_entity_loader() to restrict loading of external files.  See
+http://www.idontplaydarts.com/2011/02/
+scanning-the-internal-network-using-simplexml/
+===============================================================================
+
+If you want to serialize and unserialize SimpleXMLElement objects for caching,
+you need to transform the SimpleXMLElement object into a standard class object
+before unserializing.
+This is only if you want to cache converted data, the functionallity of the
+SimpleXMLElement will not be held.
+
+$content = '<SomeXML....'
+
+$serialized = str_replace(
+  array('O:16:"SimpleXMLElement":0:{}', 'O:16:"SimpleXMLElement":'),
+  array('s:0:"";', 'O:8:"stdClass":'),
+  serialize(simplexml_load_string($content))
+);
+
+$unserialized = unserialize($serialized);
+===============================================================================
+
+Here is my update to Bob's simple SimpleXML wrapper function.
+I noticed his version would turn an empty SimpleXMLElement into an empty array.
+
+<?php
+    /**
+     * http://php.net/manual/en/function.simplexml-load-string.php#91564
+     *
+     * bool/array unserialize_xml ( string $input [ , callback $callback ] )
+     * Unserializes an XML string, returning a multi-dimensional associative
+array, optionally runs a callback on all non-array data
+     * Returns false on all failure
+     * Notes:
+     * Root XML tags are stripped
+     * Due to its recursive nature, unserialize_xml() will also support
+SimpleXMLElement objects and arrays as input
+     * Uses simplexml_load_string() for XML parsing, see SimpleXML
+documentation for more info
+     *
+     * @param $input
+     * @param null $callback
+     * @param bool $recurse
+     * @return array|mixed
+     *
+     */
+    function unserialize_xml($input, $callback = null, $recurse = false)
+    {
+        // Get input, loading an xml string with simplexml if its the top level
+of recursion
+        $data = ((!$recurse) && is_string($input))? simplexml_load_string(
+$input): $input;
+        // Convert SimpleXMLElements to array
+        if ($data instanceof SimpleXMLElement){
+            if(!empty($data)){
+                $data = (array) $data;
+            } else {
+                $data = '';
+            }
+        }
+        // Recurse into arrays
+        if (is_array($data)) foreach ($data as &$item) $item = unserialize_xml(
+$item, $callback, true);
+        // Run callback and return
+        return (!is_array($data) && is_callable($callback))? call_user_func(
+$callback, $data): $data;
+    }
+?>
+===============================================================================
+
+Theres a problem with the below workaround when serializing fields containing
+html CDATA. For any other content type then HTML try to modfiy function
+parseCDATA.
+Just add these lines before serializing.
+This is also a workaround for this bug http://bugs.php.net/bug.php?id=42001
+
+<?PHP
+if(strpos($content, '<![CDATA[')) {
+   function parseCDATA($data) {
+      return htmlentities($data[1]);
+   }
+   $content = preg_replace_callback(
+      '#<!\[CDATA\[(.*)\]\]>#',
+      'parseCDATA',
+      str_replace("\n", " ", $content)
+   );
+}
+?>
+===============================================================================
+
+seems like simplexml has a line-length restriction - fails if a largeish XML
+doc with no linebreaks is passed as a string or file.
+
+h
+===============================================================================
+
+simplexml does not simply handle CDATA sections in a foreach loop.
+
+<?php
+$sx = simplexml_load_string('
+<test>
+<one>hi</one>
+<two><![CDATA[stuff]]></two>
+<t>
+  <for>two</for>
+</t>
+<multi>one</multi>
+<multi>two</multi>
+</test>');
+foreach((array) $sx as $tagname => $val) {
+    if (is_string($val)) {
+       // <one> will go here
+    } elseif (is_array($val)) {
+       // <multi> will go here because it happens multiple times
+    } elseif (is_object($val)) {
+      // <t> will go here because it contains tags
+      // <two> will go here because it contains CDATA!
+    }
+}
+?>
+
+To test in the loop, do this
+
+<?php
+if (count((array) $val) == 0) {
+    // this is not a tag that contains other tags
+    $val = '' . $val;
+    // now the CDATA is revealed magically.
+}
+?>
+===============================================================================
+
+Be careful using nested SimpleXML objects in double quoted strings.
+
+<?php
+$xmlstring = '<root><node>123</node><foo><bar>456</bar></foo></root>';
+
+$root = simplexml_load_string($xmlstring);
+
+echo "Node is: $root->node"; // Works: Node is 123
+echo "Bar is: $root->foo->bar"; // Doesn't work, outputs: Bar is: ->bar
+// use curly brackets to fix
+echo "Bar is: {$root->foo->bar}"; // Works: Bar is 456
+
+?>
+===============================================================================
+
+simplexml provides a neat way to do 'ini' files. Preferences for any number of
+users can be held in a single XML file having elements for each user name with
+user specific preferences as attributes of child elements. The separate <pref/>
+'s could of course be combined as multiple attributes of a single <pref/>
+element but this could get unwieldy.
+
+In the sample code below the makeXML() function uses the simplexml_load_string
+function to generate some XML to play with and the readPrefs() function parses
+the requested users preferences into an array.
+
+<?php
+function makeXML() {
+
+$xmlString = <<<XML
+<preferences>
+    <johndoe>
+        <pref color="#FFFFFF"/>
+        <pref size="14"/>
+        <pref font="Verdana"/>
+    </johndoe>
+    <janedoe>
+        <pref color="#000000"/>
+        <pref size="16"/>
+        <pref font="Georgia"/>
+    </janedoe>   
+</preferences>
+XML;
+
+return simplexml_load_string($xmlString);
+
+}
+function readPrefs($user, $xml) {
+   
+    foreach($xml->$user as $arr);
+        $n = count($arr);
+           
+    for($i=0;$i<$n;$i++) {
+        foreach($xml->$user->pref[$i]->attributes() as $a=>$b) {
+            $prefs[$a] = (string)$b;
+        }
+    }
+       
+    print_r($prefs);
+}
+
+readPrefs('johndoe', makeXML());
+
+?>
+===============================================================================
+
+If you want to set the charset of the outputed xml, simply set the encoding
+attribute like this :
+
+<?php simplexml_load_string('<?xml version="1.0" encoding="utf-8"?><xml/>'); ?>
+
+The generated xml outputed by $xml->asXML will containt accentuated characters
+like 'é' instead of &#xE9;.
+
+Hope this help
+===============================================================================
+
+SimpleXMLElement - Warning: unserialize() [function.unserialize]: Node no
+longer exists in … .php
+
+If you get this error from storing serialized SimpleXMLElement data then this
+is your fix…
+
+<?php
+
+function sxml_unserialze($str) {
+return unserialize(str_replace(array('O:16:"SimpleXMLElement":0:{}', 
+'O:16:"SimpleXMLElement":'), array('s:0:"";', 'O:8:"stdClass":'), $str));
+}
+
+?>
+===============================================================================
+
+if we don't know children number. How many loop. How many key.
+
+<?php
+class XML {
+    protected $pointer;
+    public    $degerler=array();
+   
+    function loadString($string){
+        $this->pointer = simplexml_load_string($string);
+                return $this->pointer;
+    }
+   
+    function loadFile($file){
+        $this->pointer = simplexml_load_file($file);
+        return $this->pointer;
+    }
+   
+    function getname(){
+        return $this->pointer->getName();
+    }
+    function child(){
+        return $this->pointer->children();
+    }
+    function att(){
+        return $this->pointer->attributes();
+    }
+    function toArray(){
+        foreach ($this->child() as $sq){
+            $this->degerler[$this->getname()][$sq->getname()][][] = $sq; // How
+many key
+        }
+        return;
+    }
+   
+}
+?>
+===============================================================================
+
+While needing to add an xml subtree to an existing simplexml object, I noticed
+that simplexml_load_string fails with strings like
+<emptynode></emptynode>
+
+I needed to use dom instead of simplexml to bypass this problem and work with
+any kind of xml strings.
+===============================================================================
+
+"simplexml_load_string() : Entity: line #: parser error : Comment not
+terminated"
+
+On the off chance you see this error and you're pulling your hair out over it,
+simplexml can't seem to correctly parse XML comment tags if the comment
+contains "--".
+
+Is silly and likely won't happen very often -- but sometimes it does. ;-)
+===============================================================================
+
+please note that:
+
+<?
+$data_array = (array) simplexml_load_string($xml_string);
+?>
+
+will only convert the root element to an array, where as the child elements
+remain XML objects.
+
+To prove this, try returning a value N objects deep by association.  Then try
+the same exercise using something like the object2array example below. (Which
+works great).
+===============================================================================
+
+Simplexml's simplicity can be deceptive.  Simplexml elements behave either as
+objects or strings, depending on the context in which they're used (through
+overloading of the __toString() method, I assume).  Statements implying
+conversion to string treat them as strings, while assignment operations treat
+them as objects.  This can lead to unexpected behavior if, for example, you are
+trying to compare the values of two Simplexml elements.  The expected syntax
+will not work.  To force conversion to strings, just "typecast' whatever
+Simplexml element you're using.  For example:
+
+<?php
+$s = simplexml_load_string('<foo>43</foo> <bar>43</bar>');
+
+// Evaluates to false by comparing object IDs instead of strings
+($s->foo == $s->bar);
+
+// Evaluates to true
+((string)$s->foo == (string)$s->bar);
+?>
+
+[Ed. Note: Changed from quotes to casts because casts provide a quicker and
+more explicit conversion than do double quotes.]
+===============================================================================
+
+simplexml doesn't appear to like long attributes. I have tried passing it a
+valid xhtml document but the url in the anchor tag was causing simplexml to
+generate an error.
+===============================================================================
+
+While you can't add new elements to a SimpleXML object you can however add new
+attributes
+<?php
+$string = '<doc channel="chat"><test1>Hello</test1></doc>';
+$xml = simplexml_load_string($string);
+$xml->test1['sub'] = 'No';
+echo $xml->asXML();
+?>
+
+Will return output
+<doc channel="chat"><test1 sub="No">Hello</test1></doc>

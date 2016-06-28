@@ -1,0 +1,265 @@
+
+imagecreatefromwbmp
+
+(PHP 4 >= 4.0.1, PHP 5, PHP 7)
+
+imagecreatefromwbmp — 由文件或 URL 创建一个新图象。
+
+说明
+
+resource imagecreatefromwbmp ( string $filename )
+
+imagecreatefromwbmp() 返回一图像标识符，代表了从给定的文件名取得的图像。
+
+Tip
+
+如已启用fopen 包装器，在此函数中， URL 可作为文件名。关于如何指定文件名详见 
+fopen()。各种 wapper 的不同功能请参见支持的协议和封装协议，注意其用法及其可提供
+的预定义变量。
+
+参数
+
+filename
+
+    WBMP 图像的路径。
+
+返回值
+
+成功后返回图象资源,失败后返回 FALSE 。
+
+范例
+
+Example #1 处理创建 WBMP 过程中的错误
+
+<?php
+function LoadWBMP($imgname)
+{
+    /* Attempt to open */
+    $im = @imagecreatefromwbmp($imgname);
+
+    /* See if it failed */
+    if(!$im)
+    {
+        /* Create a blank image */
+        $im  = imagecreatetruecolor(150, 30);
+        $bgc = imagecolorallocate($im, 255, 255, 255);
+        $tc  = imagecolorallocate($im, 0, 0, 0);
+
+        imagefilledrectangle($im, 0, 0, 150, 30, $bgc);
+
+        /* Output an error message */
+        imagestring($im, 1, 5, 5, 'Error loading ' . $imgname, $tc);
+    }
+
+    return $im;
+}
+
+header('Content-Type: image/vnd.wap.wbmp');
+
+$img = LoadWBMP('bogus.image');
+
+imagewbmp($img);
+imagedestroy($img);
+?>
+
+注释
+
+    Note: WBMP 支持仅在 PHP 与 GD-1.8 或更高版本一起编译时可用。
+
+Warning
+
+Windows 版本的 PHP 在 4.3.0 版之前不支持通过此函数访问远程文件，即使已经启用
+allow_url_fopen.
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+WBMP images are Wireless Bitmaps, not Windows Bitmaps. WBMP is used for
+bandwidth constrained, black and white, limited devices such as PDAs and Cell
+Phones.
+===============================================================================
+
+.bmp is just hex encoded RGB values.
+All you need to do is open in binary mode and seperate the header from the
+body.
+Decode the width and height from the header.
+Then create the image pixel by pixel from the RGB values in the body.
+
+function imagecreatefrombmp( $filename )
+{
+    $file = fopen( $filename, "rb" );
+    $read = fread( $file, 10 );
+    while( !feof( $file ) && $read != "" )
+    {
+        $read .= fread( $file, 1024 );
+    }
+    $temp = unpack( "H*", $read );
+    $hex = $temp[1];
+    $header = substr( $hex, 0, 104 );
+    $body = str_split( substr( $hex, 108 ), 6 );
+    if( substr( $header, 0, 4 ) == "424d" )
+    {
+        $header = substr( $header, 4 );
+        // Remove some stuff?
+        $header = substr( $header, 32 );
+        // Get the width
+        $width = hexdec( substr( $header, 0, 2 ) );
+        // Remove some stuff?
+        $header = substr( $header, 8 );
+        // Get the height
+        $height = hexdec( substr( $header, 0, 2 ) );
+        unset( $header );
+    }
+    $x = 0;
+    $y = 1;
+    $image = imagecreatetruecolor( $width, $height );
+    foreach( $body as $rgb )
+    {
+        $r = hexdec( substr( $rgb, 4, 2 ) );
+        $g = hexdec( substr( $rgb, 2, 2 ) );
+        $b = hexdec( substr( $rgb, 0, 2 ) );
+        $color = imagecolorallocate( $image, $r, $g, $b );
+        imagesetpixel( $image, $x, $height-$y, $color );
+        $x++;
+        if( $x >= $width )
+        {
+            $x = 0;
+            $y++;
+        }
+    }
+    return $image;
+}
+===============================================================================
+
+AeroX created a nice example, but it only works at specific imagesizes because
+bmp uses fully 32-bit lines. To prevent failures (different colors,
+pixel-shifting per line), the solution is to skip the padding, inserted after
+color-pixels on the line. His implementation did cutting the padding into the
+image-data, causing wrong colors, pixel-shifting per line and also an large
+memory-consumption.
+
+I improved this script to the next implementation. The readability of a image
+is checked by a other function, so it doesn't take part in this script.
+Suggestions? Please let me know.
+
+<?php
+    public function imagecreatefrombmp($p_sFile)
+    {
+        //    Load the image into a string
+        $file    =    fopen($p_sFile,"rb");
+        $read    =    fread($file,10);
+        while(!feof($file)&&($read<>""))
+            $read    .=    fread($file,1024);
+       
+        $temp    =    unpack("H*",$read);
+        $hex    =    $temp[1];
+        $header    =    substr($hex,0,108);
+       
+        //    Process the header
+        //    Structure: http://www.fastgraph.com/help/bmp_header_format.html
+        if (substr($header,0,4)=="424d")
+        {
+            //    Cut it in parts of 2 bytes
+            $header_parts    =    str_split($header,2);
+           
+            //    Get the width        4 bytes
+            $width            =    hexdec($header_parts[19].$header_parts[18]);
+           
+            //    Get the height        4 bytes
+            $height            =    hexdec($header_parts[23].$header_parts[22
+]);
+           
+            //    Unset the header params
+            unset($header_parts);
+        }
+       
+        //    Define starting X and Y
+        $x                =    0;
+        $y                =    1;
+       
+        //    Create newimage
+        $image            =    imagecreatetruecolor($width,$height);
+       
+        //    Grab the body from the image
+        $body            =    substr($hex,108);
+
+        //    Calculate if padding at the end-line is needed
+        //    Divided by two to keep overview.
+        //    1 byte = 2 HEX-chars
+        $body_size        =    (strlen($body)/2);
+        $header_size    =    ($width*$height);
+
+        //    Use end-line padding? Only when needed
+        $usePadding        =    ($body_size>($header_size*3)+4);
+       
+        //    Using a for-loop with index-calculation instaid of str_split to
+avoid large memory consumption
+        //    Calculate the next DWORD-position in the body
+        for ($i=0;$i<$body_size;$i+=3)
+        {
+            //    Calculate line-ending and padding
+            if ($x>=$width)
+            {
+                //    If padding needed, ignore image-padding
+                //    Shift i to the ending of the current 32-bit-block
+                if ($usePadding)
+                    $i    +=    $width%4;
+               
+                //    Reset horizontal position
+                $x    =    0;
+               
+                //    Raise the height-position (bottom-up)
+                $y++;
+               
+                //    Reached the image-height? Break the for-loop
+                if ($y>$height)
+                    break;
+            }
+           
+            //    Calculation of the RGB-pixel (defined as BGR in image-data)
+            //    Define $i_pos as absolute position in the body
+            $i_pos    =    $i*2;
+            $r        =    hexdec($body[$i_pos+4].$body[$i_pos+5]);
+            $g        =    hexdec($body[$i_pos+2].$body[$i_pos+3]);
+            $b        =    hexdec($body[$i_pos].$body[$i_pos+1]);
+           
+            //    Calculate and draw the pixel
+            $color    =    imagecolorallocate($image,$r,$g,$b);
+            imagesetpixel($image,$x,$height-$y,$color);
+           
+            //    Raise the horizontal position
+            $x++;
+        }
+       
+        //    Unset the body / free the memory
+        unset($body);
+       
+        //    Return image-object
+        return $image;
+    }
+?>
+===============================================================================
+
+To get the horizontal and vertical resolution you could add some lines to the
+previous code of alexander. BMP stores the resolution in pixels per meter. To
+get it as pixels per inch (dpi) you have to multiply the value by 0.0254.
+
+<?php
+    public function imagecreatefrombmp($p_sFile)
+    {
+            // ...
+            // ... insert after the lines where you get width and height...
+
+            //    Get the horz. resolution in pixel per meter, 4 bytes
+            $dpix = hexdec($header_parts[39]. $header_parts[38]) * 0.0254;
+           
+            //    Get the vert. resolution in pixel per meter, 4 bytes
+            $dpiy = hexdec($header_parts[43]. $header_parts[42]) * 0.0254;
+
+            // ... rest of the code...
+
+            return ($image, $dpix, $dpiy);
+    }          
+?>

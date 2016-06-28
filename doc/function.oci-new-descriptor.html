@@ -1,0 +1,482 @@
+
+oci_new_descriptor
+
+(PHP 5, PHP 7, PECL OCI8 >= 1.1.0)
+
+oci_new_descriptor — 初始化一个新的空 LOB 或 FILE 描述符
+
+说明
+
+OCI-Lob oci_new_descriptor ( resource $connection [, int $type ] )
+
+oci_new_descriptor() 分配资源以保存描述符或 LOB 定位器。有效的 type 值是：
+OCI_D_FILE，OCI_D_LOB 以及 OCI_D_ROWID。
+
+Example #1 oci_new_descriptor() 例子
+
+<?php
+    /* This script is designed to be called from a HTML form.
+     * It expects $user, $password, $table, $where, and $commitsize
+     * to be passed in from the form.  The script then deletes
+     * the selected rows using the ROWID and commits after each
+     * set of $commitsize rows. (Use with care, there is no rollback)
+     */
+    $conn = oci_connect($user, $password);
+    $stmt = oci_parse($conn, "select rowid from $table $where");
+    $rowid = oci_new_descriptor($conn, OCI_D_ROWID);
+    oci_define_by_name($stmt, "ROWID", $rowid);
+    oci_execute($stmt);
+    while (oci_fetch($stmt)) {
+       $nrows = oci_num_rows($stmt);
+       $delete = oci_parse($conn, "delete from $table where ROWID = :rid");
+       oci_bind_by_name($delete, ":rid", $rowid, -1, OCI_B_ROWID);
+       oci_execute($delete);
+       echo "$nrows\n";
+       if (($nrows % $commitsize) == 0) {
+           oci_commit($conn);
+       }
+    }
+    $nrows = oci_num_rows($stmt);
+    echo "$nrows deleted...\n";
+    oci_free_statement($stmt);
+    oci_close($conn);
+?>
+<?php
+    /* This script demonstrates file upload to LOB columns
+     * The formfield used for this example looks like this
+     * <form action="upload.php" method="post" enctype="multipart/form-data">
+     * <input type="file" name="lob_upload" />
+     * ...
+     */
+  if (!isset($lob_upload) || $lob_upload == 'none'){
+?>
+<form action="upload.php" method="post" enctype="multipart/form-data">
+Upload file: <input type="file" name="lob_upload" /><br />
+<input type="submit" value="Upload" /> - <input type="reset" value="Reset" />
+</form>
+<?php
+  } else {
+
+     // $lob_upload contains the temporary filename of the uploaded file
+
+     // see also the features section on file upload,
+     // if you would like to use secure uploads
+
+     $conn = oci_connect($user, $password);
+     $lob = oci_new_descriptor($conn, OCI_D_LOB);
+     $stmt = oci_parse($conn, "insert into $table (id, the_blob)
+               values(my_seq.NEXTVAL, EMPTY_BLOB())
+ returning the_blob into :the_blob");
+     oci_bind_by_name($stmt, ':the_blob', $lob, -1, OCI_B_BLOB);
+     oci_execute($stmt, OCI_DEFAULT);
+     if ($lob->savefile($lob_upload)){
+        oci_commit($conn);
+        echo "Blob successfully uploaded\n";
+     }else{
+        echo "Couldn't upload Blob\n";
+     }
+     oci_free_descriptor($lob);
+     oci_free_statement($stmt);
+     oci_close($conn);
+  }
+?>
+
+Example #2 oci_new_descriptor() 例子
+
+<?php
+    /* Calling PL/SQL stored procedures which contain clobs as input
+     * parameters (PHP 4 >= 4.0.6).
+     * Example PL/SQL stored procedure signature is:
+     *
+     * PROCEDURE save_data
+     *   Argument Name                  Type                    In/Out Default?
+     *   ------------------------------ ----------------------- ------ --------
+     *   KEY                            NUMBER(38)              IN
+     *   DATA                           CLOB                    IN
+     *
+     */
+
+    $conn = oci_connect($user, $password);
+    $stmt = oci_parse($conn, "begin save_data(:key, :data); end;");
+    $clob = oci_new_descriptor($conn, OCI_D_LOB);
+    oci_bind_by_name($stmt, ':key', $key);
+    oci_bind_by_name($stmt, ':data', $clob, -1, OCI_B_CLOB);
+    $clob->write($data);
+    oci_execute($stmt, OCI_DEFAULT);
+    oci_commit($conn);
+    $clob->free();
+    oci_free_statement($stmt);
+?>
+
+oci_new_descriptor() 如果出错返回 FALSE。
+
+    Note:
+
+    在 PHP 5.0.0 之前的版本必须使用 ocinewdescriptor() 替代本函数。该函数名仍然
+    可用，为向下兼容作为 oci_new_descriptor() 的别名。不过其已被废弃，不推荐使
+    用。
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+<?php
+// calling stored procedure to get clob data type (we use to get xml from
+oracle)
+
+error_reporting(E_ALL ^ E_NOTICE);
+
+$conn = oci_connect($user, $password);
+       
+$sql = "BEGIN sp_employee_xml_data_select(:result); END;";
+$stmt = oci_parse($conn , $sql);
+
+$objClob = oci_new_descriptor($conn, OCI_D_LOB);
+oci_bind_by_name($stmt, ':result', $objClob, -1, OCI_B_CLOB);
+
+oci_execute($stmt, OCI_DEFAULT);
+$xmlData = $objClob->load($result);
+
+$objClob->free();
+oci_free_statement($stmt);
+
+echo $xmlData;
+
+?>
+===============================================================================
+
+Here is an example of retrieving a CLOB as an output parameter from a stored
+procedure. This is a bit hack-y and maybe there's a cleaner way to do this, but
+I couldn't find one. The following definitely works with Oracle 9:
+
+// the query to call the procedure, which includes declaring the
+// output parameter and assigning the result to a variable to be bound.
+$qry = '
+declare clob_out clob;
+begin
+  myprocedure(someparam_in, clob_out);
+  :myclob := clob_out;
+end;
+';
+
+// parse the query and bind the 'myclob' variable
+$sth = OCIParse($conn,$qry);
+$myclob = OCINewDescriptor($conn,OCI_D_LOB);
+OCIBindByName($sth,":myclob",$myclob,-1,OCI_B_CLOB);
+
+OCIExecute($sth);
+
+// display the results
+echo $myclob->load();
+===============================================================================
+
+I had the same problem with updating the lobs with shorter content as in one of
+the notes above. The addition of "\0" at the end of the replacement text didn't
+help either. But the following worked perfectly:
+
+$sql = "UPDATE sometable SET lob_col = EMPTY_LOB() WHERE key_col = $key
+RETURNING lob_col INTO :lob";
+$stmt = OCIParse($conn,$sql);
+$lob = OCINewDescriptor($conn,OCI_D_LOB);
+OCIBindByName($stmt,':lob',&$lob,-1,OCI_B_BLOB);
+OCIExecute($stmt,OCI_DEFAULT);
+$lob->save($sometext);
+$lob->free();
+===============================================================================
+
+another way to display your clob details !
+
+    $query = "select * from Your_clob_table";
+    $stmt = OCIParse($conn, $query);
+    ociexecute($stmt);
+       
+        while ( OCIFetch($stmt))
+        {
+         $lob = OCIResult($stmt,"CLOB_MESSAGE");
+         $CLOB_MESSAGE = $lob->load();
+         echo $CLOB_MESSAGE;
+        }
+
+this works,
+===============================================================================
+
+How to insert big XML data as CLOB into table with XMLType field.
+
+<?php
+
+//CREATE TABLE sometable(
+//id number(8) not null,
+//record XMLType
+//) XMLTYPE COLUMN record STORE AS OBJECT RELATIONAL
+//XMLSCHEMA "someschema" ELEMENT "some_element";
+//
+
+$sql = "INSERT INTO sometable(id, record) VALUES(some_sequqnce.nextval,
+sys.xmltype.createxml(:rec)) RETURNING ID INTO :rid";
+$stmt = OCIParse($ora_conn,$sql);
+$clob = OCINewDescriptor($ora_conn, OCI_D_LOB);
+$rowid = OCINewDescriptor($ora_conn,OCI_D_ROWID);
+OCIBindByName($stmt, ':rec', &$clob, -1,OCI_B_CLOB);
+OCIBindByName($stmt, ':rid', $rowid, -1);
+$clob->WriteTemporary($xml,OCI_TEMP_CLOB);
+$success = OCIExecute($stmt,OCI_DEFAULT);
+if(!$success) {
+OCICommit($ora_conn);
+}
+OCIFreeStatement($stmt);
+OCIFreeDesc($lob);
+
+?>
+
+I hope it will help :)
+===============================================================================
+
+If you're passing a clob variable to oracle stored procedure, you could:
+
+<?php
+$qry = 'begin my_sp(:largetext); end;';
+$stmt = oci_parse($conn, $qry); //definition of $conn is not included here
+$clob = oci_new_descriptor($conn, OCI_D_LOB);
+oci_bind_by_name($stmt, ":largetext", $clob, -1, OCI_B_CLOB);
+$clob->writetemporary($mylargedata);
+oci_execute($stmt);
+$clob->free();
+oci_free_statement($stmt);
+?>
+
+Hopefully this will help!
+===============================================================================
+
+Passing CLOB to stored procedure and retrieve CLOB too (function lobinout(a in
+clob) return clob)
+
+<?
+    error_reporting(1+2+4+8);
+    $conn = OCILogon('batdtd', 'batdtd', 'batxml');
+   
+    $lobin = OCINewDescriptor($conn, OCI_D_LOB);
+    $lobout = OCINewDescriptor($conn, OCI_D_LOB);
+   
+    $stmt = OCIParse($conn, "declare rs clob; begin :rs := lobinout(:par); end;
+");
+    $lob_data = 'abcdefgh';
+   
+    echo "binding lobin...";
+    OCIBindByName($stmt, ':par', $lobin, -1, OCI_B_CLOB);
+   
+    echo "done<br>binding rs...";
+   
+    OCIBindByName($stmt, ':rs', $lobout, -1, OCI_B_CLOB);
+   
+    echo "done<br>writing temp lob...";
+             // here we pass data to func
+    $lobin -> WriteTemporary($lob_data);
+    echo "done<br>executing...";
+   
+    OCIExecute($stmt, OCI_DEFAULT);
+             // here we load data returned from func
+    echo "done<br>rs = ".$lobout->load();
+    OCICommit($conn);
+    $lobin -> free();
+    $lobout -> free();
+    OCIFreeStatement($stmt);
+    OCILogoff($conn);
+?>
+===============================================================================
+
+In PHP5 the way Example 2 passes a CLOB bind variable as an input
+parameter to a PL/SQL procedure can be extended to BLOBs.
+
+The critical change is:
+
+    OCIBindByName($stmt, ':data', $blob, -1, OCI_B_BLOB);
+    $blob->WriteTemporary($data, OCI_B_BLOB);
+
+This doesn't work for me in PHP4.  I believe it is because the
+implementation of OCIWriteTemporaryLob() always binds as a CLOB.
+(This is true as of php4-STABLE-200403170230).  In PHP5 the interface
+has changed and a type parameter is permitted.
+===============================================================================
+
+I found another method of inserting/updating lob data.  It works the same was
+as passing lob parameters to a stored procedure and avoids the need for a
+RETURNING clause.
+    $lob = OCINewDescriptor($conn, OCI_D_LOB);
+    $stmt = OCIParse($conn,"insert into $table (id, the_blob)
+               values(my_seq.NEXTVAL, :the_blob)");
+    OCIBindByName($stmt, ':the_blob', &$lob, -1, OCI_B_BLOB);
+    $lob->WriteTemporary($data);
+    OCIExecute($stmt, OCI_DEFAULT);
+    $lob->close();
+    $lob->free();
+    OCICommit($conn);
+
+There are some cases involving triggers where you can't use a RETURNING clause,
+so this method can come in handy.  The case where I needed it was updating a
+view that had an instead-of update trigger.
+===============================================================================
+
+Two examples of retrieving CLOBs from the database.  They are almost
+identical.  The first is using a package(and cursor) which is how I interface
+to Oracle at work, and the second is using straight SQL, which most people post
+examples in.
+
+I also convert the case from upper to lower, since that is how I prefer to work
+with assoc arrays...
+
+Instead of using the get_class() function you could use the OCIColumnType()
+function which (in this case) would return 'CLOB' as a result...
+
+/**
+* Example 1
+*
+* Using a PL/SQL package and cursor
+*
+*/
+$cursor=':p_cur';
+$sql2="begin clobPackage.getClob($cursor); end;";
+$curs=OCINewCursor($conn);
+$stmt=OCIParse($conn,$sql2);
+OCIBindByName($stmt,$cursor,&$curs,-1,OCI_B_CURSOR);
+OCIExecute($stmt,OCI_DEFAULT);
+OCIExecute($curs,OCI_DEFAULT);
+$x=0;
+while(OCIFetch($curs)){
+  $cols=OCINumCols($curs);
+  for($i=1;$i<=$cols;$i++){
+    $column_name=OCIColumnName($curs,$i);
+    if(is_object($tmp=OCIResult($curs,$i))&&get_class($tmp)=='OCI-Lob'){
+      $column_value=$tmp->load();
+    }else{
+      $column_value=$tmp;
+    }
+    $result[$x][strtolower($column_name)]=trim($column_value);
+  }
+  $x++;
+}
+OCICommit($conn);
+
+/**
+* Example 2
+*
+* Using a SELECT
+*
+*/
+$query="SELECT a_num, a_clob FROM clob_test";
+$stmt=OCIParse($conn,$query);
+OCIExecute($stmt,OCI_DEFAULT);
+$x=0;
+while(OCIFetch($stmt)){
+  $ncols=OCINumCols($stmt);
+  for($i=1;$i<=$ncols;$i++){
+    $column_name=OCIColumnName($stmt,$i);
+    if(is_object($tmp=OCIResult($curs,$i))&&get_class($tmp)=='OCI-Lob'){
+      $column_value=$tmp->load();
+    }else{
+      $column_value=$tmp;
+    }
+    $result[$x][strtolower($column_name)]=trim($column_value);
+  }
+  $x++;
+}
+OCICommit($conn);
+
+I hope someone finds this useful.
+
+Cheers,
+Keith.
+===============================================================================
+
+[Editor's note: don't use '&' for parameters in bind calls in PHP 5]
+
+The code up above is somewhat correct... here's an example of how I got a CLOB
+to work
+
+<?php
+function insert_adinfo($AdInfoID, $MagazineType, $Publish, $DatePost, $BodyText
+)
+{
+   global $db;
+
+    // Insert record into database
+    $clob = OCINewDescriptor($db, OCI_D_LOB);
+    $stmt = OCIParse($db,"insert into tblAdInfo values ($AdInfoID,             
+    $MagazineType, '$Publish', to_date('$DatePost', 'YYYY-MM-DD'),             
+    EMPTY_CLOB()) returning BodyText into :the_blob");
+    OCIBindByName($stmt, ':the_blob', &$clob, -1, OCI_B_CLOB);
+    OCIExecute($stmt, OCI_DEFAULT);
+    if($clob->save($BodyText)){
+        OCICommit($db);
+    }else{
+        echo "Problems: Couldn't upload Clob\n";
+    }
+  
+   OCIFreeDescriptor($clob);
+   OCIFreeStatement($stmt);
+}
+?>
+===============================================================================
+
+Just a note. When INSERTing a CLOB, if a VALUES clause is used, Oracle notes:
+You cannot initialize an internal LOB attribute in an object with a value other
+than empty or null. That is, you cannot use a literal.
+
+That's why all the examples here INSERT an EMPTY_CLOB(), and use RETURNING to
+grab the pointer.
+
+However, a CLOB can also be INSERTed via a SELECT statement, and that won't
+require any descriptors.
+
+Example:
+
+$Clob = Str_Replace("'", "''", $Clob);
+
+OCIParse($DB, "INSERT INTO My_Table (My_Clob) SELECT '$Clob' FROM Dual");
+
+This, of course, allows the use of a WHERE clause as well.
+===============================================================================
+
+To read a lob, other way:
+
+$sql = OCIParse("select * from table_with_lob_field");
+OCIExecute($sql, OCI_DEFAULT);
+while ( OCIFetch($sql)) {
+$o = ociresult($sql,"loc_field_name");
+$loc_field_name = $o->load();
+print $loc_field_name;
+};
+===============================================================================
+
+Here is another example of how to insert a BLOB into table using a PL/SQL
+function.
+
+Oracle Database Code:
+
+create table blob_table ( the_blob blob);
+
+create or replace function insert_blob(out_blob out blob)
+    return integer is
+    begin
+       insert into blob_table values (EMPTY_BLOB())
+         return the_blob into out_blob;
+       return 0; /* Success */
+    end insert_blob;
+
+PHP Code:
+
+<?php
+  $iResult = -1;
+  $strTestData = 'Testing 123';
+  $conn = oci_connect($user, $password);
+  $stmt = oci_parse($conn, "begin :RES := insert_blob(:OUT_BLOB); end;");
+
+  $objBlob = oci_new_descriptor($conn, OCI_D_LOB);
+  oci_bind_by_name($stmt, ":RES", $iResult);
+  oci_bind_by_name($stmt, ":OUT_BLOB", $objBlob, -1, OCI_B_BLOB);
+  oci_execute($stmt, OCI_DEFAULT);
+  $objBlob->write($strTestData);
+  oci_commit($conn);
+  $objBlob->free();
+  oci_free_statement($stmt);
+?>

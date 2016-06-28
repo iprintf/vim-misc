@@ -1,0 +1,266 @@
+
+mysql_set_charset
+
+(PHP 5 >= 5.2.3)
+
+mysql_set_charset — 设置客户端的字符集
+
+    本扩展自 PHP 5.5.0 起已废弃，并在将来会被移除。应使用 MySQLi 或 PDO_MySQL
+    扩展来替换之。参见 MySQL：选择 API 指南以及相关 FAQ 以获取更多信息。用以替
+    代本函数的有：
+
+      □ mysqli_character_set_name()
+      □ PDO: 添加 charset 到连接字符串，比如 charset=utf8
+
+说明
+
+bool mysql_set_charset ( string $charset [, resource $link_identifier = NULL ]
+)
+
+设置当前连接的默认字符集。
+
+参数
+
+charset
+
+    一个有效的字符集名称。
+
+link_identifier
+
+    MySQL 连接。如不指定连接标识，则使用由 mysql_connect() 最近打开的连接。如果
+    没有找到该连接，会尝试不带参数调用 mysql_connect() 来创建。如没有找到连接或
+    无法建立连接，则会生成 E_WARNING 级别的错误。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+    Note:
+
+    本函数需要 MySQL 5.0.7 或更高版本。
+
+    Note:
+
+    这是改变字符集的最佳方式。不推荐您使用 mysql_query() 来设置 (比如 SET NAMES
+    utf8)。更多信息参见 MySQL character set concepts 一节。
+
+参见
+
+  • mysql_client_encoding() - 返回字符集的名称
+  • Setting character sets in MySQL
+  • » List of character sets that MySQL supports
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+I needed to access the database from within one particular webhosting service.
+Pages are UTF-8 encoded and data received by forms should be inserted into
+database without changing the encoding. The database is also in UTF-8.
+
+Neither SET character set 'utf8' or SET names 'utf8' worked properly here, so
+this workaround made sure all variables are set to utf-8.
+
+<?php
+
+// ... (creating a connection to mysql) ...
+
+mysql_query("SET character_set_results = 'utf8', character_set_client = 'utf8',
+character_set_connection = 'utf8', character_set_database = 'utf8',
+character_set_server = 'utf8'", $conn);
+
+$re = mysql_query('SHOW VARIABLES LIKE "%character_set%";')or die(mysql_error
+());
+while ($r = mysql_fetch_assoc($re)) {var_dump ($r); echo "<br />";} exit;
+
+?>
+
+All important variables are now utf-8 and we can safely use INSERTs or SELECTs
+with mysql_escape_string($var) without any encoding functions.
+===============================================================================
+
+Here's an example of how to use this feature :
+
+I'm using  PHP 5.2.5 from http://oss.oracle.com/projects/php/
+
+I wanted to store arabic characters as UTF8 in the database and as suggested in
+many of the google results, I tried using
+
+mysql_query("SET NAMES 'utf8'");
+
+and
+
+mysql_query("SET CHARACTER SET utf8 ");
+
+but it did not work.
+
+Using the following, it worked flawlessly
+
+$link = mysql_connect('localhost', 'user', 'password');
+mysql_set_charset('utf8',$link);
+
+Once this is set we need not manually encode the text into utf using
+utf8_encode() or other functions. The arabic ( or any UTF8 supported ) text can
+be passed directly to the database and it is automatically converted by PHP.
+For eg.
+<?php
+$link = mysql_connect('localhost', 'user', 'password');
+mysql_set_charset('utf8',$link);
+$db_selected = mysql_select_db('emp_feedback', $link);
+if (!$db_selected) { die ('Database access error : ' . mysql_error());}
+$query = "INSERT INTO feedback ( EmpName, Message ) VALUES ('$_empName','
+$_message')";
+mysql_query($query) or die('Error, Feedback insert into database failed');
+?>
+Note that here $_empName is stored in English while $_message is in Arabic.
+===============================================================================
+
+I assume that this is an equivalent in previous versions of php (add some
+parameter validation and default values though!):
+<?
+if (!function_exists('mysql_set_charset')) {
+  function mysql_set_charset($charset,$dbh)
+  {
+    return mysql_query("set names $charset",$dbh);
+  }
+}
+?>
+===============================================================================
+
+Massage for nabeelmoidu at gmail dot com:
+
+For me works following code:
+
+$mysqli = mysqli_connect( ... );
+mysqli_query( $mysqli, 'SET NAMES "utf8" COLLATE "utf8_general_ci"' );
+
+or just:
+
+mysqli_set_charset( $mysqli, 'utf8' );
+
+Regards, good luck!
+===============================================================================
+
+I need to revoke most of my post below. What I found out afterwards is this:
+
+1. if you do not use mysql_set_char mysql will NOT do any translations and thus
+store a utf8-character-byte as is. If you then retrieve this byte from the db
+and output it in a utf8 page it will show just fine BUT if other apps query
+this byte (expecting to find a latin1 byte) they will go wrong.
+
+2. the 'bug' mentioned before only occurs if you use a ucase or lcase function
+in your statement (like: latin1_col = ucase('utf8 string')
+
+Hope this helps, Ronald
+===============================================================================
+
+Here's an improved version of Janez R.'s function:
+<?php
+if (function_exists('mysql_set_charset') === false) {
+    /**
+     * Sets the client character set.
+     *
+     * Note: This function requires MySQL 5.0.7 or later.
+     *
+     * @see http://www.php.net/mysql-set-charset
+     * @param string $charset A valid character set name
+     * @param resource $link_identifier The MySQL connection
+     * @return TRUE on success or FALSE on failure
+     */
+    function mysql_set_charset($charset, $link_identifier = null)
+    {
+        if ($link_identifier == null) {
+            return mysql_query('SET CHARACTER SET "'.$charset.'"');
+        } else {
+            return mysql_query('SET CHARACTER SET "'.$charset.'"', 
+$link_identifier);
+        }
+    }
+}
+?>
+===============================================================================
+
+I just hope that the text below will help someone who is struggling with
+charset encoding, specially when php-charset is different from the
+mysql-charset. Let me add that I really think that the php man-pages on the
+mysql-functions are lacking a lot of details on this important issues. Could
+someone add some useful text here?
+
+Here is my situation. PHP5.2.4, MySql 4.1.15. A php web-application fully utf-8
+encoded and a mysql database in latin1 charset.
+
+To make this work I had to:
+
+1. create and store all code files (php, html, inc, js, etc) in the utf-8
+charset. Your editor should have an option for this, if not dump it.
+
+2. check that your editor does not add a BOM (http://en.wikipedia.org/wiki/
+Byte-order_mark) at the beginning of the file. Use a hex-editor to detect them
+if needed.
+
+3. Set your apache environment to utf-8 by adding 'AddDefaultCharset utf-8' to
+your .htaccess. If you do not use apache add 'default_charset utf-8' to your
+php.ini. You have to do either of them (not both), php will use the apache
+setting where needed.
+
+4. Additionally add this meta-tag to your html-header: '<meta http-equiv=
+"Content-type" content="text/html; charset=UTF-8" />'. This will help silly
+browsers (Oeps, IE again?) that ignore the utf-response-header send to them.
+
+5. Check that the above line are listened to by check the 'page info' of your
+pages in firefox. It should show 2 (!!) utf-8 entries.
+
+======== all of the above sofar has nothing to do with mysql ;-) ======
+
+6. Do *NOT* (repeat NOT!) set the 'names' (set names *) or _ANY_ 'character
+set' (set character set *) (opposed to what they tell you on these pages).
+
+7. Check the previous item by listing the results of the mysql query 'SHOW
+session VARIABLES'. All char_sets here should say 'latin1', except for the
+system one which is always 'utf8'. All collations should say 'latin1_*'.
+Furthermore the php function mysql_client_encoding() should also return latin1
+(though I don't understand why; what does this value mean, I would think if php
+(being the client) is utf8 encoded this would be utf8?)
+
+8 Finally test the above by storing this string in your db and output it in
+your webpage: 'Iñtërnâtiônàlizætiøn and €'.
+
+Now what was interesting during testing and debugging of the above findings
+was:
+1. If I would run 'mysql_set_charset('utf8')' _OR_ 'mysql_query("SET NAMES
+'utf8'");' and then run a query in which I would have 'where char_column =
+'abc''it would die with 'Illegal mix of collations'
+
+2. If I would run 'mysql_query("SET character_set_client = 'utf8';");
+mysql_query("SET character_set_result = 'utf8';")' the query would work BUT the
+non-ascii-characters would show scrambled in the browser.
+
+3. BUT these 2 points above work just fine on my local dev-machine (php 5.2.3 &
+mysql 5.0.45)!!!!!!!!
+
+This draws me to these 3 conclusions:
+
+1. The Php-mysql-function library (5.2.+) does a fine job translating utf-8
+queries & results to/from latin1! It's better to let php handle this for you
+then to have mysql do this.
+
+2. Mysql (4.0.+) has 1 or more bugs (well, let's say unfinished features) that
+involve the charset-translations that are solved in 5.0.+.
+
+3. It is not well enough documented! (Otherwise I would have to write this)
+
+One last remark: clearly characters that exist in utf8 and not in latin1 (and
+vv.) will get lost during utf8-latin1-utf8 translation.
+
+If any of the above is not correct or not complete feel free to correct this!
+(Or better yet, add a chapter to the php manual :-)
+
+Cheers, Ronald
+===============================================================================
+
+Actually, this function is available in client libraries in MySQL 4.1.13 and
+newer, too.  So the real version requirement is MySQL >= 5.0.7 OR, if you're
+using MySQL 4, then >= 4.1.13.

@@ -1,0 +1,503 @@
+
+PDOStatement::bindParam
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.1.0)
+
+PDOStatement::bindParam — 绑定一个参数到指定的变量名
+
+说明
+
+bool PDOStatement::bindParam ( mixed $parameter , mixed &$variable [, int
+$data_type = PDO::PARAM_STR [, int $length [, mixed $driver_options ]]] )
+
+绑定一个PHP变量到用作预处理的SQL语句中的对应命名占位符或问号占位符。不同于 
+PDOStatement::bindValue() ，此变量作为引用被绑定，并只在 PDOStatement::execute
+() 被调用的时候才取其值。
+
+大多数参数是输入参数，即，参数以只读的方式用来建立查询。一些驱动支持调用存储过
+程并作为输出参数返回数据，一些支持作为输入/输出参数，既发送数据又接收更新后的数
+据。
+
+参数
+
+parameter
+
+    参数标识符。对于使用命名占位符的预处理语句，应是类似 :name 形式的参数名。对
+    于使用问号占位符的预处理语句，应是以1开始索引的参数位置。
+
+variable
+
+    绑定到 SQL 语句参数的 PHP 变量名。
+
+data_type
+
+    使用 PDO::PARAM_* 常量明确地指定参数的类型。要从一个存储过程中返回一个
+    INOUT 参数，需要为 data_type 参数使用按位或操作符去设置
+    PDO::PARAM_INPUT_OUTPUT 位。
+
+length
+
+    数据类型的长度。为表明参数是一个存储过程的 OUT 参数，必须明确地设置此长度。
+
+driver_options
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 执行一条使用命名占位符的预处理语句
+
+<?php
+/* 通过绑定的 PHP 变量执行一条预处理语句  */
+$calories = 150;
+$colour = 'red';
+$sth = $dbh->prepare('SELECT name, colour, calories
+    FROM fruit
+    WHERE calories < :calories AND colour = :colour');
+$sth->bindParam(':calories', $calories, PDO::PARAM_INT);
+$sth->bindParam(':colour', $colour, PDO::PARAM_STR, 12);
+$sth->execute();
+?>
+
+Example #2 执行一条使用问号占位符的预处理语句
+
+<?php
+/*  通过绑定的 PHP 变量执行一条预处理语句 */
+$calories = 150;
+$colour = 'red';
+$sth = $dbh->prepare('SELECT name, colour, calories
+    FROM fruit
+    WHERE calories < ? AND colour = ?');
+$sth->bindParam(1, $calories, PDO::PARAM_INT);
+$sth->bindParam(2, $colour, PDO::PARAM_STR, 12);
+$sth->execute();
+?>
+
+Example #3 使用 INOUT 参数调用一个存储过程
+
+<?php
+/* 使用 INOUT 参数调用一个存储过程 */
+$colour = 'red';
+$sth = $dbh->prepare('CALL puree_fruit(?)');
+$sth->bindParam(1, $colour, PDO::PARAM_STR|PDO::PARAM_INPUT_OUTPUT, 12);
+$sth->execute();
+print("After pureeing fruit, the colour is: $colour");
+?>
+
+参见
+
+  • PDO::prepare() - Prepares a statement for execution and returns a statement
+    object
+  • PDOStatement::execute() - 执行一条预处理语句
+  • PDOStatement::bindValue() - 把一个值绑定到一个参数
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+I know this has been said before but I'll write a note on it too because I
+think it's important to keep in mind:
+
+If you use PDO bindParam to do a search with a LIKE condition you cannot put
+the percentages and quotes to the param placeholder '%:keyword%'.
+
+This is WRONG:
+"SELECT * FROM `users` WHERE `firstname` LIKE '%:keyword%'";
+
+The CORRECT solution is to leave clean the placeholder like this:
+"SELECT * FROM `users` WHERE `firstname` LIKE :keyword";
+
+And then add the percentages to the php variable where you store the keyword:
+$keyword = "%".$keyword."%";
+
+And finally the quotes will be automatically added by PDO when executing the
+query so you don't have to worry about them.
+
+So the full example would be:
+<?php
+// Get the keyword from query string
+$keyword = $_GET['keyword'];
+// Prepare the command
+$sth = $dbh->prepare('SELECT * FROM `users` WHERE `firstname` LIKE :keyword');
+// Put the percentage sing on the keyword
+$keyword = "%".$keyword."%";
+// Bind the parameter
+$sth->bindParam(':keyword', $keyword, PDO::PARAM_STR);
+?>
+===============================================================================
+
+This works ($val by reference):
+<?php
+foreach ($params as $key => &$val) {
+    $sth->bindParam($key, $val);
+}
+?>
+
+This will fail ($val by value, because bindParam needs &$variable):
+<?php
+foreach ($params as $key => $val) {
+    $sth->bindParam($key, $val);
+}
+?>
+===============================================================================
+
+Note that when using PDOStatement::bindParam an integer is changed to a string
+value upon PDOStatement::execute(). (Tested with MySQL).
+
+This can cause problems when trying to compare values using the === operator.
+
+Example:
+<?php
+$active = 1;
+var_dump($active);
+$ps->bindParam(":active", $active, PDO::PARAM_INT);
+var_dump($active);
+$ps->execute();
+var_dump($active);
+if ($active === 1) {
+    // do something here
+    // note: this will fail since $active is now "1"
+}
+?>
+
+results in:
+int(1)
+int(1)
+string(1) "1"
+===============================================================================
+
+SQL Server 2008 R2
+
+If this was in the documentation, I didn't stumble across it. When using bound
+output parameters with a stored procedure, the output parameters are updated
+AFTER the LAST rowset has been processed.
+
+If your stored procedure does not return any rowsets (no SELECT statements)
+then you are set, your output parameters will be ready as soon as the stored
+procedure is processed.
+
+Otherwise you need to process the rows, and then:
+<?php $stmt->nextRowset(); ?>
+
+Once that is done for each returning rowset you will have access to the output
+parameters.
+===============================================================================
+
+Please note, that PDO format numbers according to current locale. So if, locale
+set number format to something else, that standard that query WILL NOT work
+properly.
+
+For example:
+in Polish locale (pl_PL) proper decimal separator is coma (","), so: 123,45,
+not 123.45. If we try bind 123.45 to the query, we will end up with coma in the
+query.
+
+<?php
+setlocale(LC_ALL, 'pl_PL');
+$sth = $dbh->prepare('SELECT name FROM products WHERE price < :price');
+$sth->bindParam(':price', 123.45, PDO::PARAM_STR);
+$sth->execute();
+// result:
+// SELECT name FROM products WHERE price < '123,45';
+?>
+===============================================================================
+
+There seems to be some confusion about whether you can bind a single value to
+multiple identical placeholders. For example:
+
+$sql = "SELECT * FROM user WHERE is_admin = :myValue AND is_deleted = :myValue
+";
+
+$params = array("myValue" => "0");
+
+Some users have reported that attempting to bind a single parameter to multiple
+placeholders yields a parameter mismatch error in PHP version 5.2.0 and
+earlier. Starting with version 5.2.1, however, this seems to work just fine.
+
+For details, see bug report 40417:
+http://bugs.php.net/bug.php?id=40417
+===============================================================================
+
+Note that with bindParam the second parameter is passed by reference. This
+means that the following will produce a warning if E_STRICT is enabled:
+
+<?php
+$stmt->bindParam('type', $object->getType());
+
+// Strict Standards: Only variables should be passed by reference in /path/to/
+file.php on line 123
+?>
+
+If the second parameter is not an actual variable, either set the result of
+$object->getType(); to a variable and use that variable in bindParam or use
+bindValue instead.
+===============================================================================
+
+A caution for those using bindParam() on a placeholder in a
+LIKE '%...%' clause, the following code will likely not work:
+
+<?php
+$q = "SELECT id, name FROM test WHERE name like '%:foo%'";
+$s = "carrot";
+$sth = $dbh->prepare($q);
+$sth->bindParam(':foo', $s);
+$sth->execute();
+?>
+
+What is needed is something like the following:
+
+<?php
+$s = "%$s%";
+$sth->bindParam(':foo', $s);
+?>
+
+This should work. Tested against mysql 4.1, PHP 5.1.3.
+===============================================================================
+
+MySQL will return an error if a named placeholder has a hyphen in it:
+UPDATE wardrobe SET `T-Shirt`=:T-SHIRT WHERE id=:id
+
+Will return the following error: PDOException' with message 'SQLSTATE[HY093]:
+Invalid parameter number: parameter was not defined'
+
+To resolve, just remove hyphens from named placeholders:
+UPDATE wardrobe SET `T-Shirt`=:TSHIRT WHERE id=:id
+===============================================================================
+
+/*
+   method for pdo class connection, you can add your cases by    yourself and
+use it.
+*/
+class Conn{
+....
+....
+private $stmt;
+public function bind($parameter, $value, $var_type = null){
+        if (is_null($var_type)) {
+            switch (true) {
+                               case is_bool($value):
+                    $var_type = PDO::PARAM_BOOL;
+                    break;
+                case is_int($value):
+                    $var_type = PDO::PARAM_INT;
+                    break;
+                case is_null($value):
+                    $var_type = PDO::PARAM_NULL;
+                    break;
+                default:
+                    $var_type = PDO::PARAM_STR;
+            }
+        }
+        $this->stmt->bindValue($parameter, $value, $var_type);
+    }
+===============================================================================
+
+Do not try to use the same named parameter twice in a single SQL statement, for
+example
+
+<?php
+$sql = 'SELECT * FROM some_table WHERE  some_value > :value OR some_value <
+:value';
+$stmt = $dbh->prepare($sql);
+$stmt->execute( array( ':value' => 3 ) );
+?>
+
+...this will return no rows and no error -- you must use each parameter once
+and only once. Apparently this is expected behavior (according to this bug
+report: http://bugs.php.net/bug.php?id=33886)  because of portability issues.
+===============================================================================
+
+Took me forever to find this elsewhere in the notes in the manual, so I'd
+thought I'd put this tidbit here to help others in the future.
+
+When using a LIKE search in MySQL along with a prepared statement, the *value*
+must have the appropriate parentheses attached before the bindParam() statement
+as such:
+
+<?php
+$dbc = $GLOBALS['dbc'];
+$sql = "SELECT * FROM `tbl_name` WHERE tbl_col LIKE ?";
+$stmt = $dbc->prepare($sql);
+
+$value = "%{$value}%";
+$stmt->bindParam($i, $value, PDO::PARAM_STR);
+?>
+
+Trying to use
+<?php
+$stmt->bindParam($i, "%{$value}%", PDO::PARAM_STR);
+?>
+
+will fail.
+===============================================================================
+
+Spent all day banging my head against a brick wall.
+
+Tried to use INOUT or OUT and getting the return variable into PHP using Mysql
+v5.5.16 on XAMPP.
+
+"MySQL doesn't supporting binding output parameters via its C API.  You must
+use SQL level variables:"
+
+<?php
+$stm = $db->prepare("CALL sp_mysp(:Name, :Email, @sp_result)");
+
+$outputArray = $db->query("select @sp_result")->fetch(PDO::FETCH_ASSOC);
+?>
+
+So the 'workaround' for Mysql and PDO is to use two SQL calls.
+
+Hope this helps someone.
+===============================================================================
+
+If you're using the MySQL driver and have a stored procedure with an OUT or
+INOUT parameter, you can't (currently) use bindValue(). See http://bugs.php.net
+/bug.php?id=35935 for a workaround.
+===============================================================================
+
+For those who are confused on insert query using PDO-bindparam:
+
+$sql = $db->prepare("INSERT INTO db_fruit (id, type, colour) VALUES (? ,? ,?)
+");
+
+$sql->bindParam(1, $newId);
+$sql->bindParam(2, $name);
+$sql->bindParam(3, $colour);
+$sql->execute();
+===============================================================================
+
+http://technet.microsoft.com/en-us/library/ff628166(v=sql.105).aspx
+
+When binding null data to server columns of type varbinary, binary, or
+varbinary(max) you should specify binary encoding (PDO::SQLSRV_ENCODING_BINARY)
+using the $driver_options. See Constants for more information about encoding
+constants.
+Support for PDO was added in version 2.0 of the Microsoft Drivers for PHP for
+SQL Server.
+
+<?php
+$db = new PDO('sqlsrv:server=SQLSERVERNAME;Database=own_exchange', 'user', 
+'password');
+$sql = "INSERT INTO dbo.files(file_name, file_source) VALUES(:file_name,
+:file_source)";
+$stmt = $db->prepare($sql);
+$stmt->bindParam(":file_name", $files->name, PDO::PARAM_STR);
+$stmt->bindParam(":file_source", file_get_contents($files->tempName), PDO::
+PARAM_LOB, 0, PDO::SQLSRV_ENCODING_BINARY);
+$stmt->execute();
+?>
+===============================================================================
+
+<?php
+/**
+* Bind bit value:
+*/
+
+$sql = 'SELECT * FROM myTable WHERE level & ?';
+$sth = \App::pdo()->prepare($sql);
+$sth->bindValue(1, 0b0101, \PDO::PARAM_INT);
+$sth->execute();
+$result = $sth->fetchAll(\PDO::FETCH_ASSOC);
+===============================================================================
+
+Avoid to use a param with dot like ":table.column".
+It will return a error 'PDOException' with message 'SQLSTATE[HY093]: Invalid
+parameter number: parameter was not defined' in ...
+===============================================================================
+
+The documentation says this about the length parameter for bindParam: 
+
+"To indicate that a parameter is an OUT parameter from a stored procedure, you
+must explicitly set the length. "
+
+For db2, I found that setting the length for the "INPUT_OUTPUT" parameters
+causes a problem for varchar parameters that are input parameters.  The problem
+I found is that the stored procedure was called, but varchar input parameters
+were set to null inside my stored procedure and as a result, the stored
+procedure could not work properly. 
+
+Here is the signature for my stored procedure:
+
+CREATE OR REPLACE PROCEDURE MY_SCHEMA_NAME.MY_STORED_PROCEDURE_NAME ( IN RUN_ID
+INTEGER,IN V_SCHEMA_NAME VARCHAR(128),
+  OUT out_rc INTEGER,OUT out_err_message VARCHAR(100),OUT out_sqlstate CHAR(5)
+,OUT out_sqlcode INT)
+
+Here is the php code that works:
+
+$command = "Call MY_SCHEMA_NAME.MY_STORED_PROCEDURE_NAME (?,?,?,?,?,?,?)";
+$stmt = $this->GuestDb->prepare($command);
+$stmt->bindParam(1, $RUN_ID, PDO::PARAM_INT);
+$stmt->bindParam(2, $V_SCHEMA_NAME, PDO::PARAM_STR);
+$stmt->bindParam(3, $V_TABNAME, PDO::PARAM_STR);
+$stmt->bindParam(4, $out_rc, PDO::PARAM_INT|PDO::PARAM_INPUT_OUTPUT);
+$stmt->bindParam(5, $out_err_message, PDO::PARAM_STR|PDO::PARAM_INPUT_OUTPUT);
+$stmt->bindParam(6, $out_sqlstate, PDO::PARAM_STR|PDO::PARAM_INPUT_OUTPUT);
+$stmt->bindParam(7, $out_sqlcode, PDO::PARAM_INT|PDO::PARAM_INPUT_OUTPUT);
+
+Here is the php code that does not work:
+
+$command = "Call MY_SCHEMA_NAME.MY_STORED_PROCEDURE_NAME (?,?,?,?,?,?,?)";
+$stmt = $this->GuestDb->prepare($command);
+$stmt->bindParam(1, $RUN_ID, PDO::PARAM_INT,12);
+$stmt->bindParam(2, $V_SCHEMA_NAME, PDO::PARAM_STR,128);
+$stmt->bindParam(3, $V_TABNAME, PDO::PARAM_STR,100);
+$stmt->bindParam(4, $out_rc, PDO::PARAM_INT|PDO::PARAM_INPUT_OUTPUT,12);
+$stmt->bindParam(5, $out_err_message, PDO::PARAM_STR|
+PDO::PARAM_INPUT_OUTPUT,100);
+$stmt->bindParam(6, $out_sqlstate, PDO::PARAM_STR|PDO::PARAM_INPUT_OUTPUT,6);
+$stmt->bindParam(7, $out_sqlcode, PDO::PARAM_INT|PDO::PARAM_INPUT_OUTPUT,12);
+===============================================================================
+
+if you are storing files (or binary data), using PARAM_LOB (and moreover trying
+to do this with Oracle), don't miss this page :
+
+http://php.net/manual/en/pdo.lobs.php
+
+You will there notice that PDO-PGSQL and PDO-OCI don't work the same at all :
+not the same argument nor the same behaviour.
+===============================================================================
+
+This confused me for some time because it is never explicitly mentioned, but
+PDO will automagically encapsulate parameters for you, so a prepared query that
+is manually escaped like so:
+
+"INSERT INTO table (column) VALUES (':value');"
+
+Will actually end up being double-quoted and can cause problems.
+===============================================================================
+
+Note that you cannot mix named and positional parameters in one query:
+
+<?php
+$stmt = $conn->prepare('SELECT * FROM employees WHERE name LIKE :name OR email
+LIKE ?');
+$name = 'John%';
+$email = 'john%';
+
+$stmt->bindParam(':name', $name);
+$stmt->bindParam(1, $email);
+
+$stmt->execute();
+?>
+
+Fatal error: Uncaught exception 'PDOException' with message 'SQLSTATE[HY093]:
+Invalid parameter number: mixed named and positional parameters' in ...
+
+Running PHP 5.3.2 on Linux x86-64
+===============================================================================
+
+Hi, i have an error when i use a reserved keyword in a bindparam() function. I
+use in a database field a the word 'unique' in some items, but when i send this
+query to mysql  returned me an null:
+"SELECT *
+FROM ItemsOptions
+WHERE option = unique"
+
+how can i use reserved keywords in a bindparam? i used escape special character
+such a `   but not woks.
+
+Thanks in advance

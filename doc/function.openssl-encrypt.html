@@ -1,0 +1,409 @@
+
+openssl_encrypt
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+openssl_encrypt — Encrypts data
+
+说明
+
+string openssl_encrypt ( string $data , string $method , string $password [, 
+int $options = 0 [, string $iv = "" ]] )
+
+Encrypts given data with given method and key, returns a raw or base64 encoded
+string
+
+参数
+
+data
+
+    The data.
+
+method
+
+    The cipher method. For a list of available cipher methods, use 
+    openssl_get_cipher_methods().
+
+password
+
+    The password.
+
+options
+
+    options is a bitwise disjunction of the flags OPENSSL_RAW_DATA and
+    OPENSSL_ZERO_PADDING.
+
+iv
+
+    A non-NULL Initialization Vector.
+
+返回值
+
+Returns the encrypted string on success 或者在失败时返回 FALSE.
+
+错误／异常
+
+Emits an E_WARNING level error if an unknown cipher algorithm is passed in via
+the method parameter.
+
+Emits an E_WARNING level error if an empty value is passed in via the iv
+parameter.
+
+更新日志
+
+版本                   说明
+5.3.3 The iv parameter was added.
+5.4.0 The raw_output was changed to options.
+
+参见
+
+  • openssl_decrypt() - Decrypts data
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Many users give up with handilng problem when openssl command line tool cant
+decrypt php openssl encrypted file which is encrypted with openssl_encrypt
+function.
+
+For example how beginner is encrypting data:
+
+<?php
+
+$string = 'It works ? Or not it works ?';
+$pass = '1234';
+$method = 'aes128';
+
+file_put_contents ('./file.encrypted', openssl_encrypt ($string, $method, $pass
+));
+
+?>
+
+And then how beginner is trying to decrypt data from command line:
+
+# openssl enc -aes-128-cbc -d -in file.encrypted -pass pass:123
+
+Or even if he/she determinates that openssl_encrypt output was base64 and
+tries:
+
+# openssl enc -aes-128-cbc -d -in file.encrypted -base64 -pass pass:123
+
+Or even if he determinates that base64 encoded file is represented in one line
+and tries:
+
+# openssl enc -aes-128-cbc -d -in file.encrypted -base64 -A -pass pass:123
+
+Or even if he determinates that IV is needed and adds some string iv as
+encryption function`s fourth parameter and than adds hex representation of iv
+as parameter in openssl command line :
+
+# openssl enc -aes-128-cbc -d -in file.encrypted -base64 -pass pass:123 -iv -iv
+31323334353637383132333435363738
+
+Or even if he determinates that aes-128 password must be 128 bits there fore 16
+bytes and sets $pass = '1234567812345678' and tries:
+
+# openssl enc -aes-128-cbc -d -in file.encrypted -base64 -pass
+pass:1234567812345678 -iv -iv 31323334353637383132333435363738
+
+All these troubles will have no result in any case.
+
+BECAUSE THE PASSWORD PARAMETER DOCUMENTED HERE IS NOT THE PASSWORD.
+
+It means that the password parameter of the function is not the same string
+used as [-pass pass:] parameter with openssl cmd tool for file encryption
+decryption.
+
+IT IS THE KEY !
+
+And now how to correctly encrypt data with php openssl_encrypt and how to
+correctly decrypt it from openssl command line tool.
+
+<?php
+
+    function strtohex($x)
+    {
+        $s='';
+        foreach (str_split($x) as $c) $s.=sprintf("%02X",ord($c));
+        return($s);
+    }
+   
+    $source = 'It works !';
+
+    $iv = "1234567812345678";
+    $pass = '1234567812345678';
+    $method = 'aes-128-cbc';
+
+    echo "\niv in hex to use: ".strtohex ($iv);
+    echo "\nkey in hex to use: ".strtohex ($pass);
+    echo "\n";
+
+    file_put_contents ('./file.encrypted',openssl_encrypt ($source, $method, 
+$pass, true, $iv));
+
+    $exec = "openssl enc -".$method." -d -in file.encrypted -nosalt -nopad -K "
+.strtohex($pass)." -iv ".strtohex($iv);
+
+    echo 'executing: '.$exec."\n\n";
+    echo exec ($exec);
+    echo "\n";
+
+?>
+
+IV and Key parameteres passed to openssl command line must be in hex
+representation of string.
+
+The correct command for decrypting is:
+
+# openssl enc -aes-128-cbc -d -in file.encrypted -nosalt -nopad -K
+31323334353637383132333435363738 -iv 31323334353637383132333435363738
+
+As it has no salt has no padding and by setting functions third parameter we
+have no more base64 encoded file to decode. The command will echo that it
+works...
+
+: /
+===============================================================================
+
+Beware of the padding this method adds !
+
+<?php
+$encryption_key = openssl_random_pseudo_bytes(32);
+$iv = openssl_random_pseudo_bytes(16);
+$data = openssl_random_pseudo_bytes(32);
+
+for ($i = 0; $i < 5; $i++) {
+$data = openssl_encrypt($data, 'aes-256-cbc', $encryption_key, OPENSSL_RAW_DATA
+, $iv);
+echo strlen($data) . "\n";
+}
+?>
+
+With this sample the output will be:
+48
+64
+80
+96
+112
+
+This is because our $data is already taking all the block size, so the method
+is adding a new block which will contain only padded bytes.
+
+The only solution that come to my mind to avoid this situation is to add the
+option OPENSSL_ZERO_PADDING along with the first one:
+<?php
+$data = openssl_encrypt($data, 'aes-256-cbc', $encryption_key, OPENSSL_RAW_DATA
+|OPENSSL_ZERO_PADDING, $iv);
+?>
+
+/!\ Be careful when using this option, be sure that you provide data that have
+already been padded or that takes already all the block size.
+===============================================================================
+
+Since the $options are not documented, I'm going to clarify what they mean here
+in the comments.  Behind the scenes, in the source code for /ext/openssl/
+openssl.c:
+
+    EVP_EncryptInit_ex(&cipher_ctx, NULL, NULL, key, (unsigned char *)iv);
+    if (options & OPENSSL_ZERO_PADDING) {
+        EVP_CIPHER_CTX_set_padding(&cipher_ctx, 0);
+    }
+
+And later:
+
+        if (options & OPENSSL_RAW_DATA) {
+            outbuf[outlen] = '\0';
+            RETVAL_STRINGL((char *)outbuf, outlen, 0);
+        } else {
+            int base64_str_len;
+            char *base64_str;
+
+            base64_str = (char*)php_base64_encode(outbuf, outlen, &
+base64_str_len);
+            efree(outbuf);
+            RETVAL_STRINGL(base64_str, base64_str_len, 0);
+        }
+
+So as we can see here, OPENSSL_ZERO_PADDING has a direct impact on the OpenSSL
+context.  EVP_CIPHER_CTX_set_padding() enables or disables padding (enabled by
+default).  So, OPENSSL_ZERO_PADDING disables padding for the context, which
+means that you will have to manually apply your own padding out to the block
+size.  Without using OPENSSL_ZERO_PADDING, you will automatically get PKCS#7
+padding.
+
+OPENSSL_RAW_DATA does not affect the OpenSSL context but has an impact on the
+format of the data returned to the caller.  When OPENSSL_RAW_DATA is specified,
+the returned data is returned as-is.  When it is not specified, Base64 encoded
+data is returned to the caller.
+
+Hope this saves someone a trip to the PHP source code to figure out what the
+$options do.  Pro developer tip:  Download and have a copy of the PHP source
+code locally so that, when the PHP documentation fails to live up to quality
+expectations, you can see what is actually happening behind the scenes.
+===============================================================================
+
+Just a couple of notes about the parameters:
+
+data - It is interpreted as a binary string
+method - Regular string, make sure you check openssl_get_cipher_methods() for a
+list of the ciphers available in your server*
+password - As biohazard mentioned before, this is actually THE KEY! It should
+be in hex format.
+options - As explained in the Parameters section
+iv - Initialization Vector. Different than biohazard mentioned before, this
+should be a BINARY string. You should check for your particular implementation.
+
+To verify the length/format of your IV, you can provide strings of different
+lengths and check the error log. For example, in PHP 5.5.9 (Ubuntu 14.04 LTS),
+providing a 32 byte hex string (which would represent a 16 byte binary IV)
+throws an error.
+"IV passed is 32 bytes long which is longer than the 16 expected by the
+selected cipher" (cipher chosen was 'aes-256-cbc' which uses an IV of 128 bits,
+its block size).
+Alternatively, you can use openssl_cipher_iv_length().
+
+From the security standpoint, make sure you understand whether your IV needs to
+be random, secret or encrypted. Many times the IV can be non-secret but it has
+to be a cryptographically secure random number. Make sure you generate it with
+an appropriate function like openssl_random_pseudo_bytes(), not mt_rand().
+
+*Note that the available cipher methods can differ between your dev server and
+your production server! They will depend on the installation and compilation
+options used for OpenSSL in your machine(s).
+===============================================================================
+
+The list of methods for this function can be obtained with
+openssl_get_cipher_methods();
+The password can be encrypted with the openssl_private/public_encrypt()
+===============================================================================
+
+PHP OpenSSL functions openssl_encrypt() and openssl_decrypt() seem to use PKCS5
+/7 style padding for all symmetric ciphers. Upon this, you can't use them to
+encrypt using null byte padding or to decrypt null byte padded data.
+
+The developers of the wrapper forgot the padding scheme flags... :(
+===============================================================================
+
+There's a lot of confusion plus some false guidance here on the openssl
+library.
+
+The basic tips are:
+
+aes-256-ctr is arguably the best choice for cipher algorithm as of 2016. This
+avoids potential security issues (so-called padding oracle attacks) and bloat
+from algorithms that pad data to a certain block size. aes-256-gcm is
+preferable, but not usable until the openssl library is enhanced, which is due
+in PHP 7.1
+
+Use different random data for the initialisation vector each time encryption is
+made with the same key. mcrypt_create_iv() is one choice for random data. AES
+uses 16 byte blocks, so you need 16 bytes for the iv.
+
+Join the iv data to the encrypted result and extract the iv data again when
+decrypting.
+
+Pass OPENSSL_RAW_DATA for the flags and encode the result if necessary after
+adding in the iv data.
+
+Hash the chosen encryption key (the password parameter) using openssl_digest()
+with a hash function such as sha256, and use the hashed value for the password
+parameter.
+
+There's a simple Cryptor class on GitHub called php-openssl-cryptor that
+demonstrates encryption/decryption and hashing with openssl, along with how to
+produce and consume the data in base64 and hex as well as binary. It should lay
+the foundations for better understanding and making effective use of openssl
+with PHP.
+
+Hopefully it will help anyone looking to get started with this powerful
+library.
+===============================================================================
+
+Contrary to some of the other comments here, I'm not certain that Password is
+indeed being improperly treated as the direct key.  I say this because I've
+been passing random text values into this parameter which would be invalid as
+hex input.  It seems to be hashing the password I provide, using what algorithm
+I do not know, because otherwise I'd expect it to throw an exception instead of
+working as expected.
+
+That said, I'm using openssl_decrypt() to decrypt data that was only encrypted
+with openssl_encrypt().  I've not had to try to decrypt data where I do know
+for certain what the direct key is to know if I have an issue with bad pad
+blocks or any other exceptions which would indicate a key mismatch.
+===============================================================================
+
+Might be useful to people trying to use 'aes-256-cbc' cipher (and probably
+other cbc ciphers) in collaboration with other implementations of AES (C libs
+for example) that the openssl extension has a strict implementation regarding
+padding bytes. I found the solution only by manually going through the openssl
+source.
+
+In C, you would want to pad plaintexts the following way (assuming all mem
+allocations are proper):
+
+nPadding = ( 16 - ( bufferSize % 16 ) ) ? ( 16 - ( bufferSize % 16 ) ) : 16;
+for( index = bufferSize; index < bufferSize + nPadding; index++ )
+{
+    plaintext[ index ] = (char)nPadding;
+}
+
+while decryptions are validated like:
+
+isSuccess = TRUE;
+for( index = bufferSize - 1; index > ( bufferSize - nPadding ); index-- )
+{
+    if( plaintext[ index ] != nPadding )
+    {
+        isSuccess = FALSE;
+        break;
+    }
+}
+decryptedSize = bufferSize - nPadding;
+
+In plain english, the buffer must be padded up to blockSize. If the buffer is
+already a multiple of blockSize, you add an entire new blockSize bytes as
+padding.
+
+The value of the padding bytes MUST be the number of padding bytes as a byte...
+
+So 5 bytes of padding will result in the following bytes added at the end of
+the ciphertext:
+[ 0x05 ][ 0x05 ][ 0x05 ][ 0x05 ][ 0x05 ]
+
+Hope this saves someone else a few hours of their life.
+===============================================================================
+
+Note, that if you don't specify the ...RAW_DATA  option, then you get a base64
+encoded result.  I lost a few hours because my PHP didn't have the
+OPENSSL_RAW_DATA constant, and after I'd carefully base64 encoded the result,
+it just wasn't decoding...
+===============================================================================
+
+Be advised there was a memory leak in this function: https://bugs.php.net/
+bug.php?id=54060.  I believe this got fixed in 5.3.6, but on production
+webservers running 5.3.5 with modest traffic, this became  a memory hemorrhage
+that brought my site down.  Look at mcrypt_encrypt instead.
+===============================================================================
+
+In 5.3.3 they added a new parameter, string $iv (initialization vector)
+Real parameters are:
+string openssl_encrypt ( string $data , string $method , string $password, bool
+$raw_output = false, string $iv )
+
+If $iv is missing, a warning is issued: "Using an empty Initialization Vector
+(iv) is potentially insecure and not recommended".
+
+If $iv is too short, another warning:
+"IV passed is only 3 bytes long, cipher expects an IV of precisely 8 bytes,
+padding with \0"
+
+same IV should be used in openssl_decrypt()
+===============================================================================
+
+For security reasons, if NOT  encrypting using a (cryptographically) random IV,
+then the IV itself must be entryptet as well ( this is not handled behind the
+scene).
+the reason is that it leads to predictable IV's, which then breaks semantic
+security. [this kind of attack can already be done on ssl/ TLS 1.1].

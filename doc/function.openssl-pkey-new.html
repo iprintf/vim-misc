@@ -1,0 +1,156 @@
+
+openssl_pkey_new
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+openssl_pkey_new — Generates a new private key
+
+说明
+
+resource openssl_pkey_new ([ array $configargs ] )
+
+openssl_pkey_new() generates a new private and public key pair. The public
+component of the key can be obtained using openssl_pkey_get_public().
+
+    Note: 必须安装有效的 openssl.cnf 以保证此函数正确运行。参考有关安装的说明以
+    获得更多信息。
+
+参数
+
+configargs
+
+    You can finetune the key generation (such as specifying the number of bits)
+    using configargs. See openssl_csr_new() for more information about
+    configargs.
+
+返回值
+
+Returns a resource identifier for the pkey on success, or FALSE on error.
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Working example:
+
+$config = array(
+    "digest_alg" => "sha512",
+    "private_key_bits" => 4096,
+    "private_key_type" => OPENSSL_KEYTYPE_RSA,
+);
+   
+// Create the private and public key
+$res = openssl_pkey_new($config);
+
+// Extract the private key from $res to $privKey
+openssl_pkey_export($res, $privKey);
+
+// Extract the public key from $res to $pubKey
+$pubKey = openssl_pkey_get_details($res);
+$pubKey = $pubKey["key"];
+
+$data = 'plaintext data goes here';
+
+// Encrypt the data to $encrypted using the public key
+openssl_public_encrypt($data, $encrypted, $pubKey);
+
+// Decrypt the data using the private key and store the results in $decrypted
+openssl_private_decrypt($encrypted, $decrypted, $privKey);
+
+echo $decrypted;
+===============================================================================
+
+It's easier than all that, if you just want the keys:
+
+<?php
+// Create the keypair
+$res=openssl_pkey_new();
+
+// Get private key
+openssl_pkey_export($res, $privkey);
+
+// Get public key
+$pubkey=openssl_pkey_get_details($res);
+$pubkey=$pubkey["key"];
+?>
+===============================================================================
+
+If you try and generate a new key using openssl_pkey_new(), and need to specify
+the size of the key, the key MUST be type-bound to integer
+
+// works
+$keysize = 1024;
+$ssl = openssl_pkey_new (array('private_key_bits' => $keysize));
+
+// fails
+$keysize = "1024";
+$ssl = openssl_pkey_new (array('private_key_bits' => $keysize));
+
+// works (force to int)
+$keysize = "1024";
+$ssl = openssl_pkey_new (array('private_key_bits' => (int)$keysize));
+===============================================================================
+
+If you want to change the default private key size (1024) too something else
+you can use the following code:
+
+<?php
+$config = array('private_key_bits' => 512);
+$privKey = openssl_pkey_new($config);
+
+?>
+
+Mind though that the minimum number of bits is 384. Any lower will trigger an
+error.
+===============================================================================
+
+As you probably found, getting the public key is not as direct as you might
+think with this documentation.
+
+You can easily get into messages like:
+
+Warning: openssl_pkey_get_public(): Don't know how to get public key from this
+private key (the documentation lied) in D:\www\keys.php on line 4
+
+The correct steps to get the whole thing seem to be these:
+
+<?
+$dn = array("countryName" => 'XX', "stateOrProvinceName" => 'State',
+"localityName" => 'SomewhereCity', "organizationName" => 'MySelf',
+"organizationalUnitName" => 'Whatever', "commonName" => 'mySelf',
+"emailAddress" => 'user@domain.com');
+$privkeypass = '1234';
+$numberofdays = 365;
+
+$privkey = openssl_pkey_new();
+$csr = openssl_csr_new($dn, $privkey);
+$sscert = openssl_csr_sign($csr, null, $privkey, $numberofdays);
+openssl_x509_export($sscert, $publickey);
+openssl_pkey_export($privkey, $privatekey, $privkeypass);
+openssl_csr_export($csr, $csrStr);
+
+echo $privatekey; // Will hold the exported PriKey
+echo $publickey;  // Will hold the exported PubKey
+echo $csrStr;     // Will hold the exported Certificate
+?>
+
+Now all you need to do is to make some research on each individual function.
+===============================================================================
+
+Getting the public key corresponding to a particular private key, through the
+methods provided for by OpenSSL, is a bit cumbersome. An easier way to do it is
+to use phpseclib, a pure PHP RSA implementation:
+
+<?php
+include('Crypt/RSA.php');
+
+$rsa = new Crypt_RSA();
+$rsa->loadKey('...');
+
+$privatekey = $rsa->getPrivateKey();
+$publickey = $rsa->getPublicKey();
+?>
+
+Doesn't require any extensions be installed.  It'll use bcmath or gmp if
+they're available, for speed, but doesn't even require those.

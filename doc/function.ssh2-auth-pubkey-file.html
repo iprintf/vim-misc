@@ -1,0 +1,368 @@
+
+ssh2_auth_pubkey_file
+
+(PECL ssh2 >= 0.9.0)
+
+ssh2_auth_pubkey_file — Authenticate using a public key
+
+说明
+
+bool ssh2_auth_pubkey_file ( resource $session , string $username , string
+$pubkeyfile , string $privkeyfile [, string $passphrase ] )
+
+Authenticate using a public key read from a file.
+
+参数
+
+session
+
+    An SSH connection link identifier, obtained from a call to ssh2_connect().
+
+username
+
+pubkeyfile
+
+    The public key file needs to be in OpenSSH's format. It should look
+    something like:
+
+    ssh-rsa AAAAB3NzaC1yc2EAAA....NX6sqSnHA8= rsa-key-20121110
+
+privkeyfile
+
+passphrase
+
+    If privkeyfile is encrypted (which it should be), the passphrase must be
+    provided.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Authentication using a public key
+
+<?php
+$connection = ssh2_connect('shell.example.com', 22, array('hostkey'=>'ssh-rsa'
+));
+
+if (ssh2_auth_pubkey_file($connection, 'username',
+                          '/home/username/.ssh/id_rsa.pub',
+                          '/home/username/.ssh/id_rsa', 'secret')) {
+  echo "Public Key Authentication Successful\n";
+} else {
+  die('Public Key Authentication Failed');
+}
+?>
+
+注释
+
+    Note:
+
+    The underlying libssh library doesn't support partial auths very cleanly
+    That is, if you need to supply both a public key and a password it will
+    appear as if this function has failed. In this particular case a failure
+    from this call may just mean that auth hasn't been completed yet. You would
+    need to ignore this failure and continue on and call ssh2_auth_password()
+    in order to complete authentication.
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+This function has a known bug (https://bugs.php.net/bug.php?id=58573) under
+some Linux installations: you can't encrypt your private key if you've compiled
+libssh2 using libgcrypt.  According to the bug page, the solution is to rebuild
+libssh2 with OpenSSL.  (Or don't encrypt your private key, but that seems
+irresponsible somehow.)
+
+This isn't a bug report -- the bug is apparently already being fixed -- but a
+note for others, because it took me at least an hour of Googling to realize the
+problem wasn't with my own code.
+===============================================================================
+
+Beware of the tilde (~) in the key file paths, as they will trigger the
+following warning (on a debug build):
+
+PHP Warning:  String is not zero-terminated (ZZZZZZZZZZZZZZZZZZ1wjj*=?<)
+(source: Zend/zend_execute.h:81) in Unknown on line 0
+
+although the authentication will suceed.
+
+<?php
+    $ssh_conn = ssh2_connect('test.host.com', 22, array('hostkey' => 'ssh-rsa'
+));
+    ssh2_auth_pubkey_file($ssh_conn, 'user', '~/.ssh/id_rsa.pub', '~/.ssh/
+id_rsa')
+?>
+
+The above code will throw the Warning.
+
+<?php
+    $ssh_conn = ssh2_connect('test.host.com', 22, array('hostkey' => 'ssh-rsa'
+));
+    ssh2_auth_pubkey_file($ssh_conn, 'user', '/home/user/.ssh/id_rsa.pub', '/
+home/user/.ssh/id_rsa')
+?>
+
+The above code won't.
+
+If you want to perform a dynamic replacement of the tilde, you can use
+posix_getpwuid (http://php.net/manual/en/function.posix-getpwuid.php)
+===============================================================================
+
+On my linux debian server running php communicating with another linux debian
+server I had problems getting rsa to work. dsa worked out of the box. I got it
+to work by doing the following in terminal
+
+* ssh-keygen -t rsa
+.... PUBFILE
+* ssh-keygen -f PUBFILE -e
+OUTPUT
+
+id_rsa.pub =
+ssh-rsa OUTPUT [COMMENT]
+===============================================================================
+
+Well, you have to format the publickey with the following command:
+
+# ssh-keygen -f id_rsa.pub -i
+Output: "ssh-rsa <YOURKEYDATA>"
+
+That worked fine for me.
+===============================================================================
+
+rsa keys may don't work, using dsa keys are more compatible
+
+Linux:
+ssh-keygen -t dsa
+cat ~/.ssh/id_dsa.pub >> ~/.ssh/authorized_keys
+chmod 700 ~/.ssh/
+chmod -R 600 ~/.ssh/*
+
+PHP:
+<?php
+    $methods = array(
+    'kex' => 'diffie-hellman-group1-sha1',
+    'hostkey' => 'ssh-dss',
+    'client_to_server' => array(
+    'crypt' => '3des-cbc',
+    'mac' => 'hmac-md5',
+    'comp' => 'none'),
+    'server_to_client' => array(
+    'crypt' => '3des-cbc',
+    'mac' => 'hmac-md5',
+    'comp' => 'none'));
+    $connect = ssh2_connect('127.0.0.1', 22, $methods);
+    if(ssh2_auth_pubkey_file($connect, 'username', '~/.ssh/id_dsa.pub', '~/.ssh
+/id_dsa'))
+    {
+        echo "Public Key Authentication Successful\n";
+    }
+    else
+    {
+        echo "Public Key Authentication Failed\n";
+    }
+?>
+===============================================================================
+
+I had an anoyiing problem with this function, everytime I tried to make it run
+it responds with an
+
+Authentication failed for <user> using public key
+
+but when I try directly to connect to the server using
+ssh <user>@<domain>
+Things works fine...
+
+After lots of intents I realize that local files were read protected from user
+apache (they were stored at /home/<user>/.ssh directory)
+
+So, if you also have this problem, just make a new directory into a place where
+apache can read and place there the keys.
+
+The whole thing I do is as follows (Linux & Apache both server and client):
+
+First I create a directory where apache can read
+
+mkdir ~/.newssh_keys
+chmod 777 ~/.newssh_keys
+
+(This is a security issue, so maybe you need to realize how to make it safer.)
+
+Then I create keys into local server choosing ~/.newssh_keys/id_dsa as the file
+to save the key:
+
+ssh-keygen -t dsa
+...
+Enter file in which to save the key (/home/<user>/.ssh/id_dsa): ~/.newssh_keys/
+id_dsa
+...
+
+Then I have to change permissions to private key
+(This is a security issue, so maybe you need to realize how to make it safer.)
+
+chmod 644 ~/.newssh_keys/id_dsa
+
+I copy the public key into the server's .ssh directory
+client$ scp id_dsa.pub <remoteuser>@<server_domain>:~/.ssh/
+
+and then I connect myself to the server using traditional ssh in order to
+append the public key at the end of authorized_keys2 file
+
+server$ cat ~/.ssh/id_dsa.pub >> ~/.ssh/authorized_keys2
+
+and remove the public key in order to be clean
+server$ rm ~/.ssh/id_dsa.pub
+
+Finally I use this code into my php script
+
+<?php
+// This in order to be sure apache can read public key
+// (remove this after debug)
+$pub_key = file_get_contents('~/.newssh_keys/id_dsa.pub');
+print "<pre>";
+var_export($pub_key);
+print "</pre>";
+
+// This in order to check private one
+// (remove this after debug)
+$prv_key = file_get_contents('~/.newssh_keys/id_dsa');
+print "<pre>";
+var_export($prv_key);
+print "</pre>";
+
+// Finally the connection code
+$connection = ssh2_connect('<server_domain>', 22, array('hostkey', 'ssh-dss'));
+if (ssh2_auth_pubkey_file($connection, '<server_user>',
+                          '~/.newssh_keys/id_dsa.pub',
+                          '~/.newssh_keys/id_dsa')) {
+  echo "Public Key Authentication Successful\n";
+} else {
+  echo "Public Key Authentication Failed";
+}
+?>
+===============================================================================
+
+Setting up public key authentication:
+
+1.  Login to the unix server you want to connect using putty.
+2.  mkdir .ssh (there is a dot before ssh)
+3.  cd .ssh
+4.  ssh-keygen -t rsa mykey
+5.  Enter passphrase as test
+6.  ls -al -> you will find two files mykey , mykey.pub
+7.  cat mykey.pub >>authorized_keys
+8.  cat mykey
+9.  Copy what you get on screen to notepad and save it as "c:\mykey" (within
+quotes)
+10.  cat mykey.pub
+11.  Copy what you get on screen to notepad and save it as "c:\mykey.pub"
+(within quotes)
+
+<?php
+
+function my_ssh_disconnect($reason, $message, $language)
+{
+  printf("Server disconnected with reason code [%d] and message: %s\n", $reason
+, $message);
+}
+
+//Open a connection forcing 3des-cbc when sending packets, any strength aes
+cipher when receiving packets, no compression in either direction, and Group1
+key exchange.
+$methods = array(
+  'kex' => 'diffie-hellman-group1-sha1',
+  'client_to_server' => array(
+   'crypt' => 'aes256-cbc',
+   'comp' => 'none',
+   'mac' => 'hmac-sha1'),
+  'server_to_client' => array(
+   'crypt' => 'aes256-cbc',
+   'comp' => 'none',
+   'mac' => 'hmac-sha1'));
+
+$callbacks = array('disconnect' => 'my_ssh_disconnect');
+
+      // Function to run a command on the unix server
+
+      function run_cmd($ssh_host, $user_name, $keyfilename, $ssh_command)
+      {
+          $connection = ssh2_connect($ssh_host, 22, $methods, $callbacks);
+          if (!$connection) die('Connection failed');
+          if (ssh2_auth_pubkey_file($connection, $user_name, $keyfilename.
+".pub", $keyfilename, 'test'))
+          {
+            echo "Public Key Authentication Successful as user: $user_name";
+          }
+          else
+          {
+            die('Public Key Authentication Failed');
+          }
+
+          $stream = ssh2_exec($connection, $ssh_command);
+          $i=0;
+          stream_set_blocking($stream, true);
+          $line = stream_get_line($stream, 1024, "\n");
+          while (!feof($stream))                                               
+                              
+          {
+                  echo $line.' ';
+                  $line = stream_get_line($stream, 1024, "\n");
+                  $i++;
+          } 
+          echo "Count : ".$i;
+          flush();
+          unset($stream); 
+      }
+
+      function my_ssh_disconnect($reason, $message, $language)
+      {
+            printf("Server disconnected with reason code [%d] and message: %s\
+n",
+            $reason, $message);
+      }
+
+      // Main Code
+
+      $user_name = "USERID";
+      $keydir = "c:\\";
+      $search_string = 'needle';
+      $keyfilename= $keydir.'mykey';
+      $ssh_host = "foo.bar.com";
+      $ssh_command = 'grep "'.$search_string.'" /haystack/*.log';
+      run_cmd($ssh_host, $user_name, $keyfilename, $ssh_command);
+
+      $ssh_command = 'ls -al';
+      run_cmd($ssh_host, $user_name, $keyfilename, $ssh_command);
+?>
+===============================================================================
+
+This is probably incredibly insecure but if you are in a closed environment,
+you can run it at your own risk.
+
+I was trying to get ssh access from server A to server B but server A was
+running apache as 'apache' and
+I needed files on server B that were owned by root. So I needed some way for
+the apache user to connect
+to server B as root.  Here's what I did (both servers running linux -
+specifically CentOS4):
+
+1. ssh-keygen -t rsa -f id_rsa  generate with no passphrase
+2. append the id_rsa.pub file to server B /root/.ssh/authorized_keys2
+3. copy the id_rsa and id_rsa.pub files to a directory like /var/www/.ssh/
+(happens to be apache's home dir on CentOS)
+4. chown -R apache.apache /var/www/.ssh
+
+Then you can connect like this:
+$connection = ssh2_connect($server,22,array('hostkey'=>'ssh-rsa'));
+if (ssh2_auth_pubkey_file($connection,'root',
+'/var/www/.ssh/id_rsa.pub',
+'/var/www/.ssh/id_rsa')) {
+echo "success!";
+}
+else
+{
+echo "no success :-(";
+}

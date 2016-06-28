@@ -1,0 +1,332 @@
+
+mysql_error
+
+(PHP 4, PHP 5)
+
+mysql_error — 返回上一个 MySQL 操作产生的文本错误信息
+
+说明
+
+string mysql_error ([ resource $link_identifier ] )
+
+返回上一个 MySQL 函数的错误文本，如果没有出错则返回 ''（空字符串）。如果没有指
+定连接资源号，则使用上一个成功打开的连接从 MySQL 服务器提取错误信息。
+
+从 MySQL 数据库后端来的错误不再发出警告，要用 mysql_error() 来提取错误文本。注
+意本函数仅返回最近一次 MySQL 函数的执行（不包括 mysql_error() 和 mysql_errno()
+）的错误文本，因此如果要使用此函数，确保在调用另一个 MySQL 函数之前检查它的值。
+
+Example #1 mysql_error 例子
+
+<?php
+    mysql_connect("localhost", "mysql_user", "mysql_password");
+
+    mysql_select_db("nonexistentdb");
+    echo mysql_errno() . ": " . mysql_error(). "\n";
+
+    mysql_select_db("kossu");
+    mysql_query("SELECT * FROM nonexistenttable");
+    echo mysql_errno() . ": " . mysql_error() . "\n";
+?>
+
+以上例子将产生如下输出：
+
+1049: Unknown database 'nonexistentdb'
+1146: Table 'kossu.nonexistenttable' doesn't exist
+
+参见 mysql_errno()。
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+Be aware that if you are using multiple MySQL connections you MUST support the
+link identifier to the mysql_error() function. Otherwise your error message
+will be blank.
+
+Just spent a good 30 minutes trying to figure out why i didn't see my SQL
+errors.
+===============================================================================
+
+some error can't handle. Example:
+
+ERROR 1044: Access denied for user: 'ituser@mail.ramon.intranet' to database
+'itcom'
+
+This error ocurrs when a intent of a sql insert of no authorized user. The
+results: mysql_errno = 0 and the mysql_error = "" .
+===============================================================================
+
+This is a big one - As of MySQL 4.1 and above, apparently, the way passwords
+are hashed has changed. PHP 4.x is not compatible with this change, though PHP
+5.0 is. I'm still using the 4.x series for various compatibility reasons, so
+when I set up MySQL 5.0.x on IIS 6.0 running PHP 4.4.4 I was surpised to get
+this error from mysql_error():
+
+MYSQL: Client does not support authentication protocol requested by server;
+consider upgrading MySQL client
+
+According to the MySQL site (http://dev.mysql.com/doc/refman/5.0/en/
+old-client.html) the best fix for this is to use the OLD_PASSWORD() function
+for your mysql DB user. You can reset it by issuing to MySQL:
+
+Set PASSWORD for 'user'@'host' = OLD_PASSWORD('password');
+
+This saved my hide.
+===============================================================================
+
+When creating large applications it's quite handy to create a custom function
+for handling queries. Just include this function in every script. And use
+db_query(in this example) instead of mysql_query.
+
+This example prompts an error in debugmode (variable $b_debugmode ). An e-mail
+with the error will be sent to the site operator otherwise.
+
+The script writes a log file in directory ( in this case /log ) as well.
+
+The system is vulnerable when database/query information is prompted to
+visitors. So be sure to hide this information for visitors anytime.
+
+Regars,
+
+Lennart Poot
+http://www.twing.nl
+
+<?php
+$b_debugmode = 1; // 0 || 1
+
+$system_operator_mail = 'developer@company.com';
+$system_from_mail = 'info@mywebsite.com';
+
+function db_query( $query ){
+  global $b_debugmode;
+ 
+  // Perform Query
+  $result = mysql_query($query);
+
+  // Check result
+  // This shows the actual query sent to MySQL, and the error. Useful for
+debugging.
+  if (!$result) {
+    if($b_debugmode){
+      $message  = '<b>Invalid query:</b><br>' . mysql_error() . '<br><br>';
+      $message .= '<b>Whole query:</b><br>' . $query . '<br><br>';
+      die($message);
+    }
+
+    raise_error('db_query_error: ' . $message);
+  }
+  return $result;
+}
+
+  function raise_error( $message ){
+    global $system_operator_mail, $system_from_mail;
+
+    $serror=
+    "Env:       " . $_SERVER['SERVER_NAME'] . "\r\n" .
+    "timestamp: " . Date('m/d/Y H:i:s') . "\r\n" .
+    "script:    " . $_SERVER['PHP_SELF'] . "\r\n" .
+    "error:     " . $message ."\r\n\r\n";
+
+    // open a log file and write error
+    $fhandle = fopen( '/logs/errors'.date('Ymd').'.txt', 'a' );
+    if($fhandle){
+      fwrite( $fhandle, $serror );
+      fclose(( $fhandle ));
+     }
+ 
+    // e-mail error to system operator
+    if(!$b_debugmode)
+      mail($system_operator_mail, 'error: '.$message, $serror, 'From: ' . 
+$system_from_mail );
+  }
+
+?>
+===============================================================================
+
+The following code returns two times the same error, even though I would have
+expected only one:
+
+   $ conn = mysql_connect ('localhost', 'root', '');
+   $ conn2 = mysql_connect ('localhost', 'root', '');
+ 
+   mysql_select_db ('db1', $ conn);
+   mysql_select_db ('db2', $ conn2);
+ 
+   $ result = mysql_query ("select 1 from dual", $ conn);
+   $ result2 = mysql_query ("select 1 from luad", $ conn2);
+ 
+   echo mysql_error ($ conn) "<hr>".
+   echo mysql_error ($ conn2) "<hr>".
+
+The reason for this is that mysql_connect not working as expected a further
+connection returns. Since the parameters are equal, a further reference to the
+previous link is returned. So also changes the second mysql_select_db the
+selected DB of $conn to 'db2'.
+
+If you change the connection parameters of the second connection to 127.0.0.1,
+a new connection is returned. In addition to the parameters new_link the
+mysql_connect() function to be forced.
+===============================================================================
+
+Using a manipulation of josh ><>'s function, I created the following. It's
+purpose is to use the DB to store errors. It handles both original query, as
+well as the error log. Included Larry Ullman's escape_data() as well since I
+use it in q().
+
+<?php
+function escape_data($data){
+global $dbc;
+if(ini_get('magic_quotes_gpc')){
+  $data=stripslashes($data);
+}
+return mysql_real_escape_string(trim($data),$dbc);
+}
+
+function q($page,$query){
+// $page
+$result = mysql_query($query);
+if (mysql_errno()) {
+  $error = "MySQL error ".mysql_errno().": ".mysql_error()."\n<br>When
+executing:<br>\n$query\n<br>";
+  $log = mysql_query("INSERT INTO db_errors (error_page,error_text) VALUES ('
+$page','".escape_data($error)."')");
+}
+}
+
+// Run the query using q()
+$query = "INSERT INTO names (first, last) VALUES ('myfirst', 'mylast'");
+$result = q("Sample Page Title",$query);
+?>
+===============================================================================
+
+If you want to display errors like "Access denied...", when mysql_error()
+returns "" and mysql_errno() returns 0, use  $php_errormsg. This Warning will
+be stored there.  You need to have track_errors set to true in your php.ini.
+
+Note. There is a bug in either documentation about error_reporting() or in
+mysql_error() function cause manual for mysql_error(), says:  "Errors coming
+back from the MySQL database backend no longer issue warnings." Which is not
+true.
+===============================================================================
+
+My suggested implementation of mysql_error():
+
+$result = mysql_query($query) or die("<b>A fatal MySQL error occured</b>.\n<br
+/>Query: " . $query . "<br />\nError: (" . mysql_errno() . ") " . mysql_error
+());
+
+This will print out something like...
+
+A fatal MySQL error occured.
+Query: SELECT * FROM table
+Error: (err_no) Bla bla bla, you did everything wrong
+
+It's very useful to see your query in order to detect problems with syntax.
+Most often, the output message from MySQL doesn't let you see enough of the
+query in the error message to let you see where your query went bad- it a
+missing quote, comma, or ( or ) could have occured well before the error was
+detected. I do -not- recomend using this procedure, however, for queries which
+execute on your site that are not user-specific as it has the potential to leak
+sensative data. Recomended use is just for debugging/building a script, and for
+general user-specific queries which would at the worst, leak the users own
+information to themself.
+
+Good luck,
+
+-Scott
+===============================================================================
+
+"Errors coming back from the MySQL database backend no longer issue warnings."
+Please note, you have an error/bug here. In fact, MySQL 5.1 with PHP 5.2:
+
+Warning: mysql_connect() [function.mysql-connect]: Unknown MySQL server host
+'locallllllhost' (11001)
+
+That's a warning, which is not trapped by mysql_error()!
+===============================================================================
+
+Following are error codes that may appear when you call MySQL from any host
+language:
+
+http://www.mysql.com/doc/en/Error-returns.html
+===============================================================================
+
+When dealing with user input, make sure that you use
+<?php
+echo htmlspecialchars (mysql_error ());
+?>
+instead of
+<?php
+echo mysql_error ();
+?>
+
+Otherwise it might be possible to crack into your system by submitting data
+that causes the SQL query to fail and that also contains javascript commands.
+
+Would it make sense to change the examples in the documentation for mysql_query
+() and for mysql_error () accordingly?
+===============================================================================
+
+A friend of mine proposed a great solution.
+
+<?php
+$old_track = ini_set('track_errors', '1');
+
+.....
+
+        if ($this->db_handle!=FALSE && $db_selection_status!=FALSE)
+            {
+            $this->connected=1;
+            ini_set('track_errors', $old_track);
+            }
+        else
+            {
+            $this->connected=-1;
+            $mysql_warning=$php_errormsg;
+            ini_set('track_errors', $old_track);
+            throw new mysql_cns_exception(1, $mysql_warning . " " . mysql_error
+());
+            }
+?>
+===============================================================================
+
+Oops, the code in my previous post only works for queries that don't return
+data (INSERT, UPDATE, DELETE, etc.), this updated function should work for all
+types of queries (using $result = myquery($query);):
+
+    function myquery ($query) {
+        $result = mysql_query($query);
+        if (mysql_errno())
+            echo "MySQL error ".mysql_errno().": ".mysql_error()."\n<br>When
+executing:<br>\n$query\n<br>";
+        return $result;
+    }
+===============================================================================
+
+My suggested implementation of mysql_error():
+
+$result = mysql_query($query) or die("<b>A fatal MySQL error occured</b>.\n<br
+/>Query: " . $query . "<br />\nError: (" . mysql_errno() . ") " . mysql_error
+());
+
+This will print out something like...
+
+<b>A fatal MySQL error occured</b>.
+Query: SELECT * FROM table
+Error: (err_no) Bla bla bla, you did everything wrong
+
+It's very useful to see your query in order to detect problems with syntax.
+Most often, the output message from MySQL doesn't let you see enough of the
+query in the error message to let you see where your query went bad- it a
+missing quote, comma, or ( or ) could have occured well before the error was
+detected. I do -not- recomend using this procedure, however, for queries which
+execute on your site that are not user-specific as it has the potential to leak
+sensative data. Recomended use is just for debugging/building a script, and for
+general user-specific queries which would at the worst, leak the users own
+information to themself.
+
+Good luck,
+
+-Scott

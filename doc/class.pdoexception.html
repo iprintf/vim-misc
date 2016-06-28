@@ -1,0 +1,283 @@
+
+PDOException 异常类
+
+(PHP 5 >= 5.1.0, PHP 7)
+
+简介
+
+代表一个由 PDO 产生的错误。在自己的代码不应抛出一个 PDOException 异常。关于 PHP
+异常的更多信息请参见异常。
+
+类摘要
+
+PDOException extends RuntimeException {
+/* 属性 */
+public array $errorInfo ;
+protected string $message ;
+protected string $code ;
+/* 继承的方法 */
+final public string Exception::getMessage ( void )
+final public Exception Exception::getPrevious ( void )
+final public int Exception::getCode ( void )
+final public string Exception::getFile ( void )
+final public int Exception::getLine ( void )
+final public array Exception::getTrace ( void )
+final public string Exception::getTraceAsString ( void )
+public string Exception::__toString ( void )
+final private void Exception::__clone ( void )
+}
+
+属性
+
+errorInfo
+
+    相当于PDO::errorInfo() 或 PDOStatement::errorInfo()
+
+message
+
+    文本错误信息。用 Exception::getMessage() 来访问。
+
+code
+
+    SQLSTATE 错误码。用Exception::getCode() 来访问。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Here is something interesting regarding a PDOException and it involves some of
+the annoyances that can be associated with PHP's dynamic nature.
+
+PDOException extends from RuntimeException, which in return extends from
+Exception. As such, it has access to the $code Protected Class Variable, which
+represents the Exception's code as an Integer (duh!) and can be accessed
+externally using the Exception::getCode Method.
+
+Here is the interesting part. PDOException actually redefines $code as a String
+and not an Integer because for its case, $code actually contains the
+Exception's SQL State, which is composed of characters and numbers.
+
+It is actually documented in the manual that $code is a String and not an
+Integer but it might not be immedietley clear because it is hidden by the fact
+that PDOException::getCode is documented to return an Integer and not a String!
+
+Some developers like to catch a PDOException and rethrow it as a different
+Exception if they wrap their database calls in an external library. For
+example, consider the following code:
+
+<?php
+
+try {
+    $PDO = new PDO( '...' ); // PDO Driver DSN. Throws A PDOException.
+}
+catch( PDOException $Exception ) {
+    // PHP Fatal Error. Second Argument Has To Be An Integer, But
+PDOException::getCode Returns A
+    // String.
+    throw new MyDatabaseException( $Exception->getMessage( ) , $Exception->
+getCode( ) );
+}
+
+?>
+
+Be careful in that you have to typecast the value returned by
+PDOException::getCode to an Integer BEFORE you pass it as an Argument to your
+Exception's Constructor. The following will work:
+
+<?php
+
+try {
+    $PDO = new PDO( '...' ); // PDO Driver DSN. Throws A PDOException.
+}
+catch( PDOException $Exception ) {
+    // Note The Typecast To An Integer!
+    throw new MyDatabaseException( $Exception->getMessage( ) , (int)$Exception
+->getCode( ) );
+}
+
+?>
+
+Hope this will save some developers some frustrating hours from an otherwise
+enjoyable job :)
+
+Good Luck,
+===============================================================================
+
+In response to the 15-May-2010 07:45 note from: samuelelliot+php dot net at
+gmail dot com
+
+Since the most base class Exception takes three arguments, and the previous
+exception is not the first, ...
+Since inherited classes to not implicitly call the parent constructor, ...
+
+I recommend changing his constructor to this:
+
+    public function __construct(string $message = "", int $code = 0,
+PDOException $e = null)
+    {
+        // in case they call: new MyException($somePDOException);
+        // instead of following the interface.
+        //
+        if (is_subclass_of($message, PDOException))
+        {
+            $e = $message;
+            $code = $e->getCode();
+            $message = $e->getMessage();
+        }
+       
+        // Let PDOException do its normal thing
+        //
+        parent::__construct($message, $code, $e);
+
+        // Now to correct the code number.
+        //
+        $state = $this->getMessage();
+        if(!strstr($state, 'SQLSTATE['))
+            $state = $this->getCode();
+        if(strstr($state, 'SQLSTATE['))
+        {
+            preg_match('/SQLSTATE\[(\w+)\] \[(\w+)\] (.*)/', $state, $matches);
+            $this->code = ($matches[1] == 'HT000' ? $matches[2] : $matches[1]);
+            $this->message = $matches[3];
+        }
+    }
+===============================================================================
+
+PDOException has two methods for retrieving information about an error. When
+interpreting the PDOException I run into a problem, the error code that is
+provided by getCode() is meaningless.  I have come up with a method to make
+both the error code and message more usable.
+
+A bad username or password would normally provide the following:
+
+CODE : 0
+Message : "SQLSTATE[28000] [1045] Access denied for user 'user'@'example.com'
+(using password: YES)"
+
+Using my extended exception class provides:
+
+CODE: "28000"
+Message: "Access denied for user 'user'@'example.com' (using password: YES)"
+
+<?php
+class pdoDbException extends PDOException {
+
+    public function __construct(PDOException $e) {
+        if(strstr($e->getMessage(), 'SQLSTATE[')) {
+            preg_match('/SQLSTATE\[(\w+)\] \[(\w+)\] (.*)/', $e->getMessage(), 
+$matches);
+            $this->code = ($matches[1] == 'HT000' ? $matches[2] : $matches[1]);
+            $this->message = $matches[3];
+        }
+    }
+}
+?>
+
+To walk threw the method; first the beginning of the message is checked for the
+SQLSTATE text.  If the text is present, message is then parsed to pull the ANSI
+code, the SQL specific code, and the message.  The parsed values are stored in
+there respective variables.  The error code variable stores the ANSI code,
+unless ANSI is 'HT000' (unmapped error code) then SQL specific code is used.
+
+Using this class is easy; when interacting with PDO use a try catch set of
+blocks, as follows:
+
+<?php
+try {
+    $pdo = new PDO($dns, $username, $password, $options);
+} catch (PDOException $e) {
+    throw new pdoDbException($e);
+}
+?>
+
+Now you can use the normal error methods to retrieve the real error code and
+message.
+
+<?php
+echo $err->getCode(); // Outputs: "28000"
+echo $err->getMessage(); // Outputs: "Access denied for user
+'user'@'example.com' (using password: YES)"
+?>
+
+If you decide to use this code, be aware that the error code is a string (as
+apposed to PHP standard errors which are integers) as some error codes are
+alphanumeric.
+===============================================================================
+
+Since PDOException returns the error code as a string, you need a constructor
+like the one below if you wish to rethrow the PDOException as a custom
+exception.
+This constructor does not call the parent::__construct which will enforce the
+int type on the error code, but set the message and code as properties directly
+on the custom exception object.
+
+<?php
+
+class CustomException extends PDOException {
+   
+    /**
+     * Override constructor and set message and code properties.
+     * Workaround PHP BUGS #51742, #39615
+     */
+    public function __construct($message=null, $code=null) {
+        $this->message = $message;
+        $this->code = $code;
+    }
+   
+}
+===============================================================================
+
+the sqlstate is an hex integer (as string)
+if you want to wrap pdoexception, use
+
+throw new MyDBException($pdoe->getMessage(), hexdec($pdoe->getCode()), $pdoe);
+===============================================================================
+
+This is a PDOException Error handler for Using/Debugging in Web Browser.
+
+<?php
+echo '<html><head><title>PHP PDO Tests</title></head><body>';
+
+// Try the following code:
+try {
+    $db = new PDO('sqlite:database.sdb'); // Create a new PDO Object
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION); // Set
+Errorhandling to Exception
+
+    $db->query("BlaBlaBla"); // Query something wrong
+
+    $db = null; // "Disconnect"
+}
+catch (PDOException $err) {
+    // Catch Expcetions from the above code for our Exception Handling
+    $trace = '<table border="0">';
+    foreach ($err->getTrace() as $a => $b) {
+        foreach ($b as $c => $d) {
+            if ($c == 'args') {
+                foreach ($d as $e => $f) {
+                    $trace .= '<tr><td><b>' . strval($a) . '#</b></td><td align
+="right"><u>args:</u></td> <td><u>' . $e . '</u>:</td><td><i>' . $f . '</i></
+td></tr>';
+                }
+            } else {
+                $trace .= '<tr><td><b>' . strval($a) . '#</b></td><td align=
+"right"><u>' . $c . '</u>:</td><td></td><td><i>' . $d . '</i></td>';
+            }
+        }
+    }
+    $trace .= '</table>';
+    echo '<br /><br /><br /><font face="Verdana"><center><fieldset style=
+"width: 66%; border: 4px solid white; background: black;"><legend><b>[</b>PHP
+PDO Error ' . strval($err->getCode()) . '<b>]</b></legend> <table border="0">
+<tr><td align="right"><b><u>Message:</u></b></td><td><i>' . $err->getMessage()
+. '</i></td></tr><tr><td align="right"><b><u>Code:</u></b></td><td><i>' . 
+strval($err->getCode()) . '</i></td></tr><tr><td align="right"><b><u>File:</u>
+</b></td><td><i>' . $err->getFile() . '</i></td></tr><tr><td align="right"><b>
+<u>Line:</u></b></td><td><i>' . strval($err->getLine()) . '</i></td></tr><tr>
+<td align="right"><b><u>Trace:</u></b></td><td><br /><br />' . $trace . '</td>
+</tr></table></fieldset></center></font>';
+}
+
+echo '</body></html>';
+?>

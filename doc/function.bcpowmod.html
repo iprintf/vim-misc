@@ -1,0 +1,150 @@
+
+bcpowmod
+
+(PHP 5, PHP 7)
+
+bcpowmod — Raise an arbitrary precision number to another, reduced by a
+specified modulus
+
+说明
+
+string bcpowmod ( string $left_operand , string $right_operand , string
+$modulus [, int $scale = 0 ] )
+
+Use the fast-exponentiation method to raise left_operand to the power
+right_operand with respect to the modulus modulus.
+
+参数
+
+left_operand
+
+    The left operand, as a string.
+
+right_operand
+
+    The right operand, as a string.
+
+modulus
+
+    The modulus, as a string.
+
+scale
+
+    此可选参数用于设置结果中小数点后的小数位数。也可通过使用 bcscale() 来设置全
+    局默认的小数位数，用于所有函数。
+
+返回值
+
+Returns the result as a string, or NULL if modulus is 0.
+
+注释
+
+    Note:
+
+    Because this method uses the modulus operation, numbers which are not
+    positive integers may give unexpected results.
+
+范例
+
+The following two statements are functionally identical. The bcpowmod() version
+however, executes in less time and can accept larger parameters.
+<?php
+$a = bcpowmod($x, $y, $mod);
+
+$b = bcmod(bcpow($x, $y), $mod);
+
+// $a and $b are equal to each other.
+
+?>
+
+参见
+
+  • bcpow() - 任意精度数字的成方
+  • bcmod() - 对一个任意精度数字取模
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+However, if you read his full note, you see this paragraph:
+"The function bcpowmod(v, e, m) is supposedly equivalent to bcmod(bcpow(v, e),
+m).  However, for the large numbers used as keys in the RSA algorithm, the
+bcpow function generates a number so big as to overflow it.  For any exponent
+greater than a few tens of thousands, bcpow overflows and returns 1."
+
+So you still can, and should (over bcmod(bcpow(v, e), m) ), use his function if
+you are using larger exponents, "any exponent greater than a few tens of
+thousand."
+===============================================================================
+
+Versions of PHP prior to 5 do not have bcpowmod in their repertoire.  This
+routine simulates this function using bcdiv, bcmod and bcmul.  It is useful to
+have bcpowmod available because it is commonly used to implement the RSA
+algorithm.
+
+The function bcpowmod(v, e, m) is supposedly equivalent to bcmod(bcpow(v, e),
+m).  However, for the large numbers used as keys in the RSA algorithm, the
+bcpow function generates a number so big as to overflow it.  For any exponent
+greater than a few tens of thousands, bcpow overflows and returns 1.
+
+This routine will iterate through a loop squaring the result, modulo the
+modulus, for every one-bit in the exponent.  The exponent is shifted right by
+one bit for each iteration.  When it has been reduced to zero, the calculation
+ends.
+
+This method may be slower than bcpowmod but at least it works.
+
+function PowModSim($Value, $Exponent, $Modulus)
+  {
+  // Check if simulation is even necessary.
+  if (function_exists("bcpowmod"))
+    return (bcpowmod($Value, $Exponent, $Modulus));
+
+  // Loop until the exponent is reduced to zero.
+  $Result = "1";
+
+  while (TRUE)
+    {
+    if (bcmod($Exponent, 2) == "1")
+      $Result = bcmod(bcmul($Result, $Value), $Modulus);
+
+    if (($Exponent = bcdiv($Exponent, 2)) == "0") break;
+
+    $Value = bcmod(bcmul($Value, $Value), $Modulus);
+    }
+
+  return ($Result);
+  }
+===============================================================================
+
+I found a better way to emulate bcpowmod on PHP 4, which works with very big
+numbers too:
+
+function powmod($m,$e,$n) {
+    if (intval(PHP_VERSION)>4) {
+        return(bcpowmod($m,$e,$n));
+    } else {
+        $r="";
+        while ($e!="0") {
+            $t=bcmod($e,"4096");
+            $r=substr("000000000000".decbin(intval($t)),-12).$r;
+            $e=bcdiv($e,"4096");
+        }
+        $r=preg_replace("!^0+!","",$r);
+        if ($r=="") $r="0";
+        $m=bcmod($m,$n);
+        $erb=strrev($r);
+        $q="1";
+        $a[0]=$m;
+        for ($i=1;$i<strlen($erb);$i++) {
+            $a[$i]=bcmod(bcmul($a[$i-1],$a[$i-1]),$n);
+        }
+        for ($i=0;$i<strlen($erb);$i++) {
+            if ($erb[$i]=="1") {
+                $q=bcmod(bcmul($q,$a[$i]),$n);
+            }
+        }
+        return($q);
+    }
+}

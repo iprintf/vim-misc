@@ -1,0 +1,278 @@
+
+socket_write
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+socket_write — Write to a socket
+
+说明
+
+int socket_write ( resource $socket , string $buffer [, int $length ] )
+
+The function socket_write() writes to the socket from the given buffer.
+
+参数
+
+socket
+
+buffer
+
+    The buffer to be written.
+
+length
+
+    The optional parameter length can specify an alternate length of bytes
+    written to the socket. If this length is greater than the buffer length, it
+    is silently truncated to the length of the buffer.
+
+返回值
+
+Returns the number of bytes successfully written to the socket 或者在失败时返回
+FALSE. The error code can be retrieved with socket_last_error(). This code may
+be passed to socket_strerror() to get a textual explanation of the error.
+
+    Note:
+
+    It is perfectly valid for socket_write() to return zero which means no
+    bytes have been written. Be sure to use the === operator to check for FALSE
+    in case of an error.
+
+注释
+
+    Note:
+
+    socket_write() does not necessarily write all bytes from the given buffer.
+    It's valid that, depending on the network buffers etc., only a certain
+    amount of data, even one byte, is written though your buffer is greater.
+    You have to watch out so you don't unintentionally forget to transmit the
+    rest of your data.
+
+参见
+
+  • socket_accept() - Accepts a connection on a socket
+  • socket_bind() - 给套接字绑定名字
+  • socket_connect() - 开启一个套接字连接
+  • socket_listen() - Listens for a connection on a socket
+  • socket_read() - Reads a maximum of length bytes from a socket
+  • socket_strerror() - Return a string describing a socket error
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+I often read in php docs users not checking for the php function returned
+value, and in the case of socket_write, I could not see here in the comment
+anyone botering to read on the socket the server reply.
+Then one user thought it would be a good idea to use usleep after a
+socket_write on a smtp connection.
+Actually, if you check the server reply, not only will it give time for the
+server to reply before you write again on the socket, but also this is a great
+opportunity to check what the server replied you.
+For instance, for smtp connection :
+In this example MAIL_SERVER, MAIL_PORT and DEBUG are constants I defined.
+<?php
+function sendmail( $param )
+{
+    $from    = &$param[ 'from' ];
+    $to      = &$param[ 'to' ];
+    $message = &$param[ 'data' ];
+   
+    $isError = function( $string )
+    {
+        if( preg_match( '/^((\d)(\d{2}))/', $string, $matches ) )
+        {
+            if( $matches[ 2 ] == 4 || $matches[ 2 ] == 5 ) return( $matches[ 1 
+] );
+        }
+        else
+        {
+            return( false );
+        }
+    };
+   
+    try
+    {
+        $socket = null;
+        if( ( $socket = socket_create( AF_INET, SOCK_STREAM, SOL_TCP ) ) == 
+false )
+        {
+            throw new Exception( sprintf( "Unable to create a socket: %s", 
+socket_strerror( socket_last_error() ) ) );
+        }
+        if( !socket_connect( $socket, MAIL_SERVER, MAIL_PORT ) )
+        {
+            throw new Exception( sprintf( "Unable to connect to server %s: %s",
+MAIL_SERVER, socket_strerror( socket_last_error() ) ) );
+        }
+        $read = socket_read( $socket, 1024 );
+        if( $read == false )
+        {
+            throw new Exception( sprintf( "Unable to read from socket: %s", 
+socket_strerror( socket_last_error() ) ) );
+        }
+       
+        if( socket_write( $socket, sprintf( "HELO %s\r\n", gethostname() ) ) ==
+= false )
+        {
+            throw new Exception( sprintf( "Unable to write to socket: %s", 
+socket_strerror( socket_last_error() ) ) );
+        }
+        $read = socket_read( $socket, 1024 );
+        if( $read == false )
+        {
+            throw new Exception( sprintf( "Unable to read from socket: %s", 
+socket_strerror( socket_last_error() ) ) );
+        }
+        else
+        {
+            if( ( $errCode = $isError( $read ) ) ) throw new Exception( "Server
+responded with an error code $errCode" );
+        }
+       
+        if( socket_write( $socket, sprintf( "MAIL FROM: %s\r\n", $from ) ) === 
+false )
+        {
+            throw new Exception( sprintf( "Unable to write to socket: %s", 
+socket_strerror( socket_last_error() ) ) );
+        }
+        $read = socket_read( $socket, 1024 );
+        if( $read == false )
+        {
+            throw new Exception( sprintf( "Unable to read from socket: %s", 
+socket_strerror( socket_last_error() ) ) );
+        }
+        else
+        {
+            if( ( $errCode = $isError( $read ) ) ) throw new Exception( "Server
+responded with an error code $errCode" );
+        }
+        /* And some more code, but not enough place in comment */
+        return( $totalWriten );
+    }
+    catch( Exception $e )
+    {
+        $ERROR = sprintf( "Error sending mail message at line %d. ", $e->
+getLine() ) . $e->getMessage();
+        return( false );
+    }
+}
+===============================================================================
+
+Here we have the same function to write a socket but with improved performance.
+
+If the messager are not larger, they will be written entirely with a single
+socket_write() call. And is not needed to call the substr() function for the
+first bucle.
+
+<?php
+$st="Message to sent";
+$length = strlen($st);
+       
+    while (true) {
+       
+        $sent = socket_write($socket, $st, $length);
+           
+        if ($sent === false) {
+       
+            break;
+        }
+           
+        // Check if the entire message has been sented
+        if ($sent < $length) {
+               
+            // If not sent the entire message.
+            // Get the part of the message that has not yet been sented as
+message
+            $st = substr($st, $sent);
+               
+            // Get the length of the not sented part
+            $length -= $sent;
+
+        } else {
+           
+            break;
+        }
+           
+    }
+?>
+===============================================================================
+
+from http://www.manualy.sk/sock-faq/unix-socket-faq-2.html
+read() is equivalent to recv() with a flags parameter of 0. Other values for
+the flags parameter change the behaviour of recv(). Similarly, write() is
+equivalent to send() with flags == 0.
+===============================================================================
+
+If you connect to a Server in a way like you do with telnet or some similar
+protokoll you may have problems with sending data to the server. I found out
+that at some servers there is a different between:
+
+<?php
+   
+    socket_write ($my_socket, $line, strlen ($line));
+    socket_write ($my_socket, "\r\n", strlen ("\r\n"));
+   
+?>
+witch worked at least, and
+<?php
+    socket_write ($my_socket, $line."\r\n", strlen ($line."\r\n"));
+?>
+wich made the server stop sending any data.
+
+I hope this helps to save a lot of time. I needed about two days to find out,
+that this was the problem ;)
+===============================================================================
+
+function AddTCPChecksum(&$data){
+//feel free to add some error handling for strlen($data)>65535...
+$data=pack("v",strlen($data)).$data;
+}
+===============================================================================
+
+Hi,
+if you got same problems like i have
+
+<?php
+@socket_write($xd, "Good Bye!\n\r");
+@socket_shutdown($xd, 2);
+@socket_close($xd);
+?>
+
+wont'tx send "Good Bye!\n\r" to the opened socket.
+
+but if you put a
+usleep or something like echo "";
+between write and shutdown its working.
+===============================================================================
+
+Some clients (Flash's XMLSocket for example) won't fire a read event until a
+new line is recieved.
+
+<?php
+    /*
+     * Write to a socket
+     * add a newline and null character at the end
+     * some clients don't read until new line is recieved
+     *
+     * try to send the rest of the data if it gets truncated
+     */
+    function write(&$sock,$msg) {
+        $msg = "$msg\n\0";
+        $length = strlen($msg);
+        while(true) {
+            $sent = socket_write($sock,$msg,$length);
+            if($sent === false) {
+                return false;
+            }
+            if($sent < $length) {
+                $msg = substr($msg, $sent);
+                $length -= $sent;
+                print("Message truncated: Resending: $msg");
+            } else {
+                return true;
+            }
+        }
+        return false;
+    }
+?>

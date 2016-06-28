@@ -1,0 +1,839 @@
+
+fgets
+
+(PHP 4, PHP 5, PHP 7)
+
+fgets — 从文件指针中读取一行
+
+说明
+
+string fgets ( resource $handle [, int $length ] )
+
+从文件指针中读取一行。
+
+参数
+
+handle
+
+    文件指针必须是有效的，必须指向由 fopen() 或 fsockopen() 成功打开的文件(并还
+    未由 fclose() 关闭)。
+
+length
+
+    从 handle 指向的文件中读取一行并返回长度最多为 length - 1 字节的字符串。碰
+    到换行符（包括在返回值中）、EOF 或者已经读取了 length - 1 字节后停止（看先
+    碰到那一种情况）。如果没有指定 length，则默认为 1K，或者说 1024 字节。
+
+        Note:
+
+        从 PHP 4.3 开始，忽略掉 length 则行的长度被假定为 1024，将继续从流中读
+        取数据直到行结束。如果文件中的大多数行都大于 8KB，则在脚本中指定最大行
+        的长度在利用资源上更为有效。
+
+返回值
+
+从指针 handle 指向的文件中读取了 length - 1 字节后返回字符串。如果文件指针中没
+有更多的数据了则返回 FALSE。
+
+错误发生时返回 FALSE。
+
+更新日志
+
+版本           说明
+4.3.0 fgets() 开始二进制安全
+4.2.0 length 参数成为可选。
+
+范例
+
+Example #1 逐行读取文件
+
+<?php
+$handle = @fopen("/tmp/inputfile.txt", "r");
+if ($handle) {
+    while (($buffer = fgets($handle, 4096)) !== false) {
+        echo $buffer;
+    }
+    if (!feof($handle)) {
+        echo "Error: unexpected fgets() fail\n";
+    }
+    fclose($handle);
+}
+?>
+
+注释
+
+    Note: 在读取在 Macintosh 电脑中或由其创建的文件时，如果 PHP 不能正确的识别
+    行结束符，启用运行时配置可选项 auto_detect_line_endings 也许可以解决此问题
+    。
+
+    Note:
+
+    习惯了 C 语言中 fgets() 语法的人应该注意到 EOF 是怎样被返回的。
+
+参见
+
+  • fgetss() - 从文件指针中读取一行并过滤掉 HTML 标记
+  • fread() - 读取文件（可安全用于二进制文件）
+  • fgetc() - 从文件指针中读取字符
+  • stream_get_line() - 从资源流里读取一行直到给定的定界符
+  • fopen() - 打开文件或者 URL
+  • popen() - 打开进程文件指针
+  • fsockopen() - 打开一个网络连接或者一个Unix套接字连接
+  • stream_set_timeout() - Set timeout period on a stream
+
+
+User Contributed Notes 32 notes
+
+===============================================================================
+
+A better example, to illustrate the differences in speed for large files,
+between fgets and stream_get_line.
+
+This example simulates situations where you are reading potentially very long
+lines, of an uncertain length (but with a maximum buffer size), from an input
+source.
+
+As Dade pointed out, the previous example I provided was much to easy to pick
+apart, and did not adequately highlight the issue I was trying to address.
+
+Note that specifying a definitive end-character for fgets (ie: newline),
+generally decreases the speed difference reasonably significantly.
+
+#!/usr/bin/php
+<?php
+        $plaintext=file_get_contents('http://loripsum.net/api/60/verylong/
+plaintext');  # Should be around 90k characters
+        $plaintext=str_replace("\n"," ",$plaintext); # Get rid of newlines
+
+        $fp=fopen("/tmp/SourceFile.txt","w");
+        for($i=0;$i<100000;$i++) {
+                fputs($fp,substr($plaintext,0,rand(4096,65534)) . "\n");
+        }
+        fclose($fp);
+
+        $fp=fopen("/tmp/SourceFile.txt","r");
+        $start=microtime(true);
+        while($line=fgets($fp,65535)) {
+                1;
+        }
+        $end=microtime(true);
+        fclose($fp);
+        $delta1=($end - $start);
+
+        $fp=fopen("/tmp/SourceFile.txt","r");
+        $start=microtime(true);
+        while($line=stream_get_line($fp,65535)) {
+                1;
+        }
+        $end=microtime(true);
+        fclose($fp);
+        $delta2=($end - $start);
+
+        $pdiff=$delta1/$delta2;
+        print "stream_get_line is " . ($pdiff>1?"faster":"slower") . " than
+fgets - pdiff is $pdiff\n";
+?>
+
+$ ./testcase.php
+stream_get_line is faster than fgets - pdiff is 1.760398041785
+
+Note that, in a vast majority of situations in which php is employed, tiny
+differences in speed between system calls are of negligible importance.
+===============================================================================
+
+One thing I discovered with fgets, at least with PHP 5.1.6, is that you may
+have to use an IF statement to avoid your code running rampant (and possibly
+hanging the server).  This can cause problems if you do not have root access on
+the server on which you are working.
+
+This is the code I have implemented ($F1 is an array):
+
+<?php
+   if($fh = fopen("filename","r")){
+      while (!feof($fh)){
+         $F1[] = fgets($fh,9999);
+      }
+      fclose($fh);
+    }
+?>
+
+I have noticed that without the IF statement, fgets seems to ignore when $fh is
+undefined (i.e., "filename" does not exist).  If that happens, it will keep
+attempting to read from a nonexistent filehandle until the process can be
+administratively killed or the server hangs, whichever comes first.
+===============================================================================
+
+It appears that fgets() will return FALSE on EOF (before feof has a chance to
+read it), so this code will throw an exception:
+
+while (!feof($fh)) {
+  $line = fgets($fh);
+  if ($line === false) {
+    throw new Exception("File read error");
+  }
+}
+===============================================================================
+
+WARNING! fgets() and I presume any read() call to a file handle, e.g.
+
+  while(!feof(STDIN)) {
+    $line = fgets(STDIN);
+
+    ...do something useful with $line...
+  }
+
+...will result in a timeout after a default time of 60 seconds on my install.
+This behavior is non standard (not POSIX like) and seems to me to be a bug, or
+if not a major caveat which should be documented more clearly.
+
+After the timeout fgets() will return FALSE (=== FALSE), however, you can check
+to see if the stream (file handle) has really closed by checking feof($stream),
+e.g.
+
+  while(!feof(STDIN)) {
+    $line = fgets(STDIN);
+
+    if($line === FALSE) {
+      if(feof(STDIN)) {
+        break;
+      }
+      continue;
+    }
+ 
+    ...do something useful with $line...
+  }
+===============================================================================
+
+Regarding Leigh Purdie's comment (from 4 years ago) about stream_get_line being
+better for large files, I decided to test this in case it was optimized since
+then and I found out that Leigh's comment is just completely incorrect
+
+fgets actually has a small amount of better performance, but the test Leigh did
+was not set up to produce good results
+
+The suggested test was:
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,65535,"\n")) { 1; } fclose($fp);'
+
+0m1.616s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,65535)) { 1; } fclose($fp);'
+
+0m7.392s
+
+The reason this is invalid is because the buffer size of 65535 is completely
+unnecessary
+
+piping the output of "yes 'this is a test line'" in to PHP makes each line 19
+characters plus the delimiter
+
+so while I don't know why stream_get_line performs better with an oversize
+buffer, if both buffer sizes are correct, or default, they have a negligable
+performance difference - although notably, stream_get_line is consistent -
+however if you're thinking of switching, make sure to be aware of the
+difference between the two functions, that stream_get_line does NOT append the
+delimiter, and fgets DOES append the delimiter
+
+Here are the results on one of my servers:
+
+Buffer size 65535
+stream_get_line:    0.340s
+fgets:   2.392s
+
+Buffer size of 1024
+stream_get_line:  0m0.348s
+fgets: 0.404s
+
+Buffer size of 8192 (the default for both)
+stream_get_line: 0.348s
+fgets:  0.552s
+
+Buffer size of 100:
+stream_get_line: 0.332s
+fgets: 0.368s
+===============================================================================
+
+For sockets, If you dont want fgets, fgetc etc... to block if theres no data
+there. set socket_set_blocking(handle,false); and socket_set_blocking
+(handle,true); to set it back again.
+===============================================================================
+
+If you need to simulate an un-buffered fgets so that stdin doesnt hang there
+waiting for some input (i.e. it reads only if there is data available) use this
+:
+<?php
+
+    function fgets_u($pStdn) {
+
+            $pArr = array($pStdn);
+
+        if (false === ($num_changed_streams = stream_select($pArr, $write = 
+NULL, $except = NULL, 0))) {
+            print("\$ 001 Socket Error : UNABLE TO WATCH STDIN.\n");
+            return FALSE;
+        } elseif ($num_changed_streams > 0) {
+                return trim(fgets($pStdn, 1024));
+        }
+           
+    }
+
+?>
+===============================================================================
+
+I'm using this function to modify the header of a large postscript document on
+copy...  Works extremely quickly so far...
+
+function write($filename) {
+     $fh = fopen($this->sourceps,'r');
+     $fw = fopen($filename,'w');
+
+     while (!feof($fh)) {
+       $buffer = fgets($fh);
+       fwrite($fw,$buffer);
+       if (!$setupfound && ereg("^%%BeginSetup",$buffer)) {
+         $setupfound++;
+         if (array_key_exists("$filename",$this->output)) {
+           foreach ($this->output[$filename] as $function => $value) {
+             fwrite($fw,$value);
+           }
+         }
+         stream_copy_to_stream($fh,$fw);
+       }
+     }
+     fclose($fw);
+     fclose($fh);
+   }
+===============================================================================
+
+fscanf($file, "%s\n") isn't really a good substitution for fgets(), since it
+will stop parsing at the first whitespace and not at the end of line!
+
+(See the fscanf page for details on this)
+===============================================================================
+
+For large files, consider using stream_get_line rather than fgets - it can make
+a significant difference.
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,65535,"\n")) { 1; } fclose($fp);'
+
+real    0m1.482s
+user    0m1.616s
+sys    0m0.152s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,65535)) { 1; } fclose($fp);'
+
+real    0m7.281s
+user    0m7.392s
+sys    0m0.136s
+===============================================================================
+
+I had loads of trouble while reading with fgets on a WAMP (Windows server). On
+local the file went unto a <pre> tag without a hitch, but when I moved the code
+to a LAMP production server, every \r\n created two fgets and I got free empty
+lines.
+
+I tried deleting with $string=str_replace("\r\n","\n",$string); but it had no
+effect whatsoever. The solution was to do an fread() and explode the contents
+by PHP_EOL and do a foreach($lines as $line) so every line did not get
+duplicated.
+
+Here is the example code:
+
+$file=fopen("test.txt,"r");
+$text=fread($file,filesize("test.txt"));
+$lines=explode(PHP_EOL,$text);
+foreach($lines as $line)
+  {
+  // Do something
+  }
+===============================================================================
+
+For anyone who wants a proper non-blocking fgets for sockets, there is a tiny
+snippet that does just that (performance should be horrible compared to fgets
+though):
+
+<?php
+function read_line_nb($handle)
+{
+    static $buffer = '';
+    static $lastOffset = 0;
+
+    $buffer .= fread($handle, 0x1000);
+    if (preg_match('#\\R#', $buffer, $m, PREG_OFFSET_CAPTURE, $lastOffset)) {
+        $line = substr($buffer, 0, $m[0][1] + strlen($m[0][0]));
+        $buffer = substr($buffer, $m[0][1] + strlen($m[0][0]));
+        return $line;
+    }
+    $lastOffset = strlen($buffer);
+    return false;
+}
+?>
+===============================================================================
+
+Some people try to call feof before fgets, and then ignoring the return value
+of fgets. This method leads to processing value FALSE when reaching the end of
+file.
+
+Bad example:
+<?php
+    $f = fopen ("fgetstest.php", "r");
+    $ln= 0;
+    while (! feof ($f)) {
+        $line= fgets ($f);
+        ++$ln;
+        printf ("%2d: ", $ln);
+        if ($line===FALSE) print ("FALSE\n");
+        else print ($line);
+    }
+    fclose ($f);
+?>
+
+Good example:
+<?php
+    $f = fopen ("fgetstest.php", "r");
+    $ln= 0;
+    while ($line= fgets ($f)) {
+        ++$ln;
+        printf ("%2d: ", $ln);
+        if ($line===FALSE) print ("FALSE\n");
+        else print ($line);
+    }
+    fclose ($f);
+?>
+===============================================================================
+
+The file pointer that fgets() uses can also be created with the proc_open()
+function and used with the stdout pipe created from the executed process.
+===============================================================================
+
+If you use the example from the command-description, i recommend to trim the
+$buffer for further use. The line feed ist still at the end of the line. I saw
+this when using PHP CLI.
+
+Like this, checking a file-list for existing entries:
+
+$handle = fopen ("/tmp/files.txt", "r");
+while (!feof($handle)) {
+    $buffer = fgets($handle, 4096);
+    if (file_exists(rtrim($filename,"\n"))) {
+        echo $buffer;
+    } else {
+        echo $buffer." has been removed."
+}
+fclose ($handle);
+===============================================================================
+
+There's an error in the documentation:
+
+The file pointer must be valid, and must point to a file successfully opened by
+fopen() or fsockopen() (and not yet closed by fclose()).
+
+You should also add "popen" and "pclose" to the documentation. I'm a new PHP
+developer and went to verify that I could use "fgets" on commands that I used
+with "popen".
+===============================================================================
+
+An easy way to authenticate Windows Domain users from scripts running on a
+non-Windows or non-Domain box - pass the submitted username and password to an
+IMAP service on a Windows machine.
+
+<?php
+$server = 'imapserver';
+$user = 'user';
+$pass = 'pass';
+
+if (authIMAP($user, $pass, $server)) {
+    echo "yay";
+} else {
+    echo "nay";
+}
+
+function authIMAP($user, $pass, $server) {
+    $connection = fsockopen($server, 143, $errno, $errstr, 30);
+
+    if(!$connection) return false;
+
+    $output = fgets($connection, 128); // banner
+    fputs($connection, "1 login $user $pass\r\n");
+    $output = fgets($connection, 128);
+    fputs($connection, "2 logout\r\n");
+    fclose($connection);
+
+    if (substr($output, 0, 4) == '1 OK') return true;
+
+    return false;
+}
+?>
+===============================================================================
+
+Macintosh line endings mentioned in docs refer to Mac OS Classic. You don't
+need this setting for interoperability with unixish OS X.
+===============================================================================
+
+I think that the quickest way of read a (long) file with the rows in  reverse
+order is
+
+<?php
+$myfile = 'myfile.txt';
+$command = "tac $myfile > /tmp/myfilereversed.txt";
+passthru($command);
+$ic = 0;
+$ic_max = 100;  // stops after this number of rows
+$handle = fopen("/tmp/myfilereversed.txt", "r");
+while (!feof($handle) && ++$ic<=$ic_max) {
+   $buffer = fgets($handle, 4096);
+   echo $buffer."<br>";
+}
+fclose($handle);
+?>
+
+It echos the rows while it is reading the file so it is good for long files
+like logs.
+
+Borgonovo
+===============================================================================
+
+I would have expected the same behaviour from these bits of code:-
+
+<?php
+
+/*This times out correctly*/
+while (!feof($fp)) {
+    echo fgets($fp);
+}
+
+/*This times out before eof*/
+while ($line=fgets($fp)) {
+    echo $line;
+}
+
+/*A reasonable fix is to set a long timeout*/
+stream_set_timeout($fp, 180);
+while ($line=fgets($fp)) {
+    echo $line;
+}
+?>
+===============================================================================
+
+When working with VERY large files, php tends to fall over sideways and die. 
+
+Here is a neat way to pull chunks out of a file very fast and won't stop in mid
+line, but rater at end of last known line.  It pulled a 30+ million line 900meg
+file through in ~ 24 seconds.
+
+NOTE:
+$buf just hold current chunk of data to work with.  If you try "$buf .=" (note
+'dot' in from of '=') to append $buff, script will come to grinding crawl
+around 100megs of data, so work with current data then move on!
+
+//File to be opened
+$file = "huge.file";
+//Open file (DON'T USE a+ pointer will be wrong!)
+$fp = fopen($file, 'r');
+//Read 16meg chunks
+$read = 16777216;
+//\n Marker
+$part = 0;
+
+while(!feof($fp)) {
+    $rbuf = fread($fp, $read);
+    for($i=$read;$i > 0 || $n == chr(10);$i--) {
+        $n=substr($rbuf, $i, 1);
+        if($n == chr(10))break;
+        //If we are at the end of the file, just grab the rest and stop loop
+        elseif(feof($fp)) {
+            $i = $read;
+            $buf = substr($rbuf, 0, $i+1);
+            break;
+        }
+    }
+    //This is the buffer we want to do stuff with, maybe thow to a function?
+    $buf = substr($rbuf, 0, $i+1);
+    //Point marker back to last \n point
+    $part = ftell($fp)-($read-($i+1));
+    fseek($fp, $part);
+}
+fclose($fp);
+===============================================================================
+
+Saku's example may also be used like this:
+
+<?php
+@ $pointer = fopen("$DOCUMENT_ROOT/foo.txt", "r"); // the @ suppresses errors
+so you have to test the pointer for existence
+   if ($pointer) {
+     while (!feof($pointer)) {
+         $preTEXT = fgets($pointer, 999);
+         // $TEXT .= $preTEXT;  this is better for a string
+        $ATEXT[$I] = $preTEXT;  // maybe better as an array
+        $I++;
+     }
+     fclose($pointer);
+   }
+?>
+===============================================================================
+
+Sometimes the strings you want to read from a file are not separated by an end
+of line character.  the C style getline() function solves this.  Here is my
+version:
+<?php
+function getline( $fp, $delim )
+{
+    $result = "";
+    while( !feof( $fp ) )
+    {
+        $tmp = fgetc( $fp );
+        if( $tmp == $delim )
+            return $result;
+        $result .= $tmp;
+    }
+    return $result;
+}
+
+// Example:
+$fp = fopen("/path/to/file.ext", 'r');
+while( !feof($fp) )
+{
+    $str = getline($fp, '|');
+    // Do something with $str
+}
+fclose($fp);
+?>
+===============================================================================
+
+Note that - afaik - fgets reads a line until it reaches a line feed (\\n).
+Carriage returns (\\r) aren't processed as line endings.
+However, nl2br insterts a <br /> tag before carriage returns as well.
+This is useful (but not nice - I must admit) when you want to store a more
+lines in one.
+<?php
+function write_lines($text) {
+  $file = fopen('data.txt', 'a');
+  fwrite($file, str_replace("\n", ' ', $text)."\n");
+  fclose($file);
+}
+
+function read_all() {
+  $file = fopen('data.txt', 'r');
+  while (!feof($file)) {
+    $line = fgets($file);
+    echo '<u>Section</u><p>nl2br'.($line).'</p>';
+  }
+  fclose($file);
+}
+?>
+
+Try it.
+===============================================================================
+
+fgets is SLOW for scanning through large files. If you don't have PHP 5, use
+fscanf($file, "%s\n") instead.
+===============================================================================
+
+There seems to be an interaction between sockets and the
+auto_detect_line_endings setting that can cause rather peculiar behavior.
+Apparently, if the first line read from a socket is split across two TCP
+packets, the detector will look at the first TCP packet and determine that the
+system uses MacOS (\r) line endings, even though the LF is contained in the
+next packet. For example, this affected the PEAR Net_SMTP package, which would
+fail mysteriously for only some email servers.
+===============================================================================
+
+It's worth noting that this function only assumes chr(10) as a line break, but
+not chr(13). Personally, I prefer using chr(13) as a line break.
+===============================================================================
+
+This goes out to Leigh Purdie (5 years ago) and also Dade Brandon (4 months
+ago)
+
+So i say Leigh posting and though omg i need to change all my fgets to
+stream_get_line. Then i ran the tests as shown in Leigh Purdie comment His
+results:
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,65535,"\n")) { 1; } fclose($fp);'
+
+real    0m1.482s
+user    0m1.616s
+sys    0m0.152s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,65535)) { 1; } fclose($fp);'
+
+real    0m7.281s
+user    0m7.392s
+sys    0m0.136s
+
+My Results:
+
+$  time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,65535,"\n")) { 1; } fclose($fp);'
+
+real    0m0.341s
+user    0m0.352s
+sys    0m0.148s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,65535)) { 1; } fclose($fp);'
+
+real    0m4.283s
+user    0m4.128s
+sys    0m0.448s
+
+My results do show the same issue his results show. But first off PHP has at
+least gotten about 2-5 times faster then when the tests were first run (or
+better hardware).
+
+Now to relate to Dade Brandon who states if you use a correct buffer size the
+perfomance is neck and neck.
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,21,"\n")) { 1; } fclose($fp);'
+
+real    0m0.336s
+user    0m0.412s
+sys    0m0.076s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,21)) { 1; } fclose($fp);'
+
+real    0m0.312s
+user    0m0.364s
+sys    0m0.192s
+
+As you can see very close and fgets just coming just a little bit ahead. I
+suspect that fgets is reading backwards on the buffer or loads everything into
+its self then trys to figure it out where as a correct set buffer does the
+trick. Dade Brandon states that fgets lets you know how the line was delimited.
+stream_get_line lets you choose what you wanna call the delimiter using its 3rd
+option.
+
+fgets has one more option that is important, you dont have to set the length of
+the line. So in a case where you may not know the length of the line maybe in
+handling Http protocol or something else like log lines you can simply leave it
+off and still get great performance.
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp)) { 1; } fclose($fp);'
+
+real    0m0.261s
+user    0m0.260s
+sys    0m0.232s
+
+This is better then with a buffer set.
+===============================================================================
+
+If you need to read an entire file into a string, use file_get_contents(). 
+fgets() is most useful when you need to process the lines of a file separately.
+===============================================================================
+
+This goes out to Leigh Purdie (5 years ago) and also Dade Brandon (4 months
+ago)
+
+So i say Leigh posting and though omg i need to change all my fgets to
+stream_get_line. Then i ran the tests as shown in Leigh Purdie comment His
+results:
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,65535,"\n")) { 1; } fclose($fp);'
+
+real    0m1.482s
+user    0m1.616s
+sys    0m0.152s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,65535)) { 1; } fclose($fp);'
+
+real    0m7.281s
+user    0m7.392s
+sys    0m0.136s
+
+My Results:
+
+$  time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,65535,"\n")) { 1; } fclose($fp);'
+
+real    0m0.341s
+user    0m0.352s
+sys    0m0.148s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,65535)) { 1; } fclose($fp);'
+
+real    0m4.283s
+user    0m4.128s
+sys    0m0.448s
+
+My results do show the same issue his results show. But first off PHP has at
+least gotten about 2-5 times faster then when the tests were first run (or
+better hardware).
+
+Now to relate to Dade Brandon who states if you use a correct buffer size the
+perfomance is neck and neck.
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=stream_get_line($fp,21,"\n")) { 1; } fclose($fp);'
+
+real    0m0.336s
+user    0m0.412s
+sys    0m0.076s
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp,21)) { 1; } fclose($fp);'
+
+real    0m0.312s
+user    0m0.364s
+sys    0m0.192s
+
+As you can see very close and fgets just coming just a little bit ahead. I
+suspect that fgets is reading backwards on the buffer or loads everything into
+its self then trys to figure it out where as a correct set buffer does the
+trick. Dade Brandon states that fgets lets you know how the line was delimited.
+stream_get_line lets you choose what you wanna call the delimiter using its 3rd
+option.
+
+fgets has one more option that is important, you dont have to set the length of
+the line. So in a case where you may not know the length of the line maybe in
+handling Http protocol or something else like log lines you can simply leave it
+off and still get great performance.
+
+$ time yes "This is a test line" | head -1000000 | php -r '$fp=fopen("php://
+stdin","r"); while($line=fgets($fp)) { 1; } fclose($fp);'
+
+real    0m0.261s
+user    0m0.260s
+sys    0m0.232s
+
+This is better then with a buffer set.
+===============================================================================
+
+This is a a simple function to detect end of line type for any file.
+
+<?php
+function detectEndOfLine($file)
+{
+    $handle = @fopen($file, "r");
+    if ($handle)
+    {
+        $char=0;
+        while (!$eol || feof($handle))
+        {
+            $char++;
+            $line = fgets($handle, $char);
+            $eol = preg_match("/(\r)+/", $line)? "W" : "";
+            if(!$eol) $eol = preg_match("/(\n)+/", $line)? "L" : "";
+        }
+        return $eol;
+        fclose($handle);
+    }
+}
+?>
+===============================================================================
+
+If you have troubles reading binary data with versions <= 4.3.2 then upgrade to
+4.3.3
+The binary safe implementation seems to have had bugs which were fixed in 4.3.3

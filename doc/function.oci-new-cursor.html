@@ -1,0 +1,144 @@
+
+oci_new_cursor
+
+(PHP 5, PHP 7, PECL OCI8 >= 1.1.0)
+
+oci_new_cursor — 分配并返回一个新的游标（语句句柄）
+
+说明
+
+resource oci_new_cursor ( resource $connection )
+
+oci_new_cursor() 在指定的连接上分配一个新的语句句柄。
+
+Example #1 在 Oracle 的存储过程中使用 REF CURSOR
+
+<?php
+// suppose your stored procedure info.output returns a ref cursor in :data
+
+$conn = oci_connect("scott", "tiger");
+$curs = oci_new_cursor($conn);
+$stmt = oci_parse($conn, "begin info.output(:data); end;");
+
+oci_bind_by_name($stmt, "data", $curs, -1, OCI_B_CURSOR);
+oci_execute($stmt);
+oci_execute($curs);
+
+while ($data = oci_fetch_row($curs)) {
+    var_dump($data);
+}
+
+oci_free_statement($stmt);
+oci_free_statement($curs);
+oci_close($conn);
+?>
+
+Example #2 在 Oracle 的 select 语句中使用 REF CURSOR
+
+<?php
+echo "<html><body>";
+$conn = oci_connect("scott", "tiger");
+$count_cursor = "CURSOR(select count(empno) num_emps from emp " .
+                "where emp.deptno = dept.deptno) as EMPCNT from dept";
+$stmt = oci_parse($conn, "select deptno,dname,$count_cursor");
+
+oci_execute($stmt);
+echo "<table border=\"1\">";
+echo "<tr>";
+echo "<th>DEPT NAME</th>";
+echo "<th>DEPT #</th>";
+echo "<th># EMPLOYEES</th>";
+echo "</tr>";
+
+while ($data = oci_fetch_assoc($stmt)) {
+    echo "<tr>";
+    $dname  = $data["DNAME"];
+    $deptno = $data["DEPTNO"];
+    echo "<td>$dname</td>";
+    echo "<td>$deptno</td>";
+    oci_execute($data["EMPCNT"]);
+    while ($subdata = oci_fetch_assoc($data["EMPCNT"])) {
+        $num_emps = $subdata["NUM_EMPS"];
+        echo  "<td>$num_emps</td>";
+    }
+    echo "</tr>";
+}
+echo "</table>";
+echo "</body></html>";
+oci_free_statement($stmt);
+oci_close($conn);
+?>
+
+oci_new_cursor() 如果出错返回 FALSE。
+
+    Note:
+
+    在 PHP 5.0.0 之前的版本必须使用 ocinewcursor() 替代本函数。该函数名仍然可用
+    ，为向下兼容作为 oci_new_cursor() 的别名。不过其已被废弃，不推荐使用。
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+Some packages in oracle are functions, and that functions returns a cursor.
+
+For example:
+
+CREATE FUNCTION F_Function( p1 char(2), p2 int)
+  RETURN SYS_REFCURSOR
+AS
+  my_cursor SYS_REFCURSOR;
+BEGIN
+  OPEN my_cursor FOR SELECT * FROM allitems
+                           WHERE (cod=p1)
+                                      AND (Number=p2);
+  RETURN my_cursor;
+END F_Function;
+
+Here is the code that allows to obtain data from a function that returns a
+cursor.
+
+<pre>
+<?php
+$conn=oci_connect("server", "user", "pass");
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message']), E_USER_ERROR);
+}
+
+    //You must asign before.
+    $p1 = '03';
+    $p2 = 2012016191;
+
+    $stid = oci_parse($conn, 'begin :cursor := server.PKG_package.F_Function
+(:p1,:p2); end;');
+    $p_cursor = oci_new_cursor($conn);
+
+    //Send parameters variable  value  lenght
+    oci_bind_by_name($stid, ':p1', $p1,2);
+    oci_bind_by_name($stid, ':p2', $p2,10);
+
+    //Bind Cursor     put -1
+    oci_bind_by_name($stid, ':cursor', $p_cursor, -1, OCI_B_CURSOR);
+
+    // Execute Statement
+    oci_execute($stid);
+    oci_execute($p_cursor, OCI_DEFAULT);
+
+    oci_fetch_all($p_cursor, $cursor, null, null, OCI_FETCHSTATEMENT_BY_ROW);
+    echo '<br>';
+    print_r($cursor);
+?>
+===============================================================================
+
+Because OCI8 uses "prefetching" to greatly improve returning query results, but
+Oracle doesn't support prefetching for REF CURSORs, application performance
+using REF CURSORs can be greatly improved by writing a PL/SQL function that
+pulls data from the REF CURSOR and PIPEs the output. The new function can be
+queried in a SELECT as if it were a table.  See http://blogs.oracle.com/opal/
+2008/11/
+converting_ref_cursor_to_pipe.html
+===============================================================================
+
+Oracle 11.2 introduced support for REF CURSOR prefetching

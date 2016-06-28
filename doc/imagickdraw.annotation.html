@@ -1,0 +1,196 @@
+
+ImagickDraw::annotation
+
+(PECL imagick 2.0.0)
+
+ImagickDraw::annotation — Draws text on the image
+
+说明
+
+bool ImagickDraw::annotation ( float $x , float $y , string $text )
+Warning
+
+本函数还未编写文档，仅有参数列表。
+
+Draws text on the image.
+
+参数
+
+x
+
+    The x coordinate where text is drawn
+
+y
+
+    The y coordinate where text is drawn
+
+text
+
+    The text to draw on the image
+
+返回值
+
+没有返回值。
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Here's how to create a header image and write it to file.  This took me a while
+to figure out.  I hope this helps.
+
+<?php
+
+/* Text to write */
+$text = "Hello World!";
+
+/* Create Imagick objects */
+$image = new Imagick();
+$draw = new ImagickDraw();
+$color = new ImagickPixel('#000000');
+$background = new ImagickPixel('none'); // Transparent
+
+/* Font properties */
+$draw->setFont('Arial');
+$draw->setFontSize(50);
+$draw->setFillColor($color);
+$draw->setStrokeAntialias(true);
+$draw->setTextAntialias(true);
+
+/* Get font metrics */
+$metrics = $image->queryFontMetrics($draw, $text);
+
+/* Create text */
+$draw->annotation(0, $metrics['ascender'], $text);
+
+/* Create image */
+$image->newImage($metrics['textWidth'], $metrics['textHeight'], $background);
+$image->setImageFormat('png');
+$image->drawImage($draw);
+
+/* Save image */
+file_put_contents('/path/to/file.png', $image);
+?>
+===============================================================================
+
+may help someone...
+
+<?php
+    /**
+     * Split the given text into rows fitting the given maxWidth
+     *
+     * @param unknown_type $draw
+     * @param unknown_type $text
+     * @param unknown_type $maxWidth
+     * @return array
+     */
+    private function getTextRows($draw, $text, $maxWidth)
+    {       
+        $words = explode(" ", $text);
+       
+        $lines = array();
+        $i=0;
+        while ($i < count($words))
+        {//as long as there are words
+
+            $line = "";
+            do
+            {//append words to line until the fit in size
+                if($line != ""){
+                    $line .= " ";
+                }
+                $line .= $words[$i];
+               
+               
+                $i++;
+                if(($i) == count($words)){
+                    break;//last word -> break
+                }
+               
+                //messure size of line + next word
+                $linePreview = $line." ".$words[$i];
+                $metrics = $this->canvas->queryFontMetrics($draw, $linePreview
+);
+                //echo $line."($i)".$metrics["textWidth"].":".$maxWidth."<br>";
+               
+            }while($metrics["textWidth"] <= $maxWidth);
+           
+            //echo "<hr>".$line."<br>";
+            $lines[] = $line;
+        }
+       
+        //var_export($lines);
+        return $lines;
+    }
+?>
+===============================================================================
+
+In some cases the (custom) font can be truncated on the side parts, especially
+the handwritten ones.
+To improve the above note from Anonymous on "how to create a header image",
+I've changed this part of the code:
+
+<?php
+/* Create text */
+$draw->annotation( $metrics['boundingBox']['y2'], $metrics['ascender'], $text 
+);
+
+/* Create image */
+$image->newImage( $metrics['textWidth'] + $metrics['boundingBox']['y2'], 
+$metrics['textHeight'], $background );
+?>
+===============================================================================
+
+You can use this method to break your text so that it'll fit a certain
+$maxWidth.
+
+<?php
+/**
+* @param string $text
+* @param int $maxWidth
+*/
+protected function _fitText($text, $maxWidth)
+{
+    $im = new Imagick();
+    $im->newImage($this->_width, $this->_height, "none");
+
+    $lines = explode(PHP_EOL, trim($text));
+    $DEBUG_LOOP = 0;
+
+    for ($k = 0; $k < count($lines); ++$k) {
+        do {
+            $drawText = new ImagickDraw();
+            // set your font settings like size, family, .. here
+            $metrics  = $im->queryFontMetrics($drawText, $lines[$k]);
+            $fits     = $metrics["textWidth"] <= $maxWidth;
+
+            if ($fits) {
+                break;
+            }
+
+            $pos = mb_strrpos($lines[$k], " ");
+            if ($pos === false) {
+                throw new RuntimeException("can not make it fit");
+            }
+            if (!isset($lines[$k + 1])) {
+                $lines[$k + 1] = null;
+            }
+            $lines[$k + 1] = trim(mb_substr($lines[$k], $pos + 1) . " " . 
+$lines[$k + 1]);
+            $lines[$k]     = trim(mb_substr($lines[$k], 0, $pos));
+
+            if (++$DEBUG_LOOP >= 200) {
+                throw new RuntimeException("infinite loop");
+            }
+        } while (!$fits);
+    }
+    $text     = implode(PHP_EOL, $lines);
+    $drawText = new ImagickDraw();
+    // set your font settings like size, family, .. here again!
+    $metrics  = $im->queryFontMetrics($drawText, $text);
+    $metrics["text"] = $text;
+    assert('$metrics["textWidth"] <= $maxWidth');
+    return $metrics;
+}
+?>

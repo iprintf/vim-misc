@@ -1,0 +1,186 @@
+
+Memcache::addServer
+
+(PECL memcache >= 2.0.0)
+
+Memcache::addServer — 向连接池中添加一个memcache服务器
+
+说明
+
+bool Memcache::addServer ( string $host [, int $port = 11211 [, bool
+$persistent [, int $weight [, int $timeout [, int $retry_interval [, bool
+$status [, callback $failure_callback [, int $timeoutms ]]]]]]]] )
+
+Memcache::addServer()增加一个服务器到连接池中。通过Memcache::addServer() 打开的
+连接将会在脚本执行结束后自动关闭，也可以使用Memcache::close()进行手动关闭。您也
+可以使用memcache_add_server()来添加服务器。
+
+当使用这个方法的时候(与Memcache::connect()和Memcache::pconnect()相反) 网络连接
+并不会立刻建立，而是直到真正使用的时候才建立。因此在加入大量服务器到连接池中时
+也是没有开销的，因为它们可能并不会被使用。
+
+故障转移可能在方法的任何一个层次发生，通常只要其他服务器可用用户就不会感受到。
+任何的socket或memcache服务器级别的错误（比如内存溢出）都可能导致故障转移。而一
+般的客户端错误比如使用Memcache::add尝试增加一个已经存在的key则不会导致故障转移
+。
+
+    Note:
+
+    这个方法在2.0.0版本加入Memcache。
+
+参数
+
+host
+
+    要连接的memcached服务端监听的主机位置。这个参数通常指定其他类型的传输比如
+    Unix域套接字使用 unix:///path/to/memcached.sock，这种情况下参数port 必须设
+    置为0。
+
+port
+
+    要连接的memcached服务端监听的端口。当使用UNIX域套接字连接时设置为0。
+
+persistent
+
+    控制是否使用持久化连接。默认TRUE。
+
+weight
+
+    为此服务器创建的桶的数量，用来控制此服务器被选中的权重，单个服务器被选中的
+    概率是相对于所有服务器weight总和而言的。
+
+timeout
+
+    连接持续（超时）时间（单位秒），默认值1秒，修改此值之前请三思，过长的连接持
+    续时间可能会导致失去所有的缓存优势。
+
+retry_interval
+
+    服务器连接失败时重试的间隔时间，默认值15秒。如果此参数设置为-1表示不重试。
+    此参数和persistent参数在扩展以 dl()函数动态加载的时候无效。
+
+    每个失败的连接结构有自己的超时时间，并且在它失效之前选择后端服务请求时该结
+    构会被跳过。一旦一个连接失效，它将会被成功重新连接或被标记为失败连接以在下
+    一个retry_interval秒重连。典型的影响是每个web服务子进程在服务于一个页面时将
+    会每retry_interval秒尝试重新连接一次。
+
+status
+
+    控制此服务器是否可以被标记为在线状态。设置此参数值为FALSE并且retry_interval
+    参数设置为-1时允许将失败的服务器保留在一个池中以免影响key的分配算法。对于这
+    个服务器的请求会进行故障转移或者立即失败，这受限于memcache.allow_failover参
+    数的设置。该参数默认TRUE，表明允许进行故障转移。
+
+failure_callback
+
+    允许用户指定一个运行时发生错误后的回调函数。回调函数会在故障转移之前运行。
+    回调函数会接受到两个参数，分别是失败主机的主机名和端口号。
+
+timeoutms
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Memcache::addServer() 示例
+
+<?php
+
+/* OO API */
+
+$memcache = new Memcache;
+$memcache->addServer('memcache_host', 11211);
+$memcache->addServer('memcache_host2', 11211);
+
+/* procedural API */
+
+$memcache_obj = memcache_connect('memcache_host', 11211);
+memcache_add_server($memcache_obj, 'memcache_host2', 11211);
+
+?>
+
+参见
+
+  • Memcache::connect() - 打开一个memcached服务端连接
+  • Memcache::pconnect() - 打开一个到服务器的持久化连接
+  • Memcache::close() - 关闭memcache连接
+  • Memcache::setServerParams() - 运行时修改服务器参数和状态
+  • Memcache::getServerStatus() - 用于获取一个服务器的在线/离线状态
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+The Memcache client library is responsible for picking the right server to set/
+get data. That's why addServer is what you want to use rather than connect,
+when you have more than one Memcache server. A subsequent set/get will then
+connect on demand to the appropriate instance as needs be. Disconnection to
+whatever servers were connected to happening when you close or your script
+terminates.
+
+Memcache instances added to your Memcache object via addServer should be added
+in the same order in your application to ensure that the same server is picked
+for use with the same key.
+
+A client library may be implemented to run a CRC on the key and do a modulus
+over the number of instances in the list to select an instance from the list
+for the set/get. This ensures that data is spread nicely across the nodes.
+
+That all works nicely behind the scenes for you in your PHP code, as long as
+you add your list of Memcache instances in a consistent manner with addServer.
+===============================================================================
+
+The $timeoutms argument can be used to specify the timeout in milliseconds, but
+isn't available in all versions. For example, it exists in php_memcache 2.2.6,
+but not in 3.0.4. In 2.2.6, if you specify it, then it overrides $timeout.
+
+Caveat emptor: If $timeoutms is not specified, it defaults to the value of
+memcache.default_timeout_ms in php.ini, which defaults to 1000 if not set. This
+also overrides $timeout, which has the curious effect that $timeout is always
+ignored in php_memcache 2.2.6 (either in favor of $timeoutms,
+memcache.default_timeout_ms or the value 1000, in that order of priority).
+===============================================================================
+
+The weight of the server must be greater than 0.
+
+If there is no memcached server to use, and you try to set/add variables, the
+apache will be crashed, with the error message "[notice] child pid 18725 exit
+signal Segmentation fault (11)" in error_log file.
+===============================================================================
+
+Note that this method will always return TRUE because a connection is not
+actually made at call time. See this bug report for more information: https://
+bugs.php.net/bug.php?id=58193
+===============================================================================
+
+Actually if you have two memcached servers from which one of them is on
+localhost, and the other is on a remote machine you can communicate with both
+even if you specify the loopback address for the local one.
+
+<?php
+$memcache_obj = memcache_connect("127.0.0.1", 11211);
+memcache_add_server($memcache_obj, "memcache_remote_host");
+$memcache_obj->set('var_key', time());
+?>
+
+This WILL communicate with both hosts but however there are two aspects that
+must be taken into account:
+1. the communication will be done through different network interfaces with the
+two hosts. It will use the loopback interface for the "127.0.0.1" host (lo in
+my case on Linux) and the external interface for the "memcache_remote_host"
+(eth0 in my case). Only if you want to use the same network interface to
+communicate with both hosts you must use the external IPs of both machines (and
+all communication will go out through the eth0 interface).
+2. the connection with the two hosts will be established differently because of
+how memcache_connect() and memcache_add_server() work. Therefore the
+memcache_connect() will initiate the connection to localhost through the
+loopback interface when it is called, while memcache_add_server() will just add
+the second server to the pool, but it will not send any package through the
+network until it's absolutely needed (for example when a memcache_set() command
+is issued).
+===============================================================================
+
+The default value for the "weight" argument is 1

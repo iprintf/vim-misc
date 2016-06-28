@@ -1,0 +1,290 @@
+
+PDO 类
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.1.0)
+
+简介
+
+代表 PHP 和数据库服务之间的一个连接
+
+类摘要
+
+PDO {
+__construct ( string $dsn [, string $username [, string $password [, array
+$driver_options ]]] )
+bool beginTransaction ( void )
+bool commit ( void )
+mixed errorCode ( void )
+public array errorInfo ( void )
+int exec ( string $statement )
+mixed getAttribute ( int $attribute )
+static array getAvailableDrivers ( void )
+bool inTransaction ( void )
+string lastInsertId ([ string $name = NULL ] )
+public PDOStatement prepare ( string $statement [, array $driver_options =
+array() ] )
+public PDOStatement query ( string $statement )
+public string quote ( string $string [, int $parameter_type = PDO::PARAM_STR ]
+)
+bool rollBack ( void )
+bool setAttribute ( int $attribute , mixed $value )
+}
+
+Table of Contents
+
+  • PDO::beginTransaction — 启动一个事务
+  • PDO::commit — 提交一个事务
+  • PDO::__construct — 创建一个表示数据库连接的 PDO 实例
+  • PDO::errorCode — 获取跟数据库句柄上一次操作相关的 SQLSTATE
+  • PDO::errorInfo — Fetch extended error information associated with the last
+    operation on the database handle
+  • PDO::exec — 执行一条 SQL 语句，并返回受影响的行数
+  • PDO::getAttribute — 取回一个数据库连接的属性
+  • PDO::getAvailableDrivers — 返回一个可用驱动的数组
+  • PDO::inTransaction — 检查是否在一个事务内
+  • PDO::lastInsertId — 返回最后插入行的ID或序列值
+  • PDO::prepare — Prepares a statement for execution and returns a statement
+    object
+  • PDO::query — Executes an SQL statement, returning a result set as a
+    PDOStatement object
+  • PDO::quote — Quotes a string for use in a query.
+  • PDO::rollBack — 回滚一个事务
+  • PDO::setAttribute — 设置属性
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+"And storing username/password inside class is not a very good idea for
+production code."
+
+Good idea is to store database connection settings in *.ini files but you have
+to restrict access to them. For example this way:
+
+my_setting.ini:
+[database]
+driver = mysql
+host = localhost
+;port = 3306
+schema = db_schema
+username = user
+password = secret
+
+Database connection:
+<?php
+class MyPDO extends PDO
+{
+    public function __construct($file = 'my_setting.ini')
+    {
+        if (!$settings = parse_ini_file($file, TRUE)) throw new exception(
+'Unable to open ' . $file . '.');
+       
+        $dns = $settings['database']['driver'] .
+        ':host=' . $settings['database']['host'] .
+        ((!empty($settings['database']['port'])) ? (';port=' . $settings[
+'database']['port']) : '') .
+        ';dbname=' . $settings['database']['schema'];
+       
+        parent::__construct($dns, $settings['database']['username'], $settings[
+'database']['password']);
+    }
+}
+?>
+
+Database connection parameters are accessible via human readable ini file for
+those who screams even if they see one PHP/HTML/any_other command.
+===============================================================================
+
+Starting with PHP 5.4 you are unable to use persistent connections when you
+have your own database class derived from the native PDO class. If your code
+uses this combination, you will encounter segmentation faults during the
+cleanup of the PHP process.
+You can still use _either_ a derived PDO class _or_ persistent connections.
+
+For more information, please see this bug report: https://bugs.php.net/bug.php?
+id=63176
+===============================================================================
+
+Keep in mind, you MUST NOT use 'root' user in your applications, unless your
+application designed to do a database maintenance.
+
+And storing username/password inside class is not a very good idea for
+production code. You would need to edit the actual working code to change
+settings, which is bad.
+===============================================================================
+
+PDO and Dependency Injection
+
+Dependency injection is good for testing.  But for anyone wanting various data
+mapper objects to have a database connection, dependency injection can make
+other model code very messy because database objects have to be instantiated
+all over the place and given to the data mapper objects.
+
+The code below is a good way to maintain dependency injection while keeping
+clean and minimal model code.
+
+<?php
+
+class DataMapper
+{
+    public static $db;
+   
+    public static function init($db)
+    {
+        self::$db = $db;
+    }
+}
+
+class VendorMapper extends DataMapper
+{
+    public static function add($vendor)
+    {
+        $st = self::$db->prepare(
+            "insert into vendors set
+            first_name = :first_name,
+            last_name = :last_name"
+        );
+        $st->execute(array(
+            ':first_name' => $vendor->first_name,
+            ':last_name' => $vendor->last_name
+        ));
+    }
+}
+
+// In your bootstrap
+$db = new PDO(...);
+DataMapper::init($db);
+
+// In your model logic
+$vendor = new Vendor('John', 'Doe');
+VendorMapper::add($vendor);
+
+?>
+===============================================================================
+
+<?php
+class PDOConfig extends PDO {
+   
+    private $engine;
+    private $host;
+    private $database;
+    private $user;
+    private $pass;
+   
+    public function __construct(){
+        $this->engine = 'mysql';
+        $this->host = 'localhost';
+        $this->database = '';
+        $this->user = 'root';
+        $this->pass = '';
+        $dns = $this->engine.':dbname='.$this->database.";host=".$this->host;
+        parent::__construct( $dns, $this->user, $this->pass );
+    }
+}
+?>
+===============================================================================
+
+Here is an singleton PDO example:
+
+###### config.ini ######
+db_driver=mysql
+db_user=root
+db_password=924892xp
+
+[dsn]
+host=localhost
+port=3306
+dbname=localhost
+
+[db_options]
+PDO::MYSQL_ATTR_INIT_COMMAND=set names utf8
+
+[db_attributes]
+ATTR_ERRMODE=ERRMODE_EXCEPTION
+############
+
+<?php class Database {
+    private static $link = null ;
+
+    private static function getLink ( ) {
+        if ( self :: $link ) {
+            return self :: $link ;
+        }
+
+        $ini = _BASE_DIR . "config.ini" ;
+        $parse = parse_ini_file ( $ini , true ) ;
+
+        $driver = $parse [ "db_driver" ] ;
+        $dsn = "${driver}:" ;
+        $user = $parse [ "db_user" ] ;
+        $password = $parse [ "db_password" ] ;
+        $options = $parse [ "db_options" ] ;
+        $attributes = $parse [ "db_attributes" ] ;
+
+        foreach ( $parse [ "dsn" ] as $k => $v ) {
+            $dsn .= "${k}=${v};" ;
+        }
+
+        self :: $link = new PDO ( $dsn, $user, $password, $options ) ;
+
+        foreach ( $attributes as $k => $v ) {
+            self :: $link -> setAttribute ( constant ( "PDO::{$k}" )
+                , constant ( "PDO::{$v}" ) ) ;
+        }
+
+        return self :: $link ;
+    }
+
+    public static function __callStatic ( $name, $args ) {
+        $callback = array ( self :: getLink ( ), $name ) ;
+        return call_user_func_array ( $callback , $args ) ;
+    }
+} ?>
+
+<?php // examples
+$stmt = Database :: prepare ( "SELECT 'something' ;" ) ;
+$stmt -> execute ( ) ;
+var_dump ( $stmt -> fetchAll ( ) ) ;
+$stmt -> closeCursor ( ) ;
+?>
+===============================================================================
+
+$DB = new PDO('mysql:host=127.0.0.1;port=3306;dbname=anexis_new;charset=UTF8;
+','root','password', array(PDO::ATTR_PERSISTENT=>true));
+$DB->query("SET NAMES utf8;");
+===============================================================================
+
+Here is a cheeky PDO helper class to get you started . . .
+
+define('DB_MAIN', 'localhost|user1|pa55word|db1');
+
+// Connect to database db1
+$db = new my_db(DB_MAIN);
+
+// Request "SELECT * FROM table1 WHERE a=16 AND b=22"
+// Get an array of stdClass's
+$rows = $db->fetchAll('SELECT * FROM table1 WHERE a=? AND b=?', 16, 22);
+
+class my_db{
+
+    private static $databases;
+    private $connection;
+
+    public function __construct($connDetails){
+        if(!is_object(self::$databases[$connDetails])){
+            list($host, $user, $pass, $dbname) = explode('|', $connDetails);
+            $dsn = "mysql:host=$host;dbname=$dbname";
+            self::$databases[$connDetails] = new PDO($dsn, $user, $pass);
+        }
+        $this->connection = self::$databases[$connDetails];
+    }
+   
+    public function fetchAll($sql){
+        $args = func_get_args();
+        array_shift($args);
+        $statement = $this->connection->prepare($sql);       
+        $statement->execute($args);
+         return $statement->fetchAll(PDO::FETCH_OBJ);
+    }
+}

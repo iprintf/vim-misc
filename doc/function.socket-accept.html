@@ -1,0 +1,298 @@
+
+socket_accept
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+socket_accept — Accepts a connection on a socket
+
+说明
+
+resource socket_accept ( resource $socket )
+
+After the socket socket has been created using socket_create(), bound to a name
+with socket_bind(), and told to listen for connections with socket_listen(),
+this function will accept incoming connections on that socket. Once a
+successful connection is made, a new socket resource is returned, which may be
+used for communication. If there are multiple connections queued on the socket,
+the first will be used. If there are no pending connections, socket_accept()
+will block until a connection becomes present. If socket has been made
+non-blocking using socket_set_blocking() or socket_set_nonblock(), FALSE will
+be returned.
+
+The socket resource returned by socket_accept() may not be used to accept new
+connections. The original listening socket socket, however, remains open and
+may be reused.
+
+参数
+
+socket
+
+    A valid socket resource created with socket_create().
+
+返回值
+
+Returns a new socket resource on success, or FALSE on error. The actual error
+code can be retrieved by calling socket_last_error(). This error code may be
+passed to socket_strerror() to get a textual explanation of the error.
+
+参见
+
+  • socket_connect() - 开启一个套接字连接
+  • socket_listen() - Listens for a connection on a socket
+  • socket_create() - 创建一个套接字（通讯节点）
+  • socket_bind() - 给套接字绑定名字
+  • socket_strerror() - Return a string describing a socket error
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+If you want to make a daemon process that forks on each client connection,
+you'll find out that there's a bug in PHP. The child processes send SIGCHLD to
+their parent when they exit but the parent can't handle signals while it's
+waiting for socket_accept (blocking).
+
+Here is a piece of code that makes a non-blocking forking server.
+
+#!/usr/bin/php -q
+<?php
+/**
+  * Listens for requests and forks on each connection
+  */
+
+$__server_listening = true;
+
+error_reporting(E_ALL);
+set_time_limit(0);
+ob_implicit_flush();
+declare(ticks = 1);
+
+become_daemon();
+
+/* nobody/nogroup, change to your host's uid/gid of the non-priv user */
+change_identity(65534, 65534);
+
+/* handle signals */
+pcntl_signal(SIGTERM, 'sig_handler');
+pcntl_signal(SIGINT, 'sig_handler');
+pcntl_signal(SIGCHLD, 'sig_handler');
+
+/* change this to your own host / port */
+server_loop("127.0.0.1", 1234);
+
+/**
+  * Change the identity to a non-priv user
+  */
+function change_identity( $uid, $gid )
+{
+    if( !posix_setgid( $gid ) )
+    {
+        print "Unable to setgid to " . $gid . "!\n";
+        exit;
+    }
+
+    if( !posix_setuid( $uid ) )
+    {
+        print "Unable to setuid to " . $uid . "!\n";
+        exit;
+    }
+}
+
+/**
+  * Creates a server socket and listens for incoming client connections
+  * @param string $address The address to listen on
+  * @param int $port The port to listen on
+  */
+function server_loop($address, $port)
+{
+    GLOBAL $__server_listening;
+
+    if(($sock = socket_create(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        echo "failed to create socket: ".socket_strerror($sock)."\n";
+        exit();
+    }
+
+    if(($ret = socket_bind($sock, $address, $port)) < 0)
+    {
+        echo "failed to bind socket: ".socket_strerror($ret)."\n";
+        exit();
+    }
+
+    if( ( $ret = socket_listen( $sock, 0 ) ) < 0 )
+    {
+        echo "failed to listen to socket: ".socket_strerror($ret)."\n";
+        exit();
+    }
+
+    socket_set_nonblock($sock);
+   
+    echo "waiting for clients to connect\n";
+
+    while ($__server_listening)
+    {
+        $connection = @socket_accept($sock);
+        if ($connection === false)
+        {
+            usleep(100);
+        }elseif ($connection > 0)
+        {
+            handle_client($sock, $connection);
+        }else
+        {
+            echo "error: ".socket_strerror($connection);
+            die;
+        }
+    }
+}
+
+/**
+  * Signal handler
+  */
+function sig_handler($sig)
+{
+    switch($sig)
+    {
+        case SIGTERM:
+        case SIGINT:
+            exit();
+        break;
+
+        case SIGCHLD:
+            pcntl_waitpid(-1, $status);
+        break;
+    }
+}
+
+/**
+  * Handle a new client connection
+  */
+function handle_client($ssock, $csock)
+{
+    GLOBAL $__server_listening;
+
+    $pid = pcntl_fork();
+
+    if ($pid == -1)
+    {
+        /* fork failed */
+        echo "fork failure!\n";
+        die;
+    }elseif ($pid == 0)
+    {
+        /* child process */
+        $__server_listening = false;
+        socket_close($ssock);
+        interact($csock);
+        socket_close($csock);
+    }else
+    {
+        socket_close($csock);
+    }
+}
+
+function interact($socket)
+{
+    /* TALK TO YOUR CLIENT */
+}
+
+/**
+  * Become a daemon by forking and closing the parent
+  */
+function become_daemon()
+{
+    $pid = pcntl_fork();
+   
+    if ($pid == -1)
+    {
+        /* fork failed */
+        echo "fork failure!\n";
+        exit();
+    }elseif ($pid)
+    {
+        /* close the parent */
+        exit();
+    }else
+    {
+        /* child becomes our daemon */
+        posix_setsid();
+        chdir('/');
+        umask(0);
+        return posix_getpid();
+
+    }
+}
+
+?>
+===============================================================================
+
+If you want to have multiple clients on a server you will have to use non
+blocking.
+
+<?php
+
+$clients = array();
+$socket = socket_create(AF_INET,SOCK_STREAM,SOL_TCP);
+socket_bind($socket,'127.0.0.1',$port);
+socket_listen($socket);
+socket_set_nonblock($socket);
+
+while(true)
+{
+    if(($newc = socket_accept($socket)) !== false)
+    {
+        echo "Client $newc has connected\n";
+        $clients[] = $newc;
+    }
+}
+
+?>
+===============================================================================
+
+Be aware signal handler functions set with pcntl_signal are not called while a
+socket is blocking waiting for a connection; the signal is absorbed silently
+and the handler called when a connection is made.
+===============================================================================
+
+In order to make many clients connectable to the server, you have to set the
+accepted socket also to non-blocking. Otherwise the accepted connection will
+block further incoming connections.
+
+while (true) {
+    $newSock = @socket_accept($sock);
+
+    if ($newSock) {
+        echo 'client connected';
+
+        socket_set_nonblock($newSock);
+    }
+}
+===============================================================================
+
+The socket returned by this resource will be non-blocking, regardless of what
+the listening socket is set to. This is actually true for all FCNTL modifiers.
+===============================================================================
+
+>Accepting a connection using php-sockets:
+>
+>$fd = socket_create(AF_INET, SOCK_STREAM, 6 /* OR >getprotobyname("TCP")*/);
+>
+>$PORT = 5000;
+>
+>socket_bind($fd, "0.0.0.0", $PORT);
+>
+>while(true)
+>{
+>$remote_fd = socket_accept($fd);
+>
+>remote_socket_client_handle($remote_fd);
+>
+>}
+>
+>It is simple!
+
+This example doesn't work. You have to call socket_listen($fd) after your bind
+in order to accept incoming connections.
+
+Simon

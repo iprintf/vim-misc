@@ -1,0 +1,134 @@
+
+Exception::getPrevious
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+Exception::getPrevious — 返回异常链中的前一个异常
+
+说明
+
+final public Exception Exception::getPrevious ( void )
+
+返回异常链中的前一个异常（Exception::__construct()方法的第三个参数）。
+
+参数
+
+此函数没有参数。
+
+返回值
+
+返回异常链中的前一个异常Exception，否则返回NULL。
+
+范例
+
+Example #1 Exception::getPrevious()示例
+
+追踪异常，并循环打印。
+
+<?php
+class MyCustomException extends Exception {}
+
+function doStuff() {
+    try {
+        throw new InvalidArgumentException("You are doing it wrong!", 112);
+    } catch(Exception $e) {
+        throw new MyCustomException("Something happend", 911, $e);
+    }
+}
+
+
+try {
+    doStuff();
+} catch(Exception $e) {
+    do {
+        printf("%s:%d %s (%d) [%s]\n", $e->getFile(), $e->getLine(), $e->
+getMessage(), $e->getCode(), get_class($e));
+    } while($e = $e->getPrevious());
+}
+?>
+
+以上例程的输出类似于：
+
+/home/bjori/ex.php:8 Something happend (911) [MyCustomException]
+/home/bjori/ex.php:6 You are doing it wrong! (112) [InvalidArgumentException]
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+May be I am late (5.2 is not supported). But if you want use the functionality
+of "previous Exception" in PHP < 5.3 or write compatible code, you can use next
+way as below.
+
+<?php
+abstract class App_Exception_PreviousNativeAbstract extends Exception {
+    public static $printPrevious = true;
+
+    public function __toString() {
+        $result   = array();
+        $result[] = sprintf("Exception '%s' with message '(%s) %s' in %s:%d", 
+get_class($this), $this->code, $this->message, $this->file, $this->line);
+        $result[] = '---[Stack trace]:';
+        $result[] = $this->getTraceAsString();
+
+        if (self::$printPrevious) {
+            $previous = $this->getPrevious();
+            if ($previous) {
+                do {
+                    $result[] = '---[Previous exception]:';
+                    $result[] = sprintf("Exception '%s' with message '(%s) %s'
+in %s:%d", get_class($previous), $previous->getCode(), $previous->getMessage(),
+$previous->getFile(), $previous->getLine());
+                    $result[] = '---[Stack trace]:';
+                    $result[] = $previous->getTraceAsString();
+                } while(method_exists($previous, 'getPrevious') && ($previous =
+$previous->getPrevious()));
+            }
+        }
+
+        return implode("\r\n", $result);
+    }
+}
+
+abstract class App_Exception_PreviousLegacyAbstract extends 
+App_Exception_PreviousNativeAbstract {
+    protected $previous;
+
+    public function __construct($message, $code = 0, Exception $previous = null
+) {
+        $this->previous = $previous;
+
+        parent::__construct($message, $code);
+    }
+
+    public function getPrevious() {
+        return $this->previous;
+    }
+}
+
+if (version_compare(PHP_VERSION, '5.3.0', '>=')) {
+    abstract class App_Exception_PreviousAbstract extends 
+App_Exception_PreviousNativeAbstract {}
+}
+else {
+    abstract class App_Exception_PreviousAbstract extends 
+App_Exception_PreviousLegacyAbstract {}
+}
+
+class App_Exception extends App_Exception_PreviousAbstract {
+    public function __construct($message, $code = 0, Exception $previous = null
+) {
+        parent::__construct($message, 0, $previous);
+    }
+}
+
+// Example:
+try {
+    // ...
+    throw new Exception('Exception mesage');
+    // ...
+} catch (Exception $e) {
+    throw new App_Exception('App exception mesage', 0, $e);
+}
+?>

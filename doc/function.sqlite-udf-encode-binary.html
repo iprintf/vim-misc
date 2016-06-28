@@ -1,0 +1,136 @@
+
+sqlite_udf_encode_binary
+
+(PHP 5 < 5.4.0, PECL sqlite >= 1.0.0)
+
+sqlite_udf_encode_binary — Encode binary data before returning it from an UDF
+
+说明
+
+string sqlite_udf_encode_binary ( string $data )
+
+sqlite_udf_encode_binary() applies a binary encoding to the data so that it can
+be safely returned from queries (since the underlying libsqlite API is not
+binary safe).
+
+If there is a chance that your data might be binary unsafe (e.g.: it contains a
+NUL byte in the middle rather than at the end, or if it has and 0x01 byte as
+the first character) then you must call this function to encode the return
+value from your UDF.
+
+PHP does not perform this encode/decode operation automatically as it would
+severely impact performance if it did.
+
+    Note:
+
+    Do not use sqlite_escape_string() to quote strings returned from UDF's as
+    it will lead to double-quoting of the data. Use sqlite_udf_encode_binary()
+    instead!
+
+参数
+
+data
+
+    The string being encoded.
+
+返回值
+
+The encoded string.
+
+参见
+
+  • sqlite_udf_decode_binary() - Decode binary data passed as parameters to an
+    UDF
+  • sqlite_escape_string() - Escapes a string for use as a query parameter
+  • sqlite_create_function() - Registers a "regular" User Defined Function for
+    use in SQL statements
+  • sqlite_create_aggregate() - Register an aggregating UDF for use in SQL
+    statements
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+I wrote a script to transfer my old data from a mysql database, performing some
+changes to a sqlite3 database. When I realized that that the sqlite interfaces
+is no longer included in PHP and my PECL didn't get it installed it was too
+late.
+
+However, there is a very easy, though not particularly performant way to get
+the job done like in the "sqlite_encode_blob" function I present below. Note
+that this does ONLY encode the data. To actually use it in a query you will
+have to wrap it like: X'data' See the example below.
+
+#!/usr/bin/php
+<?php
+function sqlite_encode_blob($data) {
+        $result = "";
+        for ($i = 0; $i < strlen($data); $i++) {
+                $result .= sprintf("%02X", ord(substr($data, $i, 1)));
+        }
+        return $result;
+}
+
+error_reporting(E_ALL);
+$original = "62.jpg";
+$data = file_get_contents($original);
+$before = microtime(true);
+$encodedData = sqlite_encode_blob($data);
+$after = microtime(true);
+unset($data);
+echo "Encoding time needed: ".($after - $before)." seconds.\n";
+
+$sql = <<<QUERY
+BEGIN;
+CREATE TABLE test(test BLOB);
+INSERT INTO test(test) VALUES ( X'$encodedData' );
+COMMIT;
+QUERY;
+unset($encodedData);
+
+file_put_contents("test.sql", $sql);
+`sqlite3 blob_test.db < test.sql`
+?>
+
+The tricky part is to get the data back out of the database - that is not
+possible with the command line tool as far as I can tell. You will have to use
+a language with an actual API.
+
+The following example is written in C and compiles on a linux box where the
+sqlite3 API is installed using:
+gcc -o test test.c `pkg-config --cflags --libs sqlite3`
+Note that this has absolutely no error checking whatsoever. If the slightest
+thing goes wrong it will likely cause a segmentation fault and likely leave the
+database corrupted.
+
+# FILE test.c START
+#include <stdlib.h>
+#include <stdio.h>
+#include <sqlite3.h>
+#define DB_FILE "blob_test.db"
+#define QUERY_STRING "SELECT data FROM test"
+#define STORAGE_FILE "test.jpg"
+
+int main(int argc, char** argv) {
+        sqlite3 *db = NULL;
+        int size = 0;
+        const char *data = NULL;
+        sqlite3_stmt *query = NULL;
+        const char *rest = NULL;
+        FILE *file = NULL;
+        sqlite3_open(DB_FILE, &db);
+        sqlite3_prepare_v2(db, QUERY_STRING, sizeof(QUERY_STRING), &query, &
+rest);
+        sqlite3_step(query);
+        size = sqlite3_column_bytes(query, 0);
+        data = sqlite3_column_blob(query, 0);
+        file = fopen(STORAGE_FILE, "w");
+        fwrite(data, 1, size, file);
+        fclose(file);
+        sqlite3_finalize(query);
+        sqlite3_close(db);
+        return 0;
+}
+
+# FILE test.c END

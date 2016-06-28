@@ -1,0 +1,280 @@
+
+pg_connect
+
+(PHP 4, PHP 5, PHP 7)
+
+pg_connect — 打开一个 PostgreSQL 连接
+
+说明
+
+resource pg_connect ( string $connection_string )
+
+pg_connect() 返回其它 PostgreSQL 函数所需要的资源。
+
+pg_connect() 打开一个由 connection_string 所指定的 PostgreSQL 数据库的连接。如
+果成功则返回连接资源，如果不能连接则返回 FALSE。connection_string 应该是用引号
+引起来的字符串。
+
+Example #1 使用 pg_connect()
+
+<?php
+$dbconn = pg_connect("dbname=mary");
+//connect to a database named "mary"
+$dbconn2 = pg_connect("host=localhost port=5432 dbname=mary");
+// connect to a database named "mary" on "localhost" at port "5432"
+$dbconn3 = pg_connect("host=sheep port=5432 dbname=mary user=lamb password=foo"
+);
+//
+connect to a database named "mary" on the host "sheep" with a username and password
+
+$conn_string = "host=sheep port=5432 dbname=test user=lamb password=bar";
+$dbconn4 = pg_connect($conn_string);
+//
+connect to a database named "test" on the host "sheep" with a username and password
+?>
+connection_string 所包括的参数有 host，port，tty, options，dbname, user 和
+password。
+
+如果用同样的 connection_string 再次调用 pg_connect()，不会建立新连接，而是返回
+前面已经打开的连接资源。如果使用不同的连接字符串，则可以和同一个数据库建立多个
+连接。
+
+旧的多参数语法 $conn = pg_connect("host", "port", "options", "tty", "dbname")
+已经不提倡使用。
+
+参见 pg_pconnect()，pg_close()，pg_host()，pg_port(), pg_tty()，pg_options() 和
+pg_dbname()。
+
+
+User Contributed Notes 22 notes
+
+===============================================================================
+
+Getting md5 passwords was confusing because of a lack of documentation:
+
+- set up your pg_hba.conf in order to use md5 password instead of 'trust' or
+'ident'
+- check if your postgres.conf has 'password_encryption=on' (depending on the
+version this might already be 'on').
+- make sure to restart your postgres process.
+- in PHP you just supply the username and password in _plain_ text:
+'host=localhost port=5432 dbname=megadb user=megauser password=
+holyhandbagsbatmanthispasswordisinplaintext'
+The postgres PHP library will automagically do the md5 encoding for you, no
+need to do it yourself.
+===============================================================================
+
+If you use pgbouncer and unix socket
+and you pgbouncer.ini looks like this
+listen_port = 6432
+unix_socket_dir = /tmp
+
+you connect like this
+
+pg_connect('host=/tmp port=6432 dbname=DB user=USER password=PASS');
+===============================================================================
+
+Beware about writing something like
+<?php
+function getdb_FAILS() {
+    return pg_connect("...") or die('connection failed');
+}
+?>
+
+It will return a boolean.  This will appear to be fine if you don't use the
+return value as a db connection handle, but will fail if you do.
+
+Instead, use:
+<?php
+function getdb() {
+    $db = pg_connect("...") or die('connection failed');
+    return $db;
+}
+?>
+
+which actually returns a handle.
+===============================================================================
+
+if you need to open a new connection handle (i.e. for multiple pg_send_query())
+use PGSQL_CONNECT_FORCE_NEW as second parameter to pg_connect()
+===============================================================================
+
+One thing is to remember, whenever trying to use pg_connect, add the timeout
+parameter with it
+
+<?php
+$d=pg_connect('host=example.com user=pgsql dbname=postgres connect_timeout=5');
+?>
+===============================================================================
+
+The values accepted by pg_connect's sslmode argument are: disable, allow,
+prefer, require
+===============================================================================
+
+Little note that is buried in the install somewhere.  In Php 3, PostgreSQL
+support was activated by adding --with-postgresql=[DIR] to the options passed
+to ./configure.  With Php 4.0.2 (on Linux) the parameter was --with-pgsql.  The
+only place I found this was in the installing PHP on Unix section of the
+manual.
+===============================================================================
+
+If you use PostgreSQL users for authenticating into your pg database rather
+than using your own authentication, always specify host directive in pg_connect
+and edit pg_hba.conf to authenticate from this host accordingly. Otherwise, PHP
+will connect as 'local' using UNIX domain sockets, which is set in pg_hba.conf
+to 'trust' by default (so you can connect using psql on console without
+specifying password) and everyone can connect to db _without password_ .
+===============================================================================
+
+It's not explicitly stated here, but you can also connect to PostgreSQL via a
+UNIX domain socket by leaving the host empty.  This should have less overhead
+than using TCP e.g.:
+
+$dbh = new PDO('pgsql:user=exampleuser dbname=exampledb password=examplepass');
+
+In fact as the C library call PQconnectdb underlies this implementation, you
+can supply anything that this library call would take - the "pgsql:" prefix
+gets stripped off before PQconnectdb is called, and if you supply any of the
+optional arguments (e.g. user), then these arguments will be added to the
+string that you supplied...  Check the docs for your relevant PostgreSQL client
+library: e.g.
+
+http://www.postgresql.org/docs/8.3/static/libpq-connect.html
+
+If you really want, you can use ';'s to separate your arguments - these will
+just be converted to spaces before PQconnectdb is called.
+
+Tim.
+===============================================================================
+
+It's possible connect to a PostgreSQL database via Unix socket using the
+pg_connect() function by the following two ways:
+
+1) Using the socket path:
+
+<?php
+$conn = pg_connect('host=/var/run/postgresql user=username dbname=databasename'
+);
+?>
+
+2) Omitting the host name/path:
+
+<?php
+$conn = pg_connect('user=username dbname=databasename');
+?>
+
+Note: in this case (omitting the host value), the default socket path will be
+used.
+===============================================================================
+
+I got the same problem but I have to solve that in different way.
+In my postgresql.conf file the following was commented.
+So, I active that under Connection Settings-
+
+# - Connection Settings –
+tcpip_socket = true
+===============================================================================
+
+If you use pg_connect('host=localhost port=5432 user=my_username password=
+my_password dbname=my_dbname') and you get the following error:
+"Warning: pg_connect(): Unable to connect to PostgreSQL server: could not
+connect to server: Connection refused Is the server running on host localhost
+and accepting TCP/IP connections on port 5432?"
+then you should try to leave the host= and port= parts out of the connection
+string. This sounds strange, but this is an "option" of Postgre. If you have
+not activated the TCP/IP port in postgresql.conf then postgresql doesn't accept
+any incoming requests from an TCP/IP port. If you use host= in your connection
+string you are going to connect to Postgre via TCP/IP, so that's not going to
+work. If you leave the host= part out of your connection string you connect to
+Postgre via the Unix domain sockets, which is faster and more secure, but you
+can't connect with the database via any other PC as the localhost.
+===============================================================================
+
+pg_connect seems to support SSL connections, on systems where Postgres has been
+compiled with ssl, i'm assuming this is since psql uses libpq to connect.
+pg_connect can successfully connect, and use the "requiressl" argument.
+===============================================================================
+
+"If you use pg_connect('host=localhost port=5432 user=my_username password=
+my_password dbname=my_dbname') and you get the following error:
+"Warning: pg_connect(): Unable to connect to PostgreSQL server: could not
+connect to server: Connection refused Is the server running on host localhost
+and accepting TCP/IP connections on port 5432?"
+"
+I solved this error just by setting listen_addresses = '*' in the
+postgresql.conf file. This error occurs probably despite of a name resolution
+to localhost, given in the "host" parameter. So you can set the host in the
+pg_connect() function.
+===============================================================================
+
+regarding the note from  matias at nospam dot projectcast dot com
+on 12-Feb-2002 01:16, you do not need a user in the database with the same name
+a your web user with ANY version of postgresql.  The only time that would be a
+requirement ifs if you set your postgresql server to only allow IDENT based
+authentication  (which IIRC is the default on Red Hat systems, which might be
+what lead to the confusion).  For more info on the various authentication
+methods allowed by postgresql, check out http://www.postgresql.org/docs/7.4/
+static/client-authentication.html
+===============================================================================
+
+If you use host=HOSTNAME in your pg_connect string when connecting to
+PostgreSQL databases newer than 7.1, you need to make sure that your postmaster
+daemon is started with the "-i" option.  Otherwise the connection will fail. 
+See http://www.postgresql.org/idocs/index.php?client-authentication.html for
+client authentication documentation.
+===============================================================================
+
+At least with Postgres 7.2, connecting to local postgresdatabase requires a
+user in the database with the same name as the user running apache, or the
+connection fails.
+===============================================================================
+
+pg_connect() won't work with the authentication method 'crypt' in the
+pg_hba.conf. Took me an hour to figure that out till I remeberd some other
+issues with windows missing the crypt() call.
+===============================================================================
+
+If you get the following warning :
+"Warning: pg_connect(): Unable to connect to PostgreSQL server: could not
+translate host name "server.your.trying.to.connect.to" to address:"
+and the server you are trying to connect to is fine and the connecting itself
+should be working fine,
+it might be the case that the postgres extension for PHP might be confused
+about something.
+Try to restart your Apache to reinitialize the extension.
+===============================================================================
+
+It's strange how this "Fatal error: Call to undefined function pg_connect()"
+happens(when everything else is OK) in PHP version 5.3.3.
+
+I was trying to connect to my db when I got that error message the firs time.
+My extensions path was OK, pgsql extension  should have been loaded from
+php.ini(i had enabled it before), Apache started-up without errors, but i still
+had the "Fatal error: Call to undefined function pg_connect()" message when i
+tried to connect.
+Seaching a bit around i found something about dll libraries not working as they
+should, so deleted the new 5.3.3 version, downloaded the PHP 5.2.5 and
+configured it.
+
+I'm using Windows XP Home SP3, Apache 2.2, PHP 5.2.5 and everything works fine
+now... ;)
+===============================================================================
+
+Ubuntu/Debian users, specifically server versions: If you used Tasksel to build
+PostgreSQL, and you're banging your head against the wall with the "Fatal
+error: Call to undefined function pg_connect()" error, check that php5-pgsql is
+installed.
+
+Tasksel apparently doesn't install it.
+===============================================================================
+
+remember that when you use a blank password there will be an error because of:
+password= dbname= (...)
+to fix this problem use '' in your $options variable
+example:
+
+$options = " host='localhost' port='5432' user='postgres' password='' dbname=
+'test' ";
+pg_connect($options);
+
+*** careful: I used double ' after password=, not "

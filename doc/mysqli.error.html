@@ -1,0 +1,274 @@
+
+mysqli::$error
+
+mysqli_error
+
+(PHP 5, PHP 7)
+
+mysqli::$error -- mysqli_error — Returns a string description of the last error
+
+说明
+
+面向对象风格
+
+string $mysqli->error;
+
+过程化风格
+
+string mysqli_error ( mysqli $link )
+
+Returns the last error message for the most recent MySQLi function call that
+can succeed or fail.
+
+参数
+
+link
+
+    仅以过程化样式：由mysqli_connect() 或 mysqli_init() 返回的链接标识。
+
+返回值
+
+A string that describes the error. An empty string if no error occurred.
+
+范例
+
+Example #1 $mysqli->error example
+
+面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if ($mysqli->connect_errno) {
+    printf("Connect failed: %s\n", $mysqli->connect_error);
+    exit();
+}
+
+if (!$mysqli->query("SET a=1")) {
+    printf("Errormessage: %s\n", $mysqli->error);
+}
+
+/* close connection */
+$mysqli->close();
+?>
+
+过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+if (!mysqli_query($link, "SET a=1")) {
+    printf("Errormessage: %s\n", mysqli_error($link));
+}
+
+/* close connection */
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Errormessage: Unknown system variable 'a'
+
+参见
+
+  • mysqli_connect_errno() - Returns the error code from last connect call
+  • mysqli_connect_error() - Returns a string description of the last connect
+    error
+  • mysqli_errno() - 返回最近函数调用的错误代码
+  • mysqli_sqlstate() - Returns the SQLSTATE error from previous MySQL
+    operation
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+The mysqli_sql_exception class is not available to PHP 5.05
+
+I used this code to catch errors
+<?php
+$query = "SELECT XXname FROM customer_table ";
+$res = $mysqli->query($query);
+
+if (!$res) {
+   printf("Errormessage: %s\n", $mysqli->error);
+}
+
+?>
+The problem with this is that valid values for $res are: a mysqli_result object
+, true or false
+This doesn't tell us that there has been an error with the sql used.
+If you pass an update statement, false is a valid result if the update fails.
+
+So, a better way is:
+<?php
+$query = "SELECT XXname FROM customer_table ";
+$res = $mysqli->query($query);
+
+if (!$mysqli->error) {
+   printf("Errormessage: %s\n", $mysqli->error);
+}
+
+?>
+
+This would output something like:
+Unexpected PHP error [mysqli::query() [<a href='function.query'>function.query
+</a>]: (42S22/1054): Unknown column 'XXname' in 'field list'] severity
+[E_WARNING] in [G:\database.php] line [249]
+
+Very frustrating as I wanted to also catch the sql error and print out the
+stack trace.
+
+A better way is:
+
+<?php
+mysqli_report(MYSQLI_REPORT_OFF); //Turn off irritating default messages
+
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+$query = "SELECT XXname FROM customer_table ";
+$res = $mysqli->query($query);
+
+if ($mysqli->error) {
+    try {   
+        throw new Exception("MySQL error $mysqli->error <br> Query:<br> $query"
+, $msqli->errno);   
+    } catch(Exception $e ) {
+        echo "Error No: ".$e->getCode(). " - ". $e->getMessage() . "<br >";
+        echo nl2br($e->getTraceAsString());
+    }
+}
+
+//Do stuff with the result
+?>
+Prints out something like:
+Error No: 1054
+Unknown column 'XXname' in 'field list'
+Query:
+SELECT XXname FROM customer_table
+
+#0 G:\\database.php(251): database->dbError('Unknown column ...', 1054,
+'getQuery()', 'SELECT XXname F...')
+#1 G:\data\WorkSites\1framework5\tests\dbtest.php(29): database->getString
+('SELECT XXname F...')
+#2 c:\PHP\includes\simpletest\runner.php(58): testOfDB->testGetVal()
+#3 c:\PHP\includes\simpletest\runner.php(96): SimpleInvoker->invoke
+('testGetVal')
+#4 c:\PHP\includes\simpletest\runner.php(125): SimpleInvokerDecorator->invoke
+('testGetVal')
+#5 c:\PHP\includes\simpletest\runner.php(183): SimpleErrorTrappingInvoker->
+invoke('testGetVal')
+#6 c:\PHP\includes\simpletest\simple_test.php(90): SimpleRunner->run()
+#7 c:\PHP\includes\simpletest\simple_test.php(498): SimpleTestCase->run(Object
+(HtmlReporter))
+#8 c:\PHP\includes\simpletest\simple_test.php(500): GroupTest->run(Object
+(HtmlReporter))
+#9 G:\all_tests.php(16): GroupTest->run(Object(HtmlReporter))
+
+This will actually print out the error, a stack trace and the offending sql
+statement. Much more helpful when the sql statement is generated somewhere else
+in the code.
+===============================================================================
+
+The decription "mysqli_error -- Returns a string description of the LAST error"
+is not exactly that what you get from mysqli_error. You get the error
+description from the last mysqli-function, not from the last mysql-error.
+
+If you have the following situation
+
+if (!$mysqli->query("SET a=1")) {
+   $mysqli->query("ROLLBACK;")
+   printf("Errormessage: %s\n", $mysqli->error);
+}
+
+you don't get an error-message, if the ROLLBACK-Query didn't failed, too. In
+order to get the right error-message you have to write:
+
+if (!$mysqli->query("SET a=1")) {
+   printf("Errormessage: %s\n", $mysqli->error);
+   $mysqli->query("ROLLBACK;")
+}
+===============================================================================
+
+Please note that the string returned may contain data initially provided by the
+user, possibly making your code vulnerable to XSS.
+
+So even if you escape everything in your SQL query using
+mysqli_real_escape_string(), make sure that if you plan to display the string
+returned by mysqli_error() you run that string through htmlspecialchars().
+
+As far as I can tell the two escape functions don't escape the same characters,
+which is why you need both (the first for SQL and the second for HTML/JS).
+===============================================================================
+
+I had to set mysqli_report(MYSQLI_REPORT_ALL) at the begin of my script to be
+able to catch mysqli errors within the catch block of my php code.
+
+Initially, I used the below code to throw and subsequent catch mysqli
+exceptions
+
+<?php
+try {
+   $mysqli = new mysqli('localhost','root','pwd','db');
+    if ($mysqli->connect_errno)
+        throw new Exception($mysqli->connect_error);
+
+} catch (Exception $e) {
+     echo $e->getMessage();
+}
+
+I realized the exception was being thrown before the actual throw statement and
+hence the catch block was not being called.
+
+My current code looks like
+mysqli_report(MYSQLI_REPORT_ALL) ;
+try {
+      $mysqli = new mysqli('localhost','root','pwd','db');
+      /* I don't need to throw the exception, it's being thrown automatically *
+/
+
+} catch (Exception $e) {
+  echo $e->getMessage();
+}
+
+This works fine and I'm able to trap all mysqli errors
+===============================================================================
+
+Hi, you can also use the new mysqli_sql_exception to catch sql errors.
+Example:
+<?php
+//set up $mysqli_instance here..
+$Select = "SELECT xyz FROM mytable ";
+try {
+    $res = $mysqli_instance->query($Select);
+}catch (mysqli_sql_exception $e) {
+    print "Error Code <br>".$e->getCode();
+    print "Error Message <br>".$e->getMessage();
+    print "Strack Trace <br>".nl2br($e->getTraceAsString());
+}
+
+?>
+Will print out something like
+Error Code: 0
+Error Message
+No index used in query/prepared statement select sess_value from frame_sessions
+where sess_name = '5b85upjqkitjsostvs6g9rkul1'
+Strack Trace:
+#0 G:\classfiles\lib5\database.php(214): mysqli->query('select sess_val...')
+#1 G:\classfiles\lib5\Session.php(52): database->getString('select
+sess_val...')
+#2 [internal function]: sess_read('5b85upjqkitjsos...')
+#3 G:\classfiles\includes.php(50): session_start()
+#4 G:\tests\all_tests.php(4): include('G:\data\WorkSit...')
+#5 {main}
+===============================================================================
+
+try/catch on $mysqli->query
+doesn't catch most SQL errors, you should use $mysqli->error

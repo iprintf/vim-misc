@@ -1,0 +1,1230 @@
+
+imap_fetchbody
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_fetchbody — Fetch a particular section of the body of the message
+
+说明
+
+string imap_fetchbody ( resource $imap_stream , int $msg_number , string
+$section [, int $options = 0 ] )
+
+Fetch of a particular section of the body of the specified messages. Body parts
+are not decoded by this function.
+
+参数
+
+imap_stream
+
+    由 imap_open() 返回的 IMAP 流。
+
+msg_number
+
+    The message number
+
+section
+
+    The part number. It is a string of integers delimited by period which index
+    into a body part list as per the IMAP4 specification
+
+options
+
+    A bitmask with one or more of the following:
+      □ FT_UID - The msg_number is a UID
+      □ FT_PEEK - Do not set the \Seen flag if not already set
+      □ FT_INTERNAL - The return string is in internal format, will not
+        canonicalize to CRLF.
+
+返回值
+
+Returns a particular section of the body of the specified messages as a text
+string.
+
+参见
+
+  • imap_savebody() - Save a specific body section to a file
+  • imap_fetchstructure() - Read the structure of a particular message
+
+
+User Contributed Notes 36 notes
+
+===============================================================================
+
+imap-fetchbody() will decode attached email messages inline with the rest of
+the email parts, however the way it works when handling attached email messages
+is inconsistent with the main email message.
+
+With an email message that only has a text body and does not have any mime
+attachments, imap-fetchbody() will return the following for each requested part
+number:
+
+(empty) - Entire message
+0 - Message header
+1 - Body text
+
+With an email message that is a multi-part message in MIME format, and contains
+the message text in plain text and HTML, and has a file.ext attachment,
+imap-fetchbody() will return something like the following for each requested
+part number:
+
+(empty) - Entire message
+0 - Message header
+1 - MULTIPART/ALTERNATIVE
+1.1 - TEXT/PLAIN
+1.2 - TEXT/HTML
+2 - file.ext
+
+Now if you attach the above email to an email with the message text in plain
+text and HTML, imap_fetchbody() will use this type of part number system:
+
+(empty) - Entire message
+0 - Message header
+1 - MULTIPART/ALTERNATIVE
+1.1 - TEXT/PLAIN
+1.2 - TEXT/HTML
+2 - MESSAGE/RFC822 (entire attached message)
+2.0 - Attached message header
+2.1 - TEXT/PLAIN
+2.2 - TEXT/HTML
+2.3 - file.ext
+
+Note that the file.ext is on the same level now as the plain text and HTML, and
+that there is no way to access the MULTIPART/ALTERNATIVE in the attached
+message.
+
+Here is a modified version of some of the code from previous posts that will
+build an easily accessible array that includes accessible attached message
+parts and the message body if there aren't multipart mimes.  The $structure
+variable is the output of the imap_fetchstructure() function.  The returned
+$part_array has the field 'part_number' which contains the part number to be
+fed directly into the imap_fetchbody() function.
+
+<?php
+function create_part_array($structure, $prefix="") {
+    //print_r($structure);
+    if (sizeof($structure->parts) > 0) {    // There some sub parts
+        foreach ($structure->parts as $count => $part) {
+            add_part_to_array($part, $prefix.($count+1), $part_array);
+        }
+    }else{    // Email does not have a seperate mime attachment for text
+        $part_array[] = array('part_number' => $prefix.'1', 'part_object' => 
+$obj);
+    }
+   return $part_array;
+}
+// Sub function for create_part_array(). Only called by create_part_array() and
+itself.
+function add_part_to_array($obj, $partno, & $part_array) {
+    $part_array[] = array('part_number' => $partno, 'part_object' => $obj);
+    if ($obj->type == 2) { // Check to see if the part is an attached email
+message, as in the RFC-822 type
+        //print_r($obj);
+        if (sizeof($obj->parts) > 0) {    // Check to see if the email has
+parts
+            foreach ($obj->parts as $count => $part) {
+                // Iterate here again to compensate for the broken way that
+imap_fetchbody() handles attachments
+                if (sizeof($part->parts) > 0) {
+                    foreach ($part->parts as $count2 => $part2) {
+                        add_part_to_array($part2, $partno.".".($count2+1), 
+$part_array);
+                    }
+                }else{    // Attached email does not have a seperate mime
+attachment for text
+                    $part_array[] = array('part_number' => $partno.'.'.($count+
+1), 'part_object' => $obj);
+                }
+            }
+        }else{    // Not sure if this is possible
+            $part_array[] = array('part_number' => $prefix.'.1', 'part_object' 
+=> $obj);
+        }
+    }else{    // If there are more sub-parts, expand them out.
+        if (sizeof($obj->parts) > 0) {
+            foreach ($obj->parts as $count => $p) {
+                add_part_to_array($p, $partno.".".($count+1), $part_array);
+            }
+        }
+    }
+}
+?>
+===============================================================================
+
+If text has been encoded as quoted-printable (most body text is encoded as
+this), it must be decoded for it to be displayed correctly (without '=', '=20'
+and other strange text chunks all through the string).
+
+To decode, you can use the following built-in php function...
+
+quoted_printable_decode($string)
+
+Hopefully I've just saved a few people from having to do a preg_replace on
+there email bodies.
+===============================================================================
+
+How to give more then one option in the "options" parameter:
+It took me some time to realize how easy it is, so just in case some one else
+would be puzzled at this point:
+<?php
+imap_fetchbody($imap_stream, $msg_number, $section, FT_UID | FT_PEEK);
+?>
+===============================================================================
+
+this may be the way, how to obtain all those part_numbers.... even when a
+message contains another message attached, and it contains another message
+attached...
+
+<?
+$parttypes = array ("text", "multipart", "message", "application", "audio",
+"image", "video", "other");
+function buildparts ($struct, $pno = "") {
+   global $parttypes;
+   switch ($struct->type):
+     case 1:
+       $r = array (); $i = 1;
+       foreach ($struct->parts as $part)
+         $r[] = buildparts ($part, $pno.".".$i++);
+
+       return implode (", ", $r);
+     case 2:
+       return "{".buildparts ($struct->parts[0], $pno)."}";
+     default:
+       return '<a href="?p='.substr ($pno, 1).'">'.$parttypes[$struct->type]."/
+".strtolower ($struct->subtype)."</a>";
+   endswitch;
+}
+
+  $struct = imap_fetchstructure ($pop3mbox, $msguid, FT_UID);
+  echo buildparts ($struct);
+?>
+
+it will print something like:
+
+<a href="?p=1">text/plain</a>, {<a href="?p=2.1">text/plain</a>, <a href="?p=
+2.2">text/html</a>}
+===============================================================================
+
+I had some problems with the german umlauts from a gmail fetched text. I lost
+an hour trying to find a solution.
+
+Hopefully this helps someone in need :)
+
+<?php
+$text = trim( utf8_encode( quoted_printable_decode(
+                        imap_fetchbody( $this->inbox, $emailNo, $section ) ) )
+);
+
+$section was previously defined:
+$section = empty( $attachments ) ? 1 : 1.1;
+?>
+===============================================================================
+
+The function imap_fetchbody() seems uncapable of getting subordinate parts of a
+message/rfc822-part. I had problems with getting an attachment that was
+forwarded in such a part, because the object given by imap_fetchstructure()
+would assume that the part was represented by the string "2.1.2.1.2".
+
+So I wrote this set of functions which parses the raw message-body and creates
+an array with the struture corresponding to the structure given by
+imap_fetchstructure(). The function mail_fetchpart() (see below) will work on
+the array and return even those parts that I could not get with imap_fetchbody
+().
+
+Example usage of this function: mail_fetchpart($mbox, 2, "2.1.2.1.2");
+
+Note: If the message does not contain multiple pars, the body of the message
+can be accessed by the part-string "1".
+I have more functions for parsing and decoding messages, just email me.
+
+    // get the body of a part of a message according to the
+    // string in $part
+    function mail_fetchpart($mbox, $msgNo, $part) {
+        $parts = mail_fetchparts($mbox, $msgNo);
+       
+        $partNos = explode(".", $part);
+       
+        $currentPart = $parts;
+        while(list ($key, $val) = each($partNos)) {
+            $currentPart = $currentPart[$val];
+        }
+       
+        if ($currentPart != "") return $currentPart;
+          else return false;
+    }
+
+    // splits a message given in the body if it is
+    // a mulitpart mime message and returns the parts,
+    // if no parts are found, returns false
+    function mail_mimesplit($header, $body) {
+        $parts = array();
+       
+        $PN_EREG_BOUNDARY = "Content-Type:(.*)boundary=\"([^\"]+)\"";
+
+        if (eregi ($PN_EREG_BOUNDARY, $header, $regs)) {
+            $boundary = $regs[2];
+
+            $delimiterReg = "([^\r\n]*)$boundary([^\r\n]*)";
+            if (eregi ($delimiterReg, $body, $results)) {
+                $delimiter = $results[0];
+                $parts = explode($delimiter, $body);
+                $parts = array_slice ($parts, 1, -1);
+            }
+           
+            return $parts;
+        } else {
+            return false;
+        }   
+       
+       
+    }
+
+    // returns an array with all parts that are
+    // subparts of the given part
+    // if no subparts are found, return the body of
+    // the current part
+    function mail_mimesub($part) {
+        $i = 1;
+        $headDelimiter = "\r\n\r\n";
+        $delLength = strlen($headDelimiter);
+   
+        // get head & body of the current part
+        $endOfHead = strpos( $part, $headDelimiter);
+        $head = substr($part, 0, $endOfHead);
+        $body = substr($part, $endOfHead + $delLength, strlen($part));
+       
+        // check whether it is a message according to rfc822
+        if (stristr($head, "Content-Type: message/rfc822")) {
+            $part = substr($part, $endOfHead + $delLength, strlen($part));
+            $returnParts[1] = mail_mimesub($part);
+            return $returnParts;
+        // if no message, get subparts and call function recursively
+        } elseif ($subParts = mail_mimesplit($head, $body)) {
+            // got more subparts
+            while (list ($key, $val) = each($subParts)) {
+                $returnParts[$i] = mail_mimesub($val);
+                $i++;
+            }           
+            return $returnParts;
+        } else {
+            return $body;
+        }
+    }
+
+    // get an array with the bodies all parts of an email
+    // the structure of the array corresponds to the
+    // structure that is available with imap_fetchstructure
+    function mail_fetchparts($mbox, $msgNo) {
+        $parts = array();
+        $header = imap_fetchheader($mbox,$msgNo);
+        $body = imap_body($mbox,$msgNo, FT_INTERNAL);
+       
+        $i = 1;
+       
+        if ($newParts = mail_mimesplit($header, $body)) {
+            while (list ($key, $val) = each($newParts)) {
+                $parts[$i] = mail_mimesub($val);
+                $i++;               
+            }
+        } else {
+            $parts[$i] = $body;
+        }
+        return $parts;
+       
+    }
+===============================================================================
+
+Sorry for my english....
+
+for read the attachment's:
+
+<?
+foreach ($_GET as $k => $v)
+{
+     $$k = $v;
+}
+$login = 'mylogin';
+$password = 'mypassword';
+$host = '{myhost:110/pop3}';
+
+$mbox = imap_open("$host", "$login", "$password");
+$struckture = imap_fetchstructure($mbox, $id);
+$message = imap_fetchbody($mbox,$id,$part);   
+$name = $struckture->parts[$part]->dparameters[0]->value;
+$type = $struckture->parts[$part]->typee;
+############## type
+if ($type == 0)
+{
+    $type = "text/";
+}
+elseif ($type == 1)
+{
+    $type = "multipart/";
+}
+elseif ($type == 2)
+{
+    $type = "message/";
+}
+elseif ($type == 3)
+{
+    $type = "application/";
+}
+elseif ($type == 4)
+{
+    $type = "audio/";
+}
+elseif ($type == 5)
+{
+    $type = "image/";
+}
+elseif ($type == 6)
+{
+    $type = "video";
+}
+elseif($type == 7)
+{
+    $type = "other/";
+}
+$type .= $struckture->parts[$part]->subtypee;
+######## Type end
+
+header("Content-typee: ".$type);
+header("Content-Disposition: attachment; filename=".$name);
+
+######## coding
+$coding = $struckture->parts[$part]->encoding;
+if ($coding == 0)
+{
+    $message = imap_7bit($message);
+}
+elseif ($coding == 1)
+{
+    $wiadomsoc = imap_8bit($message);
+}
+elseif ($coding == 2)
+{
+    $message = imap_binary($message);
+}
+elseif ($coding == 3)
+{
+    $message = imap_base64($message);
+}
+elseif ($coding == 4)
+{
+    $message = quoted_printable($message);
+}
+elseif ($coding == 5)
+{
+    $message = $message;
+}
+echo $message;
+########## coding end
+imap_close($mbox);
+?>
+===============================================================================
+
+I tried using the function add_part_to_array below and noticed a few errors
+were thrown. If there are no 'parts' in the structure then if (sizeof($obj->
+parts) > 0) will throw an error. As well $prefix is not defined here is the
+code I have updated. I have left the original lines commented out. I have
+tested reading emails from a gmail account and so far so good.
+
+<?php
+
+// Sub function for create_part_array(). Only called by create_part_array() and
+itself.
+function add_part_to_array($obj, $partno, & $part_array) {
+    $part_array[] = array('part_number' => $partno, 'part_object' => $obj);
+
+   if ($obj->type == 2) { // Check to see if the part is an attached email
+message, as in the RFC-822 type
+//        if (sizeof($obj->parts) > 0) {    // Check to see if the email has
+parts
+    if(array_key_exists('parts',$obj){
+            foreach ($obj->parts as $count => $part) {
+                // Iterate here again to compensate for the broken way that
+imap_fetchbody() handles attachments
+                if (sizeof($part->parts) > 0) {
+                    foreach ($part->parts as $count2 => $part2) {
+                        add_part_to_array($part2, $partno.".".($count2+1), 
+$part_array);
+                    }
+                }else{    // Attached email does not have a seperate mime
+attachment for text
+                    $part_array[] = array('part_number' => $partno.'.'.($count+
+1), 'part_object' => $obj);
+                }
+            }
+        }else{    // Not sure if this is possible
+//            $part_array[] = array('part_number' => $prefix.'.1',
+'part_object' => $obj);
+            $part_array[] = array('part_number' => $partno.'.1', 'part_object' 
+=> $obj);
+        }
+    }else{    // If there are more sub-parts, expand them out.
+//        if (sizeof($obj->parts) > 0) {
+                    if(array_key_exists('parts',$obj)){
+            foreach ($obj->parts as $count => $p) {
+                add_part_to_array($p, $partno.".".($count+1), $part_array);
+            }
+        }
+    }
+}
+?>
+===============================================================================
+
+For those of you trying to create a "flexible" email reader, I suggest doing
+the following.
+
+Firstly, instead of going through each part of the email and decoding it, I
+suggest you go in a specific order.
+
+1) First go through all the parts and search for the part that has subtype==
+'HTML'. If found, use that as your message body, else go to Step 2.
+2) If HTML component not found, search all parts for subtype=='PLAIN'. If
+found, use that as your message body else print out an error message (this
+should never occur).
+3) At this point, you already have the main body of the email that you should
+display. The next thing to do is to find all the attachments. You do this by
+going through all parts, searching for the parts with ifdisposition==1 (there
+can be multiple).
+
+This is the way I did my email reader program and it works perfectly. I started
+off by using the methods recommended in a lot of webpages (i.e. going through
+the parts tree like 1.2.1, 1, 2, etc) but the problem is the message body is
+never in some fixed part! Sometimes its in 1, somtimes 1.1.2, sometimes 2, and
+sometimes in some totally unexpected place! So my approach was to "search" for
+the parts that I'm interested. Hope this helps. I also managed to crack the
+problem with emails containing embedded images. I will probably write a
+tutorial on that soon.
+===============================================================================
+
+I'm adding this for those of you like me who are scouring the web looking for
+code to break down a message.  These two functions will break down a multi-part
+and non multi-part message and return the contents of the message in the array
+$message.  It doesn't do attachments.  This assumes you've already opened the
+mailbox and pass it VIA the $mbox.
+
+function retrieve_message($mbox, $messageid)
+{
+   $message = array();
+   
+   $header = imap_header($mbox, $messageid);
+   $structure = imap_fetchstructure($mbox, $messageid);
+
+   $message['subject'] = $header->subject;
+   $message['fromaddress'] =   $header->fromaddress;
+   $message['toaddress'] =   $header->toaddress;
+   $message['ccaddress'] =   $header->ccaddress;
+   $message['date'] =   $header->date;
+
+  if (check_type($structure))
+  {
+   $message['body'] = imap_fetchbody($mbox,$messageid,"1"); ## GET THE BODY OF
+MULTI-PART MESSAGE
+   if(!$message['body']) {$message['body'] = '[NO TEXT ENTERED INTO THE
+MESSAGE]\n\n';}
+  }
+  else
+  {
+   $message['body'] = imap_body($mbox, $messageid);
+   if(!$message['body']) {$message['body'] = '[NO TEXT ENTERED INTO THE
+MESSAGE]\n\n';}
+  }
+  
+  return $message;
+}
+
+function check_type($structure) ## CHECK THE TYPE
+{
+  if($structure->type == 1)
+    {
+     return(true); ## YES THIS IS A MULTI-PART MESSAGE
+    }
+else
+    {
+     return(false); ## NO THIS IS NOT A MULTI-PART MESSAGE
+    }
+}
+===============================================================================
+
+A very easy way to handle attachments is just using munpack, with a
+subdirectory called attachments chmod it to 777 and then use the following bit
+of code (with mpack installed) on the MIME encoded body:
+
+<?php
+//email MIME body in $input
+file_put_contents("attachments/body.eml",$input);
+$command = "munpack -C attachments -fq body.eml";
+exec($command,$output);
+if($output[0]!='Did not find anything to unpack from body.eml') {
+    foreach ($output as $attach) {
+        $pieces = explode(" ", $attach);
+        $part = $pieces[0];
+        echo "<a href=\"attachments/$part\">$part</a><br>";
+        }
+    }
+?>
+===============================================================================
+
+I had an issue with the content that was returned by imap_fetchbody - either
+the function itself, or the mail-server, was inserting "=\r\n" at points into
+the text body returned. This may depend upon the content type (i.e. plain text
+/ csv, as opposed to something like a Word document), but you may need to do
+something like:
+
+$body = preg_replace("/=(\r?)\n/", '', imap_fetchbody($mailbox, $message,
+$part));
+===============================================================================
+
+I spent hours religously thinking that
+
+imap_fetchbody($mbox,$email_number,1.2)
+
+would fetch the html body, and in many cases this did not work.  It turns out
+that simple message can have a simple [parts] stucture so this became true:
+
+imap_fetchbody($mbox,$email_number,1) - PLAIN
+imap_fetchbody($inbox,$email_number,2) - HTML
+
+Check for empty string before using the latter.
+===============================================================================
+
+Sorry for my English.
+Rather than quoted_printable_decode, you can use the function imap_qprint
+($body)
+===============================================================================
+
+The previous post contains a copy/paste error and a little added complexity. 
+The first function should look like this:
+
+<?php
+function create_part_array($struct) {
+    if (sizeof($struct->parts) > 0) {    // There some sub parts
+        foreach ($struct->parts as $count => $part) {
+            add_part_to_array($part, ($count+1), $part_array);
+        }
+    }else{    // Email does not have a seperate mime attachment for text
+        $part_array[] = array('part_number' => '1', 'part_object' => $struct);
+    }
+   return $part_array;
+}
+?>
+===============================================================================
+
+Better, a fix on a fix... ;)
+
+function read_all_parts($uid){
+global $mime,$ret_info,$enc;
+  $mime = array("text","multipart","message","application","audio",
+"image","video","other","unknow");
+  $enc  = array("7BIT","8BIT","BINARY","BASE64",
+"QUOTED-PRINTABLE","OTHER");
+    
+
+$struct = imap_fetchstructure( $this -> Link, $uid );
+
+$ret_info = array();
+
+function scan($struct,$subkey){
+global $mime,$enc,$ret_info;
+
+   foreach($struct as $key => $value){
+
+ 
+    if($subkey!=0){
+    $pid = $subkey.".".($key+1); }
+    else { $pid = ($key+1); }
+ 
+    $ret_info[]['pid'] = $pid;
+    $ret_info[key($ret_info)]['type'] = $mime["$value->type"];
+    $ret_info[key($ret_info)]['encoding'] = $enc["$value->encoding"];
+
+    next($ret_info);
+ 
+    if(($value->parts)!= null) {scan($value->parts,$pid); }
+   }
+}
+
+if(!is_null($struct->parts))
+{
+scan($struct->parts,0);
+}
+else
+{
+    print_r($struct);
+    echo("<hr>");
+    $ret_info[]['pid']=1;
+    $ret_info[key($ret_info)]['type']=$mime["$struct->type"];   
+    $ret_info[key($ret_info)]['encoding']=$enc["$struct->encoding"];   
+}
+
+return $ret_info;
+
+}
+===============================================================================
+
+// $uid - msg number
+
+function read_all_parts($uid){
+global $mime,$ret_info,$enc;
+  $mime = array("text","multipart","message","application","audio",
+"image","video","other","unknow");
+  $enc  = array("7BIT","8BIT","BINARY","BASE64",
+"QUOTED-PRINTABLE","OTHER");
+     
+
+$struct = imap_fetchstructure( $this -> Link, $uid );
+
+$ret_info = array();
+
+function scan($struct,$subkey){
+global $mime,$enc,$ret_info;
+
+foreach($struct as $key => $value){
+
+ 
+  if($subkey!=0){
+  $pid = $subkey.".".($key+1); }
+  else { $pid = ($key+1); }
+ 
+  $ret_info[]['pid'] = $pid;
+  $ret_info[key($ret_info)]['type'] = $mime["$value->type"];
+  $ret_info[key($ret_info)]['encoding'] = $enc["$value->encoding"];
+
+  next($ret_info);
+ 
+  if(($value->parts)!= null) {scan($value->parts,$pid); }
+}
+
+}
+
+scan($struct->parts,0);
+
+return $ret_info;
+
+}
+===============================================================================
+
+Expanding on a comment below about using munpack to extract attachments, here's
+a lazy person's function that extracts attachments from mail with $msg_number
+from $mailbox and writes them to $dir. It returns an array of filenames or
+false if there are no attachments.
+
+function writeAttachmentsToDisk($mailbox, $msg_number, $dir){
+ 
+  if (!file_exists($dir)){
+    mkdir($dir);
+  }
+  $filename = "tmp.eml";
+  $email_file = $dir."/".$filename;
+  // write the message body to disk
+  imap_savebody  ($mailbox, $email_file, $msg_number);
+  $command = "munpack -C $dir -fq $email_file";
+  // invoke munpack which will
+  // write all the attachments to $dir
+  exec($command,$output);
+
+  // if($output[0]!='Did not find anything to unpack from $filename') {
+  $found_file = false;
+  foreach ($output as $attach) {
+    $pieces = explode(" ", $attach);
+    $part = $pieces[0];
+    if (file_exists($dir.$part)){
+      $found_file = true;
+      $files[] = $part;
+    }
+  }
+  if (!$found_file){
+    //echo ("\nMail.php : no files found - cleaning up. ");
+    // didn't find any output files - delete the directory and email file
+    unlink($email_file);
+    rmdir($dir);
+    return false;
+  }
+  else {
+    // found some files-  just delete the email file
+    unlink($email_file);
+    return $files;
+  }
+}
+===============================================================================
+
+An alternative to munpack for rfc822 messages is ripmime http://
+www.pldaniels.com/ripmime/
+
+It lets you pass it the rfc822 attachment (usually something.eml) and it
+recursively writes out attachments (and text and html files)
+===============================================================================
+
+Here's simple way of extending Makusnospam's little routine to flatten the
+entire message into an array which can be useful to quickly find the body and
+attachments just by walking through the array elements.
+
+function create_part_array($structure, $prefix="") {
+   $part_array = array();
+
+    if (sizeof($structure->parts) > 0) {
+        foreach ($structure->parts as $count => $part) {
+            add_part_to_array($part, $prefix.($count+1), $part_array);
+        }
+    }
+   
+   return $part_array;
+}
+
+function add_part_to_array($obj, $partno, & $part_array) {
+
+    if ($obj->type == TYPEMESSAGE) {
+        parse_message($obj->parts[0], $partno.".");
+    }
+    else {
+        if (sizeof($obj->parts) > 0) {
+            foreach ($obj->parts as $count => $p) {
+                add_part_to_array($p, $partno.".".($count+1), $part_array);
+            }
+        }
+    }
+   
+    $part_array[] = array('part_number' => $partno, 'part_object' => $obj);
+}
+===============================================================================
+
+Musawir Ali comment is not totally correct, ifdisposition= 1 will never tell
+you 100% if there is an attachment. You must look at (ifdparameters,
+ifparameters) if (1) of them is greater then (0), then you need to look inside
+(parameters), looking at each ($obj->parameters) and check the (attribute) for
+(NAME, FILENAME), also be sure to set them to upper or lower case before doing
+your testing. That's the only way to know if you have an attachment. inline
+attachments will have $obj->ifid equal to 1, the $obj->id will contain the
+(cid). If $obj->ifid equals 0 then it's also an attachment (file type) if you
+have (NAME, FILENAME) as the current parameters (attribute).
+
+<?php
+        $name = '';
+
+        if ( $parent->ifdparameters && sizeof ( $parent->dparameters ) > 0 )
+        {
+            foreach ( $parent->dparameters as $child )
+            {
+                if ( strtolower ( $child->attribute ) == 'name' || strtolower (
+$child->attribute ) == 'filename' )
+                {
+                    $name = strtolower ( $child->value );
+                }
+            }
+        }
+
+        if ( empty ( $name ) )
+        {
+            if ( $parent->ifparameters && sizeof ( $parent->parameters ) > 0 )
+            {
+                foreach ( $parent->parameters as $child )
+                {
+                    if ( strtolower ( $child->attribute ) == 'name' || 
+strtolower ( $child->attribute ) == 'filename' )
+                    {
+                        $name = strtolower ( $child->value );
+                    }
+                }
+            }
+        }
+?>
+
+$parent is derived from imap_fetchstructure(), as a child object if $obj->parts
+is set or as the $parent if $obj->parts is not set!
+===============================================================================
+
+Nice function above. However, there are some webmail (normaly plain text)
+services like you which don't use structure type 'ATTACHMENT' with the
+attachments, but 'INLINE' (also plain text is called like this). Just replace
+if (strtoupper ($structure->disposition) == "ATTACHMENT"){
+with
+
+            if (strtoupper ($structure->disposition) == "ATTACHMENT" ||
+strtoupper ($structure->disposition) == "INLINE" && strtoupper ($structure->
+subtype) != "PLAIN") {
+
+But remember, when uou send a message with plaintext & attachment, also the
+plaintext is an attachment
+===============================================================================
+
+With regard to message/rfc822 parts, it appears that the IMAP c-client that PHP
+uses does not follow the IMAP RFC (#2060) correctly.  The RFC specifies that to
+grab the headers for a message/rfc822 part, you would request part "2.HEADER"
+(assuming 2 is your part number), and the full text of the part would be
+"2.TEXT".  Instead, "2.0" will grab the headers, and just "2" will get the
+text.
+===============================================================================
+
+If you insist on using imap_fetchbody() to retrieve a mail body that doesn't
+contain 'parts' [normally you'd use imap_body() ], then note that the header
+text is in part '0' and the body text in part '1'.
+So, imap_fetchbody($mbox,$msg,'0') will return the header and imap_fetchbody
+($mbox,$msg,'1') will return the body text.
+===============================================================================
+
+After many battles with the imap extension I took it upon myself to write my
+own implementation using sockets. Below is what I came up with, and hopefully
+it will be usefull to others as well. I know that there are some parts of this
+that can be tweaked, however I will leave that for you to do. Use/abuse/
+mutilate this as you wish (no license).
+
+(Note: I am not placing the source here since it is well over 1900 lines ~48KB)
+
+http://www.nutextonline.com/cimap.phps
+
+If enough people find this usefull I will continue to improve it and eventually
+commit it (or have it committed) to pear.
+
+Also worth noting is the fact that you can use the imap extensions on mbox
+format mailboxes. A combination of this class with the imap extension would
+certainly make a great combination of done correctly.
+===============================================================================
+
+It took me a while to figure out how part id's(numbers) are assigned to
+different parts of a message.  After getting a few AOL e-mails that had a
+semi-complex structure I was finally able to break it down.
+
+0 multipart/mixed
+    1 multipart/alternative
+        1.1 text/plain
+        1.2 text/html
+    2 message/rfc822
+        2 multipart/mixed
+            2.1 multipart/alternative
+                2.1.1 text/plain
+                2.1.2 text/html
+            2.2 message/rfc822
+                2.2 multipart/alternative
+                    2.2.1 text/plain
+                    2.2.2 text/html
+
+Hopefully this will help others get the different body parts of a message.
+===============================================================================
+
+PLEASE DOCUMENT THIS POST AND SAVE US SOME TIME! :)
+ac at artcenter dot ac
+17-Feb-2002 04:24
+Lets say your email has this structure:
+1 multipart
+    plain
+    html
+2 x-vcard
+and... you can't seem to figure out how to get either plain or HTML part of the
+multipart message? have you been going through all the trouble looking for a
+PHP mime parser? well here is a simple solution which SHOULD BE documented in
+this manual. From example above, if you want to get the plain part of the
+"multipart" message do this:
+$text=imap_fetchbody($mbox,$msg_num,"1.1");
+all you do is instead of part number 1, put 1.1 or to get the HTML part put 1.2
+
+EASY!
+===============================================================================
+
+To fetch the body of a "sub part" do the following thing:
+<?php
+$partno = "2.1"   // The first part of the second part
+
+print_r(imap_fetchbody($mbox, $msgno, $partno));
+// TODO: replace print_r for the proper function
+?>
+
+And remember... you can fetch the structure with
+<?php
+imap_fetchstructure($mbox, $msgno);
+?>
+then iterate the array of parts fetching the body.
+===============================================================================
+
+This is a well overdue addendum to the code submitted on
+14-Jan-2002 02:58.  This function was called inside the GetParts function:
+
+function concat_ws($separator, $str1, $str2){
+    if(strlen($str1) && strlen($str2)){
+        return $str1 . $separator . $str2;
+    }
+    else if (strlen($str1)){
+        return $str1;
+    }
+    else if (strlen($str2)){
+        return $str2;
+    }   
+    else return '';
+       
+}
+===============================================================================
+
+Maybe you prefer a short and recursive way to parse a message
+and get the part numbers built:
+-------------------------------------------------------------
+
+function parse_message($obj, $prefix="") {
+/* Here you can process the data of the main "part" of the message, e.g.: */
+  do_anything_with_message_struct($obj);
+
+  if (sizeof($obj->parts) > 0)
+    foreach ($obj->parts as $count=>$p)
+      parse_part($p, $prefix.($count+1));
+}
+
+function parse_part($obj, $partno) {
+/* Here you can process the part number and the data of the parts of the
+message, e.g.: */
+  do_anything_with_part_struct($obj,$partno);
+
+  if ($obj->type == TYPEMESSAGE)
+    parse_message($obj->parts[0], $partno.".");
+  else
+    if (sizeof($obj->parts) > 0)
+      foreach ($obj->parts as $count=>$p)
+        parse_part($p, $partno.".".($count+1));
+}
+
+/* Let's say, you have an already opened mailbox stream $mbox
+   and you like to parse through the first message: */
+
+$msgno = 1;
+parse_message(imap_fetchstructure($mbox,$msgno));
+===============================================================================
+
+Hi everyone
+
+I have been inspecting the RFC's and the answer to what to display is not like
+Musawir Ali in 2 areas
+
+1- You can not rely on disposition being present, not all mail software
+composes mail to standard, and if you would just take a quick look at the RFC's
+you will find out that someone can send you email where your solution will fail
+even though the mail is "within standards"
+
+2- When you are presented with Alternative-multipart, assuming you will find
+one text-plain and one text-html, you should NOT be looking for HTML then TEXT,
+the last mentioned subtype is the most loyal to the original composition, you
+check if you can support the last, if not you simply go one step back and see
+the one before it, if your client supports it, you take that, and so on, this
+is how Alternative works, Just because HTML is best colored does not mean we
+should chose that, we are looking for the closest representation of the
+original and not for any in specific
+===============================================================================
+
+For those guys trying to extract a message/rfc822 parts correctly here is a
+hint:
+
+As you may note, if you recurse over the structure object returned by
+imap_fetchstructure, when you reach the message/rfc822 you find that the
+message itself counts as a part too, so an attachment in that message should be
+2.1.2 (the .1. is the whole rfc822 msg), but if you use that part number in
+imap_fetchbody you get nothing.
+
+What i did is: my recursing function checks if the part/subtype of a particular
+part is message/rfc822, and only in that case i do not concatenate the .1 to
+the part number, because as far as i know, this only happens with this kind of
+message. And for all the other parts (non rfc822) it concats the
+dot-partnumber.
+===============================================================================
+
+Lets say your email has this structure:
+1 multipart
+    plain
+    html
+2 x-vcard
+and... you can't seem to figure out how to get either plain or HTML part of the
+multipart message? have you been going through all the trouble looking for a
+PHP mime parser? well here is a simple solution which SHOULD BE documented in
+this manual. From example above, if you want to get the plain part of the
+"multipart" message do this:
+$text=imap_fetchbody($mbox,$msg_num,"1.1");
+all you do is instead of part number 1, put 1.1 or to get the HTML part put 1.2
+
+EASY!
+===============================================================================
+
+If you are trying to fetch the body part and don't know what to fetch,
+here is a function that will return all the body parts as a single string with
+each part separated by '|' character.
+Followed by a fuction which will retrieve the structure of that part.
+
+You can then parse the return string by explode() and call imap_fetchbody() on
+each of the parts.
+
+Chunks of this code was stolen from the following site:
+http://www.bitsense.net/PHPNotes/IMAP/imap_fetchstructure.asp
+
+<pre>
+#Function Gets all the subparts , but does not get part: ''
+function GetParts($this_part, $part_no) {
+
+        //If it is type message(2)=msg envelope,
+    //Not sure about this assumption : the if statement
+    //double check with RFC822 on this one.
+
+    if($this_part->type==2){
+        //and there is only 1 subpart of the envelope
+        //and that subpart is multipart
+        //otherwise will generate excessive '.1' and
+        //send wrong part_no to imap_fetchbody
+                if($this_part->parts[0]->type==1){
+                $this_part=$this_part->parts[0];
+                }
+        }
+
+        if (count($this_part->parts)>0) {
+                for ($i = 0; $i < count($this_part->parts); $i++) {
+                        if ($part_no != "") {
+                $newpartno = $part_no . '.' . ($i +1);
+            }
+                        else $newpartno = $i+1;
+                       
+            $partstringary[$i] =
+                GetParts($this_part->parts[$i], $newpartno);
+                }//for
+                $partstring = implode('|', $partstringary);
+
+        }//if
+        $partstring = concat_ws('|', $part_no , $partstring);
+        //echo $partstring ;
+        return $partstring;
+}
+
+#########################################
+#Companion function go to GetParts();
+#Given the partno - returns the structure
+#########################################
+function GetSubPartStructure($mbox, $msgno, $partno){
+   
+        $msg_struct = imap_fetchstructure($mbox, $msgno);
+        $partsary = explode ('.', $partno);
+        $subpartstruct = $msg_struct;
+
+        for ($i=0; $i< count($partsary); $i++){
+        //Not sure about this, if assumption
+        // you should probably double check with RFC822 on this one.
+                if($subpartstruct->type==2){
+                        if($subpartstruct->parts[0]->type==1){
+                          $subpartstruct=$subpartstruct->parts[0];
+                        }
+                }
+                $subpartstruct = $subpartstruct->parts[$partsary[$i]-1];
+        }
+        return $subpartstruct;
+}
+
+function decodemsg($msgstring, $encoding){
+        //Write your own function to decode,
+    //or lots of examples within PHP already.
+    return $decodemsg;
+}
+
+#Usage:
+$msg_struct = imap_fetchstructure($mbox, $msgno);
+$msgparts= GetParts($msg_struct, $part_no);
+$partsary = explode($msgparts, '|');
+for($i=0; $i<count($parsary);$i++){
+    $substruct = GetSubPartStructure($mbox, $msgno, $partsary[$i]);
+    if($substruct->type==''){ 
+        //then this is type TEXT
+        $msg = imap_fetchbody($mbox, $msgno, $msgpartsary[$i]);
+        //Do the decoding
+        $msg = decodemsg($msg, $struct->encoding);
+        echo $msg; //or do whatever you want with it.
+    }
+    else{ //Not TEXT
+        //Do whatever you want
+        //i.e. write the attachment...etc
+    }
+}
+
+</pre>
+===============================================================================
+
+Here's a routine that yields the part of a message with a particular MIME type:
+
+<?php
+function get_mime_type(&$structure) {
+    $primary_mime_type = array("TEXT", "MULTIPART", "MESSAGE", "APPLICATION", 
+"AUDIO", "IMAGE", "VIDEO", "OTHER");
+    if($structure->subtype) {
+         return $primary_mime_type[(int) $structure->type] . '/' . $structure->
+subtype;
+     }
+     return "TEXT/PLAIN";
+}
+
+function get_part($stream, $msg_number, $mime_type, $structure = false, 
+$part_number = false) {
+    if (!$structure) {
+         $structure = imap_fetchstructure($stream, $msg_number);
+     }
+    if($structure) {
+         if($mime_type == get_mime_type($structure)) {
+              if(!$part_number) {
+                   $part_number = "1";
+               }
+              $text = imap_fetchbody($stream, $msg_number, $part_number);
+              if($structure->encoding == 3) {
+                   return imap_base64($text);
+               } else if ($structure->encoding == 4) {
+                   return imap_qprint($text);
+               } else {
+                   return $text;
+            }
+        }
+         if ($structure->type == 1) { /* multipart */
+              while (list($index, $sub_structure) = each($structure->parts)) {
+                if ($part_number) {
+                    $prefix = $part_number . '.';
+                }
+                $data = get_part($stream, $msg_number, $mime_type, 
+$sub_structure, $prefix . ($index + 1));
+                if ($data) {
+                    return $data;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// get plain text
+$data = get_part($stream, $msg_number, "TEXT/PLAIN");
+// get HTML text
+$data = get_part($stream, $msg_number, "TEXT/HTML");
+?>
+
+Right now only the first part with the matching MIME type is returned. A more
+useful version would create an array and return all matching parts (for GIFs,
+for instance).
+===============================================================================
+
+If you download an attachment labeled "winmail.dat" or "win.dat", or with the
+mime-type of "APPLICATION/MS-TNEF", this is a Microsoft Transport Neutral
+Encapsulation Format file.  It is a proprietary method for encoding several
+files together in a single file.  AFAIK only Outlook sends it with its default
+setting of sending emails in Rich Text Format.
+
+As of PHP 5.2 there is no internal method of breaking apart these attachments.
+
+There are external command line utilities that can be called from PHP. 
+Alternately, it is possible to decode these files entirely in PHP.  It appears
+that all current libraries are based on a plugin written by Graham Norbury for
+Squirrel Mail.  The only ones I've seen are in IlohaMail, Telean, Horde-Imp,
+and NaSMail.  The only one that I know that will also decode the RTF message is
+from NaSMail.
+
+To use the NaSMail code, download the "TNEF Attachment Decoder" plugin and
+extract it to
+plugins/attachment_tnef/
+
+Then use this bit of code:
+<?php
+include_once('plugins/attachment_tnef/constants.php');
+include_once('plugins/attachment_tnef/functions.php');
+include_once('plugins/attachment_tnef/class/tnef.php');
+
+// $tnef is a binary variable containing only the contents of winmail.dat
+$attachment = &new TnefAttachment($tnef_debug);
+$result = $attachment->decodeTnef($tnef);
+$tnef_files = &$attachment->getFilesNested();
+print_r($tnef_files); // See the format of the returned array
+?>

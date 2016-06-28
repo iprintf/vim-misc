@@ -1,0 +1,261 @@
+
+DirectoryIterator::isFile
+
+(PHP 5, PHP 7)
+
+DirectoryIterator::isFile — Determine if current DirectoryIterator item is a
+regular file
+
+说明
+
+public bool DirectoryIterator::isFile ( void )
+
+Determines if the current DirectoryIterator item is a regular file.
+
+参数
+
+此函数没有参数。
+
+返回值
+
+Returns TRUE if the file exists and is a regular file (not a link or dir),
+otherwise FALSE
+
+范例
+
+Example #1 DirectoryIterator::isFile() example
+
+This example will list all regular files in the directory containing the
+script.
+
+<?php
+$iterator = new DirectoryIterator(dirname(__FILE__));
+foreach ($iterator as $fileinfo) {
+    if ($fileinfo->isFile()) {
+        echo $fileinfo->getFilename() . "\n";
+    }
+}
+?>
+
+以上例程的输出类似于：
+
+apple.jpg
+banana.jpg
+example.php
+pears.jpg
+
+参见
+
+  • DirectoryIterator::getType() - Determine the type of the current
+    DirectoryIterator item
+  • DirectoryIterator::isDir() - Determine if current DirectoryIterator item is
+    a directory
+  • DirectoryIterator::isDot() - Determine if current DirectoryIterator item is
+    '.' or '..'
+  • DirectoryIterator::isLink() - Determine if current DirectoryIterator item
+    is a symbolic link
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+to actually sort a directoryiterator you need to subclass the iterator and use
+a comparator function similar to this one
+
+<?php
+function cmpSPLFileInfo( $splFileInfo1, $splFileInfo2 )
+{
+    return strcmp( $splFileInfo1->getFileName(), $splFileInfo2->getFileName()
+);
+}
+
+class DirList extends RecursiveDirectoryIterator
+{
+    private $dirArray;
+
+    public function __construct( $p )
+    {
+        parent::__construct( $p );
+        $this->dirArray = new ArrayObject();
+        foreach( $this as $item )
+        {
+            $this->dirArray->append( $item );
+        }
+        $this->dirArray->uasort( "cmpSPLFileInfo" );
+    }
+
+    public function getIterator()
+    {
+        return $this->dirArray->getIterator();
+    }
+
+}
+?>
+===============================================================================
+
+shows all .jpg files in the current directory but how does the
+DirectoryIterator sort the output!?
+
+$dir=new DirectoryIterator("./");
+foreach ($dir as $file) {
+  if ($dir->isDot()) {continue;}    //removes . and ..
+    if (strripos($file,".jpg")==true) {
+      echo $file . "<br>\n";
+    }
+}
+===============================================================================
+
+I put in an example in __autoload, but it is useful here, too...
+
+Yet another class/interface __autoload function. Includes an example usage of
+the SPL DirectoryIterator class, a settable case-ignore flag, and support for
+multiple file name patterns to allow easy integration from multiple sources.
+
+<?php
+/**
+* __autoload
+*
+* @author Ken Comer
+* @copyright released into public domain 2005 Ken Comer
+*/
+
+define('IGNORE_CASE',true);
+// comment out the define() of IGNORE_CASE to be
+//   case-sensitive. I like to ignore case so that I can
+//   use UPPERCASE for the test versions of the file.
+
+/**
+* autoloads classes and interfaces for PHP5
+*
+* @author Ken Comer
+*/
+
+function __autoload($class_name) {
+
+  // This will be set the first time through.
+  // Put your default values in the place indicated
+  //    below so as to eliminate possible duplicates
+  //    in the .ini include_path
+  static $possible_path = NULL;
+  // Leave this as NULL.
+
+ 
+  // List here whatever formats you use for your
+  //    file names. Note that, if you autoload
+  //    a class that implements a non-loaded interface,
+  //    you will also need to autoload that interface.
+  static $permitted_formats = array(
+    "&CLASS.class.inc"
+    ,"&CLASS.class.inc.php"
+    ,"&CLASS.class.inc.php5"
+    ,"class.&CLASS.inc"
+    ,"class.&CLASS.inc.php"
+    ,"class.&CLASS.inc.php5"
+    ,"&CLASS.interface.inc"
+    ,"&CLASS.interface.inc.php"
+    ,"&CLASS.interface.inc.php5"
+    ,"i&CLASS.interface.inc"
+    ,"i&CLASS.interface.inc.php"
+    ,"i&CLASS.interface.inc.php5"
+  );
+  //  Put the &CLASS wherever the $class_name
+  //    might appear
+
+  // Only executed the first time __autoload is called
+  if (NULL===$possible_path):
+    // These are the default paths for this application
+    $possible_path = array_flip(array(
+        "."
+        ,".."
+        ,"../include"
+        ,"/public_html/php/include"
+    ));
+    // Customize this yourself, but leave the
+    //      array_flip alone. We will use this
+    //      to get rid of duplicate entries from the
+    //      include_path .ini list.
+
+    // Merge the flipped arrays to get rid of duplicate
+    //      "keys" (which are really the valid include
+    //      paths) then strip out the keys leaving only
+    //      uniques. This is marginally faster than
+    //      using array_combine and array_unique and
+    //      much more elegant. Okay, it's weird, too.
+    $possible_path = array_keys(array_merge($possible_path,
+            array_flip(explode(ini_get("include_path"),";"))));
+  endif; /* static $possible_path initialization */
+
+  $possibility = str_replace("&CLASS",$class_name,$permitted_formats);
+
+  foreach ( $possible_path as $directory ) {
+    if (!file_exists($directory) or !is_dir($directory))
+    {
+      continue;
+    }
+    $file_to_check = new DirectoryIterator($directory);
+
+    foreach ( $file_to_check as $file ) {
+      // ignore directories and files that do not contain
+      // $class_name
+      if ( !$file->isDir()
+          and ( defined(IGNORE_CASE) && TRUE===IGNORE_CASE )
+            ? stripos($file->getFileName(),$class_name)
+            : strpos($file->getFileName(),$class_name) ) :
+       
+        // class_name was included, now compare against
+        // all permitted file name patterns
+        foreach ( $possibility as $compare ):
+            if ((defined(IGNORE_CASE) && TRUE===IGNORE_CASE )
+                ? !strcasecmp($compare,$file->getFileName())
+                : $compare===$file->getFileName()
+            ) {
+              // by using $compare, you will get a qualified
+              //    file name
+              include_once($compare);
+              return TRUE;
+            }
+        endforeach; /* $possibility */
+
+      endif;
+    } /* foreach $file_to_check */
+  }
+}
+?>
+===============================================================================
+
+Usage:
+<?php
+//open current directory
+$dir = new DirectoryIterator(".");
+// use do .. while since we need to iterate atleast once
+// and the first two items are always "." and ".."
+do  {
+    // if it isn't "." or ".."
+    if (!$dir->isDot()) {
+        // echo out pathname and "/" if it's a directory
+        echo $dir->getPathname() . ($dir->isDir() ? "/" : "");
+    }
+} while ($dir->next())
+?>
+
+Outputs something like:
+/path/file1
+/path/dir1/
+/path/file2
+/path/file3
+/path/dir2/
+
+---
+Note from the extension author:
+
+Try this:
+
+<?php
+foreach(new DirectoryIterator(".") as $file)
+{
+    if (!$file->isDot()) {
+        echo $file->getPathname() . ($file->isDir() ? "/" : "");
+    }
+}
+?>

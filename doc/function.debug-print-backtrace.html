@@ -1,0 +1,268 @@
+
+debug_print_backtrace
+
+(PHP 5, PHP 7)
+
+debug_print_backtrace — 打印一条回溯。
+
+说明
+
+void debug_print_backtrace ([ int $options = 0 [, int $limit = 0 ]] )
+
+debug_print_backtrace() 打印了一条 PHP 回溯。它打印了函数调用、被 included/
+required 的文件和 eval() 的代码。
+
+参数
+
+options
+
+    从 5.3.6 开始，这个参数是以下选项的位掩码：
+
+                         debug_print_backtrace() 选项
+    DEBUG_BACKTRACE_IGNORE_ARGS 是否忽略 "args" 的索引，包括所有的 function/
+                                method 的参数，能够节省内存开销。
+
+limit
+
+    从 5.4.0 开始，这个参数能够用于限制返回堆栈帧的数量。默认为 (limit=0) ，返
+    回所有的堆栈帧。
+
+返回值
+
+没有返回值。
+
+更新日志
+
+版本             说明
+5.4.0 添加了可选的参数 limit。
+5.3.6 添加了可选的参数 options。
+
+范例
+
+Example #1 debug_print_backtrace() 范例
+
+<?php
+// include.php file
+
+function a() {
+    b();
+}
+
+function b() {
+    c();
+}
+
+function c(){
+    debug_print_backtrace();
+}
+
+a();
+
+?>
+<?php
+// 文件 test.php
+// 这是你应该运行的文件
+
+include 'include.php';
+?>
+
+以上例程的输出类似于：
+
+#0  c() called at [/tmp/include.php:10]
+#1  b() called at [/tmp/include.php:6]
+#2  a() called at [/tmp/include.php:17]
+#3  include(/tmp/include.php) called at [/tmp/test.php:3]
+
+参见
+
+  • debug_backtrace() - 产生一条回溯跟踪(backtrace)
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Another way to manipulate and print a backtrace, without using output
+buffering:
+
+<?php
+// print backtrace, getting rid of repeated absolute path on each file
+$e = new Exception();
+print_r(str_replace('/path/to/code/', '', $e->getTraceAsString()));
+?>
+===============================================================================
+
+I like the output of debug_print_backtrace() but I sometimes want it as a
+string.
+
+bortuzar's solution to use output buffering is great, but I'd like to factorize
+that into a function.  Doing that however always results in whatever function
+name I use appearing at the top of the stack which is redundant.
+
+Below is my noddy (simple) solution.  If you don't care for renumbering the
+call stack, omit the second preg_replace().
+
+<?php
+    function debug_string_backtrace() {
+        ob_start();
+        debug_print_backtrace();
+        $trace = ob_get_contents();
+        ob_end_clean();
+
+        // Remove first item from backtrace as it's this function which
+        // is redundant.
+        $trace = preg_replace ('/^#0\s+' . __FUNCTION__ . "[^\n]*\n/", '', 
+$trace, 1);
+
+        // Renumber backtrace items.
+        $trace = preg_replace ('/^#(\d+)/me', '\'#\' . ($1 - 1)', $trace);
+
+        return $trace;
+    }
+?>
+===============================================================================
+
+This functionality is now implemented in the PEAR package PHP_Compat.
+
+More information about using this function without upgrading your version of
+PHP can be found on the below link:
+
+http://pear.php.net/package/PHP_Compat
+===============================================================================
+
+This code will give you a simple horizontal stack trace to assist debugging:
+
+<?php
+
+class A {
+    public function testA() {
+        echo "<LI>Class A.testA ----??";
+        echo "<LI>".$this->whoDidThat();
+    }
+    public function whoDidThat() {
+        $who=debug_backtrace();
+        $result="";
+        $count = 0;
+        $last=count($who);
+        foreach($who as $k=>$v) {
+            if ($count++ > 0) {
+                $x="";
+                if ( $count>2) {
+                    $x=">";
+                }
+                $result="[line".$who[$k]['line']."]".$who[$k]['class'].".".$who
+[$k]['function'].$x.$result;
+            }
+        }
+        return $result;
+    }
+}
+class B extends A {
+    public function testB() {
+        echo "<LI>Class B.testB";
+        echo "<LI>".$this->whoDidThat();
+    }
+    public function testA() {
+        echo "<LI>Class testB.testA  ---- Y";
+        echo "<LI>".$this->whoDidThat();
+    }
+}
+class C {
+    public function test() {
+        echo "<HR>";
+        $b=new B();
+        echo "<HR>Class C calling B.testA";
+        $b->testA();
+    }
+}
+
+$c=new C();
+$c->test();
+echo debug_print_backtrace();
+?>
+
+When run you get
+
+Class C calling B.testA
+*Class testB.testA ---- Y
+*[line45]C.test>[line40]B.testA
+===============================================================================
+
+Here's a function that returns a string with the same information shown in
+debug_print_backtrace(), with the option to exclude a certain amount of traces
+(by altering the $traces_to_ignore argument).
+
+I've done a couple of tests to ensure that it prints exactly the same
+information, but I might have missed something.
+
+This solution is a nice workaround to get the debug_print_backtrace()
+information if you're already using ob_start() in your PHP code.
+
+<?php
+function get_debug_print_backtrace($traces_to_ignore = 1){
+    $traces = debug_backtrace();
+    $ret = array();
+    foreach($traces as $i => $call){
+        if ($i < $traces_to_ignore ) {
+            continue;
+        }
+
+        $object = '';
+        if (isset($call['class'])) {
+            $object = $call['class'].$call['type'];
+            if (is_array($call['args'])) {
+                foreach ($call['args'] as &$arg) {
+                    get_arg($arg);
+                }
+            }
+        }       
+
+        $ret[] = '#'.str_pad($i - $traces_to_ignore, 3, ' ')
+        .$object.$call['function'].'('.implode(', ', $call['args'])
+        .') called at ['.$call['file'].':'.$call['line'].']';
+    }
+
+    return implode("\n",$ret);
+}
+
+function get_arg(&$arg) {
+    if (is_object($arg)) {
+        $arr = (array)$arg;
+        $args = array();
+        foreach($arr as $key => $value) {
+            if (strpos($key, chr(0)) !== false) {
+                $key = '';    // Private variable found
+            }
+            $args[] =  '['.$key.'] => '.get_arg($value);
+        }
+
+        $arg = get_class($arg) . ' Object ('.implode(',', $args).')';
+    }
+}
+?>
+===============================================================================
+
+If you want to get the trace into a variable or DB, I suggest to do the
+following:
+
+<?php
+    ob_start();
+        debug_print_backtrace();
+    $trace = ob_get_contents();
+    ob_end_clean();
+
+$query = sprintf("INSERT INTO EventLog (Trace) VALUES ('%s')",
+            mysql_real_escape_string($trace));
+mysql_query($query);
+?>
+===============================================================================
+
+bortuzar: a simpler version, w/o output buffering:
+
+<?php
+
+$query = sprintf("INSERT INTO EventLog (Trace) VALUES ('%s')",
+    mysql_real_escape_string(join("\n", debug_backtrace())) );
+mysql_query($query);
+
+?>

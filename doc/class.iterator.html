@@ -1,0 +1,686 @@
+
+Iterator（迭代器）接口
+
+(No version information available, might only be in Git)
+
+简介
+
+可在内部迭代自己的外部迭代器或类的接口。
+
+接口摘要
+
+Iterator extends Traversable {
+/* 方法 */
+abstract public mixed current ( void )
+abstract public scalar key ( void )
+abstract public void next ( void )
+abstract public void rewind ( void )
+abstract public boolean valid ( void )
+}
+
+预定义迭代器
+
+PHP 已经提供了一些用于日常任务的迭代器。详细列表参见 SPL 迭代器。
+
+范例
+
+Example #1 基本用法
+
+这个例子展示了使用 foreach 时，迭代器方法的调用顺序。
+
+<?php
+class myIterator implements Iterator {
+    private $position = 0;
+    private $array = array(
+        "firstelement",
+        "secondelement",
+        "lastelement",
+    );  
+
+    public function __construct() {
+        $this->position = 0;
+    }
+
+    function rewind() {
+        var_dump(__METHOD__);
+        $this->position = 0;
+    }
+
+    function current() {
+        var_dump(__METHOD__);
+        return $this->array[$this->position];
+    }
+
+    function key() {
+        var_dump(__METHOD__);
+        return $this->position;
+    }
+
+    function next() {
+        var_dump(__METHOD__);
+        ++$this->position;
+    }
+
+    function valid() {
+        var_dump(__METHOD__);
+        return isset($this->array[$this->position]);
+    }
+}
+
+$it = new myIterator;
+
+foreach($it as $key => $value) {
+    var_dump($key, $value);
+    echo "\n";
+}
+?>
+
+以上例程的输出类似于：
+
+string(18) "myIterator::rewind"
+string(17) "myIterator::valid"
+string(19) "myIterator::current"
+string(15) "myIterator::key"
+int(0)
+string(12) "firstelement"
+
+string(16) "myIterator::next"
+string(17) "myIterator::valid"
+string(19) "myIterator::current"
+string(15) "myIterator::key"
+int(1)
+string(13) "secondelement"
+
+string(16) "myIterator::next"
+string(17) "myIterator::valid"
+string(19) "myIterator::current"
+string(15) "myIterator::key"
+int(2)
+string(11) "lastelement"
+
+string(16) "myIterator::next"
+string(17) "myIterator::valid"
+
+Table of Contents
+
+  • Iterator::current — 返回当前元素
+  • Iterator::key — 返回当前元素的键
+  • Iterator::next — 向前移动到下一个元素
+  • Iterator::rewind — 返回到迭代器的第一个元素
+  • Iterator::valid — 检查当前位置是否有效
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Order of operations when using a foreach loop:
+
+1. Before the first iteration of the loop, Iterator::rewind() is called.
+2. Before each iteration of the loop, Iterator::valid() is called.
+3a. It Iterator::valid() returns false, the loop is terminated.
+3b. If Iterator::valid() returns true, Iterator::current() and
+Iterator::key() are called.
+4. The loop body is evaluated.
+5. After each iteration of the loop, Iterator::next() is called and we repeat
+from step 2 above.
+
+This is roughly equivalent to:
+
+<?php
+$it->rewind();
+
+while ($it->valid())
+{
+    $key = $it->key();
+    $value = $it->current();
+
+    // ...
+
+    $it->next();
+}
+?>
+
+The loop isn't terminated until Iterator::valid() returns false or the body of
+the loop executes a break statement.
+
+The only two methods that are always executed are Iterator::rewind() and
+Iterator::valid() (unless rewind throws an exception).
+
+The Iterator::next() method need not return anything. It is defined as
+returning void. On the other hand, sometimes it is convenient for this method
+to return something, in which case you can do so if you want.
+
+If your iterator is doing something expensive, like making a database query and
+iterating over the result set, the best place to make the query is probably in
+the Iterator::rewind() implementation.
+
+In this case, the construction of the iterator itself can be cheap, and after
+construction you can continue to set the properties of the query all the way up
+to the beginning of the foreach loop since the
+Iterator::rewind() method isn't called until then.
+
+Things to keep in mind when making a database result set iterator:
+
+* Make sure you close your cursor or otherwise clean up any previous query at
+the top of the rewind method. Otherwise your code will break if the same
+iterator is used in two consecutive foreach loops when the first loop
+terminates with a break statement before all the results are iterated over.
+
+* Make sure your rewind() implementation tries to grab the first result so that
+the subsequent call to valid() will know whether or not the result set is
+empty. I do this by explicitly calling next() from the end of my rewind()
+implementation.
+
+* For things like result set iterators, there really isn't always a "key" that
+you can return, unless you know you have a scalar primary key column in the
+query. Unfortunately, there will be cases where either the iterator doesn't
+know the primary key column because it isn't providing the query, the nature of
+the query is such that a primary key isn't applicable, the iterator is
+iterating over a table that doesn't have one, or the iterator is iterating over
+a table that has a compound primary key. In these cases, key() can return
+either:
+the row index (based on a simple counter that you provide), or can simply
+return null.
+
+Iterators can also be used to:
+
+* iterate over the lines of a file or rows of a CSV file
+* iterate over the characters of a string
+* iterate over the tokens in an input stream
+* iterate over the matches returned by an xpath expression
+* iterate over the matches returned by a regexp
+* iterate over the files in a folder
+* etc...
+===============================================================================
+
+<?php
+# - Here is an implementation of the Iterator interface for arrays
+#     which works with maps (key/value pairs)
+#     as well as traditional arrays
+#     (contiguous monotonically increasing indexes).
+#   Though it pretty much does what an array
+#     would normally do within foreach() loops,
+#     this class may be useful for using arrays
+#     with code that generically/only supports the
+#     Iterator interface.
+#  Another use of this class is to simply provide
+#     object methods with tightly controlling iteration of arrays.
+
+class tIterator_array implements Iterator {
+  private $myArray;
+
+  public function __construct( $givenArray ) {
+    $this->myArray = $givenArray;
+  }
+  function rewind() {
+    return reset($this->myArray);
+  }
+  function current() {
+    return current($this->myArray);
+  }
+  function key() {
+    return key($this->myArray);
+  }
+  function next() {
+    return next($this->myArray);
+  }
+  function valid() {
+    return key($this->myArray) !== null;
+  }
+}
+
+?>
+===============================================================================
+
+If you have a custom iterator that may throw an exception in it's current()
+method, there is no way to catch the exception without breaking a foreach loop.
+
+The following for loop allows you to skip elements for which $iterator->current
+() throws an exception, rather than breaking the loop.
+
+<?php
+for ($iterator->rewind(); $iterator->valid(); $iterator->next()) {
+    try {
+        $value = $iterator->current();
+    } catch (Exception $exception) {
+        continue;
+    }
+
+    # ...
+}
+?>
+===============================================================================
+
+It's important to note that following won't work if you have null values.
+
+<?php
+    function valid() {
+        var_dump(__METHOD__);
+        return isset($this->array[$this->position]);
+    }
+?>
+
+Other examples have shown the following which won't work if you have false
+values:
+
+<?php
+    function valid() {
+        return $this->current() !== false;
+    }
+?>
+
+Instead use:
+
+<?php
+    function valid() {
+        return array_key_exists($this->array, $this->position);
+    }
+?>
+
+Or the following if you do not store the position.
+
+<?php
+    public function valid() {
+        return !is_null(key($this->array));
+    }
+?>
+===============================================================================
+
+So, playing around with iterators in PHP (coming from languages where I'm
+spoiled with generators to do things like this), I wrote a quick piece of code
+to give the Fibonacci sequence (to infinity, though only the first terms up to
+F_{10} are output).
+
+<?php
+
+class Fibonacci implements Iterator {
+    private $previous = 1;
+    private $current = 0;
+    private $key = 0;
+   
+    public function current() {
+        return $this->current;
+    }
+   
+    public function key() {
+        return $this->key;
+    }
+   
+    public function next() {
+        $newprevious = $this->current;
+        $this->current += $this->previous;
+        $this->previous = $newprevious;
+        $this->key++;
+    }
+   
+    public function rewind() {
+        $this->previous = 1;
+        $this->current = 0;
+        $this->key = 0;
+    }
+   
+    public function valid() {
+        return true;
+    }
+}
+
+$seq = new Fibonacci;
+$i = 0;
+foreach ($seq as $f) {
+    echo "$f\n";
+    if ($i++ === 10) break;
+}
+?>
+===============================================================================
+
+<?php
+
+/*
+* An implementation of the Iterator
+* with simpleXML to remove a node and generate a new XML file.
+*
+* project.xml file:
+* <?xml version="1.0" encoding="UTF-8"?>
+* ...
+* <data>
+*  <item>
+*      <value>one</value>
+*  </item>
+*  <item>
+*      <value>two</value>
+*  </item>
+*  ...
+* </data>
+*
+*/
+
+class parseXML implements Iterator {
+   
+    private $position;
+    private $xml;
+    public $item;
+
+    public function __construct() {
+       
+        $this->position = 0;
+        $this->xml = simplexml_load_file('project.xml');
+               
+    }
+   
+    public function unsetItem() {
+       
+        foreach ($this as $key => $value) {
+       
+            if ($value->value == $this->item ) {
+       
+                unset($this->xml->data->item[$key]);
+       
+            }
+        }
+       
+        $this->mkXML();
+    }
+   
+    public function mkXML() {
+       
+        file_put_contents('project.xml', $this->xml->asXML() );
+       
+    }
+
+    function rewind() {
+        $this->position = 0;
+    }
+
+    function current() {
+        return $this->xml->data->item[$this->position];
+    }
+
+    function key() {
+        return $this->position;
+    }
+
+    function next() {
+        ++$this->position;
+    }
+
+    function valid() {
+        return isset($this->xml->data->item[$this->position]);
+    }
+   
+}
+
+$itemRemove = new parseXML();
+
+$itemRemove->item = "one";
+
+$itemRemove->unsetItem();
+
+?>
+===============================================================================
+
+Be carefull with Iterator when using nested loops or deleting items inside the
+collection while looping over it.
+It can be tricky to detect.
+This unexpected behavior is pertinent if you think about it long enough.
+
+<?php
+
+foreach($it as $key => $value)
+    echo $value;
+#output: value1, value2, value3
+
+foreach($it as $key => $value)
+    foreach($it as $key => $value)
+        echo $value;
+#output: value1, value2, value3
+
+foreach($it as $key => $value)
+    foreach(clone $it as $key => $value)
+        echo $value;
+#output: value1, value2, value3, value1, value2, value3, value1, value2, value3
+
+foreach($it as $key => $value)
+{
+    echo $value;
+    array_shift($it->values);
+}
+#ouput: value1, value3
+
+?>
+===============================================================================
+
+Here's a Fibonacci example using the formula, rather than addition.
+
+<?php
+/**
+* @author    Anthony Sterling
+*/
+class FibonacciSequence implements Iterator
+{
+    protected
+        $limit        = 0;
+       
+    protected
+        $key        = 0;   
+       
+    public function __construct($limit = 0)
+    {
+        $this->limit = (integer)$limit;
+    }
+   
+    public function current()
+    {
+        return round(
+            (pow(((1 + sqrt(5)) / 2), $this->key) - pow((-1 / (1 + sqrt(5)) / 2
+), $this->key)) / sqrt(5),
+            null
+        );
+    }
+
+    public function key()
+    {
+        return $this->key;
+    }
+
+    public function next()
+    {
+        $this->key++;
+    }
+
+    public function rewind()
+    {
+        $this->key = 0;
+    }
+
+    public function valid()
+    {
+        return $this->key < $this->limit;
+    }
+}
+
+foreach(new FibonacciSequence() as $number)
+{
+    printf(
+        '%d<br />',
+        $number
+    );
+}
+/*
+    0
+    1
+    1
+    2
+    3
+    5
+    8
+    13
+    21
+    34
+    55
+    89
+    144
+    233
+    377
+    610
+    987
+    1597
+    2584
+    4181
+    6765
+    10946
+    17711
+    28657
+    46368
+    75025
+    121393
+    196418
+    317811
+    514229
+*/
+?>
+
+Anthony.
+===============================================================================
+
+Examples of use
+<?php
+class myIterator implements Iterator
+    {
+    private
+        $_array = array();
+    public function __construct(array $array)
+        {
+        $this->_array = $array;
+        }
+    public function rewind()
+        {
+        reset($this->_array);
+        }
+    public function current()
+        {
+        return current($this->_array);
+        }
+    public function key()
+        {
+        return key($this->_array);
+        }
+    public function next()
+        {
+        next($this->_array);
+        }
+    public function valid()
+        {
+        return $this->key() !== null;
+        }
+    }
+
+$it = new myIterator(array('foo_1' => 'bar_1','foo_2' => 'bar_2'));
+
+//example 1 : foreach
+
+foreach($it as $key => $value)
+    {
+    var_dump($key, $value);
+    }
+   
+//example 2 : while
+
+$it -> rewind();
+while($it->valid())
+    {
+    var_dump($it->key(), $it->current());
+   
+    $it->next();
+    }
+
+//example 3 : for
+
+for($it->rewind();$it->valid();$it->next())
+    {
+   var_dump($it->key(), $it->current());
+    }
+?>
+===============================================================================
+
+An interesting fact that I didn't read in the doc:
+
+the key() method is called only if your foreach loop needs it.
+
+For instance, the following loop calls the key() method:
+
+<?php
+foreach($it as $key => $value) {
+    var_dump($key, $value);
+    echo "\n";
+}
+?>
+
+But the following loop doesn't:
+
+<?php
+foreach($it as $value) {
+    var_dump($value);
+    echo "\n";
+}
+?>
+===============================================================================
+
+If you're using PHP 5.5 or above and are creating a simple iterator, consider
+using a generator function instead. There is significantly less boilerplate
+code and the code is easier to read. http://au1.php.net/generators
+===============================================================================
+
+For Iterators implement database queries, what I've found is that if you want
+to chain multiple iterators together using a "MultipleIterator" then you *do
+not* want ::rewind() to actually execute your query, especially if it's
+expensive.
+
+Instead, what I've done is implement that portion in "valid."
+
+e.g.
+
+<?php
+class Database_Result_Iterator {
+    ...
+    private $_db_resource = null;
+    private $_loaded = false;
+    private $_valid = false;
+
+    function rewind() {
+        if ($this->_db_resource) {
+            mysql_free($this->_db_resource);
+            $this->_db_resource = null;
+        }
+        $this->_loaded = false;
+        $this->_valid = false;
+    }
+
+    function valid() {
+        if ($this->_loaded) {
+            $this->load();
+        }
+        return $this->_valid;
+    }
+
+    private function load() {
+        $this->_db_resource = mysql_query(...);
+        $this->_loaded = true;
+        $this->next(); // Sets _valid
+    }
+}
+?>
+
+That way if you chain multiple queries in a "MultipleIterator" together, the
+"rewind" call (which rewinds all iterators at once) does not execute every
+query at once.
+
+In addition, I found that the MultipleIterator may now work best for other
+reasons, but still, the above is a good idea to postpone queries until the last
+possible moment they are needed.
+===============================================================================
+
+Be aware that when you call a method like current($this) within the Iterator
+class, the properties of the class are returned and the Iterator's current()
+isn't called. This is because current() applies to arrays and the Iterator
+class is then interpretated as an array.

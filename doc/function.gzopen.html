@@ -1,0 +1,255 @@
+
+gzopen
+
+(PHP 4, PHP 5, PHP 7)
+
+gzopen — Open gz-file
+
+说明
+
+resource gzopen ( string $filename , string $mode [, int $use_include_path = 0
+] )
+
+Opens a gzip (.gz) file for reading or writing.
+
+gzopen() can be used to read a file which is not in gzip format; in this case 
+gzread() will directly read from the file without decompression.
+
+参数
+
+filename
+
+    The file name.
+
+mode
+
+    As in fopen() (rb or wb) but can also include a compression level (wb9) or
+    a strategy: f for filtered data as in wb6f, h for Huffman only compression
+    as in wb1h. (See the description of deflateInit2 in zlib.h for more
+    information about the strategy parameter.)
+
+use_include_path
+
+    You can set this optional parameter to 1, if you want to search for the
+    file in the include_path too.
+
+返回值
+
+Returns a file pointer to the file opened, after that, everything you read from
+this file descriptor will be transparently decompressed and what you write gets
+compressed.
+
+If the open fails, the function returns FALSE.
+
+范例
+
+Example #1 gzopen() Example
+
+<?php
+$fp = gzopen("/tmp/file.gz", "r");
+?>
+
+参见
+
+  • gzclose() - Close an open gz-file pointer
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+gzopen("php://output","wb") doesn't work on a web server, nor does fopen
+("compress.zlib://php://output","wb").
+
+Here is a snippet to gzip a file and output it on the fly, without using a
+temporary file, without reading the file into memory, and without reading the
+file more than once:
+
+<?php
+$fin = fopen($file, "rb");
+if ($fin !== FALSE) {
+    $fout = fopen("php://output", "wb");
+    if ($fout !== FALSE) {
+    // write gzip header
+    fwrite($fout, "\x1F\x8B\x08\x08".pack("V", filemtime($file))."\0\xFF", 10);
+    // write the original file name
+    $oname = str_replace("\0", "", basename($file));
+    fwrite($fout, $oname."\0", 1+strlen($oname));
+    // add the deflate filter using default compression level
+    $fltr = stream_filter_append($fout, "zlib.deflate", STREAM_FILTER_WRITE, -1
+);
+    // set up the CRC32 hashing context
+    $hctx = hash_init("crc32b");
+    // turn off the time limit
+    if (!ini_get("safe_mode")) set_time_limit(0);
+    $con = TRUE;
+    $fsize = 0;
+    while (($con !== FALSE) && !feof($fin)) {
+        // deflate works best with buffers >32K
+        $con = fread($fin, 64 * 1024);
+        if ($con !== FALSE) {
+        hash_update($hctx, $con);
+        $clen = strlen($con);
+        $fsize += $clen;
+        fwrite($fout, $con, $clen);
+        }
+    }
+    // remove the deflate filter
+    stream_filter_remove($fltr);
+    // write the CRC32 value
+    // hash_final is a string, not an integer
+    $crc = hash_final($hctx, TRUE);
+    // need to reverse the hash_final string so it's little endian
+    fwrite($fout, $crc[3].$crc[2].$crc[1].$crc[0], 4);
+    // write the original uncompressed file size
+    fwrite($fout, pack("V", $fsize), 4);
+    fclose($fout);
+    }
+    fclose($fin);
+}
+?>
+===============================================================================
+
+An OO-version of David Gero's excellent GZ File format note also on this page:
+
+<?php
+
+// David Gero's example: read a file and output GZ
+$gz_to_out = new GZTempFile(basename($file), "php://output");
+$fin = fopen($file, "rb");
+while($data = fread($fin, 64 * 1024)) {
+    $gz_to_out->fwrite();
+}
+close($fin);
+$gz_to_out->flushBuffer();
+
+// Example of building your GZ file content on the fly (temp filehandle)
+$gz_custom = new GZTempFile();
+foreach ( ... ) {
+    //  Some work
+    $str = ...
+
+    $gz_custom->fwrite($str);
+}
+//  Store it in a database
+$m = new MongoClient();
+$gridfs = $m->selectDB('test')->getGridFS();
+$id = $gridfs->storeFile($gz_custom->getReadFilehandle(), array('contentType' 
+=> 'application/x-gzip'));
+
+class GZTempFile {
+    private $__fh = null;
+    public $uncompressed_bytes = 0;
+    public $filesize = null;
+    private $gz_filter = null;
+    private $file_hash = null;
+    private $final_read_fh = false;
+    private $__buffer = '';
+    private $__buffer_len = 0;
+
+    public function __construct($filename = 'data', $fh = null) {
+        $this->__fh = is_null($fh) ? fopen('php://temp','w+') : $fh;
+        fwrite($this->__fh, "\x1F\x8B\x08\x08".pack("V", time())."\0\xFF", 10);
+// GZ file header
+        fwrite($this->__fh, str_replace("\0", "", basename($filename)) ."\0"); 
+// GZ filename = data, needed???
+        $this->gz_filter = stream_filter_append($this->__fh, "zlib.deflate", 
+STREAM_FILTER_WRITE, -1);
+        $this->uncompressed_bytes = 0;
+        $this->file_hash = hash_init("crc32b");
+    }
+
+    public function fwrite($str,$length = null) {
+        if ( $this->final_read_fh ) { throw new Exception("GZTempFile has
+already been finalized and closed.  No more writing"); }
+        hash_update($this->file_hash, $str);
+        $this->uncompressed_bytes += strlen($str);
+        $this->__buffer_len += strlen($str);
+        $this->__buffer .= $str;
+        if ( $this->__buffer_len >= 64 * 1024 ) { $this->flushBuffer(); }
+    }
+    public function flushBuffer() {
+        if ( $this->__buffer_len == 0 ) { return false; }
+        $return = fwrite($this->__fh, $this->__buffer);
+        $this->__buffer_len = 0;
+        $this->__buffer = '';
+        return $return;
+    }
+
+    public function getReadFilehandle() {       
+        if ( ! $this->final_read_fh ) {
+            $this->flushBuffer();
+            stream_filter_remove($this->gz_filter);
+            $crc = hash_final($this->file_hash, TRUE);            // hash_final
+is a string, not an integer
+            fwrite($this->__fh, $crc[3].$crc[2].$crc[1].$crc[0]); // need to
+reverse the hash_final string so it's little endian
+            fwrite($this->__fh, pack("V", $this->uncompressed_bytes), 4);
+
+            $this->filesize = ftell($this->__fh);
+            rewind($this->__fh);
+            $this->final_read_fh = $this->__fh;
+        }
+        return $this->final_read_fh;
+    }
+}
+===============================================================================
+
+This worked unstable for me under high load (50+ files per second):
+
+<?php
+    $gz = gzopen ( $file, 'w9' );
+    gzwrite ( $gz, $content );
+    gzclose ( $gz );
+?>
+
+The following works fine:
+
+<?php
+    $f = fopen ( $file, 'w' );
+    fwrite ( $f, gzcompress ( $content, 9 ) );
+    fclose ( $f );
+?>
+===============================================================================
+
+WARNING gzopen and gzread have a major disadvantage. They makes NO checksum and
+NO length verification of the gzipped data and discard this valuable
+information. This should be documented here.
+===============================================================================
+
+dtorop932 at hotmail dot com's comments, according to my tests, is incorrect.
+That code wishes to download the entire file before parsing, which is
+inconvinient. The wget method works though.
+===============================================================================
+
+Be aware that when opening a remote file on a http server the gzopen will
+return by default false after 120 seconds waiting to any answer.
+===============================================================================
+
+RE dubious's comment: "Being able to read gzip streams from ftp and http is
+near the top of my personal wishlist at the moment..."
+
+One way to read a gzip stream over http is to daisychain stream wrappers, e.g.:
+
+<?
+$fp = fopen("compress.zlib://http://some.website.org/example.gz", "r");
+?>
+===============================================================================
+
+"On the fly" gunzipping actually DOES seem to work - it just appears that only
+LOCAL streams/files (including php://stdin) can be accessed for some reason.  I
+THINK (but have not yet tested) that you could similarly gzopen "php://stdout"
+and pass a stream of gzipped data to the browser (when run from a web page) or
+console (when run standalone) through there.
+
+I HAVE tested scripts from the command line like:
+
+wget -q -O- ftp://some.host.net/pub/some_gzip_file.gz | php gunzip_stuff.php
+
+where gunzip_stuff.php would be a script that gzopened "php://stdin" and did
+gzgets from that stream, and it seems to work fine, but that obviously doesn't
+help someone wanting to grab gzipped streams from remote sites from a web-based
+script.
+
+Being able to read gzip streams from ftp and http is near the top of my
+personal wishlist at the moment...

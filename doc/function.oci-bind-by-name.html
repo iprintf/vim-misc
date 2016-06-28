@@ -1,0 +1,1122 @@
+
+oci_bind_by_name
+
+(PHP 5, PHP 7, PECL OCI8 >= 1.1.0)
+
+oci_bind_by_name — 绑定一个 PHP 变量到一个 Oracle 位置标志符
+
+说明
+
+bool oci_bind_by_name ( resource $stmt , string $ph_name , mixed &$variable [, 
+int $maxlength [, int $type ]] )
+
+oci_bind_by_name() 将 PHP 变量 variable 绑定到 Oracle 的位置标志符 ph_name。该
+变量是否会被用作输入输出是在运行时决定的，并且函数给该变量分配必要的存储空间。
+length 参数确定该绑定的最大长度，如果将 length 设为 -1，oci_bind_by_name() 会用
+variable 变量的当前长度确定绑定的最大长度。
+
+如果要绑定一个抽象数据类型（LOB/ROWID/BFILE），需要先用 oci_new_descriptor() 函
+数分配空间。length 没有用于抽象数据类型，应被设为 -1。type 参数告诉 Oracle 要使
+用什么样的描述符。可能的值为：
+
+  • SQLT_FILE - 对应于 BFILE；
+
+  • SQLT_CFILE - 对应于 CFILE；
+
+  • SQLT_CLOB - 对应于 CLOB；
+
+  • SQLT_BLOB - 对应于 BLOB；
+
+  • SQLT_ROWID - 对应于 ROWID；
+
+  • SQLT_NTY - 对应于有名字的数据类型；
+
+  • SQLT_INT - 对应于 integers；
+
+  • SQLT_CHR - 对应于 VARCHARs；
+
+  • SQLT_BIN - 对应于 RAW 列；
+
+  • SQLT_LNG - 对应于 LONG 列；
+
+  • SQLT_LBI - 对应于 LONG RAW 列；
+
+  • SQLT_RSET - 对应于游标，是之前由 oci_new_cursor() 创建的。
+
+Example #1 oci_bind_by_name() 例子
+
+<?php
+/* oci_bind_by_name example thies at thieso dot net (980221)
+  inserts 3 records into emp, and uses the ROWID for updating the
+  records just after the insert.
+*/
+
+$conn = oci_connect("scott", "tiger");
+
+$stmt = oci_parse($conn, "
+                          INSERT INTO
+                                     emp (empno, ename)
+                                              VALUES
+                                     (:empno,:ename)
+                            RETURNING
+                                     ROWID
+                                 INTO
+                                     :rid
+                                         ");
+
+$data = array(
+              1111 => "Larry",
+              2222 => "Bill",
+              3333 => "Jim"
+             );
+
+$rowid = oci_new_descriptor($conn, OCI_D_ROWID);
+
+oci_bind_by_name($stmt, ":empno", $empno, 32);
+oci_bind_by_name($stmt, ":ename", $ename, 32);
+oci_bind_by_name($stmt, ":rid",   $rowid, -1, OCI_B_ROWID);
+
+$update = oci_parse($conn, "
+                            UPDATE
+                                  emp
+                               SET
+                                  sal = :sal
+                             WHERE
+                                  ROWID = :rid
+                             ");
+oci_bind_by_name($update, ":rid", $rowid, -1, OCI_B_ROWID);
+oci_bind_by_name($update, ":sal", $sal,   32);
+
+$sal = 10000;
+
+foreach ($data as $empno => $ename) {
+    oci_execute($stmt);
+    oci_execute($update);
+}
+
+$rowid->free();
+
+oci_free_statement($update);
+oci_free_statement($stmt);
+
+$stmt = oci_parse($conn, "
+                          SELECT
+                                *
+                            FROM
+                                emp
+                           WHERE
+                                empno
+                              IN
+                                (1111,2222,3333)
+                              ");
+oci_execute($stmt);
+
+while ($row = oci_fetch_assoc($stmt)) {
+    var_dump($row);
+}
+
+oci_free_statement($stmt);
+
+/* delete our "junk" from the emp table.... */
+$stmt = oci_parse($conn, "
+                          DELETE FROM
+                                     emp
+                                WHERE
+                                     empno
+                                   IN
+                                     (1111,2222,3333)
+                                   ");
+oci_execute($stmt);
+oci_free_statement($stmt);
+
+oci_close($conn);
+?>
+
+记住，本函数删除了行尾的空白字符。见以下例子：
+
+Example #2 oci_bind_by_name() 例子
+
+<?php
+$connection = oci_connect('apelsin','kanistra');
+$query = "INSERT INTO test_table VALUES(:id, :text)";
+
+$statement = oci_parse($query);
+oci_bind_by_name($statement, ":id", 1);
+oci_bind_by_name($statement, ":text", "trailing spaces follow     ");
+oci_execute($statement);
+/*
+ This code will insert into DB string 'trailing spaces follow', without
+ trailing spaces
+*/
+?>
+
+Example #3 oci_bind_by_name() 例子
+
+<?php
+$connection = oci_connect('apelsin','kanistra');
+$query = "INSERT INTO test_table VALUES(:id, 'trailing spaces follow      ')";
+
+$statement = oci_parse($query);
+oci_bind_by_name($statement, ":id", 1);
+oci_execute($statement);
+/*
+ And this code will add 'trailing spaces follow      ', preserving
+ trailing whitespaces
+*/
+?>
+
+Warning
+
+不要将 magic_quotes_gpc 或 addslashes() 与 oci_bind_by_name() 同时使用，因为不
+需要转义，任何自动加上的引号都会被写入数据库中，因为 oci_bind_by_name() 不能分
+辨有意加上的引号和魔术引号。
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+    Note:
+
+    在 PHP 5.0.0 之前的版本必须使用 ocibindbyname() 替代本函数。该函数名仍然可
+    用，为向下兼容作为 oci_bind_by_name() 的别名。不过其已被废弃，不推荐使用。
+
+参数
+
+statement
+
+    A valid OCI8 statement identifer.
+
+bv_name
+
+    The colon-prefixed bind variable placeholder used in the statement. The
+    colon is optional in bv_name. Oracle does not use question marks for
+    placeholders.
+
+variable
+
+    The PHP variable to be associated with bv_name
+
+maxlength
+
+    Sets the maximum length for the data. If you set it to -1, this function
+    will use the current length of variable to set the maximum length. In this
+    case the variable must exist and contain data when oci_bind_by_name() is
+    called.
+
+type
+
+    The datatype that Oracle will treat the data as. The default type used is
+    SQLT_CHR. Oracle will convert the data between this type and the database
+    column (or PL/SQL variable type), when possible.
+
+    If you need to bind an abstract datatype (LOB/ROWID/BFILE) you need to
+    allocate it first using the oci_new_descriptor() function. The length is
+    not used for abstract datatypes and should be set to -1.
+
+    Possible values for type are:
+      □ SQLT_BFILEE or OCI_B_BFILE - for BFILEs;
+
+      □ SQLT_CFILEE or OCI_B_CFILEE - for CFILEs;
+
+      □ SQLT_CLOB or OCI_B_CLOB - for CLOBs;
+
+      □ SQLT_BLOB or OCI_B_BLOB - for BLOBs;
+
+      □ SQLT_RDD or OCI_B_ROWID - for ROWIDs;
+
+      □ SQLT_NTY or OCI_B_NTY - for named datatypes;
+
+      □ SQLT_INT or OCI_B_INT - for integers;
+
+      □ SQLT_CHR - for VARCHARs;
+
+      □ SQLT_BIN or OCI_B_BIN - for RAW columns;
+
+      □ SQLT_LNG - for LONG columns;
+
+      □ SQLT_LBI - for LONG RAW columns;
+
+      □ SQLT_RSET - for cursors created with oci_new_cursor().
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #4 Inserting data with oci_bind_by_name()
+
+<?php
+
+// Create the table with:
+//   CREATE TABLE mytab (id NUMBER, text VARCHAR2(40));
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+$stid = oci_parse($conn,"INSERT INTO mytab (id, text) VALUES(:id_bv, :text_bv)"
+);
+
+$id = 1;
+$text = "Data to insert     ";
+oci_bind_by_name($stid, ":id_bv", $id);
+oci_bind_by_name($stid, ":text_bv", $text);
+oci_execute($stid);
+
+// Table now contains: 1, 'Data to insert     '
+
+?>
+
+Example #5 Binding once for multiple executions
+
+<?php
+
+// Create the table with:
+//   CREATE TABLE mytab (id NUMBER);
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+$a = array(1,3,5,7,11);  // data to insert
+
+$stid = oci_parse($conn, 'INSERT INTO mytab (id) VALUES (:bv)');
+oci_bind_by_name($stid, ':bv', $v, 20);
+foreach ($a as $v) {
+    $r = oci_execute($stid, OCI_DEFAULT);  // don't auto commit
+}
+oci_commit($conn); // commit everything at once
+
+// Table contains five rows: 1, 3, 5, 7, 11
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #6 Binding with a foreach() loop
+
+<?php
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+$sql = 'SELECT * FROM departments WHERE department_name =
+ :dname AND location_id = :loc';
+$stid = oci_parse($conn, $sql);
+
+$ba = array(':dname' => 'IT Support', ':loc' => 1700);
+
+foreach ($ba as $key => $val) {
+
+    // oci_bind_by_name($stid, $key, $val) does not work
+    // because it binds each placeholder to the same location: $val
+    // instead use the actual location of the data: $ba[$key]
+    oci_bind_by_name($stid, $key, $ba[$key]);
+}
+
+oci_execute($stid);
+$row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS);
+foreach ($row as $item) {
+    print $item."<br>\n";
+}
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #7 Binding in a WHERE clause
+
+<?php
+
+$conn = oci_connect("hr", "hrpwd", "localhost/XE");
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+$sql = 'SELECT last_name FROM employees WHERE employee_id = :eidbv';
+$stid = oci_parse($conn, $sql);
+$myeid = 101;
+oci_bind_by_name($stid, ':eidbv', $myeid);
+oci_execute($stid);
+$row = oci_fetch_array($stid, OCI_ASSOC);
+echo $row['LAST_NAME'] ."<br>\n";
+
+// Output is
+//    Kochhar
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #8 Binding with a LIKE clause
+
+<?php
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+// Find all cities that begin with 'South'
+$stid = oci_parse($conn, "SELECT city FROM locations WHERE city LIKE :bv");
+$city = 'South%';  // '%' is a wildcard in SQL
+oci_bind_by_name($stid, ":bv", $city);
+oci_execute($stid);
+oci_fetch_all($stid, $res);
+
+foreach ($res['CITY'] as $c) {
+    print $c . "<br>\n";
+}
+// Output is
+//   South Brunswick
+//   South San Francisco
+//   Southlake
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #9 Binding with REGEXP_LIKE
+
+<?php
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+// Find all cities that contain 'ing'
+$stid = oci_parse($conn, "SELECT city FROM locations WHERE REGEXP_LIKE
+(city, :bv)");
+$city = '.*ing.*';
+oci_bind_by_name($stid, ":bv", $city);
+oci_execute($stid);
+oci_fetch_all($stid, $res);
+
+foreach ($res['CITY'] as $c) {
+    print $c . "<br>\n";
+}
+// Output is
+//   Beijing
+//   Singapore
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+For a small, fixed number of IN clause conditions, use individual bind
+variables. Values unknown at run time can be set to NULL. This allows a single
+statement to be used by all application users, maximizing Oracle DB cache
+efficiency.
+
+Example #10 Binding Multiple Values in an IN Clause
+
+<?php
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+$sql = 'SELECT last_name FROM employees WHERE employee_id in (:e1, :e2, :e3)';
+$stid = oci_parse($conn, $sql);
+$mye1 = 103;
+$mye2 = 104;
+$mye3 = NULL; // pretend we were not given this value
+oci_bind_by_name($stid, ':e1', $mye1);
+oci_bind_by_name($stid, ':e2', $mye2);
+oci_bind_by_name($stid, ':e3', $mye3);
+oci_execute($stid);
+oci_fetch_all($stid, $res);
+foreach ($res['LAST_NAME'] as $name) {
+    print $name ."<br>\n";
+}
+
+// Output is
+//   Ernst
+//   Hunold
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #11 Binding a ROWID returned by a query
+
+<?php
+
+// Create the table with:
+//   CREATE TABLE mytab (id NUMBER, salary NUMBER, name VARCHAR2(40));
+//   INSERT INTO mytab (id, salary, name) VALUES (1, 100, 'Chris');
+//   COMMIT;
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+$stid = oci_parse($conn, 'SELECT ROWID, name FROM mytab WHERE id =
+ :id_bv FOR UPDATE');
+$id = 1;
+oci_bind_by_name($stid, ':id_bv', $id);
+oci_execute($stid);
+$row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS);
+$rid = $row['ROWID'];
+$name = $row['NAME'];
+
+// Change name to upper case & save the changes
+$name = strtoupper($name);
+$stid = oci_parse($conn, 'UPDATE mytab SET name = :n_bv WHERE ROWID = :r_bv');
+oci_bind_by_name($stid, ':n_bv', $name);
+oci_bind_by_name($stid, ':r_bv', $rid, -1, OCI_B_ROWID);
+oci_execute($stid);
+
+// The table now contains 1, 100, CHRIS
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #12 Binding a ROWID on INSERT
+
+<?php
+
+// This example inserts an id & name, and then updates the salary
+// Create the table with:
+//   CREATE TABLE mytab (id NUMBER, salary NUMBER, name VARCHAR2(40));
+//
+// Based on original ROWID example by thies at thieso dot net (980221)
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $m = oci_error();
+    trigger_error(htmlentities($m['message']), E_USER_ERROR);
+}
+
+$sql = "INSERT INTO mytab (id, name) VALUES(:id_bv, :name_bv)
+        RETURNING ROWID INTO :rid";
+
+$ins_stid = oci_parse($conn, $sql);
+
+$rowid = oci_new_descriptor($conn, OCI_D_ROWID);
+oci_bind_by_name($ins_stid, ":id_bv",   $id,    10);
+oci_bind_by_name($ins_stid, ":name_bv", $name,  32);
+oci_bind_by_name($ins_stid, ":rid",     $rowid, -1, OCI_B_ROWID);
+
+$sql = "UPDATE mytab SET salary = :salary WHERE ROWID = :rid";
+$upd_stid = oci_parse($conn, $sql);
+oci_bind_by_name($upd_stid, ":rid", $rowid, -1, OCI_B_ROWID);
+oci_bind_by_name($upd_stid, ":salary", $salary,   32);
+
+// ids and names to insert
+$data = array(1111 => "Larry",
+              2222 => "Bill",
+              3333 => "Jim");
+
+// Salary of each person
+$salary = 10000;
+
+// Insert and immediately update each row
+foreach ($data as $id => $name) {
+    oci_execute($ins_stid);
+    oci_execute($upd_stid);
+}
+
+$rowid->free();
+oci_free_statement($upd_stid);
+oci_free_statement($ins_stid);
+
+// Show the new rows
+$stid = oci_parse($conn, "SELECT * FROM mytab");
+oci_execute($stid);
+while ($row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS)) {
+    var_dump($row);
+}
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #13 Binding for a PL/SQL stored function
+
+<?php
+
+//  Before running the PHP program, create a stored function in
+//  SQL*Plus or SQL Developer:
+//
+//  CREATE OR REPLACE FUNCTION myfunc(p IN NUMBER) RETURN NUMBER AS
+//  BEGIN
+//      RETURN p * 3;
+//  END;
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message']), E_USER_ERROR);
+}
+
+$p = 8;
+
+$stid = oci_parse($conn, 'begin :r := myfunc(:p); end;');
+oci_bind_by_name($stid, ':p', $p);
+
+// The return value is an OUT bind. The default type will be a string
+// type so binding a length 40 means that at most 40 digits will be
+// returned.
+oci_bind_by_name($stid, ':r', $r, 40);
+
+oci_execute($stid);
+
+print "$r\n";   // prints 24
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #14 Binding parameters for a PL/SQL stored procedure
+
+<?php
+
+//  Before running the PHP program, create a stored procedure in
+//  SQL*Plus or SQL Developer:
+//
+//  CREATE OR REPLACE PROCEDURE myproc(p1 IN NUMBER, p2 OUT NUMBER) AS
+//  BEGIN
+//      p2 := p1 * 2;
+//  END;
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message']), E_USER_ERROR);
+}
+
+$p1 = 8;
+
+$stid = oci_parse($conn, 'begin myproc(:p1, :p2); end;');
+oci_bind_by_name($stid, ':p1', $p1);
+
+// The second procedure parameter is an OUT bind. The default type
+// will be a string type so binding a length 40 means that at most 40
+// digits will be returned.
+oci_bind_by_name($stid, ':p2', $p2, 40);
+
+oci_execute($stid);
+
+print "$p2\n";   // prints 16
+
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #15 Binding a CLOB column
+
+<?php
+
+// Before running, create the table:
+//     CREATE TABLE mytab (mykey NUMBER, myclob CLOB);
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message']), E_USER_ERROR);
+}
+
+$mykey = 12343;  // arbitrary key for this example;
+
+$sql = "INSERT INTO mytab (mykey, myclob)
+        VALUES (:mykey, EMPTY_CLOB())
+        RETURNING myclob INTO :myclob";
+
+$stid = oci_parse($conn, $sql);
+$clob = oci_new_descriptor($conn, OCI_D_LOB);
+oci_bind_by_name($stid, ":mykey", $mykey, 5);
+oci_bind_by_name($stid, ":myclob", $clob, -1, OCI_B_CLOB);
+oci_execute($stid, OCI_DEFAULT);
+$clob->save("A very long string");
+
+oci_commit($conn);
+
+// Fetching CLOB data
+
+$query = 'SELECT myclob FROM mytab WHERE mykey = :mykey';
+
+$stid = oci_parse ($conn, $query);
+oci_bind_by_name($stid, ":mykey", $mykey, 5);
+oci_execute($stid);
+
+print '<table border="1">';
+while ($row = oci_fetch_array($stid, OCI_ASSOC)) {
+  $result = $row['MYCLOB']->load();
+  print '<tr><td>'.$result.'</td></tr>';
+}
+print '</table>';
+
+?>
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+Warning
+
+Do not use magic_quotes_gpc or addslashes() and oci_bind_by_name()
+simultaneously as no quoting is needed. Any magically applied quotes will be
+written into your database because oci_bind_by_name() inserts data verbatim and
+does not remove quotes or escape characters.
+
+    Note:
+
+    If you bind a string to a CHAR column in a WHERE clause, remember that
+    Oracle uses blank-padded comparison semantics for CHAR columns. Your PHP
+    variable should be blank padded to the same width as the column for the
+    WHERE clause to succeed.
+
+    Note:
+
+    The PHP variable argument is a reference. Some forms of loops do not work
+    as expected:
+
+    <?php
+    foreach ($myarray as $key => $value)  {
+        oci_bind_by_name($stid, $key, $value);
+    }
+    ?>
+
+    This binds each key to the location of $value, so all bound variables end
+    up pointing to the last loop iteration's value. Instead use the following:
+
+    <?php
+    foreach ($myarray as $key => $value) {
+        oci_bind_by_name($stid, $key, $myarray[$key]);
+    }
+    ?>
+
+    Note:
+
+    In PHP versions before 5.0.0 you must use ocibindbyname() instead. 在当前版
+    本中，旧的函数名还可以被使用，但已经被废弃并不建议使用。
+
+参见
+
+  • oci_bind_array_by_name() - Binds a PHP array to an Oracle PL/SQL array
+    parameter
+  • oci_parse() - 配置 Oracle 语句预备执行
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+I unfortunately spent the whole day trying to make this work as part of OCI
+bind_by_name insert:
+
+<?php
+      if(is_numeric($v2)){
+        oci_bind_by_name($stmth, $bvar, $v2,  -1, OCI_B_INT);
+      }else{
+        $v2 = (string) $v2;
+        oci_bind_by_name($stmth, $bvar, $v2, -1, SQLT_CHR);
+      }
+?>
+
+The string field is always inserting correctly w/o any truncation. The string
+field is a  varchar2(160) CHAR, but the data used to populate it is 40 chars in
+length.
+
+The numeric part is of Type Number in the database which is being used to store
+unix time (10 digit seconds since 1970/01/01.
+
+The problem, the insert was truncating to 9 digits with some bogus value not
+even related to the input i.e., it's not just a matter of dropping the leftmost
+or rightmost digit, it'll just insert a 9 digit bogus number.
+
+The only way I was able to resolve this for the numeric field was to set the
+maxlength to 8 (not 10 which is the number of digits in the input):
+
+<?php
+      if(is_numeric($v2)){
+        oci_bind_by_name($stmth, $bvar, $v2,  8, OCI_B_INT);
+      }else{
+        $v2 = (string) $v2;
+        oci_bind_by_name($stmth, $bvar, $v2, -1, SQLT_CHR);
+      }
+?>
+
+Hopefully you'll see this soon before you expend a lot of time repeating the
+same problem I had.
+===============================================================================
+
+Please note that in my earlier note about having oci_bind_by_name() in a
+function, this becomes a little more complicated when returning values like
+"UPDATE table SET bla='blubb' RETURNING id INTO :id".
+
+You can do it as follows:
+
+<?php
+function sql($q, &$vars_in=array(), &$vars_out=array()) {
+  ...
+  $stid = oci_parse($conn, $q);
+  ...
+  reset($vars_in);
+  do {
+    if (current($vars_in)===FALSE) {
+      break;
+    }
+    $b = oci_bind_by_name($stid, key($vars_in), current($vars_in));
+    // insert exception handling here
+  } while (each($vars_in) !== FALSE);
+
+  // VARS TO RETURN
+  // we'll fix this to integer type because for now we need this for index IDs
+  foreach ($vars_out as $k => $v) {
+    $b = oci_bind_by_name($stid, $k, $vars_out[$k], -1, SQLT_INT);
+    // insert exception handling here
+  }
+
+  ...
+}
+?>
+
+Use like this:
+
+<?php
+$blubb = 'blubb';
+$b = array(':bla' => $blubb);
+$b_out = array(':id' => ''); // leave value empty
+$x = sql($q, $b, $b_out);
+$id = $b_out[':id'];
+?>
+
+(The point is: you would not be able to return anything into $b[':bla'] because
+$b[':bla'] becomes current($vars_in) inside sql() and cannot be written to.)
+===============================================================================
+
+I had a query that was working properly at first sight, no errors on execute,
+nothing, but there were simply no results returned at runtime.
+
+Be careful when putting the database commands into a function and binding your
+variables there while using oci_fetch_xxx() outside the function.
+
+function sql($conn, $stmt, $var) {
+  $stid = oci_parse($conn, $stmt);
+  ...
+  oci_bind_by_name($stid, ':val', $var);
+  ...
+}
+sql($conn, $q, $var);
+$row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS);
+
+As you see from the definition of oci_bind_by_name(), $var needs to be passed
+as reference, so your function has to have this reference ready like this:
+
+function sql($conn, $stmt, &$var) {
+  $stid = oci_parse($conn, $stmt);
+  ...
+  oci_bind_by_name($stid, ':val', $var);
+  ...
+}
+
+The background is that if you don't pass by reference (in which case $var
+inside the function is a copy of $var outside the function), then
+oci_bind_by_name() will work just fine at first glance.
+However, since the oci_fetch statements that you use to actually get the data
+will reference the $var that has ceased to exist when the function finished. In
+fact, since the varbind seems to be a pointer, that pointer will point to an
+invalid location at that point and your variables won't be substitued in the
+SQL.
+
+All this also means that:
+
+1) You have to pass a variable, and not just a value
+
+This doesn't work:
+
+$stid = sql($conn, $q, array('bla'=>'blubb'));
+
+This is better:
+
+$vars = array('bla'=>'blubb');
+$stid = sql($conn, $q, $vars);
+
+2) Even when passing as reference to your helper function you cannot use e.g.
+foreach:
+
+This doesn't work:
+
+function sql($conn, $q, $vars) {
+  ...
+  foreach ($vars as $k => $v) {
+    oci_bind_by_name($stid, $k, $v);
+  }
+  ...
+}
+
+Again, because $k and $v are local variables that will have disappeared once
+you perform an oci_fetch outside the function.
+
+Instead you have to work the array in a more low-level way like this:
+
+function sql($conn, $q, &$vars) {
+  ...
+  $stid = oci_parse($conn, $q);
+  ...
+  reset($vars);
+  do {
+    if (current($vars)===FALSE) { // end of array
+      break;
+    }
+    $b = oci_bind_by_name($stid, key($vars), current($vars));
+    if ($b === FALSE) {
+      DIE('Could not bind var');
+    }
+  } while (each($vars) !== FALSE);
+}
+$binds = array(':bla1' => 'blubb1',
+               ':bla2' => 'blubb2');
+$stid = sql($conn, $q, $binds);
+$row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS);
+
+Wherever you oci_bind_by_name(), the pointer to the initial data has to exist
+from beginning to end.
+===============================================================================
+
+Working with Oracle and raw types in and out worked like the following for me.
+
+<?php
+  /*oracle procedure
+  procedure open_session(
+    i_instance_id in raw,
+    o_session_id out raw,
+    o_errcode out number,
+    o_errmsg out varchar2
+  ); 
+  */
+
+  //open database
+  $conn = DBOpen( DB_DEV_USER );
+
+  //get session id
+  $sql = "begin p_loader.open_session( hextoraw( :instance_id ), :session_id,
+:errcode, :errmsg ); end;";
+  $stmt = oci_parse( $conn, $sql );
+  $instanceId = DB_INSTANCE_ID;
+  oci_bind_by_name( $stmt, ":instance_id", $instanceId, 1, SQLT_CHR );
+  oci_bind_by_name( $stmt, ":session_id", $sessionId, 16, SQLT_BIN );
+  oci_bind_by_name( $stmt, ":errcode", $errcode, 12, SQLT_INT );
+  oci_bind_by_name( $stmt, ":errmsg", $errmsg, 4000, SQLT_CHR );
+ 
+  oci_execute( $stmt );
+  $sessionId = bin2hex( $sessionId ); //now this is a hex string
+ 
+  //close database
+  DBClose( $conn );
+?>
+===============================================================================
+
+It is very important to set up the maxlength of the returning parameter (:r),
+even when it is returning a number, otherwise the ORA-01460 exception
+(unimplemented or unreasonable conversion requested) may be raised.
+===============================================================================
+
+Sometimes you get the error "ORA-01461: can bind a LONG value only for insert
+into a LONG column".  This error is highly misleading especially when you have
+no LONG columns or LONG values.
+
+From my testing it seems this error can be caused when the value of a bound
+variable exceeds the length allocated.
+
+To avoid this error make sure you specify lengths when binding varchars e.g.
+<?php
+oci_bind_by_name($stmt,':string',$string, 256);
+?>
+
+And for numerics use the default length (-1) but tell oracle its an integer
+e.g.
+<?php
+oci_bind_by_name($stmt,':num',$num, -1, SQLT_INT);
+?>
+===============================================================================
+
+//Calling Oracle Stored Procedure
+//I assume that you have a users table and three columns in users table i.e.
+id, user, email in oracle
+// For example I made connection in constructor, you can modify as per your
+requirement.
+//http://www.devshed.com/c/a/PHP/Understanding-Destructors-in-PHP-5/1/
+<?php
+class Users{
+    private $connection;
+   
+    public function __construct()
+    {
+        $this->connection = oci_connect("scott", "tiger", $db); // Establishes
+a connection to the Oracle server;
+    }
+
+    public function selectUsers($start_index=1, $numbers_of_rows=20)
+    {
+        $sql ="BEGIN sp_users_select(:p_start_index, :p_numbers_of_rows,
+:p_cursor, :p_result); END;";
+        $stmt = oci_parse($this->connection, $sql);
+
+        //Bind in parameter
+        oci_bind_by_name($stmt, ':p_start_index', $start_index, 20);
+        oci_bind_by_name($stmt, ':p_numbers_of_rows', $numbers_of_rows, 20);
+
+        //Bind out parameter
+        oci_bind_by_name($stmt, ':p_result', $result, 20); // returns 0 if
+stored procedure succeessfully executed.
+
+        //Bind Cursor
+        $p_cursor = oci_new_cursor($this->connection);
+        oci_bind_by_name($stmt, ':p_cursor', $p_cursor, -1, OCI_B_CURSOR);
+
+        // Execute Statement
+        oci_execute($stmt);
+        oci_execute($p_cursor, OCI_DEFAULT);
+
+        oci_fetch_all($p_cursor, $cursor, null, null, OCI_FETCHSTATEMENT_BY_ROW
+);
+
+        echo $result;
+        echo '<br>';
+        var_dump($cursor); // $cursor is an associative array so we can use
+print_r() to print this data.
+        // you can return data from this function to use it at your user
+interface.
+    }
+
+    public function deleteUser($id)
+    {
+        $sql ="BEGIN sp_user_delete(:p_id, :p_result); END;";
+        $stmt = oci_parse($this->connection, $sql);
+
+        // bind in and out variables
+        oci_bind_by_name($stmt, ':p_id', $id, 20);
+        oci_bind_by_name($stmt, ':p_result', $result, 20);
+
+        //Execute the statement
+        $check = oci_execute($stmt);
+
+        if($check == true)
+        $commit = oci_commit($this->connection);
+        else
+        $commit = oci_rollback($this->connection);
+
+        return $result;
+    }
+   
+    // You can make function for insert ,update using above two functions
+
+}
+?>
+===============================================================================
+
+This is what the old OCI_B_* constants are now called:
+(PHP 5.1.6 win32)
+
+OCI_B_NTY - SQLT_NTY
+OCI_B_BFILE - SQLT_BFILEE
+OCI_B_CFILEE - SQLT_CFILEE
+OCI_B_CLOB - SQLT_CLOB
+OCI_B_BLOB - SQLT_BLOB
+OCI_B_ROWID - SQLT_RDD
+OCI_B_CURSOR - SQLT_RSET
+OCI_B_BIN - SQLT_BIN
+OCI_B_INT - SQLT_INT
+OCI_B_NUM - SQLT_NUM
+===============================================================================
+
+This is an example of returning the primary key from an insert so that you can
+do inserts on other tables with foreign keys based on that value.  The date is
+just used to provied semi-unique data to be inserted.
+
+$conn = oci_connect("username", "password")
+$stmt = oci_parse($conn, "INSERT INTO test (test_msg) values (:data) RETURN
+test_id INTO :RV");
+$data = date("d-M-Y H:i:s");
+oci_bind_by_name($stmt, ":RV", $rv, -1, SQLT_INT);
+oci_bind_by_name($stmt, ":data", $data, 24);
+oci_execute($stmt);
+print $rv;
+===============================================================================
+
+Note that there have been some changes on the constant identifiers and the
+documentation is currently not entirely accurate.
+
+Running the following script;
+
+<?php
+foreach (array_keys(get_defined_constants()) as $const) {
+    if ( preg_match('/^OCI_B_/', $const) ) {
+        print "$const\n";
+    }
+}
+?>
+
+Under PHP 4.4.0 I get;
+
+OCI_B_SQLT_NTY < renamed to OCI_B_NTY with PHP5
+OCI_B_BFILE
+OCI_B_CFILEE
+OCI_B_CLOB
+OCI_B_BLOB
+OCI_B_ROWID
+OCI_B_CURSOR
+OCI_B_BIN
+
+Under PHP 5.0.4 I get;
+
+OCI_B_NTY
+OCI_B_BFILE < docs are wrong right now
+OCI_B_CFILEE < docs are wrong right now
+OCI_B_CLOB
+OCI_B_BLOB
+OCI_B_ROWID
+OCI_B_CURSOR
+OCI_B_BIN < it's a mystery
+===============================================================================
+
+Dont forget the 5th parameter: $type. It's will slowly your code some times.
+Eg:
+
+<?php
+$sql = "select * from (select * from b xxx) where rownum < :rnum";
+$stmt = OCIParse($conn,$sql);
+OCIBindByName($stmt, ":rnum", $NUM, -1);
+OCIExecute($stmt);
+?>
+
+Below code was slow 5~6 time than not use bind value.Change the 3rd line to:
+
+<?php
+OCIBindByName($stmt, ":rnum", $NUM, -1, SQLT_INT);
+?>
+
+will resloved this problem.
+
+This issue is also in the ADODB DB class(adodb.sf.net), you will be careful for
+use the SelectLimit method.

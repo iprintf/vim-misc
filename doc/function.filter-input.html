@@ -1,0 +1,308 @@
+
+filter_input
+
+(PHP 5 >= 5.2.0, PHP 7)
+
+filter_input — 通过名称获取特定的外部变量，并且可以通过过滤器处理它
+
+说明
+
+mixed filter_input ( int $type , string $variable_name [, int $filter =
+FILTER_DEFAULT [, mixed $options ]] )
+
+参数
+
+type
+
+    INPUT_GET, INPUT_POST, INPUT_COOKIE, INPUT_SERVER或 INPUT_ENV之一。
+
+variable_name
+
+    待获取的变量名。
+
+filter
+
+    The ID of the filter to apply. The Types of filters manual page lists the
+    available filters.
+
+    If omitted, FILTER_DEFAULT will be used, which is equivalent to
+    FILTER_UNSAFE_RAW. This will result in no filtering taking place by
+    default.
+
+options
+
+    一个选项的关联数组，或者按位区分的标示。如果过滤器接受选项，可以通过数组的
+    "flags" 位去提供这些标示。
+
+返回值
+
+如果成功的话返回所请求的变量。如果过滤失败则返回 FALSE ，如果variable_name 不存
+在的话则返回 NULL 。如果标示 FILTER_NULL_ON_FAILURE 被使用了，那么当变量不存在
+时返回 FALSE ，当过滤失败时返回 NULL 。
+
+范例
+
+Example #1 一个 filter_input() 的例子
+
+<?php
+$search_html = filter_input(INPUT_GET, 'search', FILTER_SANITIZE_SPECIAL_CHARS
+);
+$search_url = filter_input(INPUT_GET, 'search', FILTER_SANITIZE_ENCODED);
+echo "You have searched for $search_html.\n";
+echo "<a href='?search=$search_url'>Search again.</a>";
+?>
+
+以上例程的输出类似于：
+
+You have searched for Me &#38; son.
+<a href='?search=Me%20%26%20son'>Search again.</a>
+
+参见
+
+  • filter_var() - 使用特定的过滤器过滤一个变量
+  • filter_input_array() - 获取一系列外部变量，并且可以通过过滤器处理它们
+  • filter_var_array() - 获取多个变量并且过滤它们
+  • Types of filters
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+This function provides us the extremely simple solution for type filtering.
+
+Without this function...
+<?php
+if (!isset($_GET['a'])) {
+    $a = null;
+} elseif (!is_string($_GET['a'])) {
+    $a = false;
+} else {
+    $a = $_GET['a'];
+}
+$b = isset($_GET['b']) && is_string($_GET['b']) ? $_GET['b'] : '';
+?>
+
+With this function...
+<?php
+$a = filter_input(INPUT_GET, 'a');
+$b = (string)filter_input(INPUT_GET, 'b');
+?>
+
+Yes, FILTER_REQUIRE_SCALAR seems to be set as a default option.
+It's very helpful for eliminating E_NOTICE, E_WARNING and E_ERROR.
+This fact should be documented.
+===============================================================================
+
+FastCGI seems to cause strange side-effects with unexpected null values when
+using INPUT_SERVER and INPUT_ENV with this function. You can use this code to
+see if it affects your server:
+<?php
+var_dump($_SERVER);
+foreach ( array_keys($_SERVER) as $b ) {
+    var_dump($b, filter_input(INPUT_SERVER, $b));
+}
+echo '<hr>';
+var_dump($_ENV);
+foreach ( array_keys($_ENV) as $b ) {
+    var_dump($b, filter_input(INPUT_ENV, $b));
+}
+?>
+If you want to be on the safe side, using the superglobal $_SERVER and $_ENV
+variables will always work. You can still use the filter_* functions for Get/
+Post/Cookie without a problem, which is the important part!
+===============================================================================
+
+If your $_POST contains an array value:
+<?php
+$_POST  = array(
+    'var' => array('more', 'than', 'one', 'values')
+);
+?>
+you should use FILTER_REQUIRE_ARRAY option:
+<?php
+var_dump(filter_input(INPUT_POST, 'var', FILTER_DEFAULT , FILTER_REQUIRE_ARRAY
+));
+?>
+Otherwise it returns false.
+===============================================================================
+
+Note that this function doesn't (or at least doesn't seem to) actually filter
+based on the current values of $_GET etc. Instead, it seems to filter based off
+the original values.
+<?php
+$_GET['search'] = 'foo'; // This has no effect on the filter_input
+
+$search_html = filter_input(INPUT_GET, 'search', FILTER_SANITIZE_SPECIAL_CHARS
+);
+$search_url = filter_input(INPUT_GET, 'search', FILTER_SANITIZE_ENCODED);
+echo "You have searched for $search_html.\n";
+echo "<a href='?search=$search_url'>Search again.</a>";
+?>
+
+If you need to set a default input value and filter that, use filter_var on
+your required input variable instead
+===============================================================================
+
+Here is an example how to work with the options-parameter. Notice the 'options'
+in the 'options'-Parameter!
+
+<?php
+$options=array('options'=>array('default'=>5, 'min_range'=>0, 'max_range'=>9));
+
+$priority=filter_input(INPUT_GET, 'priority', FILTER_VALIDATE_INT, $options);
+?>
+
+$priority will be 5 if the priority-Parameter isn't set or out the given range.
+===============================================================================
+
+The beauty of using this instead of directly using filter_var( $_GET['search']
+) is that you don't need to check if( isset( $_GET['search'] ) ) as if you pass
+that to filter_var and the key is not set then it will result in a warning.
+This function simplifies this and will return the relevant result to you (as
+per your options set) if the key has not been set in the user input.
+
+If the type of filter you are using also supports a 'default' argument then
+this function will also stuff your missing input key with that value, again
+saving your efforts
+===============================================================================
+
+To use a class method for a callback function, as usual, provide an array with
+an instance of the class and the method name.
+Example:
+
+<?php
+class myValidator
+{
+  public function username($value)
+  {
+    // return username or boolean false
+  }
+}
+
+$myValidator = new myValidator;
+$options = array('options' => array($myValidator, 'username'));
+$username = filter_input(INPUT_GET, 'username', FILTER_CALLBACK, $options);
+var_dump($username);
+?>
+===============================================================================
+
+I wouldn't recommend people use this function to store their data in a
+database.  It's best not to encode data when storing it, it's better to store
+it raw and convert in upon the time of need.
+
+One main reason for this is because if you have a short CHAR(16) field and the
+text contains encoded characters (quotes, ampersand) you can easily take a 12
+character entry which obviously fits, but because of encoding it no longer
+fits.
+
+Also, while not as common, if you need to use this data in another place, such
+as a non webpage (perhaps in a desktop app, or to a cell phone SMS or to a
+pager) the HTML encoded data will appear raw, and now you have to decode the
+data.
+
+In summary, the best way to architect your system, is to store data as raw, and
+encode it only the moment you need to.  So this means in your PHP upon doing a
+SQL query, instead of merely doing an   echo $row['title']  you need to run
+htmlentities() on your echos, or better yet, an abstract function.
+===============================================================================
+
+It's worth noting that the names for variables in filter input obey the same
+rules as variable naming in PHP (must start with an underscore or letter).  We
+were allowing users to build custom forms but hashing the names to prevent them
+from putting arbitrary content into the dom.  Turns out the hash function
+occasionally produced entirely numeric values for the field name... which
+doesn't work with filter_input but worked fine if you read directly from $_GET,
+$_POST, or $_REQUEST.  A workaround is to always prefix an underscore to the
+field name.
+===============================================================================
+
+filter_input() does not seem to support multiple values for a single variable
+name.
+
+Here is the code comparing the behavior of bare $_GET superglobal vs
+filter_input(INPUT_GET,...):
+<?php
+print("Bare \$_GET:\n");
+var_dump($_GET);
+print("filter_input():\n");
+var_dump(filter_input(INPUT_GET,"var"));
+?>
+
+When calling: /..../script.php?var=123 (there is only one value for variable
+'var')
+Output is:
+Bare $_GET:
+array(1) {
+  ["var"]=>
+  string(3) "123"
+}
+filter_input():
+string(3) "123"
+
+When calling: /..../script.php?var[]=123&var[]=999 (there are two  values for
+variable 'var')
+Output is:
+Bare $_GET:
+array(1) {
+  ["var"]=>
+  array(2) {
+    [0]=>
+    string(3) "123"
+    [1]=>
+    string(3) "999"
+  }
+}
+filter_input():
+bool(false)
+
+As expected, $_GET['var'] became an array. But filter_input() seems to be
+unable to process multiple values and returns false.
+===============================================================================
+
+Just a tip.
+
+Note how to setup default filter for filter_var_array
+
+When I tried to use filter_var_array and didn't mentioned all array indexes in
+definition it filtered it with some filter and broke values so using this tip
+corrected everything
+
+<?php
+$def = array_map(create_function('', 'return array("filter"=>
+FILTER_UNSAFE_RAW);'), $input);
+?>
+===============================================================================
+
+contrary to what is stated here on the comments on thow to use the options for
+filters, there is no range option or default... in fact, there is not much
+option AT ALL. It is not mentioned in the manual anywhere, and the provided
+code on that comment does nothing with php-5.4.4..
+
+<?php
+get(GET, 'p', FILTER_VALIDATE_INT, array('options'=>array('default'=>5, 
+'min_range'=>0, 'max_range'=>9)) );
+// ?p=30 => 30
+// ?p="123" => 123
+// ?p=-23 => -23
+// ?p=asdf => null
+?>
+===============================================================================
+
+1. The description of the options parameter is misleading. In order to pass the
+options (e.g. default, min_range and max_range) you must pass an associative
+array with a key called "options", which itself is an associative array
+containing option name => option value pairs.
+
+2. The return values section does not mention that if you specify the "default"
+option then the function will return the specified default value instead of
+returning FALSE or NULL (when filter fails or variable is absent).
+===============================================================================
+
+Hello,
+Does anybody know how to prevent FILTER_SANITIZE_SPECIAL_CHARS from converting
+the line breaks (\n) into (&#10;).
+I'm developing a simple commenting system for my website and I found that the
+php filter converts \n to &#10; so when using nl2br() there are no line breaks.
+help please.
+thanks :)

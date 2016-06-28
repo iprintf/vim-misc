@@ -1,0 +1,146 @@
+
+openssl_open
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+openssl_open — Open sealed data
+
+说明
+
+bool openssl_open ( string $sealed_data , string &$open_data , string $env_key
+, mixed $priv_key_id [, string $method ] )
+
+openssl_open() opens (decrypts) sealed_data using the private key associated
+with the key identifier priv_key_id and the envelope key env_key, and fills
+open_data with the decrypted data. The envelope key is generated when the data
+are sealed and can only be used by one specific private key. See openssl_seal()
+for more information.
+
+参数
+
+sealed_data
+
+open_data
+
+    If the call is successful the opened data is returned in this parameter.
+
+env_key
+
+priv_key_id
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 openssl_open() example
+
+<?php
+// $sealed and $env_key are assumed to contain the sealed data
+// and our envelope key, both given to us by the sealer.
+
+// fetch private key from file and ready it
+$fp = fopen("/src/openssl-0.9.6/demos/sign/key.pem", "r");
+$priv_key = fread($fp, 8192);
+fclose($fp);
+$pkeyid = openssl_get_privatekey($priv_key);
+
+// decrypt the data and store it in $open
+if (openssl_open($sealed, $open, $env_key, $pkeyid)) {
+    echo "here is the opened data: ", $open;
+} else {
+    echo "failed to open data";
+}
+
+// free the private key from memory
+openssl_free_key($pkeyid);
+?>
+
+参见
+
+  • openssl_seal() - Seal (encrypt) data
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+PHP compiled without OpenSSL support? Here's how you can call the openssl
+command-line utility to achieve the same goal:
+
+<?php
+// $sealed and $env_key are assumed to contain the sealed data
+// and our envelope key, both given to us by the sealer.
+
+// specify private key file and passphrase
+$pkey_file='key.pem';
+$pkey_pp='netsvc';
+
+// call openssl to decrypt envelope key
+$ph=proc_open('openssl rsautl -decrypt -inkey '.
+escapeshellarg($pkey_file).' -passin fd:3',array(
+  0 => array('pipe','r'), // stdin < envelope key
+  1 => array('pipe','w'), // stdout > decoded envelope key
+  2 => STDERR,
+  3 => array('pipe','r'), // < passphrase
+),$pipes);
+// write envelope key
+fwrite($pipes[0],$env_key);
+fclose($pipes[0]);
+// write private key passphrase
+fwrite($pipes[3],$pkey_pp);
+fclose($pipes[3]);
+// read decoded key, convert to hexadecimal
+$env_key='';
+while(!feof($pipes[1])){
+  $env_key.=sprintf("%02x",ord(fgetc($pipes[1])));
+}
+fclose($pipes[1]);
+if($xc=proc_close($ph)){
+  echo "Exit code: $xc\n";
+}
+
+// call openssl to decryp
+$ph=proc_open('openssl rc4 -d -iv 0 -K '.$env_key,array(
+  0 => array('pipe','r'), // stdin < sealed data
+  1 => array('pipe','w'), // stdout > opened data
+  2 => STDERR,
+),$pipes);
+// write sealed data
+fwrite($pipes[0],$sealed);
+fclose($pipes[0]);
+// read opened data
+//$open=stream_get_contents($pipes[1]);
+$open='';
+while(!feof($pipes[1])){
+  $open.=fgets($pipes[1]);
+}
+fclose($pipes[1]);
+if($xc=proc_close($ph)){
+  echo "Exit code: $xc\n";
+}
+
+// display the decrypted data
+echo $open;
+
+?>
+===============================================================================
+
+Example code, assume mycert.pem is a certificate containing both private and
+public key.
+
+$cert = file_get_contents("mycert.pem");
+
+$public = openssl_get_publickey($cert);
+$private = openssl_get_privatekey($cert);
+
+$data = "I'm a lumberjack and I'm okay.";
+
+echo "Data before: {$data}\n";
+openssl_seal($data, $cipher, $e, array($public));
+
+echo "Ciphertext: {$cipher}\n";
+
+openssl_open($cipher, $open, $e[0], $private);
+echo "Decrypted: {$open}\n";

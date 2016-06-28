@@ -1,0 +1,391 @@
+
+odbc_result
+
+(PHP 4, PHP 5, PHP 7)
+
+odbc_result — Get result data
+
+说明
+
+mixed odbc_result ( resource $result_id , mixed $field )
+
+Get result data
+
+参数
+
+result_id
+
+    The ODBC resource.
+
+field
+
+    The field name being retrieved. It can either be an integer containing the
+    column number of the field you want; or it can be a string containing the
+    name of the field.
+
+返回值
+
+Returns the string contents of the field, FALSE on error, NULL for NULL data,
+or TRUE for binary data.
+
+范例
+
+The first call to odbc_result() returns the value of the third field in the
+current record of the query result. The second function call to odbc_result()
+returns the value of the field whose field name is "val" in the current record
+of the query result. An error occurs if a column number parameter for a field
+is less than one or exceeds the number of columns (or fields) in the current
+record. Similarly, an error occurs if a field with a name that is not one of
+the fieldnames of the table(s) that is(are) being queried.
+
+Example #1 odbc_result() examples
+
+<?php
+$item_3   = odbc_result($Query_ID, 3);
+$item_val = odbc_result($Query_ID, "val");
+?>
+
+注释
+
+Field indices start from 1. Regarding the way binary or long column data is
+returned refer to odbc_binmode() and odbc_longreadlen().
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+Problem: Function returns a max of 4095 bytes of a cell with one call.
+
+Tip: If you have a cell containing more than 4095 bytes, write a loop and call
+the cell over and over as long return is not "". All returns can be added up to
+the whole string.
+===============================================================================
+
+The odbc_result() function has an apparently little known feature that comes in
+very handy when retrieving large text or binary fields.
+Consider this code snippet to retrieve a large value into a temporary file
+(error testing left out for clarity):
+
+<?php
+$con=odbc_connect(...);
+$query="set textsize 2147483647 ".
+       "select someLargeField from ...";
+$resultset=odbc_exec($con,$query);
+odbc_binmode($resultset,ODBC_BINMODE_RETURN);
+odbc_longreadlen($resultset,4096);
+while (odbc_fetch_row($resultset)) {
+   $fileHandle=fopen('/tmp/myfile','wb');
+   while (($chunk=odbc_result($resultset,'someLargeField'))!==false) {
+      fwrite($fileHandle,$chunk);
+   }
+   fclose($fileHandle);
+   //do something with the file
+}
+?>
+
+There are a few key points to make it work:
+- Make sure to include "set textsize 2147483647 " in your query.
+  Without it, MSSQL truncates large values to 4096 bytes by default.
+  Other databases may have a similar small limit.
+- The odbc_binmode() and odbc_longreadlen() calls are just for safety.
+  Their defaults in php.ini are usually correct.
+- Each odbc_result() call on a large field apparently returns the next chunk.
+  Of course you have to read all chunks before the next odbc_fetch_row() call.
+- When all of the large value has been read, odbc_result() will return false.
+
+Note: Using mssql_ instead of odbc_ functions is not a viable alternative. They
+don't work with chunks (AFAIK) and even crash php (overflow, segmentation
+fault) when the query result contains a large value.
+===============================================================================
+
+From http://www.php.net/manual/en/function.odbc-longreadlen.php but relevant
+here, also.
+
+An alternative is to adjust your php.ini file and set:
+odbc.defaultlrl=65536
+Or something else sufficiently large.
+lrl = long read length
+
+to get around the limit on returned chars.
+===============================================================================
+
+i use odbc and mysql and i noticed after losing a lot of time that if you write
+something like this:
+echo odbc_result($result,1);
+....
+echo odbc_result($result,1);
+the second echo will fail. so it's more useful to save the result of
+odbc_result in a variable and use it later
+like that: $var=odbc_result($result,1);
+i hope this will be useful!
+===============================================================================
+
+if you want to quickly change a website from odbc- to mysql-data-access, you
+could use a simple function like this one:
+function myresult ($cur,$nr) {
+   return mysql_result($cur,0,mysql_field_name($cur,$nr-1));
+}
+and just do a global replace from "odbc_result" to "myresult".
+
+beware, you should only use this if you don't care too much about performance,
+as this will start a query for every field you request - the better way is of
+course using mysql_fetch_row!
+===============================================================================
+
+When trying to get a date/time field from an Access database, odbc_result
+returns the date as text (e.g. 1998-07-11 21:12:23). You may use strtotime
+function to convert this into a format which can be used with PHP.
+
+e.g.
+echo "The date is "
+.date("r",strtotime(odbc_result($myquery,"mydate")));
+===============================================================================
+
+With an Access 2K database, odbc_result will only work the first time it is
+called on a memo field (odbc_field_type returns 'LONGCHAR').
+
+$good = odbc_result($result,'Description');
+# $good holds the field value
+$fail = odbc_result($result,'Description');
+# $fail holds false
+
+This tripped me up when I did something like this:
+
+for ($i=1; $i<=odbc_num_fields($result); $i++) {
+  if(odbc_result($result,$i)){
+    ... more code ...
+    echo odbc_result($result,$i);
+    ... snip ...
+  }
+}
+
+For any field type except memo, this code works perfectly.  But on memo fields,
+odbc_result returns false on the second call and nothing is echoed.
+
+Be careful, use a temporary variable instead of multiple calls to odbc_result. 
+(It's good programming practice anyway)
+
+for (...) {
+  $temp = odbc_result($result,$i);
+  if($temp){
+    ...
+    echo $temp;
+    ...
+  }
+}
+===============================================================================
+
+Hopefully useful note on accessing TEXT fields on Windows, using PHP's ODBC
+support to access Sybase*. With the following code:
+
+"SELECT status AS projstatus,oid AS projident,LOWER(title) AS
+projtitel,startsOn AS projanfang,terminatesOn AS projende,description AS
+projinfo FROM Project ORDER BY projtitel ASC"
+
+I was getting a strange error:
+
+  Warning: SQL error: [INTERSOLV][ODBC SQL Server driver][SQL Server]Invalid
+column name 'projanfang'. , SQL state S0022 in SQLGetData in [**scriptname and
+path removed**] on line 126
+
+even though I was clearly selecting a field as 'projanfang'. The reason I
+worked out eventually is that Sybase/ODBC attempts to do a conversion on the
+TEXT field 'description', which fails since the limit for CONVERT is 255
+characters, and TEXT is a field type with a  2 GB limit. I am not sure why it
+doesn't work implicitly, but it does explicitly. The following code will work
+without errors:
+
+  "SELECT status AS projstatus,oid AS projident,LOWER(title) AS
+projtitel,startsOn AS projanfang,terminatesOn AS projende,CONVERT(CHAR
+(255),description) AS projinfo FROM Project ORDER BY projtitel ASC"
+
+What you do if you have a need for more than 255 characters of your text field,
+I do not know :(. I have also tried longreadlen, but I couldn't work out how it
+could be used.
+
+* System details: Windows NT 4.0 SP6a, IIS 4.0, Sybase 11.5 Adaptive Enteprise,
+PHP 4.0.5.
+===============================================================================
+
+FWIW, ADO and similar ODBC-using interfaces also cannot distinguish between
+A.id and B.id. The easy solution is aliasing in SQL:
+
+Consider a table "A" consisting only of the column "id". Next, consider the
+following query:
+
+SELECT * FROM A JOIN B ON A.id=B.id
+
+With ODBC, you'd be forced to use the numerical index, rather than the name.
+However, you could rewrite the query, too:
+
+SELECT A.id AS A_id, B.id AS B_id FROM A JOIN B ON A.id=B.id
+
+This can be better on three counts:
+
+Firstly, unless you really want everything in the result set, it might be
+faster. SQL servers can be faster with "*", but often the networking will
+benefit from less data (Or a smaller tuple width, if you're into database
+jargon).
+
+Secondly, since you're forced into thinking about what you want out of the
+query, you'll probably write better SQL as a result.
+
+Thirdly, if you change the query - or tables - slightly, you don't have to
+revisit all your code to cope with the change.
+
+Aplogies for stating the obvious, and having no imagination with my examples.
+===============================================================================
+
+Here's a limitation that isn't mentioned anywhere (that I could see) and gave
+me a rather large headache for a couple of hours trying to figure out why my
+database wasn't initializing correctly.
+If you are trying to retrieve a large collection of fields from a database, be
+aware that odbc_result may only return up to 33 result columns.  Any more than
+that, and it generates a "result out of range" warning in your script.
+(I tried adjusting to have 32 fields, with the same bug.) It generates an error
+"Warning: Field index is larger than the number of fields inyour-script.php on
+line 70" ANY time you try to retrieve the last field of a sufficiently large
+record. What worked for me was just to write the last column twice... that way,
+the query has 34 fields, but the last two are the same. You know it'll crash if
+you ask for #34, but just use ODBC_result(current_query, 33) and you won't have
+a problem. Good luck
+
+-D
+===============================================================================
+
+If I use and MS Access 2000 database with fields of type memo, I get:
+"Warning: SQL error: [Microsoft][ODBC Driver Manager] Invalid cursor state, SQL
+state 24000 in SQLGetData in D:\Inetpub\wwwroot\xxx\xxx.php on line XxX." If I
+change to type "text," everything's cool.
+===============================================================================
+
+Beware if you have fields with the same name in a result
+
+<?php
+$res = odbc_exec($conn,"select * from PeopleMR,People,Role,Organisation".
+" WHERE PeopleMR.MeetingID = $MeetingID" .
+" ORDER BY People.Surname");
+?>
+
+I have the field "Name" from both TABLE Role and TABLE Organisation, as for
+MySQL you would do :
+
+<?php
+mysql_result($res,$count,"Role.Name");  
+mysql_result($res,$count,"Organisation.Name");
+?>
+
+but with odbc you do :
+
+<?php odbc_result($res,$count,"Name"); ?>
+
+this gives you the result of TABLE Role "Name" so you have to find the Field
+Number for the Organisation"Name" to have the correct result.
+===============================================================================
+
+FYI: odbc_result contains the following values: TABLE_QUALIFIER    TABLE_OWNER 
+  TABLE_NAME    COLUMN_NAME    DATA_TYPE    TYPE_NAME    PRECISION    LENGTH   
+SCALE    RADIX    NULLABLE    REMARKS    COLUMN_FLAGS
+
+I wrote the following to dump these values onto the page. I needed this to
+determine if the data-type for a column was something specific (eg: blob) to
+show a different result, instead of the actual contents.
+
+        $connection_string = 'OPTIM_BLOB';
+        $user = '';
+        $pass = '';       
+        if (!($connect = odbc_pconnect($connection_string, $user, $pass))) {
+           
+        } else {
+            echo 'Connecting to DSN, loading tables<br /><br />';
+            $result = odbc_tables($myconn);
+            $tables = array();
+            while (odbc_fetch_row($result)){
+                if(odbc_result($result,"TABLE_TYPE")=="TABLE") {
+                    $TableName = odbc_result($result,"TABLE_NAME");
+                    echo '<span id="tableName">Table: '.$TableName.'</span>
+....<br /><br /> ';
+                    //--------- Show Columns in that table ---------------
+                    $result2 = odbc_columns($myconn, '', "%", $TableName, "%");
+  //db connection, DB name, schema, table name, column_name);
+
+                    while(odbc_fetch_row($result2)){
+                        //TABLE_QUALIFIER    TABLE_OWNER    TABLE_NAME   
+COLUMN_NAME    DATA_TYPE    TYPE_NAME    PRECISION    LENGTH    SCALE    RADIX 
+  NULLABLE    REMARKS    COLUMN_FLAGS
+                       
+                        $COLUMN_NAME = odbc_result($result2, 4); // COLUMN_NAME
+                        $DataType = odbc_result($result2, 6);
+                        echo '<b>Column name: '.$COLUMN_NAME.'</b> Type:
+'.$DataType.'<br /><br />';
+
+                        // everything
+                        echo '1: '.odbc_result($result2, 1).'<br />';    //
+TABLE_QUALIFIER
+                        echo '2: '.odbc_result($result2, 2).'<br />';    //
+TABLE_OWNER
+                        echo '3: '.odbc_result($result2, 3).'<br />';    //
+TABLE_NAME
+                        echo '4: '.odbc_result($result2, 4).'<br />';    //
+COLUMN_NAME
+                        echo '5: '.odbc_result($result2, 5).'<br />';    //
+DATA_TYPE (Number)
+                        echo '6: '.odbc_result($result2, 6).'<br />';    //
+TYPE_NAME (String)
+                        echo '7: '.odbc_result($result2, 7).'<br />';    //
+PRECISION
+                        echo '8: '.odbc_result($result2, 8).'<br />';    //
+LENGTH
+                        echo '9: '.odbc_result($result2, 9).'<br />';    //
+SCALE
+                        echo '10: '.odbc_result($result2, 10).'<br />';    //
+RADIX
+                        echo '11: '.odbc_result($result2, 11).'<br />';    //
+NULLABLE
+                        echo '12: '.odbc_result($result2, 12).'<br />';    //
+REMARKS
+                        echo '13: '.odbc_result($result2, 13).'<br />';    //
+COLUMN_FLAGS
+                        echo '<br /><br />';
+                    }
+                }
+            }
+        }
+===============================================================================
+
+I use one store procedure to retrieve value of identifier, other, name,
+section,data and datecreated coulmns to variable from SQL server table
+
+using $odbc_result = odbc_exec($connect,$query); function.
+
+After that, I using following code,
+for($f=1;$f<=odbc_num_fields($odbc_result);$f++) {echo "<td style=\
+"font-weight:bold\">$f ".odbc_field_name($odbc_result,$f)."</td>";}
+echo "</tr></table>";
+odbc_fetch_row($odbc_result);
+echo odbc_result($odbc_result,1)."<br>";
+echo odbc_result($odbc_result,2)."<br>";
+echo odbc_result($odbc_result,3)."<br>";
+echo odbc_result($odbc_result,4)."<br>";
+echo odbc_result($odbc_result,5)."<br>";
+echo odbc_result($odbc_result,6)."<br>";
+
+The result is as following,
+1 identifier 2 other 3 name 4 section 5 data 6 datecreated
+id1
+other2
+name3
+section4
+Warning: odbc_result() [function.odbc-result]: SQL error: [Microsoft][ODBC SQL
+Server Driver]Invalid Descriptor Index, SQL state S1002 in SQLGetData in d:\
+lawdepot_test\contracts\common\LicensingSQL.php on line 630
+2005-03-16 18:12:00
+
+I can not get "data"(Text column) back. Firstly, I think "data" column is too
+long for odbc_result($odbc_result,5) function, but after I check my old colde,
+I found I can get the "data" back using same function odbc_result().
+
+I would like to hear any suggestions from you. Depressed on this question.
+
+Michael

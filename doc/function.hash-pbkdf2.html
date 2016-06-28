@@ -1,0 +1,316 @@
+
+hash_pbkdf2
+
+(PHP 5 >= 5.5.0, PHP 7)
+
+hash_pbkdf2 — 生成所提供密码的 PBKDF2 密钥导出
+
+说明
+
+string hash_pbkdf2 ( string $algo , string $password , string $salt , int
+$iterations [, int $length = 0 [, bool $raw_output = false ]] )
+
+参数
+
+algo
+
+    哈希算法名称，例如 md5，sha256，haval160,4 等。受支持的算法清单请参见 
+    hash_algos()。
+
+password
+
+    要进行导出的密码。
+
+salt
+
+    进行导出时所使用的“盐”，这个值应该是随机生成的。
+
+iterations
+
+    进行导出时的迭代次数。
+
+length
+
+    密钥导出数据的长度。如果 raw_output 为 TRUE，此参数为密钥导出数据的字节长度
+    。如果 raw_output 为 FALSE，此参数为密钥导出数据的字节长度的 2 倍，因为 1
+    个字节数据对应的 2 个 16 进制的字符。
+
+    如果传入 0，则使用所选算法的完整输出大小。
+
+raw_output
+
+    设置为 TRUE 输出原始二进制数据，设置为 FALSE 输出小写 16 进制字符串。
+
+返回值
+
+如果 raw_output 设置为 TRUE，则返回原始二进制数据表示的信息摘要，否则返回 16 进
+制小写字符串格式表示的信息摘要。
+
+错误／异常
+
+在以下情况下会产生 E_WARNING：指定了未知的算法， iterations 小于等于 0， length
+小于等于 0 或者 salt 过长（大于 INT_MAX - 4）。
+
+范例
+
+Example #1 hash_pbkdf2() 例程，基础用法
+
+<?php
+$password = "password";
+$iterations = 1000;
+
+// 使用 mcrypt_create_iv() 生成随机初始向量，
+// 也可以使用 openssl_random_pseudo_bytes() 或其他适合的随机源。
+$salt = mcrypt_create_iv(16, MCRYPT_DEV_URANDOM);
+
+$hash = hash_pbkdf2("sha256", $password, $salt, $iterations, 20);
+echo $hash;
+?>
+
+以上例程的输出类似于：
+
+120fb6cffcf8b32c43e7
+
+注释
+
+Caution
+
+为了安全起见，可以使用 PBKDF2 方法对密码明文进行哈希运算后再存储。但是更好的方
+案是使用 password_hash() 函数或者使用 CRYPT_BLOWFISH 算法调用 crypt() 函数。
+
+参见
+
+  • crypt() - 单向字符串散列
+  • password_hash() - 创建密码的哈希（hash）
+  • hash() - 生成哈希值（消息摘要）
+  • hash_algos() - 返回已注册的哈希算法列表
+  • hash_init() - 初始化增量哈希运算上下文
+  • hash_hmac() - 使用 HMAC 方法生成带有密钥的哈希值
+  • hash_hmac_file() - 使用 HMAC 方法和给定文件的内容生成带密钥的哈希值
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Sadly this function was added in PHP 5.5 but many webservers just provide PHP
+5.3. But there exists a pure PHP implementation (found here: https://defuse.ca/
+php-pbkdf2.htm).
+I took this implementation, put it into a class with comments for PHPDoc and
+added a switch so that the native PHP function is used if available.
+
+Feel free to use it!
+http://pastebin.com/f5PDq735
+(Posted on pastebin.com since the text would have been too long)
+===============================================================================
+
+this snippet was posted over a year ago on a dutch PHP community: (reference/
+source: http://www.phphulp.nl/php/script/beveiliging/
+pbkdf2-een-veilige-manier-om-wachtwoorden-op-te-slaan/1956/pbkdf2php/1757/)
+
+<?php
+
+/**
+* @author Chris Horeweg
+* @package Security_Tools
+*/
+
+function pbkdf2($password, $salt, $algorithm = 'sha512', $count = 20000, 
+$key_length = 128, $raw_output = false)
+{
+    if(!in_array($algorithm, hash_algos(), true)) {
+        exit('pbkdf2: Hash algoritme is niet geinstalleerd op het systeem.');
+    }
+   
+    if($count <= 0 || $key_length <= 0) {
+        $count = 20000;
+        $key_length = 128;
+    }
+
+    $hash_length = strlen(hash($algorithm, "", true));
+    $block_count = ceil($key_length / $hash_length);
+
+    $output = "";
+    for($i = 1; $i <= $block_count; $i++) {
+        $last = $salt . pack("N", $i);
+        $last = $xorsum = hash_hmac($algorithm, $last, $password, true);
+        for ($j = 1; $j < $count; $j++) {
+            $xorsum ^= ($last = hash_hmac($algorithm, $last, $password, true));
+        }
+        $output .= $xorsum;
+    }
+
+    if($raw_output) {
+        return substr($output, 0, $key_length);
+    }
+    else {
+        return base64_encode(substr($output, 0, $key_length));
+    }
+}
+===============================================================================
+
+This is a light-weight drop-in replacement for PHP's hash_pbkdf2(); written for
+compatibility with older versions of PHP.
+Written, formatted and tested by myself, but using code and ideas based on the
+following:
+https://defuse.ca/php-pbkdf2.htm
+https://github.com/rchouinard/hash_pbkdf2-compat/blob/master/src/
+hash_pbkdf2.php
+https://gist.github.com/rsky/5104756
+
+My main goals:
+1) Maximum compatibility with PHP hash_pbkdf2(), ie. a drop-in replacement
+function
+2) Minimum code size/bloat
+3) Easy to copy/paste
+4) No classes, and not encapsulated in a class! Why write a class when a simple
+function will do?
+5) Eliminate calls to sprintf(). (used by other examples for the error
+reporting)
+6) No other dependencies, ie. extra required functions
+
+<?php
+if (!function_exists('hash_pbkdf2'))
+{
+    function hash_pbkdf2($algo, $password, $salt, $count, $length = 0, 
+$raw_output = false)
+    {
+        if (!in_array(strtolower($algo), hash_algos())) trigger_error(
+__FUNCTION__ . '(): Unknown hashing algorithm: ' . $algo, E_USER_WARNING);
+        if (!is_numeric($count)) trigger_error(__FUNCTION__ . '(): expects
+parameter 4 to be long, ' . gettype($count) . ' given', E_USER_WARNING);
+        if (!is_numeric($length)) trigger_error(__FUNCTION__ . '(): expects
+parameter 5 to be long, ' . gettype($length) . ' given', E_USER_WARNING);
+        if ($count <= 0) trigger_error(__FUNCTION__ . '(): Iterations must be a
+positive integer: ' . $count, E_USER_WARNING);
+        if ($length < 0) trigger_error(__FUNCTION__ . '(): Length must be
+greater than or equal to 0: ' . $length, E_USER_WARNING);
+
+        $output = '';
+        $block_count = $length ? ceil($length / strlen(hash($algo, '', 
+$raw_output))) : 1;
+        for ($i = 1; $i <= $block_count; $i++)
+        {
+            $last = $xorsum = hash_hmac($algo, $salt . pack('N', $i), $password
+, true);
+            for ($j = 1; $j < $count; $j++)
+            {
+                $xorsum ^= ($last = hash_hmac($algo, $last, $password, true));
+            }
+            $output .= $xorsum;
+        }
+
+        if (!$raw_output) $output = bin2hex($output);
+        return $length ? substr($output, 0, $length) : $output;
+    }
+}
+===============================================================================
+
+There is a mistake in the class provided by Binod Kumar Luitel (http://php.net/
+manual/en/function.hash-pbkdf2.php#113488):
+this line:
+return bin2hex(substr($this->output, 0, $this->key_length));
+must be changed to:
+return substr(bin2hex($this->output), 0, $this->key_length);
+===============================================================================
+
+People who wants pure PHP implementation of the function, i.e. who don't have
+PHP 5.5 installed within their server, can use the following implementation.
+Nothing has been modified so far as from reference https://defuse.ca/
+php-pbkdf2.htm but the OOP lovers might like this.
+For more information about PBKDF2 see: http://en.wikipedia.org/wiki/PBKDF2
+
+<?php
+/**
+* PBKDF2 key derivation function as defined by RSA's PKCS #5: https://
+www.ietf.org/rfc/rfc2898.txt
+* $algorithm - The hash algorithm to use. Recommended: SHA256
+* $password - The password.
+* $salt - A salt that is unique to the password.
+* $count - Iteration count. Higher is better, but slower. Recommended: At least
+1000.
+* $key_length - The length of the derived key in bytes.
+* $raw_output - If true, the key is returned in raw binary format. Hex encoded
+otherwise.
+* Returns: A $key_length-byte key derived from the password and salt.
+*/
+if (!function_exists("hash_pbkdf2")) {
+    function hash_pbkdf2($algorithm, $password, $salt, $count, $key_length, 
+$raw_output = false) {
+
+        class pbkdf2 {
+            public $algorithm;
+            public $password;
+            public $salt;
+            public $count;
+            public $key_length;
+            public $raw_output;
+
+            private $hash_length;
+            private $output         = "";
+
+            public function __construct($data = null)
+            {
+                if ($data != null) {
+                    $this->init($data);
+                }
+            }
+
+            public function init($data)
+            {
+                $this->algorithm  = $data["algorithm"];
+                $this->password   = $data["password"];
+                $this->salt       = $data["salt"];
+                $this->count      = $data["count"];
+                $this->key_length = $data["key_length"];
+                $this->raw_output = $data["raw_output"];
+            }
+
+            public function hash()
+            {
+                $this->algorithm = strtolower($this->algorithm);
+                if(!in_array($this->algorithm, hash_algos(), true))
+                    throw new Exception('PBKDF2 ERROR: Invalid hash algorithm.'
+);
+
+                if($this->count <= 0 || $this->key_length <= 0)
+                    throw new Exception('PBKDF2 ERROR: Invalid parameters.');
+
+                $this->hash_length = strlen(hash($this->algorithm, "", true));
+                $block_count = ceil($this->key_length / $this->hash_length);
+                for ($i = 1; $i <= $block_count; $i++) {
+                    // $i encoded as 4 bytes, big endian.
+                    $last = $this->salt . pack("N", $i);
+                    // first iteration
+                    $last = $xorsum = hash_hmac($this->algorithm, $last, $this
+->password, true);
+                    // perform the other $this->count - 1 iterations
+                    for ($j = 1; $j < $this->count; $j++) {
+                        $xorsum ^= ($last = hash_hmac($this->algorithm, $last, 
+$this->password, true));
+                    }
+                    $this->output .= $xorsum;
+                    if($this->raw_output)
+                        return substr($this->output, 0, $this->key_length);
+                    else
+                        return bin2hex(substr($this->output, 0, $this->
+key_length));
+                }
+            }
+        }
+
+        $data = array('algorithm' => $algorithm, 'password' => $password, 
+'salt' => $salt, 'count' => $count, 'key_length' => $key_length, 'raw_output' 
+=> $raw_output);
+        try {
+            $pbkdf2 = new pbkdf2($data);
+            return $pbkdf2->hash();
+        } catch (Exception $e) {
+            throw $e;
+        }
+    }
+}
+===============================================================================
+
+See also https://github.com/rchouinard/hash_pbkdf2-compat for a compatibility
+function

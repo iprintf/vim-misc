@@ -1,0 +1,96 @@
+
+pg_get_result
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pg_get_result — 取得异步查询结果
+
+说明
+
+resource pg_get_result ([ resource $connection ] )
+
+pg_get_result() 取得执行 pg_send_query() 而得到的查询结果资源。pg_send_query()
+可以向 PostgreSQL 发送多个查询， pg_get_result() 则用来逐个得到查询结果。返回值
+为查询结果资源号。如果没有更多查询结果，则返回 FALSE。
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+There is no way to poll/wait for a notification to come in. You either have to
+enter a busy loop or sleep. Both options are horrible. It would be nice for PHP
+to provide access to PQsocket so one could select() on the socket connection.
+This is how it's done from C or Perl.
+===============================================================================
+
+It might seem that after calling pg_get_result() upon sending just a single
+query, the connection will not be busy. The correct way is, though, to call
+extra pg_get_result() in a loop until it returns false [1].
+
+<?php
+$conn = pg_connect('...', PGSQL_CONNECT_FORCE_NEW);
+for ($i = 0; $i < 10000; $i++) {
+    $query = 'erroneous query';
+    if (pg_connection_busy($conn)) {
+        fprintf(STDERR, "Connection is busy\n");
+        exit(1);
+    }
+    pg_send_query($conn, $query);
+    $res = pg_get_result($conn);
+    if ($res === false) {
+        fprintf(STDERR, "A result was expected\n");
+        exit(1);
+    }
+
+    /* The following does not seem necessary for good queries, but is vital for
+erroneous queries.
+       Commenting the loop out leads to this script fail with the "Connection
+is busy" error. */
+    while (pg_get_result($conn));
+
+    // result processing...
+}
+?>
+
+See http://www.postgresql.org/message-id/flat/gtitqq$26l3$1@news.hub.org#
+gtitqq$26l3$1@news.hub.org and https://bugs.php.net/bug.php?id=52750 for
+detailed information.
+
+[1] Or, even better, use an asynchronous connection since PHP 5.6.
+===============================================================================
+
+To have a a simple wait output with async queries you can use the
+pg_connection_busy command:
+
+<?php
+$dbh = pg_connect("host=XXX user=XXX password=XXX dbname=XXX");
+if (!$dbh)
+{
+    print "Failed to connect";
+    exit;
+}
+
+$query = "SELECT pg_sleep(10)";
+if (!pg_connection_busy($dbh))
+{
+    $sent = pg_send_query($dbh, $query);
+    print "Sent query, waiting: ";
+    while (pg_connection_busy($dbh)
+    {
+        print ".";
+        flush();
+    }
+    $res = pg_get_result($dbh);
+    print "<br>"; // or \n
+    print "Result is: $res";
+}
+
+pg_close($dbh);
+?>
+===============================================================================
+
+william at 25thandClement dot com said: "There is no way to poll/wait for a
+notification to come in. .."
+Yes, there is. If there is a query in progress, pg_get_result() will block and
+return the result of that query when it's complete.

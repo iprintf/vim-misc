@@ -1,0 +1,781 @@
+
+serialize
+
+(PHP 4, PHP 5, PHP 7)
+
+serialize — 产生一个可存储的值的表示
+
+描述
+
+string serialize ( mixed $value )
+
+serialize() 返回字符串，此字符串包含了表示 value 的字节流，可以存储于任何地方。
+
+这有利于存储或传递 PHP 的值，同时不丢失其类型和结构。
+
+想要将已序列化的字符串变回 PHP 的值，可使用 unserialize()。serialize() 可处理除
+了 resource 之外的任何类型。甚至可以 serialize() 那些包含了指向其自身引用的数组
+。你正 serialize() 的数组／对象中的引用也将被存储。
+
+当序列化对象时，PHP 将试图在序列动作之前调用该对象的成员函数 __sleep()。这样就
+允许对象在被序列化之前做任何清除操作。类似的，当使用 unserialize() 恢复对象时，
+将调用 __wakeup() 成员函数。
+
+    Note:
+
+    在 PHP 3 中，对象属性将被序列化，但是方法则会丢失。PHP 4 打破了此限制，可以
+    同时存储属性和方法。请参见类与对象中的序列化对象部分获取更多信息。
+
+Example #1 serialize() 示例
+
+<?php
+// $session_data 是包含了当前用户 session 信息的多维数组。
+// 我们使用 serialize() 在请求结束之前将其存储到数据库中。
+
+$conn = odbc_connect ("webdb", "php", "chicken");
+$stmt = odbc_prepare ($conn,
+      "UPDATE sessions SET data = ? WHERE id = ?");
+$sqldata = array (serialize($session_data), $PHP_AUTH_USER);
+if (!odbc_execute ($stmt, &$sqldata)) {
+    $stmt = odbc_prepare($conn,
+     "INSERT INTO sessions (id, data) VALUES(?, ?)");
+    if (!odbc_execute($stmt, &$sqldata)) {
+    /* 出错 */
+    }
+}
+?>
+
+参见：unserialize()。
+
+
+User Contributed Notes 27 notes
+
+===============================================================================
+
+<?
+/*
+Anatomy of a serialize()'ed value:
+
+String
+s:size:value;
+
+Integer
+i:value;
+
+Boolean
+b:value; (does not store "true" or "false", does store '1' or '0')
+
+Null
+N;
+
+Array
+a:size:{key definition;value definition;(repeated per element)}
+
+Object
+O:strlen(object name):object name:object size:{s:strlen(property name):property
+name:property definition;(repeated per property)}
+
+String values are always in double quotes
+Array keys are always integers or strings
+    "null => 'value'" equates to 's:0:"";s:5:"value";',
+    "true => 'value'" equates to 'i:1;s:5:"value";',
+    "false => 'value'" equates to 'i:0;s:5:"value";',
+    "array(whatever the contents) => 'value'" equates to an "illegal offset
+type" warning because you can't use an
+    array as a key; however, if you use a variable containing an array as a
+key, it will equate to 's:5:"Array";s:5:"value";',
+     and
+    attempting to use an object as a key will result in the same behavior as
+using an array will.
+*/
+?>
+===============================================================================
+
+Please! please! please! DO NOT serialize data and place it into your database.
+Serialize can be used that way, but that's missing the point of a relational
+database and the datatypes inherent in your database engine. Doing this makes
+data in your database non-portable, difficult to read, and can complicate
+queries. If you want your application to be portable to other languages, like
+let's say you find that you want to use Java for some portion of your app that
+it makes sense to use Java in, serialization will become a pain in the
+buttocks. You should always be able to query and modify data in the database
+without using a third party intermediary tool to manipulate data to be
+inserted.
+
+I've encountered this too many times in my career, it makes for difficult to
+maintain code, code with portability issues, and data that is it more difficult
+to migrate to other RDMS systems, new schema, etc. It also has the added
+disadvantage of making it messy to search your database based on one of the
+fields that you've serialized.
+
+That's not to say serialize() is useless. It's not... A good place to use it
+may be a cache file that contains the result of a data intensive operation, for
+instance. There are tons of others... Just don't abuse serialize because the
+next guy who comes along will have a maintenance or migration nightmare.
+===============================================================================
+
+Serializing floating point numbers leads to weird precision offset errors:
+
+<?php
+
+echo round(96.670000000000002, 2);
+// 96.67
+
+echo serialize(round(96.670000000000002, 2));
+// d:96.670000000000002;
+
+echo serialize(96.67);
+// d:96.670000000000002;
+
+?>
+
+Not only is this wrong, but it adds a lot of unnecessary bulk to serialized
+data. Probably better to use json_encode() instead (which apparently is faster
+than serialize(), anyway).
+===============================================================================
+
+Closures cannot be serialized:
+<?php
+$func = function () {echo 'hello!';};
+$func(); // prints "hello!"
+
+$result = serialize($func);  // Fatal error: Uncaught exception 'Exception'
+with message 'Serialization of 'Closure' is not allowed'
+?>
+===============================================================================
+
+If you are going to serialie an object which contains references to other
+objects you want to serialize some time later, these references will be lost
+when the object is unserialized.
+The references can only be kept if all of your objects are serialized at once.
+That means:
+
+$a = new ClassA();
+$b = new ClassB($a); //$b containes a reference to $a;
+
+$s1=serialize($a);
+$s2=serialize($b);
+
+$a=unserialize($s1);
+$b=unserialize($s2);
+
+now b references to an object of ClassA which is not $a. $a is another object
+of Class A.
+
+use this:
+$buf[0]=$a;
+$buf[1]=$b;
+$s=serialize($buf);
+$buf=unserialize($s);
+$a=$buf[0];
+$b=$buf[1];
+
+all references are intact.
+===============================================================================
+
+Warning: on 64 bits machines,  if you use a long string only composed of
+numbers as a key in an array and serialize/unserialize it, you can run into
+problems:
+
+an example code:
+$arr["20041001103319"] = 'test';
+var_dump( $arr);
+$arr_in_str = serialize($arr);
+print "Now result is: $arr_in_str<BR />";
+$final_arr = unserialize($arr_in_str);
+print "The final unserialized array:<BR />";
+var_dump($final_arr);
+
+The result:
+array(1) { [20041001103319]=>  string(4) "test" }
+Now result is: a:1:{i:20041001103319;s:4:"test";}
+The final unserialized array:
+array(1) { [683700183]=> string(4) "test" }
+
+As you can see, the original array :
+$arr["20041001103319"] = "test"
+
+after serialize/unserialize is:
+$arr[683700183] = "test"
+
+As you can see,  the key has changed ...
+
+Apparently a problem of implicit casting + integer overflow (I posted a PHP bug
+report: http://bugs.php.net/bug.php?id=31117)
+
+I tested with the latest 4.3.10 compiled on my laptop (32 bits, Mandrake 9.1)
+--> no such problem. But compiled on AMD 64 bits (Red Hat Taroon), the problem
+is present.
+
+Hope this will help some of you to not loose almost a whole day of debugging ;
+-)
+===============================================================================
+
+I have also written some code for importing serialized PHP data into PERL and
+then writing it back into PHP.  I think the similar library posted above is
+actually more robust for a few select cases, but mine is more compact and a
+little easier to follow.  I'd really like comments if anyone finds this useful
+or has improvements.  Please credit me if you use my code.
+
+http://www.hcs.harvard.edu/~pli/code/serialPHP.pm
+===============================================================================
+
+When you serialize an array the internal pointer will not be preserved.
+Apparently this is the expected behavior but was a bit of a gotcha moment for
+me. Copy and paste example below.
+
+<?php
+//Internal Pointer will be 2 once variables have been assigned.
+$array = array();
+$array[] = 1;
+$array[] = 2;
+$array[] = 3;
+
+//Unset variables. Internal pointer will still be at 2.    
+unset($array[0]);
+unset($array[1]);
+unset($array[2]);
+
+//Serialize
+$serializeArray = serialize($array);
+
+//Unserialize
+$array = unserialize($serializeArray);
+
+//Add a new element to the array
+//If the internal pointer was preserved, the new array key should be 3.
+//Instead the internal pointer has been reset, and the new array key is 0.
+$array[] = 4;
+
+//Expected Key - 3
+//Actual Key - 0
+echo "<pre>" , print_r($array, 1) , "</pre>";
+?>
+===============================================================================
+
+In my specific situation, I wanted to be able to pass some data from page to
+page, but without relying on a session variable. The answer I came up with was
+to serialize() the object in question, pass it on to the next page as a hidden
+form field, then unserialize() it. When ALL class variables are public, this
+worked fine. However, if there was at least one private/protected variable, the
+code no longer worked as expected ("Fatal error: Call to a member function
+display() on a non-object in page2.php on line 4")
+
+As others have already mentioned, private/protected class variables will not
+behave nicely (private variables are prefixed by class_name + &#65533;, while
+protected variables are only prefixed by &#65533; - when looking at the page
+source using Firefox). Internet Explorer does NOT display the extra character
+between the class name and variable name, but the code still doesn't work as
+one would expect.
+
+Suppose you have a simple class:
+
+testclass.php
+=============
+<?php
+class TestClass {
+  var $i = 1;
+
+  function display() {
+    echo "i=" . $this->i;
+  }
+?>
+
+page1.php
+=========
+<?php
+  require_once 'testclass.php';
+  $tc = new TestClass;
+  $tc->display();
+?>
+<form method = "post" action = "page2.php">
+<input type = "hidden" name = "str" value = "<?php echo htmlspecialchars( 
+serialize( $tc ) ); ?>">
+<input type = "submit">
+</form>
+
+page2.php
+=========
+<?php
+  require_once 'testclass.php';
+  $tc = unserialize( stripslashes( htmlspecialchars_decode( $_POST["str"] ) )
+);
+  $tc->display();
+?>
+
+The fix, suggested by evulish on #php/irc.dal.net, is to replace
+htmlspecialchars()/htmlspecialchars_decode() by base64_encode()/base64_decode.
+The code becomes:
+
+page1.php
+=========
+<input type = "hidden" name = "str" value = "<?php echo base64_encode( 
+serialize( $tc ) ); ?>">
+
+page2.php
+=========
+<?php
+  $tc = unserialize( base64_decode( $_POST["str"] ) );
+?>
+
+Hope this will help someone...
+===============================================================================
+
+I did some testing to see the speed differences between serialize and
+json_encode, and my results with 250 iterations are:
+
+PHP serialized in 0.0651714730263 seconds average
+JSON encoded in 0.0254955434799 seconds average
+json_encode() was roughly 155.62% faster than serialize()
+Test took 27.2039430141 seconds with 300 iretations.
+
+PHP serialized in 0.0564563179016 seconds average
+JSON encoded in 0.0249140485128 seconds average
+json_encode() was roughly 126.60% faster than serialize()
+Test took 24.4148340225 seconds with 300 iretations.
+
+From all my tests it looks like json_encode is on average about 120% faster
+(sometimes it gets to about 85% and sometimes to 150%).
+
+Here is the PHP code you can run on your server to try it out:
+
+<?php
+
+// fillArray function myde by Peter Bailey
+function fillArray($depth, $max){
+    static $seed;
+    if (is_null($seed)){
+        $seed = array('a', 2, 'c', 4, 'e', 6, 'g', 8, 'i', 10);
+    }
+    if ($depth < $max){
+        $node = array();
+        foreach ($seed as $key){
+            $node[$key] = fillArray( $depth + 1, $max );
+        }
+        return $node;
+    }
+    return 'empty';
+}
+
+function testSpeed($testArray, $iterations = 100){
+
+    $json_time = array();
+    $serialize_time = array();
+    $test_start = microtime(true);
+
+    for ($x = 1; $x <= $iterations; $x++){
+        $start = microtime(true);
+        json_encode($testArray);
+        $json_time[] = microtime(true) - $start;
+
+        $start = microtime(true);
+        serialize($testArray);
+        $serialize_time[] = microtime(true) - $start;
+    }
+
+    $test_lenght = microtime(true) - $test_start;
+    $json_average = array_sum($json_time) / count($json_time);
+    $serialize_average = array_sum($serialize_time) / count($serialize_time);
+
+    $result = "PHP serialized in ".$serialize_average." seconds average<br>";
+    $result .= "JSON encoded in ".$json_average." seconds average<br>";
+
+    if ($json_average < $serialize_average){
+        $result .= "json_encode() was roughly ".number_format( (
+$serialize_average / $json_average - 1 ) * 100, 2 )."% faster than serialize()
+<br>";
+    } else if ( $serializeTime < $jsonTime ){
+        $result .= "serialize() was roughly ".number_format( ($json_average / 
+$serialize_average - 1 ) * 100, 2 )."% faster than json_encode()<br>";
+    } else {
+        $result .= "No way!<br>";
+    }
+
+    $result .= "Test took ".$test_lenght." seconds with ".$iterations."
+iterations.";
+
+    return $result;
+
+}
+
+// Change the number of iterations (250) to lower if you exceed your maximum
+execution time
+echo testSpeed(fillArray(0, 5), 250);
+
+?>
+===============================================================================
+
+Note : You cannot save the state of a static variable by serializing.
+<?php
+/*
+* student.class.php
+*/
+class Student {
+
+    public $name;
+    private $roll;
+    protected $age;
+    static $class;
+
+    public function __construct() {
+        $this->name = "Nanhe Kumar";
+        $this->roll = 1;
+        $this->age = 16;
+        Student::$class = "10+2";
+    }
+
+}
+?>
+<?php
+/**
+* serialize.php
+*/
+include_once("student.class.php");
+
+//Serialize
+$so = new Student();
+$serialized = serialize($so);
+file_put_contents("test.txt", $serialized);
+echo $serialized; //O:7:"Student":3:{s:4:"name";s:11:"Nanhe Kumar";
+s:13:"Studentroll";i:1;s:6:"*age";i:16;}
+?>
+<?php
+/**
+* unserialize.php
+*/
+include_once("student.class.php");
+$content = file_get_contents("test.txt");
+$unserialized = unserialize($content);
+print_r($unserialized);//Student Object ( [name] => Nanhe Kumar
+[roll:Student:private] => 1 [age:protected] => 16 )
+?>
+===============================================================================
+
+Regarding serializing PHP data types to Javascript, following Ivans note below,
+theres an example at http://www.tekool.net/php/js_serializer/.
+
+The basic serialization looks good although, in its current form, it works on
+the basis of generating Javascript source which a browser executes as a page
+loads. Using Javascripts eval() the same can be done with strings containing
+Javascript if youre working with something like XMLHTTPRequest
+===============================================================================
+
+Corrections/clarifications to  "Anatomy of a serialize()'ed value":
+
+All strings appear inside quotes. This applies to string values, object class
+names and array key names. For example:
+
+s:3:"foo"
+O:7:"MyClass":1:{...
+a:2:{s:3:"bar";i:42;...
+
+Object property names and values are delimited by semi-colons, not colons. For
+example:
+
+O:7:"MyClass":2:{s:3:"foo";i:10;s:3:"bar";i:20}
+
+Double/float values are represented as:
+
+d:0.23241446
+===============================================================================
+
+Oddly, if you serialize a class that was previously unserialized, the class of
+the variable changes to string... Example:
+
+$R = unserialize($serialized_object);
+$R->method(); // this is ok
+$str = serialize($R);
+echo(get_class($R));
+
+this will output "string"!!!!! whereas if the first line was
+
+$R = new my_class();
+
+it would output "my_class"!
+
+I don't know if that is a bug, but the manual is not clear about that! (somehow
+$R in serialize($R) is being passed by reference, since it changes class).
+===============================================================================
+
+Another suggestion for coping with binary data in serialize()d variables is
+just to base64_encode() those fields before serializing. It will increase the
+size of the variable, but not by too much.
+===============================================================================
+
+I was trying to submit a serialized array through a hidden form field using
+POST and was having a lot of trouble with the quotes. I couldn't figure out a
+way to escape the quotes in the string so that they'd show up right inside the
+form, so only the characters up to the first set of quotes were being sent.
+
+My solution was to base64_encode() the string, put that in the hidden form
+field, and send that through the POST method. Then I decoded it (using
+base64_decode()) on the other end. This seemed to solve the problem.
+===============================================================================
+
+If serializing objects to be stored into a postgresql database, the 'null byte'
+injected for private and protected members throws a wrench into the system.
+Even pg_escape_bytea() on the value, and storing the value as a binary type
+fails under certain circumstances.
+
+For a dirty work around:
+<?php
+
+$serialized_object = serialize($my_object);
+$safe_object = str_replace("\0", "~~NULL_BYTE~~", $serialized_object);
+
+?>
+
+this allows you to store the object in a readable text format as well. When
+reading the data back:
+
+<?php
+
+$serialized_object = str_replace("~~NULL_BYTE~~", "\0", $safe_object);
+$my_object = unserialize($serialized_object);
+
+?>
+
+The only gotcha's with this method is if your object member names or values may
+somehow contain the odd "~~NULL_BYTE~~" string. If that is the case, then
+str_replace() to a string that you are guaranteed not to have any where else in
+the string that serialize() returns.
+Also remember to define the class before calling unserialize().
+
+If you are storing session data into a postgresql database, then this
+workaround is an absolute must, because the $data passed to the session's write
+function is already serialized.
+
+Thanks,
+Travis Hegner
+===============================================================================
+
+If you are serializing an object to store it in the database, using __sleep()
+can save you some space. The following code will not store empty (null)
+variables in the serialized string. For my purposes this saved a lot of space,
+since some of the member variables would not be given values.
+
+function __sleep()
+{
+    $allVars = get_object_vars($this);
+    $toReturn = array();
+    foreach(array_keys($allVars) as $name)
+    {
+        if (isset($this->$name))
+        {
+            $toReturn[] = $name;
+        }
+    }
+    return $toReturn;
+}
+===============================================================================
+
+Here is an example of a base class to implement object persistence using
+serialize and unserialize:
+
+<?php
+class Persistent
+{
+    var $filename;
+       
+    /**********************/
+    function Persistent($filename)
+    {
+        $this->filename = $filename;
+        if(!file_exists($this->filename)) $this->save();
+    }
+    /**********************/
+    function save()
+    {
+        if($f = @fopen($this->filename,"w"))
+        {
+            if(@fwrite($f,serialize(get_object_vars($this))))
+            {
+                @fclose($f);
+            }
+            else die("Could not write to file ".$this->filename." at
+Persistant::save");
+        }
+        else die("Could not open file ".$this->filename." for writing, at
+Persistant::save");
+       
+    }
+    /**********************/
+    function open()
+    {
+        $vars = unserialize(file_get_contents($this->filename));
+        foreach($vars as $key=>$val)
+        {           
+            eval("$"."this->$key = $"."vars['"."$key'];");
+        }
+    }
+    /**********************/
+}
+
+?>
+
+When an object is extended from this one it can be easily saved and re-opened
+using it's own methods as follows:
+
+<?
+
+class foo extends Persistent
+{
+   var $counter;
+   function inc()
+   {
+       $this->counter++;
+   }
+}
+
+$fooObj = new $foo;
+$foo->open();
+print $foo->counter; // displays incrementing integer as page reloads
+$foo->inc();
+$foo->save();
+
+?>
+===============================================================================
+
+For everyone facing the conversion nightmare another Anonymous described here
+in an older comment (and he took the words out of my mouth), this T-SQL script
+might be of great help: https://github.com/mjohnsonperl/tsqlphpunserialize/tree
+/master.
+
+Please do not follow the path of evil by dumping serialized data into
+relational databases.
+===============================================================================
+
+you should really use mysql_real_escape_string() for escaping (serialized)
+strings that got thrown into a query (visit php.net/mysql_real_escape_string
+for further information)
+===============================================================================
+
+It may be worth noting that, depending on the size of the object you are
+serializing, the serialize function can take up a lot of memory.
+
+If your script isn't working as expected, your serialize call may have pushed
+the memory usage over the limit set by memory_limit in php.ini.
+
+More info on memory limits here: http://www.php.net/manual/en/ini.core.php
+===============================================================================
+
+When using serialize() to convert, say, an array to a string to pass via HTML
+forms, you will likely run into issues with quoting. This is because serialize
+() puts values in double quotes. The simplest solution is to quote your HTML
+form value with single quotes rather than double quotes. (This *is* allowed,
+according to W3C specs.)
+
+So, instead of:
+
+<?php
+$arr = serialize($some_array);
+?>
+<input type="hidden" name="array" value="$arr" />
+
+you would want to use:
+
+<?php
+$arr = serialize($some_array);
+?>
+<input type="hidden" name="array" value='$arr' />
+===============================================================================
+
+NOTE: php's serialize does not properly serialize arrays with which a slice of
+the array is a reference to the array itself, observe:
+
+<?php
+$a = array();
+$a[0] = "blah";
+$a[1] =& $a;
+
+$a[1][0] = "pleh"; // $a[0] === "pleh"
+
+$b = unserialize(serialize($a));
+
+// $b[0] == "pleh", $b[1][0] == "pleh"
+
+$b[1][0] = "blah";
+?>
+
+now $b[1][0] == "blah", but $b[0] == "pleh"
+after serializing and unserializing, slice 1 is no longer a reference to the
+array itself... I have found no way around this problem... even manually
+modifying the serialized string from
+'a:2:{i:0;s:4:"pleh";i:1;a:2:{i:0;s:4:"pleh";i:1;R:3;}}'
+to
+'a:2:{i:0;s:4:"pleh";i:1;R:1;}'
+
+to force the second slice to be a reference to the first element of the
+serialization (the array itself), it seemed to work at first glance, but then
+unreferences it when you alter it again, observe:
+
+<?php
+    $testser = 'a:2:{i:0;s:4:"pleh";i:1;R:1;}';
+
+    $tmp = unserialize($testser);
+
+    print_r($tmp);
+
+    print "\n-----------------------\n";
+
+    $tmp[1][0] = "blah";
+
+    print_r($tmp);
+
+?>
+
+outputs:
+Array
+(
+    [0] => pleh
+    [1] => Array
+*RECURSION*
+)
+
+-----------------------
+Array
+(
+    [0] => pleh
+    [1] => Array
+        (
+            [0] => blah
+            [1] => Array
+                (
+                    [0] => pleh
+                    [1] => Array
+*RECURSION*
+                )
+
+        )
+
+)
+===============================================================================
+
+A call to serialize() appears to mess with the array's internal pointer.  If
+you're going to be walking through your array after serializing it, you'll want
+to make a call to reset() first.
+===============================================================================
+
+I needed to serialize an array to store it inside a database.
+I was looking for a fast, simple way to do serialization, and I came out with 2
+options: serialize() or json_encode().
+
+I ran some benchmarks to see which is the faster, and, surprisingly, I found
+that serialize() is always between 46% and 96% SLOWER than json_encode().
+So, if you don't need to serialize objects and have the json extension
+available, consider using it instead of serialize().
+===============================================================================
+
+I have problem to use serialize function with hidden form field and the
+resolution was use htmlentities.
+
+Ex.:
+
+<?
+
+$lista = array( 'pera', 'maça', 'laranja' );
+
+print "< input type='hidden' name='teste' value='htmlentities( serialize(
+$lista ) )'" >";
+
+?>

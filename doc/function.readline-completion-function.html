@@ -1,0 +1,187 @@
+
+readline_completion_function
+
+(PHP 4, PHP 5, PHP 7)
+
+readline_completion_function — 注册一个完成函数
+
+说明
+
+bool readline_completion_function ( callable $function )
+
+这个函数注册一个完成函数.这就像你在使用 Bash 时按 tab 键时你想要的功能一样
+
+参数
+
+function
+
+    你必须提供一个已经存在的函数的名字并且可以接受命令行中的部分输入然后返回一
+    些可能匹配的数组.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+A little bit of info regarding useful variables when writing your callback
+function.
+
+There doesn't seem to be a way to set rl_basic_word_break_characters like with
+the pure C library, so as previous users have pointed out you'll only receive
+the current word in the input buffer within your callback.  If for example
+you're typing "big bro|ther", where the bar is the position of your cursor when
+you hit TAB, you'll receive (string) "brother" and (int) 4 as your callback
+parameters.
+
+However, it is possible (easily) to get more useful information about what the
+user has typed into the readline buffer.  readline_info() is key here.  It will
+return an array containing:
+
+"line_buffer" => (string)
+   the entire contents of the line buffer (+ some bugs**)
+
+"point" => (int)
+   the current position of the cursor in the buffer
+
+"end" => (int)
+   the position of the last character in the buffer
+
+So for the example above you'd get:
+
+  * line_buffer => "big brother"
+  * point => 7
+  * end => 11
+
+From this you can easily perform multi-word matches.
+
+** NOTE: line_buffer seems to contain spurious data at the end of the string
+sometime.  Fortunately since $end is provided you can substr() it to get the
+correct value.
+
+The matches you need to return are full words that can replace $input, so your
+algorithm might crudely look something like:
+
+<?php
+
+function your_callback($input, $index) {
+  // Get info about the current buffer
+  $rl_info = readline_info();
+ 
+  // Figure out what the entire input is
+  $full_input = substr($rl_info['line_buffer'], 0, $rl_info['end']);
+ 
+  $matches = array();
+ 
+  // Get all matches based on the entire input buffer
+  foreach (phrases_that_begin_with($full_input) as $phrase) {
+    // Only add the end of the input (where this word begins)
+    // to the matches array
+    $matches[] = substr($phrase, $index);
+  }
+ 
+  return $matches;
+}
+
+?>
+===============================================================================
+
+The readline extension can be a bit flakey due to bugs in libedit (PHP
+5.3.10-1ubuntu3.15 with Suhosin-Patch (cli) (built: Oct 29 2014 12:19:04)).
+
+I created many segfaults returning an empty array on the autocompletion
+function:
+
+// Autocomplete
+readline_completion_function(function($Input, $Index){
+   
+    global $Commands;
+   
+    // Filter Matches   
+    $Matches = array();
+    foreach(array_keys($Commands) as $Command)
+        if(stripos($Command, $Input) === 0)
+            $Matches[] = $Command;
+   
+    return $Matches;
+});
+
+I found adding an empty string to the matches array prevents the segfault:
+
+// Autocomplete
+readline_completion_function(function($Input, $Index){
+   
+    global $Commands;
+   
+    // Filter Matches   
+    $Matches = array();
+    foreach(array_keys($Commands) as $Command)
+        if(stripos($Command, $Input) === 0)
+            $Matches[] = $Command;
+   
+    // Prevent Segfault
+    if($Matches == false)
+        $Matches[] = '';
+   
+    return $Matches;
+});
+
+Hopefully this is helpful to someone.
+===============================================================================
+
+Note: the first argument passed to the registered function is NOT the whole
+command line as entered by the user, but only the last part, i.e. the part
+after the last space.
+
+e.g.:
+<?php
+function my_readline_completion_function($string, $index) {
+  // If the user is typing:
+  // mv file.txt directo[TAB]
+  // then:
+  // $string = directo
+  // the $index is the place of the cursor in the line:
+  // $index = 19;
+
+  $array = array(
+    'ls',
+    'mv',
+    'dar',
+    'exit',
+    'quit',
+  );
+
+  // Here, I decide not to return filename autocompletion for the first
+argument (0th argument).
+  if ($index) {
+    $ls = `ls`;
+    $lines = explode("\n", $ls);
+    foreach ($lines AS $key => $line) {
+      if (is_dir($line)) {
+        $lines[$key] .= '/';
+      }
+      $array[] = $lines[$key];
+    }
+  }
+  // This will return both our list of functions, and, possibly, a list of
+files in the current filesystem.
+// php will filter itself according to what the user is typing.
+  return $array;
+}
+?>
+===============================================================================
+
+It seems that the registered function can accept 2 parameters, the first being
+the partial string, the second a number that when equal to zero indicates that
+the tab was hit on the first argument on the input. Otherwise it looks like the
+position within the string is returned.
+
+This is neccessary information for processing shell command line input.
+===============================================================================
+
+This function can simply return an array of all possible matches (regardless of
+the current user intput) and readline will handle the matching itself.  This is
+likely to be much faster than attempting to handle partial matches in PHP.

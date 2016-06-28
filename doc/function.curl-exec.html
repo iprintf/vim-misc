@@ -1,0 +1,850 @@
+
+curl_exec
+
+(PHP 4 >= 4.0.2, PHP 5, PHP 7)
+
+curl_exec — 执行一个cURL会话
+
+说明
+
+mixed curl_exec ( resource $ch )
+
+执行给定的cURL会话。
+
+这个函数应该在初始化一个cURL会话并且全部的选项都被设置后被调用。
+
+参数
+
+ch
+
+    由 curl_init() 返回的 cURL 句柄。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。然而，如果 CURLOPT_RETURNTRANSFER选项
+被设置，函数执行成功时会返回执行的结果，失败时返回 FALSE 。
+
+范例
+
+Example #1 获取一个网页
+
+<?php
+// 创建一个cURL资源
+$ch = curl_init();
+
+// 设置URL和相应的选项
+curl_setopt($ch, CURLOPT_URL, "http://www.example.com/");
+curl_setopt($ch, CURLOPT_HEADER, 0);
+
+// 抓取URL并把它传递给浏览器
+curl_exec($ch);
+
+// 关闭cURL资源，并且释放系统资源
+curl_close($ch);
+?>
+
+参见
+
+  • curl_multi_exec() - 运行当前 cURL 句柄的子连接
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+Just in case anyone is looking for a a couple of simple functions [to help
+automate cURL processes for POST and GET queries] I thought I'd post these.
+
+<?php
+
+/**
+* Send a POST requst using cURL
+* @param string $url to request
+* @param array $post values to send
+* @param array $options for cURL
+* @return string
+*/
+function curl_post($url, array $post = NULL, array $options = array())
+{
+    $defaults = array(
+        CURLOPT_POST => 1,
+        CURLOPT_HEADER => 0,
+        CURLOPT_URL => $url,
+        CURLOPT_FRESH_CONNECT => 1,
+        CURLOPT_RETURNTRANSFER => 1,
+        CURLOPT_FORBID_REUSE => 1,
+        CURLOPT_TIMEOUT => 4,
+        CURLOPT_POSTFIELDS => http_build_query($post)
+    );
+
+    $ch = curl_init();
+    curl_setopt_array($ch, ($options + $defaults));
+    if( ! $result = curl_exec($ch))
+    {
+        trigger_error(curl_error($ch));
+    }
+    curl_close($ch);
+    return $result;
+}
+
+/**
+* Send a GET requst using cURL
+* @param string $url to request
+* @param array $get values to send
+* @param array $options for cURL
+* @return string
+*/
+function curl_get($url, array $get = NULL, array $options = array())
+{   
+    $defaults = array(
+        CURLOPT_URL => $url. (strpos($url, '?') === FALSE ? '?' : ''). 
+http_build_query($get),
+        CURLOPT_HEADER => 0,
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_TIMEOUT => 4
+    );
+   
+    $ch = curl_init();
+    curl_setopt_array($ch, ($options + $defaults));
+    if( ! $result = curl_exec($ch))
+    {
+        trigger_error(curl_error($ch));
+    }
+    curl_close($ch);
+    return $result;
+}
+?>
+===============================================================================
+
+Great class Roman - just one fix:
+
+Replace the following line:
+<?php
+if (isset($params['host']) && $params['host'])      $header[]="Host: ".$host;
+?>
+
+with this:
+<?php
+if (isset($params['host']) && $params['host'])      $header[]="Host: " . 
+$params['host'];
+?>
+
+CURL automatically creates the host parameter (since it is required for HTTP/
+1.1 requests), so you don't need to set it. But if you created a custom host
+parameter, the above bug would cause a '400 Bad Request' response due to
+invalid host specified.
+
+Also when copying and pasting the class code, make sure that no line breaks
+occur (for example in the $header and $user_agent definitions etc.). It will
+still be valid PHP, but the HTTP request will not be valid, and you may get a
+'400 Bad Request' response from the server.
+
+It took me a little playing around with an HTTP Sniffer before I finally got an
+HTTP POST request fully working!
+
+Thanks,
+Alan
+===============================================================================
+
+Be careful when using curl_exec() and the CURLOPT_RETURNTRANSFER option.
+According to the manual and assorted documentation:
+Set CURLOPT_RETURNTRANSFER to TRUE to return the transfer as a string of the
+return value of curl_exec() instead of outputting it out directly.
+
+When retrieving a document with no content (ie. 0 byte file), curl_exec() will
+return bool(true), not an empty string. I've not seen any mention of this in
+the manual.
+
+Example code to reproduce this:
+<?php
+
+    // fictional URL to an existing file with no data in it (ie. 0 byte file)
+    $url = 'http://www.example.com/empty_file.txt';
+
+    $curl = curl_init();
+   
+    curl_setopt($curl, CURLOPT_URL, $url);
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_HEADER, false);
+
+    // execute and return string (this should be an empty string '')
+    $str = curl_exec($curl);
+
+    curl_close($curl);
+
+    // the value of $str is actually bool(true), not empty string ''
+    var_dump($str);
+
+?>
+===============================================================================
+
+<?php
+class CurlRequest
+{
+    private $ch;
+    /**
+     * Init curl session
+     *
+     * $params = array('url' => '',
+     *                    'host' => '',
+     *                   'header' => '',
+     *                   'method' => '',
+     *                   'referer' => '',
+     *                   'cookie' => '',
+     *                   'post_fields' => '',
+     *                    ['login' => '',]
+     *                    ['password' => '',]     
+     *                   'timeout' => 0
+     *                   );
+     */               
+    public function init($params)
+    {
+        $this->ch = curl_init();
+        $user_agent = 'Mozilla/5.0 (Windows; U;
+Windows NT 5.1; ru; rv:1.8.0.9) Gecko/20061206 Firefox/1.5.0.9';
+        $header = array(
+        "Accept: text/xml,application/xml,application/xhtml+xml,
+text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5",
+        "Accept-Language: ru-ru,ru;q=0.7,en-us;q=0.5,en;q=0.3",
+        "Accept-Charset: windows-1251,utf-8;q=0.7,*;q=0.7",
+        "Keep-Alive: 300");
+        if (isset($params['host']) && $params['host'])      $header[]="Host: ".
+$host;
+        if (isset($params['header']) && $params['header']) $header[]=$params[
+'header'];
+       
+        @curl_setopt ( $this -> ch , CURLOPT_RETURNTRANSFER , 1 );
+        @curl_setopt ( $this -> ch , CURLOPT_VERBOSE , 1 );
+        @curl_setopt ( $this -> ch , CURLOPT_HEADER , 1 );
+       
+        if ($params['method'] == "HEAD") @curl_setopt($this -> ch,
+CURLOPT_NOBODY,1);
+        @curl_setopt ( $this -> ch, CURLOPT_FOLLOWLOCATION, 1);
+        @curl_setopt ( $this -> ch , CURLOPT_HTTPHEADER, $header );
+        if ($params['referer'])    @curl_setopt ($this -> ch , CURLOPT_REFERER,
+$params['referer'] );
+        @curl_setopt ( $this -> ch , CURLOPT_USERAGENT, $user_agent);
+        if ($params['cookie'])    @curl_setopt ($this -> ch , CURLOPT_COOKIE, 
+$params['cookie']);
+
+        if ( $params['method'] == "POST" )
+        {
+            curl_setopt( $this -> ch, CURLOPT_POST, true );
+            curl_setopt( $this -> ch, CURLOPT_POSTFIELDS, $params['post_fields'
+] );
+        }
+        @curl_setopt( $this -> ch, CURLOPT_URL, $params['url']);
+        @curl_setopt ( $this -> ch , CURLOPT_SSL_VERIFYPEER, 0 );
+        @curl_setopt ( $this -> ch , CURLOPT_SSL_VERIFYHOST, 0 );
+        if (isset($params['login']) & isset($params['password']))
+            @curl_setopt($this -> ch , CURLOPT_USERPWD,$params['login'].':'.
+$params['password']);
+        @curl_setopt ( $this -> ch , CURLOPT_TIMEOUT, $params['timeout']);
+    }
+   
+    /**
+     * Make curl request
+     *
+     * @return array  'header','body','curl_error','http_code','last_url'
+     */
+    public function exec()
+    {
+        $response = curl_exec($this->ch);
+        $error = curl_error($this->ch);
+        $result = array( 'header' => '',
+                         'body' => '',
+                         'curl_error' => '',
+                         'http_code' => '',
+                         'last_url' => '');
+        if ( $error != "" )
+        {
+            $result['curl_error'] = $error;
+            return $result;
+        }
+       
+        $header_size = curl_getinfo($this->ch,CURLINFO_HEADER_SIZE);
+        $result['header'] = substr($response, 0, $header_size);
+        $result['body'] = substr( $response, $header_size );
+        $result['http_code'] = curl_getinfo($this -> ch,CURLINFO_HTTP_CODE);
+        $result['last_url'] = curl_getinfo($this -> ch,CURLINFO_EFFECTIVE_URL);
+        return $result;
+    }
+}
+?>
+
+Example of use:
+<?php
+..........
+try
+        {           
+            $params = array('url' => 'http://www.google.com',
+            'host' => '',
+            'header' => '',
+            'method' => 'GET', // 'POST','HEAD'
+            'referer' => '',
+            'cookie' => '',
+            'post_fields' => '', // 'var1=value&var2=value
+            'timeout' => 20
+            );
+           
+            $this->curl->init($params);
+            $result = $this->curl->exec();
+            if ($result['curl_error'])    throw new Exception($result[
+'curl_error']);
+            if ($result['http_code']!='200')    throw new Exception("HTTP Code
+= ".$result['http_code']);
+            if (!$result['body'])        throw new Exception("Body of file is
+empty");
+            ...............
+        }
+        catch (Exception $e)
+        {
+                    echo $e->getMessage();
+        }
+?>
+===============================================================================
+
+fyi - if you are having problems getting a
+webpage to display in your webpage with
+curl_setopt(CURLOPT_RETURNTRANSFER, 1);
+due to version bugginess perhaps,
+you may can use output control functions
+like this to show a web page
+inside your webpage:
+
+<html><head><title>whatever</title></head>
+<body>
+<script language="php">
+$ch = curl_init("http://www.cocoavillage.com/");
+// use output buffering instead of returntransfer -itmaybebuggy
+ob_start();
+curl_exec($ch);
+curl_close($ch);
+$retrievedhtml = ob_get_contents();
+ob_end_clean();
+// if you intend to print this page with meta tags, better clear out any
+expiration tag
+//    $result = preg_replace('/(?s)<meta http-equiv="Expires"[^>]*>/i', '',
+$retrievedhtml);
+// for now I just want what is between the body tags so need
+// somehow cut the header footer    
+$bodyandend = stristr($retrievedhtml,"<body");
+// not needed- $positionstartbodystring = strlen($retrievedhtml)-strlen
+($bodyandend);
+$positionendstartbodytag = strpos($bodyandend,">") + 1;
+// got to change all to lowercase temporarily
+// because end body may be upperlowercasemix
+// to bad strirstr does not exist
+$temptofindposition=strtolower($bodyandend);
+$positionendendbodytag=strpos($temptofindposition,"</body");
+//now to get the endbetween body tags
+$grabbedbody=substr($bodyandend,
+     $positionendstartbodytag,
+           $positionendendbodytag);
+//be sure to fix syntax broke by display on phpwebsite... like above line
+print("$grabbedbody");
+</script>
+</body></html>
+
+tada
+===============================================================================
+
+If you are accessing HTTPS URLs and you do not receive any contents, try to
+disable verifying SSL.
+
+<?php
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+?>
+===============================================================================
+
+so far i have not come across any code or library file that will
+extract cookie information from a http header, so i've written
+one.
+
+there are two files:
+file1.php - acts as server and sets the cookies
+file2.php - acts as browser and retrieves the cookies set by file1
+
+/*****file1.php****/
+<?php
+/*set 3 cookies at the end of the execution of this script*/
+
+setcookie("cookie1","cookie 1 data", time() - 123123);
+setcookie("cookie2","cookie 2 data", time() + 54326);
+setcookie("cookie3","cookie 3 data", time());
+?>
+/****end file1.php**/
+
+/*****file2.php****/
+<?php
+$url = "http://[host][uri]/file1.php"; /*insert desired host and
+uri*/
+$browser_id = "some crazy browser";
+$curl_handle = curl_init();
+$options = array
+(
+    CURLOPT_URL=>$url,
+    CURLOPT_HEADER=>true,
+    CURLOPT_RETURNTRANSFER=>true,
+    CURLOPT_FOLLOWLOCATION=>true,
+    CURLOPT_USERAGENT=>$browser_id
+);
+curl_setopt_array($curl_handle,$options);
+$server_output = curl_exec($curl_handle);
+curl_close($curl_handle);
+
+/*construct the http search pattern for cookies*/
+$pattern  = "/Set-Cookie:";
+$pattern .= "(?P<name>.*?)=(?P<value>.*?); ";
+$pattern .= "expires=(?P<expiry_dayname>\w+), ";
+$pattern .= "(?P<expiry_day>\d+)-
+(?P<expiry_month>\w+)-(?P<expiry_year>\d+) ";
+$pattern .= "(?P<expiry_hour>\d+):
+(?P<expiry_minute>\d+):(?P<expiry_second>\d+) ";
+$pattern .= "(?P<expiry_zone>\w+)/";
+preg_match_all($pattern,$server_output,$matches);
+
+$table_string = "
+<h1>cookie information table</h1>
+<table border='1'>
+    <tr>
+        <td>cookie name</td>
+        <td>value</td>
+        <td>expiry day</td>
+        <td>expiry date</td>
+        <td>expiry time</td>
+        <td>expiry timezone</td>
+    </tr>
+";
+$i=0;
+foreach($matches[name] as $cookie_name)
+{
+    $table_string .= "
+    <tr>
+        <td>$cookie_name</td>
+
+        <td>{$matches[value][$i]}</td>
+
+        <td>{$matches[expiry_dayname][$i]}</td>
+
+        <td>{$matches[expiry_day][$i]}-
+        {$matches[expiry_month][$i]}-
+        {$matches[expiry_year][$i]}</td>
+
+        <td>{$matches[expiry_hour][$i]}:
+        {$matches[expiry_minute][$i]}:
+        {$matches[expiry_second][$i]}</td>
+
+        <td>{$matches[expiry_zone][$i]}</td>
+    </tr>
+    ";
+    $i++;
+}
+$table_string .= "</table>";
+echo $table_string;
+?>
+/****end file2.php**/
+
+i based this code on the following http header:
+(obtained by going: echo $server_output; in file2.php)
+
+HTTP/1.1 200 OK Date: Thu, 30 Jul 2009 07:10:07 GMT
+Server: Apache/2.2.11 (Win32) DAV/2 mod_ssl/2.2.11
+OpenSSL/0.9.8i PHP/5.2.9 X-Powered-By: PHP/5.2.9
+Set-Cookie: cookie1=cookie+1+data; expires=Wed,
+29-Jul-2009 03:23:27 GMT Set-Cookie
+cookie2=cookie+2+data; expires=Wed, 29-Jul-2009 03:23:27
+GMT Set-Cookie: cookie3=cookie+3+data; expires=Wed,
+29-Jul-2009 03:23:27 GMT Content-Length: 196
+Content-Type: text/html
+
+if your header differs from this one then $pattern in file2.php
+will need to be modified accordingly. hopefully this code will save
+you a lot of time though!
+===============================================================================
+
+Just a simple curl_exec() example with a twist: I use the familiar http
+response status code returned from curl_getinfo() to put either data, or a
+custom error message + curl_error() into a single string.  I find this useful
+when the response ends up in a <div> or <span> tag.
+
+<?php
+curl_setopt($ch, CURLOPT_URL, $url);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+...
+
+$output = curl_exec($ch);
+$info = curl_getinfo($ch);
+
+if ($output === false || $info['http_code'] != 200) {
+  $output = "No cURL data returned for $url [". $info['http_code']. "]";
+  if (curl_error($ch))
+    $output .= "\n". curl_error($ch);
+  }
+else {
+  // 'OK' status; format $output data if necessary here:
+  ...
+}
+// then return or display the single string $output
+?>
+===============================================================================
+
+If you see a "0" at the end of the output, you might want to switch to HTTP/
+1.0:
+
+curl_setopt($ch, CURLOPT_HTTP_VERSION, 1.0);
+===============================================================================
+
+Thank you for sharing this.  I was wondering why my result was 1.
+
+To get around this in a safe way, this is how I check if the result is valid.
+
+$ch = curl_init(); /// initialize a cURL session
+curl_setopt ($ch, CURLOPT_RETURNTRANSFER, true);
+$xmlResponse = curl_exec ($ch);
+curl_close ($ch);
+
+if (!is_string($xmlResponse) || !strlen($xmlResponse)) {
+    return $this->_set_error( "Failure Contacting Server" );
+} else {
+    return $xmlResponse;
+}
+===============================================================================
+
+example:
+   echo CurlTool::fetchContent('www.onet.pl');
+   CurlTool::downloadFile('http://download.gadu-gadu.pl/gg77.exe', 'c:/');
+
+<?php
+error_reporting(E_STRICT | E_ALL);
+class CurlTool {
+    public static $userAgents = array(
+        'FireFox3' => 'Mozilla/5.0 (Windows; U; Windows NT 5.1; pl; rv:1.9)
+Gecko/2008052906 Firefox/3.0',
+        'GoogleBot' => 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://
+www.google.com/bot.html)',
+        'IE7' => 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
+        'Netscape' => 'Mozilla/4.8 [en] (Windows NT 6.0; U)',
+        'Opera' => 'Opera/9.25 (Windows NT 6.0; U; en)'
+        );
+    public static $options = array(
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows; U; Windows NT 5.1; pl;
+rv:1.9) Gecko/2008052906 Firefox/3.0',
+        CURLOPT_AUTOREFERER => true,
+        CURLOPT_COOKIEFILE => '',
+        CURLOPT_FOLLOWLOCATION => true
+        );
+           
+    private static $proxyServers = array();
+    private static $proxyCount = 0;
+    private static $currentProxyIndex = 0;
+       
+    public static function addProxyServer($url) {
+        self::$proxyServers[] = $url;
+        ++self::$proxyCount;   
+    }
+   
+    public static function fetchContent($url, $verbose = false) {
+        if (($curl = curl_init($url)) == false) {
+            throw new Exception("curl_init error for url $url.");
+        }
+       
+        if (self::$proxyCount > 0) {
+            $proxy = self::$proxyServers[self::$currentProxyIndex++ % self::
+$proxyCount];
+            curl_setopt($curl, CURLOPT_PROXY, $proxy);
+            if ($verbose === true) {
+                echo "Reading $url [Proxy: $proxy] ... ";
+            }
+        } else if ($verbose === true) {
+            echo "Reading $url ... ";   
+        }
+       
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt_array($curl, self::$options);
+               
+        $content = curl_exec($curl);
+        if ($content === false) {
+            throw new Exception("curl_exec error for url $url.");
+        }
+       
+        curl_close($curl);
+        if ($verbose === true) {
+            echo "Done.\n";
+        }
+       
+        $content = preg_replace('#\n+#', ' ', $content);
+        $content = preg_replace('#\s+#', ' ', $content);
+       
+        return $content;
+    }
+   
+    public static function downloadFile($url, $fileName, $verbose = false) {
+        if (($curl = curl_init($url)) == false) {
+            throw new Exception("curl_init error for url $url.");
+        }
+       
+        if (self::$proxyCount > 0) {
+            $proxy = self::$proxyServers[self::$currentProxyIndex++ % self::
+$proxyCount];
+            curl_setopt($curl, CURLOPT_PROXY, $proxy);
+            if ($verbose === true) {
+                echo "Downloading $url [Proxy: $proxy] ... ";
+            }
+        } else if ($verbose === true) {
+            echo "Downloading $url ... ";   
+        }
+       
+        curl_setopt_array($curl, self::$options);
+       
+        if (substr($fileName, -1) == '/') {
+            $targetDir = $fileName;
+            $fileName = tempnam(sys_get_temp_dir(), 'c_');
+        }
+        if (($fp = fopen($fileName, "wb")) === false) {
+            throw new Exception("fopen error for filename $fileName");
+        }
+        curl_setopt($curl, CURLOPT_FILE, $fp);
+       
+        curl_setopt($curl, CURLOPT_BINARYTRANSFER, true);
+        if (curl_exec($curl) === false) {
+            fclose($fp);
+            unlink($fileName);
+            throw new Exception("curl_exec error for url $url.");
+        } elseif (isset($targetDir)) {
+            $eurl = curl_getinfo($curl, CURLINFO_EFFECTIVE_URL);
+            preg_match('#^.*/(.+)$#', $eurl, $match);
+            fclose($fp);
+            rename($fileName, "$targetDir{$match[1]}");
+            $fileName = "$targetDir{$match[1]}";
+        } else {
+            fclose($fp);
+        }
+       
+        curl_close($curl);
+        if ($verbose === true) {
+            echo "Done.\n";
+        }
+        return $fileName;
+    }   
+}
+?>
+===============================================================================
+
+Note that when you use CURL to POST things....e.g:
+
+curl_setopt($ch, CURLOPT_POSTFIELDS, "string=This is a string");
+
+The data part (e.g. "This is a string") inside the 3rd parameter should be
+applied with urlencode()
+
+Otherwise, if you intend to send a string like "%2F", you will end up with a "/
+" on the receiving end, which can cause troubles. (e.g. serialize() data cannot
+be unserialize() becase of the change in string length).
+===============================================================================
+
+fyi:
+It returns false if there's an error while executing the curl session, no
+matter how CURLOPT_RETURNTRANSFER is set.
+===============================================================================
+
+A function to retrieve the status code of an HTTP request using CURL:
+
+    function getHttpResponseCode($url)
+    {
+        $ch = @curl_init($url);
+        @curl_setopt($ch, CURLOPT_HEADER, TRUE);
+        @curl_setopt($ch, CURLOPT_NOBODY, TRUE);
+        @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, FALSE);
+        @curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+        $status = array();
+        $response = @curl_exec($ch);
+        preg_match('/HTTP\/.* ([0-9]+) .*/', $response, $status);
+        return $status[1];
+    }
+===============================================================================
+
+If you see a "0" at the end of the output, you might want to switch to HTTP/
+1.0:
+
+curl_setopt($ch, CURLOPT_HTTP_VERSION, 1.0);
+===============================================================================
+
+Be always aware that CURLOPT_SSL_VERIFYPEER set to FALSE or 0 should never be
+used for production as it makes the link inmediately vulnerable to
+man-in-the-middle attack, still you can use it during development, but I would
+suggest that only if you KNOW what are you doing, otherwise spend some more
+time making requests to HTTPS sites work without resorting to set that option
+to FALSE or 0.
+===============================================================================
+
+Checking the source, curl_exec seems to return FALSE on failure, TRUE on
+success (unless CURLOPT_RETURNTRANSFER is set 1, and then it returns the
+returned data).
+===============================================================================
+
+There will be times when you need to get the response from curl_exec and
+capture the transfer - this is not very well documented but you can do so with
+the CURLOPT_RETURNTRANSFER Option
+
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+
+Bert
+===============================================================================
+
+If you've got problems with curl_exec not working, you should rather check
+curl_errno and curl_error than using commandline curl, like so:
+
+(since this is easier, and also allows you to check for errors runtime, which
+is a vital part of any well-design piece of code. ;)
+
+<?php
+$creq = curl_init();
+curl_setopt($creq, CURLOPT_URL, "http://www.foo.internal");
+curl_exec($creq);
+
+/* To quote curl_errno documentation:
+     Returns the error number for the last cURL operation on the resource ch,
+or 0 (zero) if no error occurred. */
+if (curl_errno($creq)) {
+    print curl_error($creq);
+} else {
+    curl_close($creq);
+}
+?>
+===============================================================================
+
+If having problems with special chars or entities (like á, ä, à, etc.), using
+the ISO encode, just decode the values given with the function utf8_decode().
+
+For example:
+
+The returned string is the following:
+
+<xml><name>IvÃ¡n</name></xml>
+
+Using utf8_decode, the result in ISO is
+
+<xml><name>Iván</name></xml>
+===============================================================================
+
+If you want to get contents of a page through HTTP GET or POST,  you can write
+a small function like below.
+
+<?php
+/**
+* Read entire contents of a URL in a string
+* @param string $url URL to fetch data from
+* @param mixed $params Parameters to the URL, typically an array. In case of
+POST, can be a string
+* @param string $method HTTP method - can be 'GET' (default) or 'POST'
+* @return mixed Contents of the webpage. Returns <i>false</i> in case of
+failure.
+*/
+function url_get_contents($url, $params = null, $method = 'GET') {
+    $contents = false;
+    if (!in_array($method, array('GET', 'POST'))) {
+        error_log(__FUNCTION__ . ": Unknown method '$method'");
+        return false;
+    }
+    if ($method == 'GET') {
+        if (is_array($params) && count($params) > 0) {
+            if ($params === array_values($params)) {
+                error_log(__FUNCTION__ . ": Numerical array recieved for
+argument '\$params' (assoc array expected)");
+                return false;
+            }
+            else {
+                $url .= '?' . http_build_query($params);
+            }
+        }
+        elseif (!is_null($params)) {
+            error_log(__FUNCTION__ . ": If you're making a GET request,
+argument \$params must be null or assoc array.");
+            return false;
+        }
+    }
+    $ch = curl_init($url);
+    if ($ch !== false) {
+        curl_setopt_array($ch, array(
+            CURLOPT_HEADER => false,
+            CURLOPT_RETURNTRANSFER => true,
+        ));
+        if ($method == 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            if (is_string($params) || is_array($params)) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+            }
+            else {
+                error_log(__FUNCTION__ . ": Argument \$params should be an
+array of parameters or (if you want to send raw data) a string");
+                return false;
+            }
+        }
+        $contents = curl_exec($ch);
+        curl_close($ch);
+    }
+    return $contents;
+}
+===============================================================================
+
+If you retrieve a web page and print it (so you can see it in your browser),
+and the page has an expiration, this expiration now applies to MyProgram.php
+and next time your program/page is called, even if it's grabbing a different
+web page, it will show what it just displayed.  In Netscape you can get rid of
+this by going into Edit, Options, Advanced, Cache, and clear out the Disk
+Cache.  But this is really annoying after short order.  The following prevents
+the above scenario:
+
+<?php
+function GetCurlPage ($pageSpec) {
+    $ch = curl_init($pageSpec);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    $tmp = curl_exec ($ch);
+    curl_close ($ch);
+// if you intend to print this page, better clear out expiration tag
+    $tmp = preg_replace('/(?s)<meta http-equiv="Expires"[^>]*>/i', '', $tmp);
+    return $tmp;
+}
+?>
+===============================================================================
+
+I was having a problem, for almost a week, of curl_exec() freezing/hanging when
+I made a request with it to a page that spends over an hour converting a large
+video file, and only afterwards sends control-data back to the calling script.
+
+I'm using windows 7, WampServer-2.1d-64.exe, PHP 5.3.4, libcurl-7.21.3.
+
+Here's the final solution;
+
+On Fri, Feb 11, 2011 at 1:32 PM, Daniel Stenberg <daniel-of-haxx.se> wrote:
+> On Fri, 11 Feb 2011, Tolas Anon wrote:
+>
+>>> It is also very easy for an application to enable the options as I've
+>>> shown.
+>>
+>> Just not for the platforms i use, apparently.. :(
+>
+> Why not? A quick search for "tcp keepalive windows" shows this:
+> http://msdn.microsoft.com/en-us/library/ms819735.aspx
+
+This fixed my problem in the simple test AND in my application!
+No need to send keep-alive bytes on the text/html level either.
+
+I just added the "KeepAliveTime" setting with windows 7 regedit.exe in
+HKEY_LOCAL_MACHINE/SYSTEM/CurrentControlSet/services/Tcpip, as a
+REG_DWORD value, set it to decimal 25000 (so 25 seconds), rebooted,
+and it all works as i want it now..
+
+Note that windows registry entries key names are case-sensitive, wrong
+casing and they'll be deleted on restart.
+
+Lots of thanks, Daniel. I would've never solved this on my own..
+
+------------------------------------------------------
+(now useless) details at:
+
+http://curl.haxx.se/mail/lib-2011-02/0101.html
+
+http://readlist.com/lists/lists.php.net/php-general/16/81195.html

@@ -1,0 +1,426 @@
+
+shmop_open
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+shmop_open — Create or open shared memory block
+
+说明
+
+int shmop_open ( int $key , string $flags , int $mode , int $size )
+
+shmop_open() can create or open a shared memory block.
+
+参数
+
+key
+
+    System's id for the shared memory block. Can be passed as a decimal or hex.
+
+flags
+
+    The flags that you can use:
+      □ "a" for access (sets SHM_RDONLY for shmat) use this flag when you need
+        to open an existing shared memory segment for read only
+      □ "c" for create (sets IPC_CREATE) use this flag when you need to create
+        a new shared memory segment or if a segment with the same key exists,
+        try to open it for read and write
+      □ "w" for read & write access use this flag when you need to read and
+        write to a shared memory segment, use this flag in most cases.
+      □ "n" create a new memory segment (sets IPC_CREATE|IPC_EXCL) use this
+        flag when you want to create a new shared memory segment but if one
+        already exists with the same flag, fail. This is useful for security
+        purposes, using this you can prevent race condition exploits.
+
+mode
+
+    The permissions that you wish to assign to your memory segment, those are
+    the same as permission for a file. Permissions need to be passed in octal
+    form, like for example 0644
+
+size
+
+    The size of the shared memory block you wish to create in bytes
+
+    Note:
+
+    Note: the 3rd and 4th should be entered as 0 if you are opening an existing
+    memory segment.
+
+返回值
+
+On success shmop_open() will return an id that you can use to access the shared
+memory segment you've created. FALSE is returned on failure.
+
+范例
+
+Example #1 Create a new shared memory block
+
+<?php
+$shm_key = ftok(__FILE__, 't');
+$shm_id = shmop_open($shm_key, "c", 0644, 100);
+?>
+
+This example opened a shared memory block with a system id returned by ftok().
+
+参见
+
+  • shmop_close() - Close shared memory block
+  • shmop_delete() - Delete shared memory block
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+To: macmaster at pobox dot com:
+
+To clear up some new confusion: you said the shm key is 8 bytes long. As far as
+I know it's 4 bytes (32bits).
+Check out the output of ipcs on Linux below to see what I mean.
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status     
+0x6e6a694d 65538      mijnbel   644        65536      0                      
+0x326e794d 98307      mijnbel   644        65536      0                      
+0x62417347 131076     smsklap   644        65536      0
+===============================================================================
+
+=== Checking if a shared memory exists ===
+The solution provided by Mitchell_Shnier at ieee dot orgZ doesn't work on my
+computer - I get a warning "Invalid flag ac".
+
+In order to check if a shared-memory exists, you just have to open it with the
+"a" or "w" flag, while hiding the warnings using the "@" operator:
+<?php
+@$shid = shmop_open($systemId, "a", 0666, 0);
+if (!empty($shid)) {
+            ... shared memory exists
+} else {
+            ... shared memory doesn't exist
+}
+?>
+===============================================================================
+
+On *nix systems shmop_open is able to create an "infinite" amount of segments
+when setting $key = 0.
+
+After executing the following command twice in an interactive shell
+php > $res = shmop_open(0,"n",0600,1024);
+
+list the memory segments currently present
+$ ipcs -m
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status
+0x00000000 2293762    user       600        1024       0
+0x00000000 2326531    user       600        1024       0
+
+For any integer <> 0 in conjunction with the flag "n" shmop_open works like
+documented. It fails.
+===============================================================================
+
+If you are running your main script as say user "root" but need to open a
+Shared Memory Segment as another user (from your main script) such as say
+"www-data" then this works:
+
+exec("sudo -u www-data php -r 'shmop_open(0xee4, "c", 0770, 100);'"); //Create
+Shared Memory segment as USER www-data
+
+$SharedMemorySegment = shmop_open(0xee4, "c", 0770, 100);
+        if (!$SharedMemorySegment) {
+            echo "Couldn't create shared memory segment\n";
+        }
+===============================================================================
+
+I'm having the same issue affecting XP and described below, on Mac OS X Lion.
+
+To solve it, use before 'a' flag, then 'n'. Avoid 'c' flag.
+
+<?php
+$str = 'Hello World';
+
+shm_key = ftok($_SERVER['PHP_SELF']);
+
+if (@$shm_id = shmop_open($shm_key, 'a', 0644, 0))
+  shmop_delete($shm_id);
+
+$shm_id = shmop_open($shm_key, 'n', 0644, strlen($str));
+
+if ($shmId) {
+  shmop_write($shmId, $str, 0);
+  shmop_close($shmId);
+}
+else
+  throw new RuntimeException("Couldn't create shared memory segment.");
+?>
+===============================================================================
+
+These shared memory functions are kind of silly on Windows where sem_get() and
+friends nor any sort of synchronization object is available (as of PHP 5.5.5)
+to perform proper locking prior to access.  A core PHP dev needs to write some
+wrappers for sem_get() for Windows as they did for shmop to really round out
+this feature.
+
+The implementation of shmop for Windows is pretty slick - the author basically
+ported variations of POSIX functions to Windows equivalent prototypes.
+===============================================================================
+
+If you faced with any problem you're going to solve with shared memmory, but
+your server doesn't support it, you can use files instead. I've wrote simple
+wrapper for this and its suites for me. Hope it will be usefull for you too.
+
+<?php
+
+define(kSHARED_FOLDER, "shared/");
+define(kSHARED_MAX_ATTEMPS, 10);
+define(kSESSION_SHARED, "shared_");
+
+class Shared {
+    var $id = 0;
+    var $filename = '';
+    var $filepointer;
+   
+    var $data = array();
+    var $date = 0;
+   
+    function Shared($id) {
+        $this->id = $id;
+       
+        $this->filename = kSHARED_FOLDER.$this->id;
+       
+        if(empty($this->filename))
+        {
+            print "no filename";
+            return false;       
+        }
+       
+        $this->date = $_SESSION[kSESSION_SHARED.$id];
+           
+    }
+   
+    function clear() {
+        if ($this->id == null)
+        {
+            return false;
+        }
+           
+        $counter = 0;
+        ignore_user_abort(true);
+        if(($this->filepointer = @fopen($this->filename, "w")) == false) {     
+ 
+            ignore_user_abort(false);
+            return false;
+        }
+
+        while(true) {
+            if ($counter >= kSHARED_MAX_ATTEMPS) {
+                fclose($this->filepointer);
+                ignore_user_abort(false);
+                return false;
+            }
+           
+            if(flock($this->filepointer, LOCK_EX) == false) {
+                $counter++;
+                usleep(rand(1, 25000));
+            }
+            else
+                break;
+        }
+
+        if(flock($this->filepointer, LOCK_UN) == false) {       
+            ignore_user_abort(false);
+            return false;
+        }
+       
+        unset($this->data);
+        $this->data = array();
+
+        fclose($this->filepointer);
+        $this->date = $_SESSION[kSESSION_SHARED.$id] = filemtime($this->
+filename);
+        ignore_user_abort(false);
+       
+        return true;
+    }
+   
+    function setObjectForKey($value, $key) {
+        if ($this->id == null)
+            return false;
+           
+        $counter = 0;
+        ignore_user_abort(true);
+        if(($this->filepointer = @fopen($this->filename, "a+")) == false) {   
+   
+            ignore_user_abort(false);
+            print "can not open file<br>";
+            return false;
+        }
+
+        while(true) {
+            if ($counter >= kSHARED_MAX_ATTEMPS) {
+                fclose($this->filepointer);
+                print("1 aborted...");
+                ignore_user_abort(false);
+                return false;
+            }
+           
+            $block;
+            if(flock($this->filepointer, LOCK_EX, $block) == false) {
+                $counter++;
+                print("1 waiting...");
+                usleep(rand(1, 25000));
+            }
+            else
+                break;
+        }
+       
+        $data = file_get_contents($this->filename);
+        $array = array();
+        if (!empty($data))
+            $array = unserialize($data);
+
+        $array[$key] = $value;
+        $data = serialize($array);
+        ftruncate($this->filepointer, 0);
+        fseek($this->filepointer, 0, SEEK_SET);
+        fwrite($this->filepointer, $data);
+       
+        $this->data = $array;
+       
+        if(flock($this->filepointer, LOCK_UN) == false) {       
+            ignore_user_abort(false);
+            return false;
+        }
+
+        fclose($this->filepointer);
+        $this->date = $_SESSION[kSESSION_SHARED.$id] = filemtime($this->
+filename);
+        ignore_user_abort(false);
+       
+        return true;
+    }
+   
+    function getObjectForKey($key)    {
+        if ($this->id == null)
+            return null;
+           
+        $counter = 0;
+        ignore_user_abort(true);
+   
+        if(($this->filepointer = @fopen($this->filename, "a+")) == false) {   
+   
+            ignore_user_abort(false);
+            print("can not open<br>");
+            return null;
+        }
+
+        if ($this->date == filemtime($this->filename)) {           
+            fclose($this->filepointer);
+            return $this->data[$key];
+        }
+       
+        while(true) {
+            if ($counter >= kSHARED_MAX_ATTEMPS) {
+                fclose($this->filepointer);
+                ignore_user_abort(false);
+                print("2 aborted<br>");
+                return null;
+            }
+           
+            if(flock($this->filepointer,  LOCK_SH ) == false) {
+                $counter++;
+                print("2 waiting...<br>");
+                usleep(rand(1, 25000));
+            }
+            else
+                break;
+        }
+       
+        fseek($this->filepointer, 0);
+        $data = file_get_contents($this->filename);
+        $array = array();
+        if (!empty($data))
+            $array = unserialize($data);
+           
+        $data = $array[$key];
+        $this->data = $array;
+       
+        if(flock($this->filepointer, LOCK_UN) == false) {       
+            ignore_user_abort(false);
+            return $data;
+        }
+
+        fclose($this->filepointer);
+        $this->date = $_SESSION[kSESSION_SHARED.$id] = filemtime($this->
+filename);
+        ignore_user_abort(false);
+       
+        return $data;
+    }
+}
+?>
+===============================================================================
+
+There is a little ftok function. This function isn't included into php for
+windows so i've grabbed it directly from linux glibc 2.3.2 source code. I hope
+that this can be useful.
+There is the code:
+
+<?php
+function ftok($pathname, $proj_id) {
+    $st = @stat($pathname);
+    if (!$st) {
+        return -1;
+    }
+   
+    $key = sprintf("%u", (($st['ino'] & 0xffff) | (($st['dev'] & 0xff) << 16) |
+(($proj_id & 0xff) << 24)));
+    return $key;
+}
+
+echo ftok($_SERVER["SCRIPT_FILENAME"], 250);
+?>
+
+sorry for my english :)
+===============================================================================
+
+Be warned that if you try to shmop_open with a key set to zero, shmop_open will
+seemingly work, and you can write to it, but you will not be able to read from
+it or delete it.  If you're not careful, you can continue doing this - creating
+more and more shared memory blocks at "zero" until eventually you WILL start
+getting errors saying that php can't access or create the shared memory block,
+and you will have to restart your machine to free up all of those "zero"
+blocks.
+===============================================================================
+
+On win xp 32bit php 5.2.6 recreation of shared memory block with the same id
+but bigger size fails.
+
+<?php
+$shm_key = 0xff3;
+$shm_id = shmop_open($shm_key, "c", 0666, 128);
+shmop_delete($shm_id);
+shmop_close($shm_id);
+$shm_id = shmop_open($shm_key, "c", 0666, 32);
+shmop_delete($shm_id);
+shmop_close($shm_id);
+$shm_id = shmop_open($shm_key, "c", 0666, 1024); // on win32 fails there
+shmop_delete($shm_id);
+shmop_close($shm_id);
+?>
+===============================================================================
+
+To check whether a particular shared memory segment is already created, you
+need to concatenate the "a" and "c" flags. For example (where $SystemKey is the
+Unix key used by the other process(es) with which you want to share this memory
+segment)...<BR>
+$shm_id = shmop_open($SystemKey, "ac", 0, 0);
+if ($shm_id) {
+   #it is already created
+} else {
+   #you need to create it with shmop_open using "c" only
+}<BR>
+Using only "a" does not work (just as using only IPC_EXCL in the Unix shmget()
+call is meaningless). Also, use the ipcs shell command to see your shared
+memory segments.

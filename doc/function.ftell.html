@@ -1,0 +1,182 @@
+
+ftell
+
+(PHP 4, PHP 5, PHP 7)
+
+ftell — 返回文件指针读/写的位置
+
+说明
+
+int ftell ( resource $handle )
+
+返回由 handle 指定的文件指针的位置，也就是文件流中的偏移量。
+
+参数
+
+handle
+
+    文件指针必须是有效的，且必须指向一个通过 fopen() 或 popen() 成功打开的文件
+    。在附加模式（加参数 "a" 打开文件）中 ftell() 会返回未定义错误。
+
+返回值
+
+Returns the position of the file pointer referenced by handle as an integer;
+i.e., its offset into the file stream.
+
+如果出错，返回 FALSE。
+
+范例
+
+Example #1 ftell() 例子
+
+<?php
+
+// opens a file and read some data
+$fp = fopen("/etc/passwd", "r");
+$data = fgets($fp, 12);
+
+// where are we ?
+echo ftell($fp); // 11
+
+fclose($fp);
+
+?>
+
+参见
+
+  • fopen() - 打开文件或者 URL
+  • popen() - 打开进程文件指针
+  • fseek() - 在文件指针中定位
+  • rewind() - 倒回文件指针的位置
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+When opening a file to append via fopen('file','ab') the file pointer should be
+at the end of the file. However ftell() returns int(0) even if the file is not
+empty and even after writing some text into the file.
+===============================================================================
+
+Attention! If you open a file with the "text"-modifier (e.g. 'rt') and the file
+contains \r\n as line-endings, ftell() returns the position as if there were
+only \n as line-endings.
+
+Example:
+If the first line only contains 1 char followed by \r\n, the start of the
+second line should be position 3. (1char + \r + \n = 3 bytes) But ftell() will
+return 2 - ignoring one byte. If you call ftell() in line 3, the value will
+differ from the real value by 2 bytes. The error gets greater with every line.
+
+(Watched this behavior in PHP 5.0.4 for Windows.)
+
+BUT: fseek() works as expected - using the true byte values.
+===============================================================================
+
+When opening a file for reading and writing via fopen('file','a+') the file
+pointer should be at the end of the file. However ftell() returns int(0) even
+if the file is not empty. Also it seems that there is two pointers, first for
+reading and second for writing, because it acts differently on first operation
+(reading or writing).
+
+Example:
+<?php
+$file = fopen('counter.txt', 'w');
+fwrite($file, '123456789');
+fclose($file);
+
+$file = fopen('counter.txt', 'r');
+echo ftell($file) . ' "' . fgets($file) . '" ' . ftell($file) . PHP_EOL;
+fclose($file);
+
+$file = fopen('counter.txt', 'a+');
+echo ftell($file) . ' "' . fgets($file) . '" ' . ftell($file) . PHP_EOL;
+fclose($file);
+
+$file = fopen('counter.txt', 'r+');
+fwrite($file, 'rr');
+echo ftell($file) . ' "' . fgets($file) . '" ' . ftell($file) . PHP_EOL;
+fclose($file);
+
+$file = fopen('counter.txt', 'a+');
+fwrite($file, 'aa');
+echo ftell($file) . ' "' . fgets($file) . '" ' . ftell($file) . PHP_EOL;
+fclose($file);
+
+$file = fopen('counter.txt', 'r');
+echo ftell($file) . ' "' . fgets($file) . '" ' . ftell($file) . PHP_EOL;
+fclose($file);
+?>
+
+Result:
+0 "123456789" 9
+0 "123456789" 9
+2 "3456789" 9
+2 "" 2
+0 "rr3456789aa" 11
+===============================================================================
+
+In response to php at michielvleugel dot com:
+
+This does not seem to be the case with PHP 5.2.0 and FreeBSD 5.4.
+
+#!/usr/local/bin/php
+<?php
+$tell = ftell(STDIN);
+var_dump($tell);
+?>
+
+root@localhost:/home/david# echo Hello World | ./test.php
+int(0)
+root@localhost:/home/david# ./test.php
+int(6629927)
+
+When something is piped to the script, it returns an integer value of 0,
+however, it also returns an integer when nothing is piped to the script.
+
+The code should  be modified to this:
+
+#!/usr/local/bin/php
+<?php
+$tell = ftell(STDIN);
+
+if ($tell === 0)
+    echo "Something was piped: " . fread(STDIN,256) . "\n";
+else
+    echo "Nothing was piped\n";
+?>
+
+And the result is:
+
+root@localhost:/home/david# echo Hello World | ./test.php
+Something was piped: Hello World
+root@localhost:/home/david# ./test.php
+Nothing was piped
+===============================================================================
+
+Actually, ftell() gives more than an undefined result for append only streams;
+it gives the offset from the end of the file as defined before any data was
+appended. So if you open a file that had 3017 characters, and append 41
+characters, and then execute ftell(), the value returned will be 41.
+===============================================================================
+
+When trying to determine whether or not something was piped into a command line
+script, it is not smart to do a fgets(STDIN), because it will wait indefenitely
+if nothing is piped. Instead, I found ftell on STDIN to be very handy: it will
+return an integer of zero when something was piped, and nothing if nothing was
+piped to the script.
+
+#!/usr/bin/php4 -q
+<?
+#following will hang if nothing is piped:
+#$sometext = fgets(STDIN, 256)
+
+$tell = ftell(STDIN);
+
+if (is_integer($tell)==true)
+  {echo "Something was piped: ".fread(STDIN,256)."\n";}
+else
+  {echo "Nothing was piped\n";}
+
+?>

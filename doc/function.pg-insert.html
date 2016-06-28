@@ -1,0 +1,246 @@
+
+pg_insert
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+pg_insert — 将数组插入到表中
+
+说明
+
+mixed pg_insert ( resource $connection , string $table_name , array
+$assoc_array [, int $options = PGSQL_DML_EXEC ] )
+
+pg_insert() 将 assoc_array 数组中的值插入到由 table_name 指定的表中。如果给出了
+参数 options ，则函数 pg_convert() 会按照给定选项被作用到 assoc_array 上
+
+Warning
+
+此函数是实验性的。此函数的表象，包括名称及其相关文档都可能在未来的 PHP 发布版本
+中未通知就被修改。使用本函数风险自担。
+
+参数
+
+connection
+
+    PostgreSQL database connection resource.
+
+table_name
+
+    Name of the table into which to insert rows. table_name 中的列必须至少要有
+    assoc_array 中的单元那么多。
+
+assoc_array
+
+    table_name 中的字段名以及字段值必须和 array 参数中的键名及值匹配。
+
+options
+
+    Any number of PGSQL_CONV_OPTS, PGSQL_DML_NO_CONV, PGSQL_DML_EXEC,
+    PGSQL_DML_ASYNC or PGSQL_DML_STRING combined. If PGSQL_DML_STRING is part
+    of the options then query string is returned.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。 Returns string if PGSQL_DML_STRING is
+passed via options.
+
+范例
+
+Example #1 pg_insert() example
+
+<?php 
+  $dbconn = pg_connect('dbname=foo');
+  // This is safe, since $_POST is converted automatically
+  $res = pg_insert($dbconn, 'post_log', $_POST);
+  if ($res) {
+      echo "POST data is successfully logged\n";
+  } else {
+      echo "User must have sent wrong inputs\n";
+  }
+?>
+
+参见
+
+  • pg_convert() - 将关联的数组值转换为适合 SQL 语句的格式。
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+Returns SQL statement, slight improvement on the code from 'rorezende at
+hotmail dot com'.  This version adds bool values correctly.It also checks to
+make sure there is actually a value in the array before including it in the sql
+statement. (ie: null values or empty strings won't be added to the sql
+statement)
+
+<?PHP
+function db_build_insert($table,$array)
+{
+
+   $str = "insert into $table ";
+   $strn = "(";
+   $strv = " VALUES (";
+   while(list($name,$value) = each($array)) {
+
+       if(is_bool($value)) {
+                $strn .= "$name,";
+                $strv .= ($value ? "true":"false") . ",";
+                continue;
+        };
+
+       if(is_string($value)) {
+                $strn .= "$name,";
+                $strv .= "'$value',";
+                continue;
+        }
+       if (!is_null($value) and ($value != "")) {
+                $strn .= "$name,";
+                $strv .= "$value,";
+                continue;
+       }
+   }
+   $strn[strlen($strn)-1] = ')';
+   $strv[strlen($strv)-1] = ')';
+   $str .= $strn . $strv;
+   return $str;
+
+}
+?>
+===============================================================================
+
+If you need schema support, this function will do something similar to
+pg_insert:
+
+function pg_insert_with_schema($connection, $table, $updates)
+{
+$schema = 'public';
+if (strpos($table, '.') !== false)
+    list($schema, $table) = explode('.', $table);
+
+    if (count($updates) == 0) {
+        $sql = "INSERT INTO $schema.\"$table\" DEFAULT VALUES";
+            return pg_query($sql);
+        } else {
+$sql = "INSERT INTO $schema.\"$table\" ";
+           
+$sql .= '("';
+$sql .= join('", "', array_keys($updates));
+$sql .= '")';
+
+$sql .= ' values (';
+for($i = 0; $i < count($updates); $i++)
+   $sql .= ($i != 0? ', ':'').'$'.($i+1);
+$sql .= ')';
+return pg_query_params($connection, $sql, array_values($updates));
+}
+}
+===============================================================================
+
+Beware of the following: pg_insert() and pg_update() are adding slashes to all
+character-like fields they work with. This makes them SQL injection super-safe,
+but there are unwanted consequences, as follows:
+
+If you have a regular setup with magic_quotes_gcp=On, and you use pg_insert()
+or pg_update(), you will end up with fields that look as if you used addslashes
+() twice. To solve this, you can use stripslashes() on the data just before
+using it with pg_insert() or pg_update().
+
+There's another alternative, which seems better to me. Why make yourself crazy
+all over the code, adding slashes, stripping slashes, worrying whether
+magic_quotes_gpc is on or off and so on and so forth? Why do this, when the
+only place you actually need those slashes is right when you push the data into
+the database?
+
+So why not get rid of your addslashes() and stripslashes() from all over your
+code, and turn magic_quotes_gcp off. As long as you always use pg_insert() and
+pg_update() to do your DB work, you're SQL-injection safe AND slash-headache
+free.
+===============================================================================
+
+Next version :) My version checks whether value is bool, null, string or
+numeric and if one of the values is not function returns false if not. null
+values are inserted as NULL, bool as true or false and strings are add-shlashed
+before adding to query string. Note, that this function is not safe. SQL
+injection is possible with column names if you use $_POST or something similar
+as a $array.
+
+<?php
+function db_build_insert($table, $array) {
+  if (count($array)===0) return false;
+  $columns = array_keys($array);
+  $values = array_values($array);
+  unset($array);
+
+  for ($i = 0, $c = count($values); $i$c; ++$i) {
+    if (is_bool($values[$i])) {
+      $values[$i] = $values[$i]?'true':'false';
+    } elseif (is_null($values[$i])) {
+      $values[$i] = 'NULL';
+    } elseif (is_string($values[$i])) {
+      $values[$i] = "'" . addslashes($values[$i]) . "'";
+    } elseif (!is_numeric($values[$i])) {
+      return false;
+    }
+  }
+
+  return "INSERT INTO $table ($column_quote" . implode(', ', $columns) .
+    ") VALUES (" . implode(', ', $values) . ")";
+}
+?>
+===============================================================================
+
+This function cannot be used to insert a record with only default values - i.e.
+with an assoc_array of array()
+===============================================================================
+
+Today at work I isolated a problem I was having with this function to how I was
+formatting the date.  I was assigning the date in my code as follows:
+
+$today = date( "Ymd" ); // ISO 8601
+
+This format is acceptable to PostgreSQL, as verified by their documentation and
+buy tests using psql.  However, to make it work in my code, I had to make the
+following change:
+
+$today = date( "Y-m-d" ); // also ISO 8601 format
+===============================================================================
+
+Time is money, then I write a function similar to pg_insert in PHP (only output
+sql statement) :
+
+   function db_mount_insert($table,$array) {
+
+    $str = "insert into $table (";
+    while(list($name,$value) = each($array)) {       
+        $str .= "$name,";       
+    }
+    $str[strlen($str)-1] = ')';
+    $str .= " values (";
+    reset($array);
+    while(list($name,$value) = each($array)) {       
+        if(is_string($value))
+            $str .= "'$value',";
+        else
+            $str .= "$value,";
+    }
+    $str[strlen($str)-1] = ')';
+    $str .= ";"    ;
+   
+    return $str;
+
+   }
+===============================================================================
+
+Had a few issues while trying to run this in PHP 4.4.0:
+
+- I could not get it to work with column names that are SQL reserved words
+(example: desc, order). I was forced to change the column names in order to use
+the function. I could not put the column names in quotes, because that caused
+pg_convert() to fail.
+
+- Function was returning false until I passed the PGSQL_DML_EXEC option.
+===============================================================================
+
+it seems to fail silently if you try to insert somehting with a mis-named
+column

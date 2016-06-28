@@ -1,0 +1,228 @@
+
+apc_fetch
+
+(PECL apc >= 3.0.0)
+
+apc_fetch — 从缓存中取出存储的变量
+
+说明
+
+mixed apc_fetch ( mixed $key [, bool &$success ] )
+
+从缓存中取出存储的变量
+
+参数
+
+key
+
+    key 是使用 apc_store() 存储的键名。如果传递的是一个数组，则数组中的每个元素
+    的值都被返回
+
+success
+
+    成功时为 TRUE 失败时 FALSE。
+
+返回值
+
+存储一个变量或者一个数组失败时返回; FALSE
+
+范例
+
+Example #1 apc_fetch() 范例
+
+<?php
+$bar = 'BAR';
+apc_store('foo', $bar);
+var_dump(apc_fetch('foo'));
+?>
+
+以上例程会输出：
+
+string(3) "BAR"
+
+更新日志
+
+ 版本                说明
+3.0.17 The success parameter was added.
+
+参见
+
+  • apc_store() - Cache a variable in the data store
+  • apc_delete() - 从用户缓存中删除某个变量
+  • APCIterator
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+Note that the APC cache accessible from PHP running through Apache is not
+accessible from CLI-PHP (the commandline PHP version). They are 2 different APC
+caches.
+
+If you are trying for example to run a script from cron that needs to access
+the same APC cache as your scripts (executed through Apache) with PHP CLI, use
+file_get_contents to execute the real script or to send over the data.
+Doing so executes the script on Apache.
+You can also specify a return value in order to move data around.
+
+<?PHP
+file_get_contents('http://localhost/actual_processing_script.php');
+?>
+===============================================================================
+
+Make sure to check the return value using a strict comparison if you want to
+know whether apc_fetch failed unless you want anything stored that can be
+evaluated to false to report an error aswell.
+
+E.g. the following is bad:
+
+<?php
+
+    $result = apc_fetch("key");
+
+    if(!$result) {
+        //handle error
+    }
+
+?>
+
+If key is an empty array or the value 0, it will naturally evaluate to false
+and trigger the error. To avoid this, do instead:
+
+<?php
+
+    $result = apc_fetch("key");
+
+    if($result === false) {
+        //handle error
+    }
+
+?>
+
+Side note: avoid storing booleans in APC :)
+===============================================================================
+
+This function is often cited related to file upload tracking with PHP 5.2. So I
+thought this is a good place to put a warning.
+
+If you setup PHP with FastCGI, you'll probably run into trouble using this
+function to get any information about a running upload. At least in my case,
+every HTTP request is handled by a different PHP process. I could track it with
+the getmypid() function, which returned a different value upon every request,
+but only from a limited set. Also, apc_cache_info() gave me all upload_*
+entries that were created in that process. So when the upload was initially
+catched by one PHP process, all progress updates must be fetched from the same
+process, too, because APC cache information does not seem to be shared across
+multiple processes handling that domain/virtual host. But that's impossible to
+tell because PHP has its own load management and serves every request by an
+arbitrary process.
+
+So in short: When using FastCGI and multiple PHP processes (recommended for
+performance reasons), you cannot use APC upload tracking. You'll only get a
+status update every few requests.
+===============================================================================
+
+hint for your fail over:
+
+"return FALSE on failure" means NOT, it returns FALSE on APC-error.
+it return FALSE if
+- key doesnt exists
+- value === FALSE
+- APC error
+
+even with $success you cant determine if its a APC-error. this is only for key
+exists / key doesnt exists things.
+===============================================================================
+
+Note apc_fetch() will return a copy of whatever is stored in the memory and not
+a reference to it.
+
+For example:
+
+<?php
+   
+    class foo{
+        public $bar;   
+    }
+
+    apc_add("foo",  new foo());
+   
+    $fooGot    =    apc_fetch("foo");
+    $fooGot->bar = 1234;   
+   
+    print_r(apc_fetch("foo"));   
+?>
+
+will print
+
+foo Object ( [bar] => )
+===============================================================================
+
+Another reason you might be getting null back from apc_fetch when using
+apc.rfc1867 is if you have only turned this option on using php_admin_value for
+a virtual host. It needs to be turned on globally in php.ini to work.
+===============================================================================
+
+Anyone who has enabled apc.rfc1867 for a file upload progress bar. Please note
+that if you are not getting any results back or a Null() data set. Then set
+apc.rfc1867_freq to 10k or 100k or whatever you see fit like this.
+
+apc.rfc1867_freq = 10k
+
+In your php.ini.
+
+Hope this helps some of you who were getting blank data results. It seems the 0
+default setting will not work on some machines. Hope this helps!
+===============================================================================
+
+Just to clarify the multi-get capability, the result is returned as an array
+with cache keys as the array keys. Any missing values re not returned, for
+example:
+
+<?php
+apc_delete('test1');
+apc_delete('test2');
+apc_add('test1', 'test1');
+$cached = apc_fetch(array('test1', 'test2'));
+var_dump($cached);
+?>
+
+gives
+
+array(1) {
+  ["test1"]=>
+  string(5) "test1"
+}
+
+If no keys are found, you get an empty array.
+===============================================================================
+
+As of version 3.0.13 APC (released 2007-02-24) you can perform multiple key
+fetches with apc_fetch. Very useful to further optimize your application!
+APC changelog:
+http://pecl.php.net/package-changelog.php?package=APC
+
+example:
+
+<?php
+apc_store('key1', 'value1');
+apc_store('key2', 'value2');
+
+$keys = array('key1','key2');
+$result = apc_fetch($keys);  //fetch multiple keys at once!
+
+var_dump($result);
+?>
+===============================================================================
+
+I dont know is it a bug or feature but...
+After apc_fetch and/or apc_store arrays loose their cursor
+
+<?php
+$array = array('foo',2,3,4,5);
+var_dump(current($array)); //foo
+apc_store('foo',$array);
+$array2 = apc_fetch('foo');
+var_dump(current($array2)); //false
+?>

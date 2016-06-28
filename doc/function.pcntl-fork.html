@@ -1,0 +1,986 @@
+
+pcntl_fork
+
+(PHP 4 >= 4.1.0, PHP 5, PHP 7)
+
+pcntl_fork — 在当前进程当前位置产生分支（子进程）。译注：fork是创建了一个子进程
+，父进程和子进程都从fork的位置开始向下继续执行，不同的是父进程执行过程中，得到
+的fork返回值为子进程号，而子进程得到的是0。
+
+说明
+
+int pcntl_fork ( void )
+
+pcntl_fork()函数创建一个子进程，这个子进程仅PID（进程号）和PPID（父进程号）与其
+父进程不同。fork怎样在您的系统工作的详细信息请查阅您的系统的fork（2）手册。
+
+返回值
+
+成功时，在父进程执行线程内返回产生的子进程的PID，在子进程执行线程内返回0。失败
+时，在父进程上下文返回-1，不会创建子进程，并且会引发一个PHP错误。
+
+范例
+
+Example #1 pcntl_fork() 示例
+
+<?php
+
+$pid = pcntl_fork();
+//父进程和子进程都会执行下面代码
+if ($pid == -1) {
+    //错误处理：创建子进程失败时返回-1.
+     die('could not fork');
+} else if ($pid) {
+     //父进程会得到子进程号，所以这里是父进程执行的逻辑
+     pcntl_wait($status); //等待子进程中断，防止子进程成为僵尸进程。
+} else {
+     //子进程得到的$pid为0, 所以这里是子进程执行的逻辑。
+}
+
+?>
+
+参见
+
+  • pcntl_waitpid() - 等待或返回fork的子进程状态
+  • pcntl_signal() - 安装一个信号处理器
+
+
+User Contributed Notes 21 notes
+
+===============================================================================
+
+Its been easy to fork process with pcntl_fork.. but how can we control or
+process further once all child processes gets completed.. here is the way we
+can do that...
+
+<?php
+for ($i = 1; $i <= 5; ++$i) {
+        $pid = pcntl_fork();
+
+        if (!$pid) {
+            sleep(1);
+            print "In child $i\n";
+            exit($i);
+        }
+    }
+
+    while (pcntl_waitpid(0, $status) != -1) {
+        $status = pcntl_wexitstatus($status);
+        echo "Child $status completed\n";
+    }
+?>
+===============================================================================
+
+I just thought of contributing to this awesome community and hope this can be
+of use to someone. Although PHP provides threaded options, and multi curl
+handles that run in parallel, I managed to bash out a solution to run each
+function as it's own process for non-threaded versions of PHP.
+
+Usage:  #!/usr/bin/php
+Usage: php -f /path/to/file
+
+#!/usr/bin/php
+<?php
+function fork_process($options)
+{
+    $shared_memory_monitor = shmop_open(ftok(__FILE__, chr(0)), "c", 0644, 
+count($options['process']));
+    $shared_memory_ids = (object) array();
+    for ($i = 1; $i <= count($options['process']); $i++)
+    {
+        $shared_memory_ids->$i = shmop_open(ftok(__FILE__, chr($i)), "c", 0644,
+$options['size']);
+    }
+    for ($i = 1; $i <= count($options['process']); $i++)
+    {
+        $pid = pcntl_fork();
+        if (!$pid)
+        {
+            if($i==1)
+                usleep(100000);
+            $shared_memory_data = $options['process'][$i - 1]();
+            shmop_write($shared_memory_ids->$i, $shared_memory_data, 0);
+            shmop_write($shared_memory_monitor, "1", $i-1);
+            exit($i);
+        }
+    }
+    while (pcntl_waitpid(0, $status) != -1)
+    {
+        if(shmop_read($shared_memory_monitor, 0, count($options['process'])) ==
+str_repeat("1", count($options['process'])))
+        {
+            $result = array();
+            foreach($shared_memory_ids as $key=>$value)
+            {
+                $result[$key-1] = shmop_read($shared_memory_ids->$key, 0, 
+$options['size']);
+                shmop_delete($shared_memory_ids->$key);
+            }
+            shmop_delete($shared_memory_monitor);
+            $options['callback']($result);
+        }   
+    }
+}
+
+// Create shared memory block of size 1M for each function.
+$options['size'] = pow(1024,2);
+
+// Define 2 functions to run as its own process.
+$options['process'][0] = function()
+{
+    // Whatever you need goes here...
+    // If you need the results, return its value.
+    // Eg: Long running proccess 1
+    sleep(1);
+    return 'Hello ';
+};
+$options['process'][1] = function()
+{
+    // Whatever you need goes here...
+    // If you need the results, return its value.
+    // Eg:
+    // Eg: Long running proccess 2
+    sleep(1);
+    return 'World!';
+};
+$options['callback'] = function($result)
+{
+    // $results is an array of return values...
+    // $result[0] for $options['process'][0] &
+    // $result[1] for $options['process'][1] &
+    // Eg:
+    echo $result[0].$result[1]."\n";   
+};
+fork_process($options);
+
+?>
+
+If you'd like to get the results back from a webpage, use exec(). Eg: echo exec
+('php -f /path/to/file');
+
+Continue hacking! :)
+===============================================================================
+
+If you want to execute some code after your php page has been returned to the
+user. Try something like this -
+
+<?php
+function index()
+{
+        function shutdown() {
+            posix_kill(posix_getpid(), SIGHUP);
+        }
+
+        // Do some initial processing
+
+        echo("Hello World");
+
+        // Switch over to daemon mode.
+
+        if ($pid = pcntl_fork())
+            return;     // Parent
+
+        ob_end_clean(); // Discard the output buffer and close
+
+        fclose(STDIN);  // Close all of the standard
+        fclose(STDOUT); // file descriptors as we
+        fclose(STDERR); // are running as a daemon.
+
+        register_shutdown_function('shutdown');
+
+        if (posix_setsid() < 0)
+            return;
+
+        if ($pid = pcntl_fork())
+            return;     // Parent
+
+        // Now running as a daemon. This process will even survive
+        // an apachectl stop.
+
+        sleep(10);
+
+        $fp = fopen("/tmp/sdf123", "w");
+        fprintf($fp, "PID = %s\n", posix_getpid());
+        fclose($fp);
+
+        return;
+}
+?>
+===============================================================================
+
+The reason for the MySQL "Lost Connection during query" issue when forking is
+the fact that the child process inherits the parent's database connection. When
+the child exits, the connection is closed. If the parent is performing a query
+at this very moment, it is doing it on an already closed connection, hence the
+error.
+
+An easy way to avoid this is to create a new database connection in parent
+immediately after forking. Don't forget to force a new connection by passing
+true in the 4th argument of mysql_connect():
+
+<?php
+// Create the MySQL connection
+$db = mysql_connect($server, $username, $password);
+
+$pid = pcntl_fork();
+            
+if ( $pid == -1 ) {       
+    // Fork failed           
+    exit(1);
+} else if ( $pid ) {
+    // We are the parent
+    // Can no longer use $db because it will be closed by the child
+    // Instead, make a new MySQL connection for ourselves to work with
+    $db = mysql_connect($server, $username, $password, true);
+} else {
+    // We are the child
+    // Do something with the inherited connection here
+    // It will get closed upon exit
+    exit(0);
+?>
+
+This way, the child will inherit the old connection, will work on it and will
+close upon exit. The parent won't care, because it will open a new connection
+for itself immediately after forking.
+
+Hope this helps.
+===============================================================================
+
+"Fatal Error" has always been the bane of my world because there is no way to
+capture and handle the condition in PHP. My team builds almost everything in
+PHP in order to leverage our core library of code, so it was of the essence to
+find a solution for this problem of scripts bombing unrecoverably and us never
+knowing about it.
+
+One of our background automation systems creates a "task queue" of sorts and
+for each task in the queue, a PHP module is include()ed to handle the task.
+Sometimes however a poorly behaved module will nuke with a Fatal Error and take
+out the parent script with it.
+
+I decided to try to use pcntl_fork() to isolate the task module from the parent
+code, and it seems to work: a Fatal Error generated within the module makes the
+child task bomb, and the waiting parent can simply catch the return code from
+the child and track/alert us to the problem as needed.
+
+Naturally something similar could be done if I wanted to simply exec() the
+module and check the output, but then I would not have the benefit of the
+stateful environment that the parent script has so carefully prepared. This
+allows me to keep the child process within the context of the parent's running
+environment and not suffer the consequences of Fatal Errors stopping the task
+queue from continuing to process.
+
+Here is fork_n_wait.php for your amusement:
+
+<?php
+
+if (! function_exists('pcntl_fork')) die('PCNTL functions not available on this
+PHP installation');
+
+for ($x = 1; $x < 5; $x++) {
+   switch ($pid = pcntl_fork()) {
+      case -1:
+         // @fail
+         die('Fork failed');
+         break;
+
+      case 0:
+         // @child: Include() misbehaving code here
+         print "FORK: Child #{$x} preparing to nuke...\n";
+         generate_fatal_error(); // Undefined function
+         break;
+
+      default:
+         // @parent
+         print "FORK: Parent, letting the child run amok...\n";
+         pcntl_waitpid($pid, $status);
+         break;
+   }
+}
+
+print "Done! :^)\n\n";
+?>
+
+Which outputs:
+php -q fork_n_wait.php
+FORK: Child #1 preparing to nuke...
+PHP Fatal error:  Call to undefined function generate_fatal_error() in
+~fork_n_wait.php on line 16
+FORK: Parent, letting the child run amok...
+FORK: Child #2 preparing to nuke...
+PHP Fatal error:  Call to undefined function generate_fatal_error() in ~/
+fork_n_wait.php on line 16
+FORK: Parent, letting the child run amok...
+FORK: Child #3 preparing to nuke...
+PHP Fatal error:  Call to undefined function generate_fatal_error() in ~/
+fork_n_wait.php on line 16
+FORK: Parent, letting the child run amok...
+FORK: Child #4 preparing to nuke...
+PHP Fatal error:  Call to undefined function generate_fatal_error() in ~/
+fork_n_wait.php on line 16
+FORK: Parent, letting the child run amok...
+Done! :^)
+===============================================================================
+
+There are quite a few questions regarding how file descriptors get handled when
+processes are forked.
+
+Remember that fork() makes a copy of the program, which means all descriptors
+are copied. Unfortunately, this is a rather bad situation for a PHP program
+because most descriptors are handled by PHP or a PHP Extension internally.
+
+The simple, and probably "proper" way to solve this issue is to fork before
+hand, there really should be no need to fork at many different points among a
+program, you would simply fork, and then delegate the work. Use a master/worker
+hierarchy.
+
+For example, if you need to have many processes that use a MySQL Connection,
+just fork before the connection is made, that way each child has it´s own
+connection to mysql that it, and it alone, manages.
+
+With careful and correct usage, fork() can be an extremely powerful tool.
+
+--Please remember to take proper care of your children.
+===============================================================================
+
+Using pcntl_fork() can be a little tricky in some situations.  For fast jobs, a
+child can finish processing before the parent process has executed some code
+related to the launching of the process.  The parent can receive a signal
+before it's ready to handle the child process' status.  To handle this
+scenario, I add an id to a "queue" of processes in the signal handler that need
+to be cleaned up if the parent process is not yet ready to handle them. 
+
+I am including a stripped down version of a job daemon that should get a person
+on the right track.
+
+<?php
+declare(ticks=1);
+//A very basic job daemon that you can extend to your needs.
+class JobDaemon{
+
+    public $maxProcesses = 25;
+    protected $jobsStarted = 0;
+    protected $currentJobs = array();
+    protected $signalQueue=array();  
+    protected $parentPID;
+  
+    public function __construct(){
+        echo "constructed \n";
+        $this->parentPID = getmypid();
+        pcntl_signal(SIGCHLD, array($this, "childSignalHandler"));
+    }
+  
+    /**
+    * Run the Daemon
+    */
+    public function run(){
+        echo "Running \n";
+        for($i=0; $i<10000; $i++){
+            $jobID = rand(0,10000000000000);
+
+            while(count($this->currentJobs) >= $this->maxProcesses){
+               echo "Maximum children allowed, waiting...\n";
+               sleep(1);
+            }
+
+            $launched = $this->launchJob($jobID);
+        }
+      
+        //Wait for child processes to finish before exiting here
+        while(count($this->currentJobs)){
+            echo "Waiting for current jobs to finish... \n";
+            sleep(1);
+        }
+    }
+  
+    /**
+    * Launch a job from the job queue
+    */
+    protected function launchJob($jobID){
+        $pid = pcntl_fork();
+        if($pid == -1){
+            //Problem launching the job
+            error_log('Could not launch new job, exiting');
+            return false;
+        }
+        else if ($pid){
+            // Parent process
+            // Sometimes you can receive a signal to the childSignalHandler
+function before this code executes if
+            // the child script executes quickly enough!
+            //
+            $this->currentJobs[$pid] = $jobID;
+          
+            // In the event that a signal for this pid was caught before we get
+here, it will be in our signalQueue array
+            // So let's go ahead and process it now as if we'd just received
+the signal
+            if(isset($this->signalQueue[$pid])){
+                echo "found $pid in the signal queue, processing it now \n";
+                $this->childSignalHandler(SIGCHLD, $pid, $this->signalQueue[
+$pid]);
+                unset($this->signalQueue[$pid]);
+            }
+        }
+        else{
+            //Forked child, do your deeds....
+            $exitStatus = 0; //Error code if you need to or whatever
+            echo "Doing something fun in pid ".getmypid()."\n";
+            exit($exitStatus);
+        }
+        return true;
+    }
+  
+    public function childSignalHandler($signo, $pid=null, $status=null){
+      
+        //If no pid is provided, that means we're getting the signal from the
+system.  Let's figure out
+        //which child process ended
+        if(!$pid){
+            $pid = pcntl_waitpid(-1, $status, WNOHANG);
+        }
+      
+        //Make sure we get all of the exited children
+        while($pid > 0){
+            if($pid && isset($this->currentJobs[$pid])){
+                $exitCode = pcntl_wexitstatus($status);
+                if($exitCode != 0){
+                    echo "$pid exited with status ".$exitCode."\n";
+                }
+                unset($this->currentJobs[$pid]);
+            }
+            else if($pid){
+                //Oh no, our job has finished before this parent process could
+even note that it had been launched!
+                //Let's make note of it and handle it when the parent process
+is ready for it
+                echo "..... Adding $pid to the signal queue ..... \n";
+                $this->signalQueue[$pid] = $status;
+            }
+            $pid = pcntl_waitpid(-1, $status, WNOHANG);
+        }
+        return true;
+    }
+}
+===============================================================================
+
+you should be _very_ careful with using fork in scripts beyond academic
+examples,
+or rather just avoid it alltogether, unless you are very aware of it's
+limitations.
+
+the problem is that it just forks the whole php process, including not only
+the state of the script, but also the internal state of any extensions loaded.
+this means that all memory is copied, but all file descriptors are shared among
+the parent and child processes.
+and that can cause major havoc if some extension internally maintains
+file descriptors.
+the primary example is ofcourse mysql, but this could be any extensions that
+maintains open files or network sockets.
+also, just reopening your connection in the parent or child isn't a safe
+method, because when the old connection resource is destroyed, the extension
+might not just close it, but for example send a request to the server to log
+off, making the connection unusable.
+this happens with mysql for example, when php exits - in the following script
+the query will always fail with "MySQL server has gone away":
+
+<?php
+mysql_connect(/* enter a working server here maybe? */);
+if(pcntl_fork()) die(); // fork a child and have the parent terminate
+//if(pcntl_fork()) posix_kill(getmypid(),9); // works, but very ugly
+$r=mysql_query("select 1;");
+if(!$r)die(mysql_error()."\n");
+?>
+(it was suggested that processes kill themselves with SIGKILL to avoid any
+cleanup on shutdown)
+
+(the only save way would be to close all connections and reopen them after the
+fork, and even that might not be possible if an extension keeps one open
+internally)
+
+for a nice demonstration of the havoc fork can create, try the below script.
+it opens a mysql connection, then forks, and runs queries from both parent and
+child,
+verifying that it receives the correct result.
+run it (on the cli preferably) a few times, and you will find various possible
+results:
+- very often is just hangs and doesn't output anything anymore
+- also very often, the server closes the connection, probably because it
+  receives interleaved requests it can't process.
+- sometimes one process gets the result of the OTHER processes'
+  query! (because both send their queries down the same socket,
+  and it's pure luck who gets the reply)
+
+<?php
+mysql_connect(/* enter a working server here maybe? */);
+$f=pcntl_fork();
+while(true){
+    sleep(rand(0,10)/100);
+    $r=mysql_query("select $f;");
+    if(!$r)die($f.": ".mysql_error()."\n");
+    list($x)=mysql_fetch_array($r);
+    echo ($f)?".":"-";
+    if($x!=$f) echo ($f.": fail: $x!=$f\n ");
+}
+?>
+===============================================================================
+
+The notes on http://php.net/manual/en/function.posix-setsid.php describe how
+you can avoid accruing countless zombie processes by a simple call to
+posix_setsid() when a child starts.
+===============================================================================
+
+It was driving me crazy that the script was killed couple of hours after I
+logged out, even I started it as:
+
+php server.php >& logfile.txt
+
+looks like PHP somehow interact with standard input, even I do not used it.
+
+Solution was to start it with nohup:
+
+nohup php server.php >& logfile.txt
+
+or to do demonize / run as demon (e.g. fork() and close file descriptors)
+===============================================================================
+
+A workaround for the MySQL "Lost Connection during query", or any other object
+related problems caused by children exiting is to force the child to kill -9
+itself, thus avoiding any cleanup.  Sure - it's not too elegant, but it does
+work.
+
+<?php
+$pid = pcntl_fork();
+if ( $pid == 0 ) {
+    // This is the child process.  Do something here.
+    // Instead of calling exit(), we use posix_kill()
+    posix_kill(getmypid(),9);
+}
+?>
+
+Watch out that you don't spawn too many processes though as this creates its
+own problems.
+===============================================================================
+
+When using fork to run multiple children processes on a single job queue using
+mysql, I used mysql_affected_rows() to prevent collisions between workers:
+
+First I find a "free" job:
+SELECT job_id FROM queue WHERE status="free"
+
+Then I update the queue:
+UPDATE queue SET worker_id={$worker_id} WHERE job_id={$job_id}
+
+Then I see if the row was changed
+
+<?php
+if(mysql_affected_rows() == 0)
+{
+//the row hasn't changed, so it must mean that another worker has claimed the
+job, so I go back to the "find a free job" query
+}
+else
+{
+//do the job
+}
+?>
+===============================================================================
+
+Fork in foreach:
+
+<?php
+foreach ($tasks as $v)
+        {if (($pid=pcntl_fork())===-1)
+            {//...
+             continue;
+            }
+         else if ($pid)
+              {pcntl_wait($status, WNOHANG); //protect against zombie children,
+one wait vs one child
+              }
+         else if ($pid===0)
+              {ob_start();//prevent output to main process
+               register_shutdown_function(create_function('$pars', 
+'ob_end_clean();posix_kill(getmypid(), SIGKILL);'), array());//to kill self
+before exit();, or else the resource shared with parent will be closed
+               //...
+               exit();//avoid foreach loop in child process
+              }
+        }
+?>
+===============================================================================
+
+It is not possible to use the function 'pcntl_fork' when PHP is used as Apache
+module. You can only use pcntl_fork in CGI mode or from command-line.
+
+Using this function will result in: 'Fatal error: Call to undefined function:
+pcntl_fork()'
+===============================================================================
+
+The following exemple works with php5.6 and apcu. This was tested on debian 7
+and Ubuntu 14.04.2 LTS.
+
+Here is a proposition of a simple Job class which execute a task list upon a
+item queue with shared memory capability :
+
+class Job
+{
+    const
+        CACHE_PREFIX = 'SHM/',
+        WORKER_NUMBER = 10;
+
+    private
+        $_queues = [],
+        $_tasks = [],
+        $_pids = [],
+        $_workerNumber,
+        $_cacheHandler,
+        $_prefix,
+        $_id;
+
+    public function __construct(array $queue, $workerNumber =
+self::WORKER_NUMBER)
+    {
+        $count = count($queue);
+
+        $length = ceil($count / $workerNumber);
+
+        $this->_queues = array_chunk($queue, $length);
+
+        $this->setWorkerNumber($workerNumber);
+
+        $this->_prefix = self::CACHE_PREFIX . microtime(true) . '/';
+    }
+
+    public function setWorkerNumber($workerNumber)
+    {
+        $this->_workerNumber = $workerNumber;
+    }
+
+    public function __get($key)
+    {
+        return apc_fetch($this->_prefix . $key);
+    }
+
+    public function __set($key, $value)
+    {
+        apc_store($this->_prefix . $key, $value);
+    }
+
+    public function add(Closure $task)
+    {
+        $this->_tasks[] = $task->bindTo($this, $this);
+
+        return $this;
+    }
+
+    public function run(Closure $task = null)
+    {
+        if (isset($task))
+        {
+            $this->add($task);
+        }
+
+        $i = 0;
+
+        do
+        {
+            $queue = $this->_queues[$i++];
+
+            $pid = pcntl_fork();
+
+            $this->_id = $i;
+
+            if ($pid === -1)
+            {
+                die("can't fork !");
+            }
+            elseif ($pid !== 0) // main
+            {
+                $this->_pids[$pid] = $pid;
+            }
+            else // child
+            {
+                foreach($this->_tasks as $task)
+                {
+                    $task($queue);
+                }
+
+                exit(0);
+            }
+        }
+        while($i < $this->_workerNumber);
+
+        do // main
+        {
+            $pid = pcntl_wait($status);
+
+            unset($this->_pids[$pid]);
+        }
+        while(count($this->_pids));
+    }
+}
+
+$driver = new mysqli(':host', ':user', ':pwd', ':db');
+
+$query = 'SELECT * FROM :table LIMIT :n';
+
+if (false !== ($res = $driver->query($query)))
+{
+    $resultSet = [];
+
+    while($row = mysqli_fetch_assoc($res))
+    {
+        $resultSet[] = $row;
+    }
+
+    $job = new Job($resultSet);
+
+    $job->test = [];
+
+    $job->run(function($queue = [])
+    {
+        // task
+
+        foreach($queue as $value)
+        {
+            $test = $this->test;
+
+            $value['workedId'] = $this->_id;
+
+            // ...
+
+            $test[] = $value;
+
+            $this->test = $test;
+        }
+    });
+
+    print_r($job->test);
+}
+===============================================================================
+
+Workaround to pcntl_fork() not being usable when PHP is run as an Apache module
+
+function background_job($program, $args)
+{
+    # The following doesn't work when running PHP as an apache module
+    /*
+    $pid = pcntl_fork();
+    pcntl_signal(SIGCHLD, SIG_IGN);
+
+    if ($pid == 0)
+    {
+        posix_setsid();
+        pcntl_exec($program, $args, $_ENV);
+        exit(0);
+    }
+    */
+
+    # Workaround
+    $args = join(' ', array_map('escapeshellarg', $args));
+    exec("$program $args 2>/dev/null >&- /dev/null &");
+}
+===============================================================================
+
+I was able to get around the problem of not being able to run fork and exec
+from Apache php.
+
+I got around this by calling the system 'at' command on Linux.  "at run
+something now".  and you have to set atrun -s in a crontab file (to run every
+minute) to insure that things get kicked off quickly even if there is a heavy
+load on the machine.
+
+If you're the only one running batch jobs on a linux box, this works.
+===============================================================================
+
+Here is an interesting script I wrote.  It demonstrates how pcntl_fork() might
+be used as a useful tool.
+
+<?php
+/* This script serves the purpose of testing an algorithm designed to:
+a.) Compare password hashes, or try passwords efficiently where the time to try
+a single password is 10 seconds. 
+b.) Spawn threads to work simultaneously on comparing hashes.
+c.) Restrict the number of threads open at a time. 
+*/
+//checks for divisibility
+function divby($num,$den) {
+    $result = $num/$den;
+    $result2 = floor($result);
+    if ($result == $result2) {
+        return true;
+        }
+    else {
+        return false;
+        }
+    }
+//checks whether a period of time fits into 2 second intervals occuring every
+10 seconds.  Interval may increase or decrease in size to use more or less
+memory. 
+function goodTime($elapsed) {
+    $num = floor($elapsed);
+    $num = $num/12;
+    $min = floor($num);
+    $min = 12*$min;
+    $max = $min+2;
+    if ($elapsed >= $min && $elapsed <= $max) {
+        return "yes";
+        }
+    else {
+        return "no";
+        }
+    }
+
+$x = 30; //number of child threads
+$pid = 1; //needed to create first thread
+$xpass = md5('29');//hash to crack
+$time = time();
+$i = 1;
+//parent spawns $x children.
+while ($i <= $x) {
+    if (file_exists('childcall.txt')) {
+        unlink('childcall.txt');
+        exit;
+        }
+    $elapsed = time()-$time;
+    //children are only spawned during intervals occuring every 10 seconds
+leaving enough time for the previous batch of children to finish their task.
+    if (goodTime($elapsed)=="yes") {   
+        //Are we the parent?
+        if ($pid != 0) {
+            //Give birth to a child. 
+            $pid = pcntl_fork();
+            //create a record of how many children have been birthed.
+            $arr[$i] = $i;
+            $time2 = $elapsed;
+            }
+        //escort children out of the loop.
+        if ($pid == 0) {
+            $i = $x+1;
+            }
+        $i++;
+        }
+    }
+//parent waits for children to finish playing.
+if ($pid) {
+    $value = 1;
+    while (!file_exists('childcall.txt')) {
+        //wait
+        }
+    unlink('childcall.txt');
+    $time = time()+2;
+    while (time()<$time) {
+        //wait
+        }
+    exit;
+    }
+//children take turns finding the highest array value, and changing it to 0
+rsort($arr);
+$value = max($arr);
+$arr[$value] = 0;
+$time = time()+10;
+//simulate delay
+while (time() < $time) {
+    //wait
+    }
+//compare the high array value hash to the hash we are looking to crack.
+if (md5($value) == $xpass) {
+    echo "$value \n";
+    }
+if ($value == $x || md5($value) == $xpass) {
+    $file = "childcall.txt";
+    $content = true;
+    file_put_contents($file,$contents);
+    }
+?>
+===============================================================================
+
+With regards to the database connection, one could deal with this using kill 9
+or a sleep, the real problem is if two threads make a database query at the
+same time, PHP starts having random database errors that are not necessarily
+clear as to what the problem is.
+
+You should create a separate link per thread.
+===============================================================================
+
+I was writing a shell script to get input from a user, however, I needed my
+script to time out after a certain number of seconds if the user didn't enter
+enough data. The code below descibes the method I used. It's a little hairy but
+it does work.
+
+-Ben
+
+#!/home/ben/php/bin/php -q
+<?php
+//GLOBALS
+$RETURN_CHAR = "\n";
+$TIMEOUT = 5; //number of seconds to timeout on input
+$PID = getmypid();
+$CHILD_PID = 0;
+
+//Make sure program execution doesn't time out
+set_time_limit(0);
+
+function set_timeout() {
+global $PID;
+global $CHILD_PID;
+global $TIMEOUT;
+
+$CHILD_PID = pcntl_fork();
+if($CHILD_PID == 0) {
+sleep($TIMEOUT);
+posix_kill($PID, SIGTERM);
+exit;
+}
+}
+
+function clear_timeout() {
+global $CHILD_PID;
+posix_kill($CHILD_PID, SIGTERM);
+}
+
+// read_data()
+// gets a line of data from STDIN and returns it
+function read_data() {
+
+$in = fopen("php://stdin", "r");
+set_timeout();
+$in_string = fgets($in, 255);
+clear_timeout();
+fclose($in);
+return $in_string;
+}
+
+// write_data($outstring)
+// writes data to STDOUT
+function write_data($outstring) {
+$out = fopen("php://stdout", "w");
+fwrite($out, $outstring);
+fclose($out);
+}
+
+while(1) {
+write_data("say something->");
+$input = read_data();
+write_data($RETURN_CHAR.$input);
+}
+
+?>
+===============================================================================
+
+I think this simple code can help understand how fork works:
+
+<?php
+echo "posix_getpid()=".posix_getpid().", posix_getppid()=".posix_getppid()."\n"
+;
+
+$pid = pcntl_fork();
+if ($pid == -1) die("could not fork");
+if ($pid) {
+    echo "pid=".$pid.", posix_getpid()=".posix_getpid().", posix_getppid()=".
+posix_getppid()."\n";
+} else {
+    echo "pid=".$pid.", posix_getpid()=".posix_getpid().", posix_getppid()=".
+posix_getppid()."\n";
+}
+?>

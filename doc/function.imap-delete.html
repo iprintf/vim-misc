@@ -1,0 +1,250 @@
+
+imap_delete
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_delete — Mark a message for deletion from current mailbox
+
+说明
+
+bool imap_delete ( resource $imap_stream , int $msg_number [, int $options = 0
+] )
+
+Marks messages listed in msg_number for deletion. Messages marked for deletion
+will stay in the mailbox until either imap_expunge() is called or imap_close()
+is called with the optional parameter CL_EXPUNGE.
+
+参数
+
+imap_stream
+
+    由 imap_open() 返回的 IMAP 流。
+
+msg_number
+
+    The message number
+
+options
+
+    You can set the FT_UID which tells the function to treat the msg_number
+    argument as an UID.
+
+返回值
+
+Returns TRUE.
+
+范例
+
+Example #1 imap_delete() example
+
+<?php
+
+$mbox = imap_open("{imap.example.org}INBOX", "username", "password")
+    or die("Can't connect: " . imap_last_error());
+
+$check = imap_mailboxmsginfo($mbox);
+echo "Messages before delete: " . $check->Nmsgs . "<br />\n";
+
+imap_delete($mbox, 1);
+
+$check = imap_mailboxmsginfo($mbox);
+echo "Messages after  delete: " . $check->Nmsgs . "<br />\n";
+
+imap_expunge($mbox);
+
+$check = imap_mailboxmsginfo($mbox);
+echo "Messages after expunge: " . $check->Nmsgs . "<br />\n";
+
+imap_close($mbox);
+?>
+
+注释
+
+    Note:
+
+    IMAP mailboxes may not have their message flags saved between connections,
+    so imap_expunge() should be called during the same connection in order to
+    guarantee that messages marked for deletion will actually be purged.
+
+参见
+
+  • imap_undelete() - Unmark the message which is marked deleted
+  • imap_expunge() - Delete all messages marked for deletion
+  • imap_close() - Close an IMAP stream
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+I had some major issues deleting emails using this function.  Using IIS 5.0 and
+a win based Mail Server, I could not delete the emails individually.
+
+My script merely needed to check the emails and update the database for bounce
+backs, after which I simply wanted to erase all emails.
+
+If imap_delete($mbox,$email->MsgNo) just isnt working for you, you can try
+using
+
+    imap_delete($mbox,'1:*');
+
+to clear out an entire mailbox.
+
+Hope this helps cause it drove me insane for about 5 hours.  :)
+===============================================================================
+
+I couldn't get imap_delete to work when I used it with pop3. Instead i wrote:
+<?php
+function pop3_dele($connection,$message)
+{
+    $status = imap_setflag_full($connection, '1:'.$message, '\\Deleted');
+    imap_expunge($connection);
+    return $status;
+
+    //return(imap_delete($connection,trim($message)));
+}
+?>
+===============================================================================
+
+the function is using the message number (and not the uid !)
+$uid = $mail->uid;
+$msgno = $mail->msgno;
+
+if you want to use the uid, simply option value
+imap_delete($mbox, $uid, FT_UID);
+===============================================================================
+
+This function seems not to work on "[Gmail]/All Mail" mailbox. This is because
+Gmails keeps only one copy of the message and mailboxes are no more than
+labels.
+Deleting a message from a mailbox only removes that label (except for "All
+Mail" mailbox).
+To delete from "All Mail" you have to use imap_mail_move() function and move
+the message to "[Gmail]/Trash" mailbox.
+
+Note: Names of mailboxes in Gmail depends on the language you're using.  E.g.:
+in Spanish "All Mail" is "Todos" and "Trash" is "Papelera".
+===============================================================================
+
+In case you feel the need to kill all emails from before a certain year on your
+Gmail account, this would work:
+
+<?php
+error_reporting(E_ALL ^ (E_NOTICE | E_WARNING));
+
+echo "parsing ini file...\n";
+$ini = parse_ini_file('g.ini');
+$user = $ini['user'];
+$pass = $ini['pass'];
+$year = $ini['year'];
+echo "account {$user} - killing msgs from before {$year}\n\n";
+
+echo "connecting...\n";
+$imap = imap_open("{imap.gmail.com:993/imap/ssl/novalidate-cert}[Gmail]/All
+Mail", $user, $pass) or die("can't connect: " . imap_last_error() . "\n");
+
+echo "checking current mailbox...\n";
+$mbox = imap_check($imap);
+
+echo "fetching overview...\n";
+$flaggedForDelete = 0;
+for($n = 0; $n < $mbox->Nmsgs; $n++) {
+    echo "processing {$n} of {$mbox->Nmsgs}...\r";
+    $hdr = imap_fetchheader($imap, $n);
+    preg_match('/^Date: (.*?)$/m', $hdr, $matches);
+    $date = date_parse(strtotime($matches[1]));
+    if($date['year'] < $year) {
+        imap_delete($imap, $msg->msgno);
+        $flaggedForDelete++;
+    }
+}
+
+echo "expunging mailbox ({$flaggedForDelete} messages flagged)... ";
+echo ((imap_expunge($imap)) ? "ok" : "failed!")."\n";
+imap_close($imap);
+
+?>
+===============================================================================
+
+After a little experimentation i found out how to mark a single message for
+deletion...
+
+<?php
+
+$msgid = '5'; //For example
+
+imap_delete($mbox, "$msgid:$msgid");
+
+?>
+
+imap_delete() seems to want a range, so to select one, simply range from your
+id to your id.
+
+Hope this helps.
+===============================================================================
+
+Somehow, when ever I try to delete an email using the message number returned
+by imap_header, any email with a message number below 999 will fail.
+
+I discovered that the imap_header will pad the message number with spaces. You
+will need to trim the number before calling imap_delete.
+
+I am using qmail and it took me over a month to figure it out.
+
+Hope this will be helpful to some poor soul out there facing the same problem.
+===============================================================================
+
+// is not a complete code but enough to clear out an entire mailbox.
+// hope this can save your time :-)
+
+<?php
+
+if (isset($_REQUEST['DoNow']))
+{
+  # PULL ADDITIONAL FILES
+  include_once ("common.php");
+ 
+  $conn = @imap_open("\{$server/$serverType}Trash", $user, $pass)
+  or die("Connection to folder failed");
+ 
+  $headers = @imap_check($conn);
+  ($headers->Nmsgs > 0) or die("Trash is empty already !");
+ 
+  // delete email(s)
+  @imap_delete($conn,'1:*');   // to clear out an entire mailbox.
+  @imap_expunge($conn);
+  echo "Trash is empty.";
+ 
+  imap_close($conn);
+}
+else
+{
+  echo "<form name='formA' action='".$_SERVER['PATH_INFO']."' method='POST'>"; 
+?>
+  Are you sure to empty trash ?
+  <p>
+  <input type="submit" value="Go Ahead" name="DoNow">&nbsp;
+  <input type="button" value="Cancel" name="Cancel" onClick=
+'javascript:self.history.go(-1)'></form></p>
+<?php
+} ?>
+===============================================================================
+
+Just so anyone using this function is aware: if you mark an email to be deleted
+from a mailbox, that flag does not persist. You need to call imap_expunge() or
+use the  CL_EXPUNGE option with imap_close() to remove the marked email in the
+same PHP script you marked it in.
+
+I hope this helps someone out.
+===============================================================================
+
+I think you don't have to give a range to imap_delete() if you want to delete a
+single one.
+
+This works well:
+
+<?php
+
+imap_delete($conn,trim($msgno));   
+
+?>

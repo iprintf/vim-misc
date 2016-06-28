@@ -1,0 +1,274 @@
+
+XSLTProcessor::transformToXML
+
+(PHP 5, PHP 7)
+
+XSLTProcessor::transformToXML — Transform to XML
+
+说明
+
+string XSLTProcessor::transformToXML ( object $doc )
+
+Transforms the source node to a string applying the stylesheet given by the 
+xsltprocessor::importStylesheet() method.
+
+参数
+
+doc
+
+    The DOMDocument or SimpleXMLElement object to be transformed.
+
+返回值
+
+The result of the transformation as a string or FALSE on error.
+
+范例
+
+Example #1 Transforming to a string
+
+<?php
+
+// Load the XML source
+$xml = new DOMDocument;
+$xml->load('collection.xml');
+
+$xsl = new DOMDocument;
+$xsl->load('collection.xsl');
+
+// Configure the transformer
+$proc = new XSLTProcessor;
+$proc->importStyleSheet($xsl); // attach the xsl rules
+
+echo $proc->transformToXML($xml);
+
+?>
+
+以上例程会输出：
+
+Hey! Welcome to Nicolas Eliaszewicz's sweet CD collection!
+
+<h1>Fight for your mind</h1><h2>by Ben Harper - 1995</h2><hr>
+<h1>Electric Ladyland</h1><h2>by Jimi Hendrix - 1997</h2><hr>
+
+参见
+
+  • XSLTProcessor::transformToDoc() - Transform to a DOMDocument
+  • XSLTProcessor::transformToUri() - Transform to URI
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+Entities are omitted from the output with the code above. 
+The symptom was that &nbsp;
+-- which should work with UTF-8 encoding --
+did not even get to XSLTProcessor, let alone through it.
+After too much hacking I discovered the simple fix:
+set substituteEntities to true in the DOMDocument for the XSL file.
+That is, replace the loading of the xsl document with
+
+<?php
+   $xsl = new DOMDocument;
+   $xsl->substituteEntities = true;    // <===added line
+   $xsl->load('collection.xsl');
+?>
+
+However, this fails when data entries have HTML entity references. (Some
+database entries may even contain user generated text.) libxml has the pedantic
+habit of throwing a FATAL error for any undefined entitiy. Solution: hide the
+entities so libxml doesn't see them.
+
+<?php
+function hideEntities($data) {
+        return str_replace("&", "&amp;", $data);
+}
+?>
+
+You could just add this to the example, but it is tidier to define a function
+to load data into a DOMDocument. This way you don't need entity declarations in
+catalog.xsl, either.
+
+<?php
+// Added function for  Example #1 
+
+/** Load an XML file and create a DOMDocument.
+Handles arbitrary entities, even undefined ones.
+*/
+function fileToDOMDoc($filename) {
+    $dom= new DOMDocument;
+    $xmldata = file_get_contents($filename);
+    $xmldata = str_replace("&", "&amp;", $xmldata);  // disguise &s going IN to
+loadXML()
+    $dom->substituteEntities = true;  // collapse &s going OUT to
+transformToXML()
+    $dom->loadXML($xmldata);
+    return $dom;
+}
+
+// Compare with  Example #1 Transforming to a string
+
+// Load the XML sources
+$xml = fileToDOMDoc('collection.xml');
+$xsl = fileToDOMDoc('collection.xsl');
+
+// Configure the transformer
+$proc = new XSLTProcessor;
+$proc->importStyleSheet($xsl);
+
+// transform $xml according to the stylesheet $xsl
+echo $proc->transformToXML($xml); // transform the data
+?>
+===============================================================================
+
+The transformToXML function can produce valid XHTML output - it honours the
+<xsl:output> element's attributes, which defines the format of the output
+document.
+
+For instance, if you want valid XHTML 1.0 Strict output, you can provide the
+following attribute values for the <xsl:output> element in your XSL stylesheet:
+
+<xsl:output
+method="xml"
+doctype-system="http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd" 
+doctype-public="-//W3C//DTD XHTML 1.0 Strict//EN" />
+===============================================================================
+
+To prevent your xsl file from automatically prepending
+
+<?xml version="1.0"?>
+
+whilst keeping the output as xml, which is preferable for a validated strict
+xhtml file, rather specify output as
+
+<xsl:output method="xml" omit-xml-declaration="yes" />
+===============================================================================
+
+The function transformToXML has a problem with the meta content type tag. It
+outputs it like this:
+
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+which is not correct X(HT)ML, because it closes with '>' instead of with '/>'.
+
+A way to get the output correct is to use instead of transformToXML first
+transformToDoc anf then saveHTML:
+
+    $domTranObj = $xslProcessor->transformToDoc($domXmlObj);
+    $domHtmlText = $domTranObj->saveHTML();
+===============================================================================
+
+If you retrieve "false" from the transformToXML method, use
+libxml_get_last_error() or libxml_get_errors() to retrieve the errors.
+===============================================================================
+
+If your xsl doesn't have <html> tags. The output will contain <?xml version=
+"1.0"?>. To fix this you can add the following to your xsl stylesheet:
+
+<xsl:output
+method="html" />
+===============================================================================
+
+Note that the method's name is sort of deceiving, because it does not only
+output XML, but any string that is generated by the processor. It should rather
+be called transformToString. So if your output method is  "text/plain", for
+example, this is the way to receive the resulting string.
+===============================================================================
+
+How to fix:: *Fatal error: Call to undefined method domdocument::load()*
+
+If you get this error, visit the php.ini file and try commenting out the
+following, like this:
+
+;[PHP_DOMXML]
+;extension=php_domxml.dll
+
+Suddenly, the wonderfully simple example above works as advertised.
+===============================================================================
+
+$domTranObj = $xslProcessor->transformToDoc($domXmlObj);
+$domHtmlText = $domTranObj->saveHTML();
+
+Do fix the <meta> for valid XHTML but do not correctly end empty node like <br
+/> which ouput like this : <br></br>
+
+Some browser note this as 2 different <br /> ...
+
+To fix this use
+
+$domTranObj = $xslProcessor->transformToDoc($domXmlObj);
+$domHtmlText = $domTranObj->saveXML();
+===============================================================================
+
+I noticed an incompatibility between libxslt (php4) and the transformation
+through XSLTProcessor.
+Php5 and the XSLTProcessor seem to add implicit CDATA-Section-Elements.
+If you have an xslt like
+
+<script type="text/javascript">
+foo('<xsl:value-of select="bar" />');
+</script>
+
+It will result in
+
+<script type="text/javascript"><![CDATA[
+foo('xpath-result-of-bar');
+]]></script>
+
+(at least for output method="xml" in order to produce strict xhtml with xslt1)
+
+That brings up an error (at least) in Firefox 1.5 as it is no valid javascript.
+It should look like that:
+
+<script type="text/javascript">//<![CDATA[
+foo('xpath-result-of-bar');
+]]></script>
+
+As the CDATA-Section is implicit, I was not able to disable the output or to
+put a '//' before it.
+
+I tried everything about xsl:text disable-output-escaping="yes"
+
+I also tried to disable implicit adding of CDATA with <output
+cdata-section-elements="" />
+(I thought that would exclude script-tags. It didn't).
+
+The solution:
+
+<xsl:text disable-output-escaping="yes">&lt;script type="text/javascript"&gt;
+  foo('</xsl:text><xsl:value-of select="bar" /><xsl:text
+disable-output-escaping="yes">');
+            &lt;/script&gt;</xsl:text>
+
+Simple, but it took me a while.
+===============================================================================
+
+transformToXML, if you have registered PHP functions previously, does indeed
+attempt to execute these functions when it finds them in a php:function()
+pseudo-XSL function. It even finds static functions within classes, for
+instance:
+
+<xsl:value-of select="php:function('MyClass::MyFunction', string(@attr), string
+(.))" disable-output-escaping="yes"/>
+
+However, in this situation transformToXML does not try to execute
+"MyClass::MyFunction()". Instead, it executes "myclass:myfunction()". In PHP,
+since classes and functions are (I think) case-insensitive, this causes no
+problems.
+
+A problem arises when you are combining these features with the __autoload()
+feature. So, say I have MyClass.php which contains the MyFunction definition.
+Generally, if I call MyClass::MyFunction, PHP will pass "MyClass" to __autoload
+(), and __autoload() will open up "MyClass.php".
+
+What we have just seen, however, means that transformToXML will pass "myclass"
+to __autoload(), not "MyClass", with the consequence that PHP will try to open
+"myclass.php", which doesn't exist, instead of "MyClass.php", which does. On
+case-insensitive operating systems, this is not significant, but on my RedHat
+server, it is--PHP will give a file not found error.
+
+The only solution I have found is to edit the __autoload() function to look for
+class names which are used in my XSL files, and manually change them to the
+correct casing.
+
+Another solution, obviously, is to use all-lowercase class and file names.

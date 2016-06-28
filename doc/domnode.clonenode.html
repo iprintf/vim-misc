@@ -1,0 +1,203 @@
+
+DOMNode::cloneNode
+
+(PHP 5, PHP 7)
+
+DOMNode::cloneNode — Clones a node
+
+说明
+
+public DOMNode DOMNode::cloneNode ([ bool $deep ] )
+
+Creates a copy of the node.
+
+参数
+
+deep
+
+    Indicates whether to copy all descendant nodes. This parameter is defaulted
+    to FALSE.
+
+返回值
+
+The cloned node.
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+<?php
+
+//@oliver thanks for example source...
+
+/*
+cloneNode(false) does not omit
+Attributes of cloned node,
+to achieve this an iteration is required.
+this is probably less efficient
+than merely creating a new
+node from the desired nodeName
+but in some cases could be useful.
+
+use case:
+
+omit subnodes and attributes of
+secured portions of an xml document
+without altering expected general structure;
+*/
+//xml to use
+
+$file="<?xml version='1.0'?>
+<book type='paperback'>
+    <title name='MAP'>Red Nails</title>
+    <price>$12.99</price>
+    <author>
+        <name first='Robert' middle='E' last='Howard'/>
+        <birthdate disco='false' nirvana='definitely'>
+            9/21/1977
+            <month title='september' />
+        </birthdate>
+    </author>
+    <author>
+        <name first='Arthur' middle='Mc' last='Kayn'/>
+    </author>
+</book>";
+
+$doc = new domDocument;
+
+$doc->loadXML($file);
+
+$xpath = new domXPath($doc);
+
+$query = "//author/birthdate";
+$xpathQuery = $xpath->query($query);
+
+//would be a loop in production code...
+$child = $xpathQuery->item(0);
+
+$parent = $child->parentNode;
+
+$doppel = $child->cloneNode(false);
+
+$limit = $doppel->attributes->length;
+
+for ($a=0;$a<$limit;$a++) {
+    $doppel->removeAttributeNode($doppel->attributes->item(0));
+}
+//swap for now empty node
+$parent->replaceChild( $doppel, $child);
+
+print $doc->saveXML();
+
+?>
+===============================================================================
+
+Remeber that DOMNode always needs a reference to a parent node or DOMDocument.
+
+For example, if you try to clone a node - copy all children - and overwrite or
+delete the variable which holds the cloned node - all children will loose any
+reference and getting invalid.
+
+This will cause a nice message like "Couldn't... node no longer exists" if you
+have luck. In most cases PHP only gives you the poor information "Couldn't
+fetch DOM[...]" which makes hard to find out whats going on, depending on the
+current operation.
+===============================================================================
+
+If you have an object that holds a DOMNode, cloning the object won't clone the
+DOMNode with it. If you simply copy the object or add its DOMNode several
+times, you will in fact only move the DOMNode in the tree, not multiply it.
+That might seem obvious, but took me half a day to find out.
+
+The object needs to use __clone and clone the node manually:
+
+<?php
+class containsNode {
+    public $node; //set from somewhere
+
+    public function __clone() {
+        $this->node = $this->node->cloneNode(TRUE);
+    }
+}
+?>
+===============================================================================
+
+If you need some function to clone a node without touching namespaces you can
+use the following.
+
+<?php
+private function cloneNode($node,$doc){
+    $nd=$doc->createElement($node->nodeName);
+           
+    foreach($node->attributes as $value)
+        $nd->setAttribute($value->nodeName,$value->value);
+           
+    if(!$node->childNodes)
+        return $nd;
+               
+    foreach($node->childNodes as $child) {
+        if($child->nodeName=="#text")
+            $nd->appendChild($doc->createTextNode($child->nodeValue));
+        else
+            $nd->appendChild(cloneNode($child,$doc));
+    }
+           
+    return $nd;
+}
+?>
+===============================================================================
+
+simple exemple of node cloning
+
+<?xml version="1.0"?>
+
+<book type="paperback">
+    <title name='MAP'>Red Nails</title>
+    <price>$12.99</price>
+    <author>
+        <name first="Robert" middle="E" last="Howard"/>
+        <birthdate>9/21/1977</birthdate>
+    </author>
+    <author>
+        <name first="Arthur" middle="Mc" last="Kayn"/>
+    </author>
+</book>
+
+<?php
+
+//filename xml file to use
+$file = 'book.xml';
+
+$doc = new domDocument;
+
+if (file_exists($file)) {
+    $doc->load($file);
+} else {
+    exit('Erreur !.');
+}
+
+$xpath = new domXPath($doc);
+
+$query = "//author/*";
+$xpathQuery = $xpath->query($query);
+
+$size = $xpathQuery->length;
+for ($i=0; $i<$size; $i++){
+    $node = $xpathQuery->item($i);
+    if ($node->nodeName == 'birthdate' && $node->hasChildNodes() && $node->
+firstChild->textContent != ''){
+        $clonenode = $node->cloneNode(true);
+        $refnode = $node;
+    }
+}
+for ($i=0; $i<$size; $i++){
+    $node = $xpathQuery->item($i);
+    if (!$node->isSameNode($refnode)){
+        $newnode = $node->appendChild($clonenode);
+    }
+}
+
+print $doc->saveXML();
+
+?>

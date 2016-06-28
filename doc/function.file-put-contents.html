@@ -1,0 +1,927 @@
+
+file_put_contents
+
+(PHP 5, PHP 7)
+
+file_put_contents — 将一个字符串写入文件
+
+说明
+
+int file_put_contents ( string $filename , mixed $data [, int $flags = 0 [, 
+resource $context ]] )
+
+和依次调用 fopen()，fwrite() 以及 fclose() 功能一样。
+
+If filename does not exist, the file is created. Otherwise, the existing file
+is overwritten, unless the FILE_APPEND flag is set.
+
+参数
+
+filename
+
+    要被写入数据的文件名。
+
+data
+
+    要写入的数据。类型可以是 string，array 或者是 stream 资源（如上面所说的那样
+    ）。
+
+    如果 data 指定为 stream 资源，这里 stream 中所保存的缓存数据将被写入到指定
+    文件中，这种用法就相似于使用 stream_copy_to_stream() 函数。
+
+    参数 data 可以是数组（但不能为多维数组），这就相当于 file_put_contents
+    ($filename, join('', $array))。
+
+flags
+
+    flags 的值可以是以下 flag 使用 OR (|) 运算符进行的组合。
+
+                                Available flags
+            Flag                                  描述
+    FILE_USE_INCLUDE_PATH 在 include 目录里搜索 filename。更多信息可参见
+                          include_path。
+    FILE_APPEND           如果文件 filename 已经存在，追加数据而不是覆盖。
+    LOCK_EX               在写入时获得一个独占锁。
+
+context
+
+    一个 context 资源。
+
+返回值
+
+该函数将返回写入到文件内数据的字节数，失败时返回FALSE
+
+Warning
+
+此函数可能返回布尔值 FALSE，但也可能返回等同于 FALSE 的非布尔值。请阅读布尔类型
+章节以获取更多信息。应使用 === 运算符来测试此函数的返回值。
+
+范例
+
+Example #1 Simple usage example
+
+<?php
+$file = 'people.txt';
+// Open the file to get existing content
+$current = file_get_contents($file);
+// Append a new person to the file
+$current .= "John Smith\n";
+// Write the contents back to the file
+file_put_contents($file, $current);
+?>
+
+Example #2 Using flags
+
+<?php
+$file = 'people.txt';
+// The new person to add to the file
+$person = "John Smith\n";
+// Write the contents to the file, 
+// using the FILE_APPEND flag to append the content to the end of the file
+//
+ and the LOCK_EX flag to prevent anyone else writing to the file at the same time
+file_put_contents($file, $person, FILE_APPEND | LOCK_EX);
+?>
+
+更新日志
+
+版本                             说明
+5.0.0 Added context support
+5.1.0 添加了对 LOCK_EX 的支持和 data 参数处理 stream 资源的功能。
+
+注释
+
+    Note: 此函数可安全用于二进制对象。
+
+Tip
+
+如已启用fopen 包装器，在此函数中， URL 可作为文件名。关于如何指定文件名详见 
+fopen()。各种 wapper 的不同功能请参见支持的协议和封装协议，注意其用法及其可提供
+的预定义变量。
+
+参见
+
+  • fopen() - 打开文件或者 URL
+  • fwrite() - 写入文件（可安全用于二进制文件）
+  • file_get_contents() - 将整个文件读入一个字符串
+  • stream_context_create() - 创建资源流上下文
+
+
+User Contributed Notes 29 notes
+
+===============================================================================
+
+File put contents fails if you try to put a file in a directory that doesn't
+exist. This creates the directory.
+
+<?php
+    function file_force_contents($dir, $contents){
+        $parts = explode('/', $dir);
+        $file = array_pop($parts);
+        $dir = '';
+        foreach($parts as $part)
+            if(!is_dir($dir .= "/$part")) mkdir($dir);
+        file_put_contents("$dir/$file", $contents);
+    }
+?>
+===============================================================================
+
+It should be obvious that this should only be used if you're making one write,
+if you are writing multiple times to the same file you should handle it
+yourself with fopen and fwrite, the fclose when you are done writing.
+
+Benchmark below:
+
+file_put_contents() for 1,000,000 writes - average of 3 benchmarks:
+
+real 0m3.932s
+user 0m2.487s
+sys 0m1.437s
+
+fopen() fwrite() for 1,000,000 writes, fclose() -  average of 3 benchmarks:
+
+real 0m2.265s
+user 0m1.819s
+sys 0m0.445s
+===============================================================================
+
+Please note that when saving using an FTP host, an additional stream context
+must be passed through telling PHP to overwrite the file.
+
+<?php
+/* set the FTP hostname */
+$user = "test";
+$pass = "myFTP";
+$host = "example.com";
+$file = "test.txt";
+$hostname = $user . ":" . $pass . "@" . $host . "/" . $file;
+
+/* the file content */
+$content = "this is just a test.";
+
+/* create a stream context telling PHP to overwrite the file */
+$options = array('ftp' => array('overwrite' => true));
+$stream = stream_context_create($options);
+
+/* and finally, put the contents */
+file_put_contents($hostname, $content, 0, $stream);
+?>
+===============================================================================
+
+Calling file_put_contents within a destructor will cause the file to be written
+in SERVER_ROOT...
+===============================================================================
+
+file_put_contents() will cause concurrency problems - that is, it doesn't write
+files atomically (in a single operation), which sometimes means that one php
+script will be able to, for example, read a file before another script is done
+writing that file completely.
+
+The following function was derived from a function in Smarty (http://
+smarty.php.net) which uses rename() to replace the file - rename() is atomic on
+Linux.
+
+On Windows, rename() is not currently atomic, but should be in the next
+release. Until then, this function, if used on Windows, will fall back on
+unlink() and rename(), which is still not atomic...
+
+<?php
+
+define("FILE_PUT_CONTENTS_ATOMIC_TEMP", dirname(__FILE__)."/cache");
+define("FILE_PUT_CONTENTS_ATOMIC_MODE", 0777);
+
+function file_put_contents_atomic($filename, $content) {
+  
+    $temp = tempnam(FILE_PUT_CONTENTS_ATOMIC_TEMP, 'temp');
+    if (!($f = @fopen($temp, 'wb'))) {
+        $temp = FILE_PUT_CONTENTS_ATOMIC_TEMP . DIRECTORY_SEPARATOR . uniqid(
+'temp');
+        if (!($f = @fopen($temp, 'wb'))) {
+            trigger_error("file_put_contents_atomic() : error writing temporary
+file '$temp'", E_USER_WARNING);
+            return false;
+        }
+    }
+  
+    fwrite($f, $content);
+    fclose($f);
+  
+    if (!@rename($temp, $filename)) {
+        @unlink($filename);
+        @rename($temp, $filename);
+    }
+  
+    @chmod($filename, FILE_PUT_CONTENTS_ATOMIC_MODE);
+  
+    return true;
+  
+}
+
+?>
+===============================================================================
+
+file_put_contents does not issue an error message if file name is incorrect(for
+example has improper symbols on the end of it /n,/t)
+that is why use trim() for file name.
+$name=trim($name);
+file_put_contents($name,$content);
+===============================================================================
+
+File put contents fails if you try to put a file in a directory that doesn't
+exist. This function creates the directory.
+
+i have updated code of "TrentTompkins at gmail dot com". thanks
+<?php
+/**
+* @param string $filename <p>file name including folder.
+* example :: /path/to/file/filename.ext or filename.ext</p>
+* @param string $data <p> The data to write.
+* </p>
+* @param int $flags same flags used for file_put_contents.
+* more info: http://php.net/manual/en/function.file-put-contents.php
+* @return bool <b>TRUE</b> file created succesfully <br> <b>FALSE</b> failed to
+create file.
+*/
+function file_force_contents($filename, $data, $flags = 0){
+    if(!is_dir(dirname($filename)))
+        mkdir(dirname($filename).'/', 0777, TRUE);
+    return file_put_contents($filename, $data,$flags);
+}
+// usage
+
+file_force_contents('test1.txt','test1 content');  // test1.txt created
+
+file_force_contents('test2/test2.txt','test2 content');
+// test2/test2.txt created "test2" folder. 
+
+file_force_contents('~/test3/test3.txt','test3 content');
+// /path/to/user/directory/test3/test3.txt created "test3" folder in user
+directory (check on linux "ll ~/ | grep test3"). 
+?>
+===============================================================================
+
+NOTE : file_put_contents doesn't add a valid BOM while creating the file
+
+<?php
+$myFile = 'test.txt';
+$myContent = 'I love PHP';
+
+file_put_contents($myFile, "\xEF\xBB\xBF".$myContent);
+?>
+===============================================================================
+
+This should also handle $filename from other than root and also $filename
+without path.
+
+function file_force_contents($filename, $data, $per = 0755, $flags = 0) {
+        $fn = "";
+    if(substr($filename, 0, 1) === "/") $fn .= "/";
+    $parts = explode("/", $filename);
+        $file = array_pop($parts);
+    
+        foreach($parts as $part) {
+            if(!is_dir($fn .= "$part")) mkdir($fn, $per, true);
+        $fn .= "/";
+    }
+
+        file_put_contents($fn.$file, $data, $flags);  
+}
+===============================================================================
+
+I had some troubles using file_put_contents with an absolute but no
+canonicalized path (eg. w:/htdocs/pri/../test/log.txt): on windows environment
+php was unable to create the file also using the realpath function .
+I had to use fopen and frwite functions to write the data.
+===============================================================================
+
+I wrote this script implementing the file_put_contents() and file_get_contents
+() functions to be compatible with both php4.* and php 5.*. It is a PHP Command
+line interface script which searches and replaces a specific word recursively
+through all files in the supplied directory hierarchy.
+
+Usage from a Linux command line: ./scriptname specifieddirectory searchString
+replaceString
+
+#!/usr/bin/php
+<?php
+$argc = $_SERVER['argc'];
+$argv = $_SERVER['argv'];
+
+if($argc != 4)
+{
+echo "This command replaces a search string with a replacement string\n for the
+contents of all files in a directory hierachy\n";
+echo "command usage: $argv[0]  directory searchString replaceString\n";
+echo "\n";
+exit;
+}
+?><?php
+     
+if (!function_exists('file_put_contents')) {
+    function file_put_contents($filename, $data) {
+        $f = @fopen($filename, 'w');
+        if (!$f) {
+            return false;
+        } else {
+            $bytes = fwrite($f, $data);
+            fclose($f);
+            return $bytes;
+        }
+    }
+}
+
+function get_file_contents($filename)
+
+      /* Returns the contents of file name passed
+
+      */
+      {
+      if (!function_exists('file_get_contents'))
+      {
+      $fhandle = fopen($filename, "r");
+      $fcontents = fread($fhandle, filesize($filename));
+      fclose($fhandle);
+      }
+      else
+      {
+      $fcontents = file_get_contents($filename);
+      }
+      return $fcontents;
+      }
+?><?php
+
+function openFileSearchAndReplace($parentDirectory, $searchFor, $replaceWith)
+{
+//echo "debug here- line 1a\n";
+//echo "$parentDirectory\n";
+//echo "$searchFor\n";
+//echo "$replaceWith\n";
+
+if ($handle = opendir("$parentDirectory")) {
+    while (false !== ($file = readdir($handle))) {
+        if (($file != "." && $file != "..") && !is_dir($file)) {
+          chdir("$parentDirectory"); //to make sure you are always in right
+directory
+         // echo "$file\n";
+         $holdcontents = file_get_contents($file);
+         $holdcontents2 = str_replace($searchFor, $replaceWith, $holdcontents);
+         file_put_contents($file, $holdcontents2);
+         // echo "debug here- line 1\n";
+         // echo "$file\n";
+
+        }
+        if(is_dir($file) && ($file != "." && $file != ".."))
+        {
+        $holdpwd = getcwd();
+        //echo "holdpwd = $holdpwd \n";
+        $newdir = "$holdpwd"."/$file";
+        //echo "newdir = $newdir \n";  //for recursive call
+        openFileSearchAndReplace($newdir, $searchFor, $replaceWith);
+        //echo "debug here- line 2\n";
+        //echo "$file\n";
+        }
+    }
+    closedir($handle);
+}
+}
+
+$parentDirectory2 = $argv[1];
+$searchFor2 = $argv[2];
+$replaceWith2 = $argv[3];
+
+//Please do not edit below to keep the rights to this script
+//Free license, if contents below this line is not edited
+echo "REPLACED\n'$searchFor2' with '$replaceWith2' recursively through
+directory listed below\nFor all files that current user has write permissions
+for\nDIRECTORY: '$parentDirectory2'\n";
+echo "command written by Kolapo Akande :) all rights reserved :)\n";
+
+$holdpwd = getcwd();
+//echo "$holdpwd\n";
+chdir($parentDirectory2);
+openFileSearchAndReplace($parentDirectory2, $searchFor2, $replaceWith2);
+exit;
+?>
+===============================================================================
+
+file_put_contents() strips the last line ending
+
+If you really want an extra line ending at the end of a file when writing with
+file_put_contents(), you must append an extra PHP_EOL to the end of the line as
+follows.
+
+<?php
+$a_str = array("these","are","new","lines");
+$contents = implode(PHP_EOL, $a_str);
+$contents .= PHP_EOL . PHP_EOL;
+file_put_contents("newfile.txt", $contents);
+print("|$contents|");
+?>
+
+You can see that when you print $contents you get two extra line endings, but
+if you view the file newfile.txt, you only get one.
+===============================================================================
+
+To upload file from your localhost to any FTP server.
+pease note 'ftp_chdir' has been used instead of putting direct remote file
+path....in ftp_put ...remoth file should be only file name
+
+<?php
+$host = '*****';
+$usr = '*****';
+$pwd = '**********';        
+$local_file = './orderXML/order200.xml';
+$ftp_path = 'order200.xml';
+$conn_id = ftp_connect($host, 21) or die ("Cannot connect to host");     
+ftp_pasv($resource, true);
+ftp_login($conn_id, $usr, $pwd) or die("Cannot login");
+// perform file upload
+ftp_chdir($conn_id, '/public_html/abc/');
+$upload = ftp_put($conn_id, $ftp_path, $local_file, FTP_ASCII);
+if($upload) { $ftpsucc=1; } else { $ftpsucc=0; }
+// check upload status:
+print (!$upload) ? 'Cannot upload' : 'Upload complete';
+print "\n";
+// close the FTP stream
+ftp_close($conn_id);
+?>
+===============================================================================
+
+There is a better way. www.php.net/touch
+
+Since you're not adding anything to the file,
+
+<?php
+function updateFile($filename) {
+    if (!file_exists($filename)) return;
+    touch($filename);
+}
+?>
+===============================================================================
+
+This functionality is now implemented in the PEAR package PHP_Compat.
+
+More information about using this function without upgrading your version of
+PHP can be found on the below link:
+
+http://pear.php.net/package/PHP_Compat
+===============================================================================
+
+As to the previous user note, it would be wise to include that code within a
+conditional statement, as to prevent re-defining file_put_contents and the
+FILE_APPEND constant in PHP 5:
+
+<?php
+   if ( !function_exists('file_put_contents') && !defined('FILE_APPEND') ) {
+   ...
+   }
+?>
+
+Also, if the file could not be accessed for writing, the function should return
+boolean false, not 0. An error is different from 0 bytes written, in this case.
+===============================================================================
+
+It's important to understand that LOCK_EX will not prevent reading the file
+unless you also explicitly acquire a read lock (shared locked) with the PHP
+'flock' function.
+
+i.e. in concurrent scenarios file_get_contents may return empty if you don't
+wrap it like this:
+
+<?php
+$myfile=fopen('test.txt','rt');
+flock($myfile,LOCK_SH);
+$read=file_get_contents('test.txt');
+fclose($myfile);
+?>
+
+If you have code that does a file_get_contents on a file, changes the string,
+then re-saves using file_put_contents, you better be sure to do this correctly
+or your file will randomly wipe itself out.
+===============================================================================
+
+if path to the file not exist function file_put_contents can't create it. This
+simple function make it on UNIX-based and Windows servers.
+<?php
+function file_put_contents_force(){
+    $args = func_get_args();
+    $path = str_replace(array('/','\\'), DIRECTORY_SEPARATOR, $args[0]);
+    $parts = explode(DIRECTORY_SEPARATOR, $path);
+    array_pop($parts);
+    $directory =  '';
+    foreach($parts as $part):
+        $check_path = $directory.$part;
+            if( is_dir($check_path.DIRECTORY_SEPARATOR) === FALSE) {
+                mkdir($check_path, 0755);
+            }
+            $directory = $check_path.DIRECTORY_SEPARATOR;
+    endforeach;    
+    call_user_func_array('file_put_contents',$args);
+}
+?>
+===============================================================================
+
+I made ​​a ftp_put_contents function.
+
+hope you enjoy.
+
+<?php
+
+function ftp_put_contents($fpc_path_and_name, $fpc_content) {
+   
+    //Temporary folder in the server
+    $cfg_temp_folder = str_replace("//", "/", $_SERVER['DOCUMENT_ROOT']."/_temp
+/");
+   
+    //Link to FTP
+    $cfg_ftp_server = "ftp://ftp.com";
+   
+    //FTP username
+    $cfg_user = "user";
+   
+    //FTP password
+    $cfg_pass = "password";
+   
+    //Document Root of FTP
+    $cfg_document_root = "DOCUMENT ROOT OF FTP";
+   
+    //Link to the website
+    $cfg_site_link = "Link to the website";
+   
+    //Check if conteins slash on the path of the file
+    $cotains_slash = strstr($fpc_path_and_name, "/");
+   
+    //Get filename and paths
+    if ($cotains_slash) {
+        $fpc_path_and_name_array = explode("/", $fpc_path_and_name);
+        $fpc_file_name = end($fpc_path_and_name_array);
+    }
+    else {
+        $fpc_file_name = $fpc_path_and_name;
+    }
+   
+    //Create local temp dir
+    if (!file_exists($cfg_temp_folder)) {
+        if (!mkdir($cfg_temp_folder, 0777)) {
+            echo "Unable to generate a temporary folder on the local server - 
+$cfg_temp_folder.<br />";
+            die();
+        }
+    }
+   
+    //Create local file in temp dir
+    if (!file_put_contents(str_replace("//", "/", $cfg_temp_folder.
+$fpc_file_name), $fpc_content)) {
+        echo "Unable to generate the file in the temporary location - ".
+str_replace("//", "/", $cfg_temp_folder.$fpc_file_name).".<br />";
+        die();
+    }
+
+    //Connection to the FTP Server
+    $fpc_ftp_conn = ftp_connect("$cfg_ftp_server");
+   
+    //Check connection
+    if (!$fpc_ftp_conn) {
+        echo "Could not connect to server <b>$cfg_ftp_server</b>.<br />";
+        die();
+    }
+    else {
+       
+        // login
+        // check username and password
+        if (!ftp_login($fpc_ftp_conn, "$cfg_user", "$cfg_pass")) {
+            echo "User or password.<br />";
+            die();
+        }
+        else {
+           
+            //Document Root
+            if (!ftp_chdir($fpc_ftp_conn, $cfg_document_root)) {
+                echo "Error to set Document Root.<br />";
+                die();
+            }
+           
+           
+            //Check if there are folders to create
+            if ($cotains_slash) {
+               
+                //Check if have folders and is not just the file name
+                if (count($fpc_path_and_name_array) > 1) {
+                   
+                    //Remove last array
+                    $fpc_remove_last_array = array_pop($fpc_path_and_name_array
+);
+                   
+                    //Checks if there slashs on the path
+                    if (substr($fpc_path_and_name,0,1) == "/") {
+                        $fpc_remove_first_array = array_shift(
+$fpc_path_and_name_array);
+                    }
+                   
+                    //Create each folder on ftp
+                    foreach ($fpc_path_and_name_array as $fpc_ftp_path) {
+                        if (!@ftp_chdir($fpc_ftp_conn, $fpc_ftp_path)) {
+                            if (!ftp_mkdir($fpc_ftp_conn, $fpc_ftp_path)) {
+                                echo "Error creating directory $fpc_ftp_path.
+<br />";
+                            }
+                            else {
+                                if (!ftp_chdir($fpc_ftp_conn, $fpc_ftp_path)) {
+                                    echo "Error go to the directory 
+$fpc_ftp_path.<br />";
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                   
+                }
+            }
+           
+            //Check upload file
+            if (!ftp_put($fpc_ftp_conn, $fpc_file_name, str_replace("//", "/", 
+$cfg_temp_folder.$fpc_file_name), FTP_ASCII)) {
+                echo "File upload <b>$fpc_path_and_name</b> failed!<br />";
+                die();
+            }
+            else {
+                if (!unlink(str_replace("//", "/", $cfg_temp_folder.
+$fpc_file_name))) {
+                    echo "Error deleting temporary file.<br />";
+                    die();
+                }
+                else {
+                    echo "File upload <a href='$cfg_site_link".str_replace("//"
+, "/", "/$fpc_path_and_name")."'><b>$cfg_site_link".str_replace("//", "/", "/
+$fpc_path_and_name")."</a></b> successfully performed.<br />";
+                }
+            }
+           
+            //Close connection to FTP server
+            ftp_close($fpc_ftp_conn);
+        }
+    }
+}
+
+#Sample
+
+$content_file = "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN
+\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">
+<html xmlns=\"http://www.w3.org/1999/xhtml\">
+<head>
+<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />
+<title>Title</title>
+</head>
+<body>
+<p>Test</p>
+</body>
+</html>";
+
+ftp_put_contents("test.php", $content_file);
+?>
+===============================================================================
+
+re: moura dot kadu at gmail dot com
+
+why not ? file_put_contents('ftp://user:pass@server/path/to/file',$data);
+===============================================================================
+
+It's worth noting that you must make sure to use the correct path when working
+with this function. I was using it to help with logging in an error handler and
+sometimes it would work - while other times it wouldn't. In the end it was
+because sometimes it was called from different paths resulting in a failure to
+write to the log file.
+
+__DIR__ is your friend.
+===============================================================================
+
+I use file_put_contents() as a method of very simple hit counters. These are
+two different examples of extremely simple hit counters, put on one line of
+code, each.
+
+Keep in mind that they're not all that efficient. You must have a file called
+counter.txt with the initial value of 0.
+
+For a text hit counter:
+<?php
+$counter = file_get_contents("counter.txt"); $counter++; file_put_contents(
+"counter.txt", $counter); echo $counter;
+?>
+
+Or a graphic hit counter:
+<?php
+$counter = file_get_contents("counter.txt"); $counter++; file_put_contents(
+"counter.txt", $counter); for($i = 0; $i < strlen($counter); $i++) echo "<img
+src=\"counter/".substr($counter, $i, 1).".gif\" alt=\"".substr($counter, $i, 1
+)."\" />";
+?>
+===============================================================================
+
+I use the following code to create a rudimentary text editor. It's not fancy,
+but then it doesn't have to be. You could easily add a parameter to specify a
+file to edit; I have not done so to avoid the potential security headaches.
+
+There are still obvious security holes here, but for most applications it
+should be reasonably safe if implemented for brief periods in a
+counterintuitive spot. (Nobody says you have to make a PHP file for that
+purpose; you can tack it on anywhere, so long as it is at the beginning of a
+file.)
+
+<?php
+$random1 = 'randomly_generated_string';
+$random2 = 'another_randomly_generated_string';
+$target_file = 'file_to_edit.php';
+$this_file = 'the_current_file.php';
+
+if ($_REQUEST[$random1] === $random2) {
+    if (isset($_POST['content']))
+        file_put_contents($target_file, get_magic_quotes_qpc() ? stripslashes(
+$_POST['content']) : $_POST['content']);
+   
+    die('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/
+TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <title>Editing...</title>
+    </head>
+    <body>
+        <form method="post" action="' . $this_file . '" />
+        <input type="hidden" name="' . $random1 . '" value="' . $random2 . '"
+/>
+        <textarea name="content" rows="50" cols="100">' . file_get_contents(
+$target_file) . '</textarea><br />
+        <input type="submit" value="Save Changes" />
+        </form>
+    </body>
+</html>');
+}
+?>
+
+Then simply browse to hxxp://www.example.com/{$this_file}?{$random1}=
+{$random2}, with the appropriate values substituted for each bracketed
+variable. Please note that this code assumes the target file to be world
+writable (-rw-rw-rw- or 666) and will fail to save properly without error if it
+is not.
+
+Once again, this is by no means secure or permanent, but as a quick fix for
+brief edits to noncritical files it should be sufficient, and its small size is
+a definite bonus.
+===============================================================================
+
+I suggest to expand file_force_contents() function of TrentTompkins at gmail
+dot com by adding verification if patch is like: "../foo/bar/file"
+
+if (strpos($dir, "../") === 0)
+    $dir = str_replace("..", substr(__DIR__, 0, strrpos(__DIR__, "/")), $dir);
+===============================================================================
+
+Log custom or error messages to a file.
+
+<?php
+
+class Logger{
+
+    protected $file;
+       
+    protected $content;
+   
+    protected $writeFlag;
+   
+    protected $endRow;
+   
+
+    public function __construct($file,$endRow="\n",$writeFlag=FILE_APPEND) {
+       
+        $this->file=$file;
+       
+        $this->writeFlag=$writeFlag;
+       
+        $this->endRow=$endRow;
+       
+    }
+   
+   
+    public function AddRow($content="",$newLines=1){
+       
+        for ($m=0;$m<$newLines;$m++)
+        {
+       
+            $newRow .= $this->endRow;
+           
+        }
+       
+        $this->content .= $content . $newRow;
+       
+    }
+   
+   
+    public function Commit(){
+   
+            return file_put_contents($this->file,$this->content,$this->
+writeFlag);
+       
+    }
+   
+    public function LogError($error,$newLines=1)
+    {
+        if ($error!=""){
+       
+            $this->AddRow($error,$newLines);
+            echo $error;
+           
+        }       
+       
+    }
+
+}
+
+$logFileDirectoryAndName="/yourDirectory/yourFileName.xxx";
+
+$logger = new Logger($logFileDirectoryAndName);
+
+$logger->AddRow("Your Log Message");
+
+#log a system error and echo a message
+$logger->LogError(mysql_error($conn));
+
+$logger->Commit();
+?>
+===============================================================================
+
+In reply to the previous note:
+
+If you want to emulate this function in PHP4, you need to return the bytes
+written as well as support for arrays, flags.
+
+I can only figure out the FILE_APPEND flag and array support. If I could figure
+out "resource context" and the other flags, I would include those too.
+
+<?
+
+define('FILE_APPEND', 1);
+function file_put_contents($n, $d, $flag = false) {
+    $mode = ($flag == FILE_APPEND || strtoupper($flag) == 'FILE_APPEND') ? 'a'
+: 'w';
+    $f = @fopen($n, $mode);
+    if ($f === false) {
+        return 0;
+    } else {
+        if (is_array($d)) $d = implode($d);
+        $bytes_written = fwrite($f, $d);
+        fclose($f);
+        return $bytes_written;
+    }
+}
+
+?>
+===============================================================================
+
+NOTE : file_put_contents create files UTF-8
+
+<?php
+$myFile = 'test.txt';
+$myContent = 'I love PHP';
+
+file_put_contents($myFile, utf8_encode($myContent));
+?>
+===============================================================================
+
+This is example, how to save Error Array into simple log file
+
+<?php
+
+$error[] = 'some error';
+$error[] = 'some error 2';
+
+@file_put_contents('log.txt',date('c')."\n".implode("\n", $error),FILE_APPEND);
+
+?>
+===============================================================================
+
+To clear up what was said by pvenegas+php at gmail dot com on 11-Oct-2005
+08:13, file_put_contents() will replace the file by default.  Here's the
+complete set of rules this function follows when accessing a file:
+
+1.  Was FILE_USE_INCUDE_PATH passed in the call?  If so, check the include path
+for an existing copy of *filename*.
+
+2.  Does the file already exist?  If not, first create it in the current
+working directory.  Either way, open the file.
+
+3.  Was LOCK_EX passed in the call?  If so, lock the file.
+
+4.  Was the function called with FILE_APPEND?  If not, clear the file's
+contents.  Otherwise, move to the end of the file.
+
+5.  Write *data* into the file.
+
+6.  Close the file and release any locks.
+
+If you don't want to completely replace the contents of the file you're writing
+to, be sure to use FILE_APPEND (same as fopen() with 'a') in the *flags*.  If
+you don't, whatever used to be there will be gone (fopen() with 'w').
+
+Hope that helps someone (and that it makes sense ^^)!
+
+- Sendoshin

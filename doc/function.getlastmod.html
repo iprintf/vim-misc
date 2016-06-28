@@ -1,0 +1,171 @@
+
+getlastmod
+
+(PHP 4, PHP 5, PHP 7)
+
+getlastmod — 获取页面最后修改的时间
+
+说明
+
+int getlastmod ( void )
+
+获取执行的主脚本的最后修改时间。
+
+如果你对其他文件的最后修改时间的感兴趣，可考虑使用 filemtime()。
+
+返回值
+
+返回当前页面最后修改的时间。这个值是一个 Unix 时间戳，可以传入 date()。错误时返
+回 FALSE。
+
+范例
+
+Example #1 getlastmod() 例子
+
+<?php
+// 输出类似 'Last modified: March 04 1998 20:43:59.'
+echo "Last modified: " . date ("F d Y H:i:s.", getlastmod());
+?>
+
+参见
+
+  • date() - 格式化一个本地时间／日期
+  • getmyuid() - 获取 PHP 脚本所有者的 UID
+  • getmygid() - 获取当前 PHP 脚本拥有者的 GID
+  • get_current_user() - 获取当前 PHP 脚本所有者名称
+  • getmyinode() - 获取当前脚本的索引节点（inode）
+  • getmypid() - 获取 PHP 进程的 ID
+  • filemtime() - 取得文件修改时间
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+With better words getlastmod() returning the last time the script in which it
+is being called was modified, it does not require or use a parameter.
+===============================================================================
+
+Return latest mod time of all included files:
+
+<?php
+function get_page_mod_time() {
+    $incls = get_included_files();
+    $incls = array_filter($incls, "is_file");
+    $mod_times = array_map('filemtime', $incls);
+    $mod_time = max($mod_times);
+
+    return $mod_time;
+}
+?>
+===============================================================================
+
+If you use register_shutdown_function() on certain SAPIs, various
+filesystem-related things inside the shutdown function might do unexpected
+things, one of which being this function can return false.
+
+On the other hand getlastmod() apparently caches the return value, so if you
+use it at least once in normal code it should work for the remainder of the
+request.
+===============================================================================
+
+Setting the 'Last-Modified' header:
+<?php
+setlocale(LC_TIME, "C");
+$ft = filemtime ('referencefile');
+$localt = mktime ();
+$gmtt = gmmktime ();
+$ft = $ft - $gmtt + $localt;
+$modified = strftime ("%a, %d %b %Y %T GMT", $ft);
+?>
+===============================================================================
+
+I found issues using getlastmod() to test whether or not I was successful in
+setting the Last Modified date in the header. The code below shows the same
+Last Modified date before and after I set the Last-Modified header.
+
+<?php
+//True modified date
+$modified = date ("F d Y H:i:s.", getlastmod());
+   
+//artificial modified date - sent to header
+$last_modified = gmdate('D, d M Y H:i:s T', (time() - 43200));
+    
+//caching prevention
+header("Last-Modified: $last_modified GMT");
+header("Cache-Control: no-store, no-cache, must-revalidate");  // HTTP/1.1
+header("Cache-Control: post-check=0, pre-check=0", false);
+    header("Pragma: no-cache");                          // HTTP/1.0
+
+$getlast_modified = date ("F d Y H:i:s.", getlastmod());
+
+print "True modified date(Before): $modified <p /> Date sent to header(After): 
+$getlast_modified";
+?>
+
+I then used the PEAR, HTTP_Request class which worked, the Last-Modified date
+updates everytime it is requested, the desired effect.
+
+<?php
+require 'HTTP/Request.php';
+$r = new HTTP_Request('http://www.sample.com/page.php');
+$r->sendRequest();
+$response_headers = $r->getResponseHeader();
+print $response_headers["last-modified"];
+?>
+===============================================================================
+
+function for displaying last modification time accross more direcotries. e.g.
+to display last modification date in "about" section of your web page
+
+<?php
+function array_prefix_values($prefix, $array)
+{
+  $callback = create_function('$s','return "'.$prefix.'".$s;');
+  return array_map($callback,$array);
+}
+
+function get_last_update()
+{
+  if ( func_num_args() < 1 ) return 0;
+  $dirs = func_get_args();
+  $files = array();
+  foreach ( $dirs as $dir )
+  {
+    $subfiles = scandir($dir);
+    $subfiles = array_prefix_values($dir,$subfiles);
+    $subfiles = array_filter($subfiles,"is_file");
+    $files = array_merge($files,$subfiles);
+  }
+  $maxtimestamp = 0;
+  $maxfilename = "";
+  foreach ( $files as $file )
+  {
+    $timestamp = filemtime($file);
+    if ( $timestamp > $maxtimestamp )
+    {
+      $maxtimestamp = $timestamp;
+      $maxfilename = $file;
+    }
+  }
+  return date("Ymd",$maxtimestamp)." ($maxfilename)";
+}
+
+print "last update: ".get_last_update("./lib/", "./css/", "./lang/");
+?>
+
+OUTPUT:
+last update: 20110927 (./lang/sk.php)
+===============================================================================
+
+DO NOT use this function unless you are absolutely sure both your Apache and
+PHP have been compiled with the same value for -DFILE_OFFSET_BITS.
+
+If not, this function will return the access time (or maybe even garbage)
+instead of the modification time due do Apache and PHP using different versions
+of the stat structure.
+
+This is true regardless of Apache and PHP version.
+
+To be on the safe side, always use the workaround already posted below:
+filemtime($_SERVER['SCRIPT_FILENAME'])

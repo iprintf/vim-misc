@@ -1,0 +1,1339 @@
+
+register_shutdown_function
+
+(PHP 4, PHP 5, PHP 7)
+
+register_shutdown_function — Register a function for execution on shutdown
+
+说明
+
+void register_shutdown_function ( callable $callback [, mixed $parameter [, 
+mixed $... ]] )
+
+Registers a callback to be executed after script execution finishes or exit()
+is called.
+
+Multiple calls to register_shutdown_function() can be made, and each will be
+called in the same order as they were registered. If you call exit() within one
+registered shutdown function, processing will stop completely and no other
+registered shutdown functions will be called.
+
+参数
+
+callback
+
+    The shutdown callback to register.
+
+    The shutdown callbacks are executed as the part of the request, so it's
+    possible to send output from them and access output buffers.
+
+parameter
+
+    It is possible to pass parameters to the shutdown function by passing
+    additional parameters.
+
+...
+
+返回值
+
+没有返回值。
+
+错误／异常
+
+If the passed callback is not callable a E_WARNING level error will be
+generated.
+
+更新日志
+
+版本                                    说明
+      The shutdown functions are now called as a part of the request. In
+      earlier versions under Apache, the registered shutdown functions were
+4.1.0 called after the request has been completed (including sending any output
+      buffers), so it was not possible to send output to the browser using echo
+      or print, or retrieve the contents of any output buffers using 
+      ob_get_contents(). Headers were also always already sent.
+
+范例
+
+Example #1 register_shutdown_function() example
+
+<?php
+function shutdown()
+{
+    // This is our shutdown function, in 
+    // here we can do any last operations
+    // before the script is complete.
+
+    echo 'Script executed with success', PHP_EOL;
+}
+
+register_shutdown_function('shutdown');
+?>
+
+注释
+
+    Note:
+
+    Working directory of the script can change inside the shutdown function
+    under some web servers, e.g. Apache.
+
+    Note:
+
+    Shutdown functions will not be executed if the process is killed with a
+    SIGTERM or SIGKILL signal. While you cannot intercept a SIGKILL, you can
+    use pcntl_signal() to install a handler for a SIGTERM which uses exit() to
+    end cleanly.
+
+参见
+
+  • auto_append_file
+  • exit() - 输出一个消息并且退出当前脚本
+  • The section on connection handling
+
+
+User Contributed Notes 53 notes
+
+===============================================================================
+
+If your script exceeds the maximum execution time, and terminates thusly:
+
+Fatal error: Maximum execution time of 20 seconds exceeded in - on line 12
+
+The registered shutdown functions will still be executed.
+
+I figured it was important that this be made clear!
+===============================================================================
+
+If you want to do something with files in function, that registered in
+register_shutdown_function(), use ABSOLUTE paths to files instead of relative.
+Because when script processing is complete current working directory chages to
+ServerRoot (see httpd.conf)
+===============================================================================
+
+If you need the old (<4.1) behavior of register_shutdown_function you can
+achieve the same with "Connection: close" and "Content-Length: xxxx" headers if
+you know the exact size of the sent data (which can be easily caught with
+output buffering).
+An example:
+<?php
+header("Connection: close");
+ob_start();
+phpinfo();
+$size=ob_get_length();
+header("Content-Length: $size");
+ob_end_flush();
+flush();
+sleep(13);
+error_log("do something in the background");
+?>
+
+The same will work with registered functions.
+According to http spec, browsers should close the connection when they got the
+amount of data specified in Content-Length header. At least it works fine for
+me in IE6 and Opera7.
+===============================================================================
+
+You may get the idea to call debug_backtrace or debug_print_backtrace from
+inside a shutdown function, to trace where a fatal error occurred.
+Unfortunately, these functions will not work inside a shutdown function.
+===============================================================================
+
+I have discovered a change in behavior from PHP 5.0.4 to PHP 5.1.2 when using a
+shutdown function in conjunction with an output buffering callback.
+
+In PHP 5.0.4 (and earlier versions I believe) the shutdown function is called
+after the output buffering callback.
+
+In PHP 5.1.2 (not sure when the change occurred) the shutdown function is
+called before the output buffering callback.
+
+Test code:
+<?php
+function ob_callback($buf) {
+    $buf .= '<li>' . __FUNCTION__ .'</li>';
+    return $buf;
+}
+
+function shutdown_func() {
+    echo '<li>' . __FUNCTION__ .'</li>';
+}
+
+ob_start('ob_callback');
+register_shutdown_function('shutdown_func');
+echo '<ol>';
+?>
+
+PHP 5.0.4:
+
+1. ob_callback
+2. shutdown_func
+
+PHP 5.1.2:
+
+1. shutdown_func
+2. ob_callback
+===============================================================================
+
+As of PHP 5.3.0, the last note about unpredictable working directory also
+applies to FastCGI, when previously it didn't.
+===============================================================================
+
+When using objects the syntax register_shutdown_function(array($object,
+'function')) will take a copy of the object at the time of the call.  This
+means you cannot do this in the constructor and have it correctly destruct
+objects.  The alternative is to use register_shutdown_function(array(&$object,
+'function')) where the ampersand passes the reference and not the copy.  This
+appears to work fine.
+===============================================================================
+
+The following function register_close_function should reproduce the former php
+behavior of closing the connection before executing the shutdown handler, based
+on the code posted by sts at mail dot xubion dot hu. It does not work on any
+machine.
+
+<?php
+function register_close_function($func) {
+  register_close_function::$func = $func;
+  register_shutdown_function(array("register_close_function", "close"));
+  ob_start();
+}
+class register_close_function {
+  // just a container
+  static $func;
+  function close() {
+    header("Connection: close");
+    $size = ob_get_length();
+    header("Content-Length: $size");
+    ob_end_flush();
+    flush();
+    call_user_func(register_close_function::$func);
+  }
+}
+?>
+===============================================================================
+
+I had a problem when forking a child process and accessing the variables by
+using the "global" keyword in the shutdown function.
+So i used another way for getting the variables to the shutdown function: I
+passed them by reference.
+
+Example:
+<?php
+function shutdown_function (&$test) {
+    echo __FUNCTION__.'(): $test = '.$test."\n";
+}
+
+$test = 1;
+register_shutdown_function('shutdown_function', &$test);
+echo '$test = '.$test."\n";
+
+// do some stuff and change the variable values
+$test = 2;
+
+// now the shutdown function gets called
+exit(0);
+?>
+
+Maybe tis helps someone. (I'm using PHP 5.2.11)
+===============================================================================
+
+If you register function that needs to be running last (for example, close
+database connection) - just register another shutdown function from shutdown
+function:
+<?php
+function test1(){
+  register_shutdown_function('test_last');
+}
+
+function test2(){/*...*/}
+function test3(){/*...*/}
+function test_last(){/*...*/}
+
+register_shutdown_function('test1');
+register_shutdown_function('test2');
+register_shutdown_function('test3');
+?>
+
+the script will call functions in correct order: test1, test2, test3, test_last
+===============================================================================
+
+You definitely need to be careful about using relative paths in after the
+shutdown function has been called, but the current working directory doesn't
+(necessarily) get changed to the web server's ServerRoot - I've tested on two
+different servers and they both have their CWD changed to '/' (which isn't the
+ServerRoot).
+
+This demonstrates the behaviour:
+
+<?php
+function echocwd() { echo 'cwd: ', getcwd(), "\n"; }
+
+register_shutdown_function('echocwd');
+echocwd() and exit;
+?>
+
+Outputs:
+
+cwd: /path/to/my/site/docroot/test
+cwd: /
+
+NB: CLI scripts are unaffected, and keep their CWD as the directory the script
+was called from.
+===============================================================================
+
+re:codeslinger at compsalot dot com
+
+fork() is actually creating 2 processes from one. So there is no surprise
+register_shutdown_function will be executed per each process.
+
+I think you have reported this as a bug and now in php 5.1.0 when you exit from
+child process, it does not execute it. Well, what are you going to do if you
+have something to register for forked process?
+
+I hope php will be more stable near soon!
+
+codeslinger at compsalot dot com
+03-Feb-2005 09:22
+Here is a nice little surprise to keep in mind...
+
+If you register a shutdown function for your main program.  And then you fork()
+a child.
+
+Guess What?
+When the child exits it will run the code that was intended for the main
+program.  This can be a really bad thing  ;-)
+
+Happily there is a simple work-around.  All you need to do is to create a
+global variable such as:
+
+$IamaChild = [TRUE | FALSE];
+
+and have your shutdown function check the value...
+===============================================================================
+
+When using CLI ( and perhaps command line without CLI - I didn't test it) the
+shutdown function doesn't get called if the process gets a SIGINT or SIGTERM.
+only the natural exit of PHP calls the shutdown function.
+To overcome the problem compile the command line interpreter with
+--enable-pcntl and add this code:
+
+<?php
+function sigint()
+{
+    exit;
+}
+pcntl_signal(SIGINT, 'sigint');
+pcntl_signal(SIGTERM, 'sigint');
+?>
+
+This way when the process recieves one of those signals, it quits normaly, and
+the shutdown function gets called.
+Note: using the pcntl function in web server envoirment is considered
+problematic, so if you are writing a script that runs both from the command
+line and from the server, you should put some conditional code around that
+block that identifies wheater this is a command line envoirment or not.
+===============================================================================
+
+Use this small snippet inside your bootstrap in order to always have a way to
+know reliably what was the last page of your site that the user have visited,
+without having to use $_SERVER['HTTP_REFERER'].
+
+<?php
+session_start();
+
+// Get current page
+$current_page = htmlspecialchars($_SERVER['SCRIPT_NAME'], ENT_QUOTES, 'UTF-8');
+$current_page .= $_SERVER['QUERY_STRING'] ? '?'.htmlspecialchars($_SERVER[
+'QUERY_STRING'], ENT_QUOTES, 'UTF-8') : '';
+
+// Set previous page at the end
+register_shutdown_function(function ($current_page) {
+    $_SESSION['previous_page'] = $current_page;
+}, $current_page);
+?>
+===============================================================================
+
+A lot of useful services may be delegated to this useful trigger.
+It is very effective because it is executed at the end of the script but before
+any object destruction, so all instantiations are still alive.
+
+Here's a simple shutdown events manager class which allows to manage either
+functions or static/dynamic methods, with an indefinite number of arguments
+without using any reflection, availing on a internal handling through
+func_get_args() and call_user_func_array() specific functions:
+
+<?php
+// managing the shutdown callback events:
+class shutdownScheduler {
+    private $callbacks; // array to store user callbacks
+   
+    public function __construct() {
+        $this->callbacks = array();
+        register_shutdown_function(array($this, 'callRegisteredShutdown'));
+    }
+    public function registerShutdownEvent() {
+        $callback = func_get_args();
+       
+        if (empty($callback)) {
+            trigger_error('No callback passed to '.__FUNCTION__.' method', 
+E_USER_ERROR);
+            return false;
+        }
+        if (!is_callable($callback[0])) {
+            trigger_error('Invalid callback passed to the '.__FUNCTION__.'
+method', E_USER_ERROR);
+            return false;
+        }
+        $this->callbacks[] = $callback;
+        return true;
+    }
+    public function callRegisteredShutdown() {
+        foreach ($this->callbacks as $arguments) {
+            $callback = array_shift($arguments);
+            call_user_func_array($callback, $arguments);
+        }
+    }
+    // test methods:
+    public function dynamicTest() {
+        echo '_REQUEST array is '.count($_REQUEST).' elements long.<br />';
+    }
+    public static function staticTest() {
+        echo '_SERVER array is '.count($_SERVER).' elements long.<br />';
+    }
+}
+?>
+
+A simple application:
+
+<?php
+// a generic function
+function say($a = 'a generic greeting', $b = '') {
+    echo "Saying {$a} {$b}<br />";
+}
+
+$scheduler = new shutdownScheduler();
+
+// schedule a global scope function:
+$scheduler->registerShutdownEvent('say', 'hello!');
+
+// try to schedule a dyamic method:
+$scheduler->registerShutdownEvent(array($scheduler, 'dynamicTest'));
+// try with a static call:
+$scheduler->registerShutdownEvent('scheduler::staticTest');
+
+?>
+
+It is easy to guess how to extend this example in a more complex context in
+which user defined functions and methods should be handled according to the
+priority depending on specific variables.
+
+Hope it may help somebody.
+Happy coding!
+===============================================================================
+
+register_shutdown_function seems to be immune to whatever value was set with
+set_time_limit or the max_execution_time value defined in php.ini.
+<?php
+function asdf() {
+    echo microtime(true) . '<br>';
+    sleep(1);
+    echo microtime(true) . '<br>';
+    sleep(1);
+    echo microtime(true) . '<br>';
+}
+register_shutdown_function('asdf');
+set_time_limit(1);
+
+while(true) {}
+?>
+The output is three lines.
+===============================================================================
+
+When using php-fpm, fastcgi_finish_request() should be used instead of
+register_shutdown_function() and exit()
+
+For example, under nginx and php-fpm 5.3+, this will make browsers wait 10
+seconds to show output:
+
+<?php
+    echo "You have to wait 10 seconds to see this.<br>";
+    register_shutdown_function('shutdown');
+    exit;
+    function shutdown(){
+        sleep(10);
+        echo "Because exit() doesn't terminate php-fpm calls immediately.<br>";
+    }
+?>
+
+This doesn't:
+
+<?php
+    echo "You can see this from the browser immediately.<br>";
+    fastcgi_finish_request();
+    sleep(10);
+    echo "You can't see this form the browser.";
+?>
+===============================================================================
+
+Given this code:
+
+<?php
+class CallbackClass {
+    function CallbackFunction() {
+        // refers to $this
+    }
+
+    function StaticFunction() {
+        // doesn't refer to $this
+    }
+}
+
+function NonClassFunction() {
+}
+?>
+
+there appear to be 3 ways to set a callback function in PHP (using
+register_shutdown_function() as an example):
+
+1: register_shutdown_function('NonClassFunction');
+
+2: register_shutdown_function(array('CallbackClass', 'StaticFunction'));
+
+3: $o =& new CallbackClass();
+   register_shutdown_function(array($o, 'CallbackFunction'));
+
+The following may also prove useful:
+
+<?php
+class CallbackClass {
+    function CallbackClass() {
+        register_shutdown_function(array(&$this, 'CallbackFunction')); // the &
+is important
+    }
+   
+    function CallbackFunction() {
+        // refers to $this
+    }
+}
+?>
+===============================================================================
+
+Here is a nice little surprise to keep in mind...
+
+If you register a shutdown function for your main program.  And then you fork()
+a child.
+
+Guess What?
+When the child exits it will run the code that was intended for the main
+program.  This can be a really bad thing  ;-)
+
+Happily there is a simple work-around.  All you need to do is to create a
+global variable such as:
+
+$IamaChild = [TRUE | FALSE];
+
+and have your shutdown function check the value...
+===============================================================================
+
+Read the post regarding the change of working directory to ServerRoot
+carefully. This means that require_once "path/to/script" (or similar
+constructs) with relative paths will not work in shutdown functions.
+===============================================================================
+
+It's already been discussed on the zlib page ( http://www.php.net/zlib ), but
+hasn't been mention here...
+
+When zlib compression is enabled, register_shutdown_function doesn't work
+properly. Anything output from your shutdown function will not be readable by
+the browser. Firefox just ignores it. IE6 will show you a blank page.
+
+The workaround that worked for me is to add the following to the top of the
+script.
+ini_set('zlib.output_compression', 0);
+===============================================================================
+
+I've had immense trouble getting any of the examples of emulated destructors to
+work.  They always seemed to have a copy of the object just after
+initialisation.  Many people mention that the register_shutdown_function will
+take a copy of the object rather than a reference... and this can be cured with
+an ampersand.  If you look in the PEAR docs for the way they emulate
+destructors you'll find that you also need one before the "new" statement when
+you create an instance of your object.  There's an editors note above that
+mentions this too... but I thought I'd collect it all here in one example that
+really works.  Honest... I'm using it (PHP 4.3.1):
+
+<?php
+class Object {
+    var $somevar = "foo";
+
+    function Object() {
+        $somevar = "bar";
+        register_shutdown_function(array(&$this, 'MyDestructor'));
+    }
+
+    function MyDestructor() {
+        # Do useful destructor stuff here...
+    }
+}
+
+# Now create the object as follows and then 'MyDestructor'
+# will be called on shutdown and will be able to operate on
+# the object as it ended up... not as it started!
+$my_object =& new Object;
+?>
+===============================================================================
+
+I was trying to figure out how to pass parameters to the
+register_shutdown_function() since you cannot register a function with
+parameters and passing through globals is not appropriate. E.g. what I was
+trying to do was  <? register_shutdown_function("anotherfunction('parameter')")
+?>
+Turns out, the trick is to use create_function() to create a "function" that
+calls the desired function with static parameters.
+
+<?php
+$funtext="mail('u@ho.com','mail test','sent after shutdown');";
+register_shutdown_function(create_function('',$funtext));
+?>
+
+Here's another example showing in-line logging and a post-execution version:
+
+Before: in-process logging
+
+<?php
+function logit($message) {
+   $oF=fopen('TEST.log', 'a');
+   fwrite($oF,"$message\n");
+   fclose($oF);
+   sleep(5);  // so you can see the delay
+}
+print "loging";
+logit("traditional execution");
+print "logged";
+exit;
+?>
+After:
+
+<?php
+function logit($message) {
+   $forlater=create_function('',"loglater('$message');");
+   register_shutdown_function($forlater);
+}
+function loglater($message) {
+   $oF=fopen('TEST.log', 'a');
+   fwrite($oF,"$message\n");
+   fclose($oF);
+   sleep(5);  // so you can see the delay
+}
+print "loging";
+logit("delayed execution");
+print "logged";
+exit;
+?>
+
+In the 'before' example, the file is written (and the delay occurs) before the
+"logged" appears. In the 'after' example, the file is written after execution
+terminates.
+
+Maybe it would be nice to add a parameter to the register_shutdown_function
+that does this automatically?
+===============================================================================
+
+Contrary to the the note that "headers are always sent" and some of the
+comments below - You CAN use header() inside of a shutdown function as you
+would anywhere else; when headers_sent() is false. You can do custom fatal
+handling this way:
+
+<?php
+ini_set('display_errors',0);
+register_shutdown_function('shutdown');
+
+$obj = new stdClass();
+$obj->method();
+
+function shutdown()
+{
+  if(!is_null($e = error_get_last()))
+  {
+    header('content-type: text/plain');
+    print "this is not html:\n\n". print_r($e,true);
+  }
+}
+?>
+===============================================================================
+
+Note that register_shutdown_function() does not work under Apache on Windows
+platforms.  Your shutdown function will be called, but the connection will not
+close until the processing is complete.  Zend tells me that this is due to a
+difference between Apache for *nix and Apache for Windows.
+
+I'm seeing similar behavior under IIS (using php4isapi).
+===============================================================================
+
+In PHP 5.1.6 things don't work as described here.
+
+The truth is that connection_status() just always returns 0 whether or not the
+client has aborted (e.g. the user hit the stop button), and that (consistently
+with this) the registered shutdown function will only be called on exit, but
+NOT when the connection is aborted from the user.
+
+That is, PHP does NOT detect when the connection is aborted.
+===============================================================================
+
+Note that if the handler function is private static it will never be called! It
+must be public!
+===============================================================================
+
+simple method to disconnect the client and continue processing:
+
+<?php
+function endOutput($endMessage){
+    ignore_user_abort(true);
+    set_time_limit(0);
+    header("Connection: close");
+    header("Content-Length: ".strlen($endMessage));
+    echo $endMessage;
+    echo str_repeat("\r\n", 10); // just to be sure
+    flush();
+}
+
+// Must be called before any output
+endOutput("thank you for visiting, have a nice day');
+
+sleep(100);
+mail("you@yourmail.com", "ping", "i'm here");
+?>
+===============================================================================
+
+Something found out during testing:
+
+the ini auto_append_file will be included BEFORE the registered function(s)
+will be called.
+===============================================================================
+
+Note that in the various solutions presented here, a call to ob_start() at the
+begining of a script and a flush at the end will defeat any optimisation
+attempt to return large files in chunks (custom code or readfile). i.e. don't
+use ob_start if you are going to return large files you will simply bust the
+memory limit.
+===============================================================================
+
+You can use a static method of a class as a shutdown function without passing
+an instance. I think that doesn't make too much sense, however it's possible.
+
+<?php
+register_shutdown_function('someClass::someMethod');
+?>
+
+If this method is *NOT* static, then PHP will complain about an invalid
+callback instead of just emitting an E_STRICT error.
+===============================================================================
+
+This may seem obvious to many people, but don't register an object's __destruct
+() function as a shutdown function! In many instances, it will then call the
+destructor twice, most likely on an already destroyed object! For example, you
+might get this error:
+
+PHP Warning:  mysqli::close() [<a href='function.mysqli-close'>
+function.mysqli-close</a>]: Couldn't fetch mysqli in /path/to/file.php
+
+I saw docey's comment from 2006 in this very page where they do just that, and
+this more often than not cause problems!
+
+It would be wise to look out for old code where someone has done that very
+thing then too!
+===============================================================================
+
+You can achieve similar results by using auto_append_file in the php.ini or
+.htaccess file:
+(php.ini)
+auto_append_file = /my-auto-append-file.php
+(.htaccess)
+php_value auto_append_file /my-auto-append-file.php
+===============================================================================
+
+Response to => vbwebprofi at gmx dot de 22-Nov-2003 03:12
+
+You have to do a changement on the object to see the difference between = and =
+&
+
+Here is your code modified to see the difference.
+The modification of the code are essentially the var $Value_changed and the
+function change().
+I have tested it under RedHat 9 with PHP 4.2.2
+
+--8<--- cls_TEST.php --------------------------------------------->8--
+<?php
+class TEST {
+    var $Value;
+    var $Value_changed;
+
+    // Constructor
+
+    function TEST($in_Value = 0){
+        // Register destructor
+        register_shutdown_function(array(&$this, '_TEST'));
+       
+        $this->Value = $in_Value;
+        $this->Value_changed = $in_Value;
+        $this->_Log('TEST');
+    }
+   
+    // Destructor
+    function _TEST() {
+        $this->_Log('_TEST');
+    }
+   
+    // Private function
+    function _Log($in_Msg) {
+        $oF = fopen('/tmp/TEST.log', 'a');
+        fwrite($oF, sprintf("%s : %-5s = %d ; %d\n",
+                            date('Y-m-d H:i:s', time()),
+                            $in_Msg,
+                            $this->Value,
+                            $this->Value_changed));
+        fclose($oF);
+    }
+   
+    // Function change()
+    function change() {
+        $this->Value_changed++;
+        $this->_Log('change');
+    }
+}
+?>
+--8<--- test_TEST.php -------------------------------------------->8--
+<?php
+    // include class TEST
+    include_once('cls_TEST.php');
+   
+    echo "New...<br>\n";
+    $o1 =  new TEST(1);
+    $o2 =& new TEST(2);
+    # Strange declaration :
+    $o3 &= new TEST(3);
+   
+    echo "Sleep...<br>\n";
+    sleep(5);
+   
+    echo "Change...<br>\n";
+    $o1->change();
+    $o2->change();
+    # The following line doesn't work !
+    #$o3->change();
+   
+    echo "Sleep...<br>\n";
+    sleep(5);
+   
+    echo "End.";
+?>
+--8<-------------------------------------------------------------->8--
+
+It should produce a content like this in the file, specified in the _Log
+function :
+
+2003-12-02 04:22:55 : TEST  = 1 ; 1
+2003-12-02 04:22:55 : TEST  = 2 ; 2
+2003-12-02 04:22:55 : TEST  = 3 ; 3
+2003-12-02 04:23:01 : change = 1 ; 2
+2003-12-02 04:23:01 : change = 2 ; 3
+2003-12-02 04:23:06 : _TEST = 1 ; 1
+2003-12-02 04:23:06 : _TEST = 2 ; 3
+2003-12-02 04:23:06 : _TEST = 3 ; 3
+===============================================================================
+
+One more note to add about register_shutdown_function and objects.
+
+It is possible to self-register the object from the constructor, but even using
+the syntax:
+register_shutdown_function(array(&$this,'shutdown'))
+
+will only result in the function being called with the object in the "just
+initialized" state, any changes made to the object after construction will not
+be there when the script actually exits.
+
+But if you use:
+
+<?php
+$obj = new object();
+register_shutdown_function(array(&$obj,'shutdown'));
+?>
+
+the object method 'shutdown' will be called with the current state of the
+object intact.
+
+[Editor's note: The explanation for this behavior is really simple.
+"$obj = new object()" creates a copy of the object which you can refer with
+$this in the object's constructor.
+To solve this "problem" you should use "$obj = &new object()" which assign the
+reference to the current object.]
+===============================================================================
+
+Sinured's example of how to use a static method did not work for me.
+But this did:
+
+<?php
+register_shutdown_function(array('theClass','theStaticMethod'));
+?>
+
+Hope this helps someone.
+
+[EDIT by danbrown AT php DOT net: This example did not work for the author of
+this note because it is written for PHP 5.  The author was using PHP 4.]
+===============================================================================
+
+Well, it might be obvious, but one should remember that one cannot send any
+HTTP header in the shutdown callback.
+
+Something like
+
+<?php
+
+function redirect()
+{
+     header("Location: myuri.php");
+}
+
+register_shutdown_function("redirect");
+
+// do something useful here
+
+?>
+
+doesn't work and PHP sends out the popular "headers already sent" warning.
+
+I tried to set a redirection target somewhere in the script, but wanted to make
+sure that it was only set/executed at the very end of the script, since my
+custom redirect function also cleaned any output buffers at that point. Well,
+no luck here =)
+===============================================================================
+
+Quick note: As of PHP 5.5.11 this function ignores current namespace and 'use'
+statements so it is mandatory to use the fully qualified name of the function
+in the callback parameter
+===============================================================================
+
+for static call
+register_shutdown_function(function () {
+                demo::shutdownFunc();
+});
+===============================================================================
+
+A note about error management.
+If you like to use the boolean 'or' operator for error detection, like this:
+<?php
+register_shutdown_function('my_shutdown_function') or
+    throw new Exception("Could not register shutdown function");
+?>
+it won't work.
+This function always returns void which == false, so the exception will
+*always* be thrown.
+Error reporting is integrated into the function.
+===============================================================================
+
+May be obvious for most people, but I spent time to clearly understand
+something which is only INDIRECTLY mentioned by the manual, so I hope this
+useful for someones.
+
+Pay attention to the function prototype: the $function argument is a callback
+one (follow the link for more information).
+This means that you must write this argument differently depending on the
+$function context:
+. function-name, as a string, when it is a built-in or user-defined function
+. array(class-name, method-name), when it is an object method
+===============================================================================
+
+Just a note to say that if your function uses paths relative to the script you
+are running (ie. for reading files, "../dir/" etc) then your function may not
+work correctly when registered as a shutdown function. I'm not sure where the
+'working dir' IS when running a shutdown function but I find it best to use
+absolute paths ("/home/www/dir/").
+===============================================================================
+
+I performed two tests on the register_shutdown_function() to see under what
+conditions it was called, and if a can call a static method from a class. Here
+are the results:
+
+<?php
+/**
+* Tests the shutdown function being able to call a static methods
+*/
+class Shutdown
+{
+    public static function Method ($mixed = 0)
+    {
+        // we need absolute
+        $ap = dirname (__FILE__);
+        $mixed = time () . " - $mixed\n";
+        file_put_contents ("$ap/shutdown.log", $mixed, FILE_APPEND);
+    }
+}
+// 3. Throw an exception
+register_shutdown_function (array ('Shutdown', 'Method'), 'throw');
+throw new Exception ('bla bla');
+
+// 2. Use the exit command
+//register_shutdown_function (array ('Shutdown', 'Method'), 'exit');
+//exit ('exiting here...')
+
+// 1. Exit normally
+//register_shutdown_function (array ('Shutdown', 'Method'));
+?>
+
+To test simply leave one of the three test lines uncommented and execute.
+Executing bottom-up yielded:
+
+1138382480 - 0
+1138382503 - exit
+1138382564 - throw
+
+HTH
+===============================================================================
+
+Just a quick note: from 5.0.5 on objects will be unloaded _before_ your
+shutdown function is called which means you can't use previously initiated
+objects (such as mysqli).
+
+See bug 33772 for more information.
+===============================================================================
+
+Various commenters have described how this function doesn't work for
+time-consuming background processing, because the webpage doesn't close the
+connection.  The workaround using output buffering and header('Connection:
+close'); seems to work, but the solution I prefer is to put the background
+processing in a separate script which gets included as a transparent gif. 
+
+<?php
+
+  //logger.php -- does the time-consuming log_it() function
+
+  function log_it()
+  {
+    sleep(12); //simulate long processing
+    error_log('log_it() completed'); 
+  }
+
+  error_reporting(0);
+  register_shutdown_function('log_it');
+  header('Cache-Control: no-cache');
+  header('Content-type: image/gif');
+
+  //the size of the unencoded transparent gif
+  header('Content-length: 85');
+
+  //1x1 pixel transparent gif
+  print base64_decode('R0lGODlhAQABALMAAAAAAIAAAACAA'.
+                       'ICAAAAAgIAAgACAgMDAwICAgP8AAA'.
+                       'D/AP//AAAA//8A/wD//wBiZCH5BAE'.
+                       'AAA8ALAAAAAABAAEAAAQC8EUAOw==');
+
+  flush();
+  exit;
+ 
+
+?>
+
+@-----------Page you want to add background processing to ---------@
+<html>
+<body>
+<h1>Hello World</h1>
+
+<!-- Call logger.php to do background processing -->
+<img src="logger.php" width="1" height="1" border="0" alt="" />
+
+</body>
+</html>
+@------------------------------------------------------------------@
+
+The only caveat is, of course, if the user has images turned off then the
+script won't be called.  Tested successfully with IE6, Firefox 0.8, and Opera
+7.11
+===============================================================================
+
+When using the register_shutdown_function command in php 4. The registered
+functions are called in the order that you register them.
+
+This is important to note if you are doing database work using classes that
+register shutdown functions for themselves.
+
+You must register the shutdown_functions in the order that you want things to
+shutdown. ( ie the database needs to shutdown last )
+
+Example of what will not work but what you might expect to work :
+
+<?php
+class database {
+
+        function database() {
+                echo "connect to sql server -- (database :: constructor)<br>\n"
+;
+                register_shutdown_function( array( &$this, "phpshutdown" ) );
+                $this->connected = 1;
+        }
+       
+        function do_sql( $sql ) {
+                if ( $this->connected == 1 ) {
+                        echo "performing sql -- (database :: do_sql)<br>\n";
+                } else {
+                        echo " ERROR -- CAN NOT PERFORM SQL -- NOT CONNECTED TO
+SERVER -- (database :: do_sql)<br>\n";
+                }
+        }
+       
+        function phpshutdown() {
+                echo "close connection to sql server -- <b>(database ::
+shutdown)</b><br>\n";
+                $this->connected = 0;
+        }      
+}
+
+class table {
+       
+        function table( &$database, $name ) {
+                $this->database =& $database;
+                $this->name = $name;
+                echo "read table data using database class -- name=$this->name
+-- (table :: constructor)<br>\n";
+                register_shutdown_function( array( &$this, "phpshutdown" ) );
+                $this->database->do_sql( "read table data" );
+        }
+       
+        function phpshutdown() {
+                echo "save changes to database -- name=$this->name -- <b>(table
+:: shutdown)</b><br>\n";
+                $this->database->do_sql( "save table data" );
+        }
+}
+
+$db =& new database();
+
+$shoppingcard =& new table( &$db, "cart " );
+?>
+
+Output of the above example is :-
+
+connect to sql server -- (database :: constructor)
+read table data using database class -- name=cart -- (table :: constructor)
+performing sql -- (database :: do_sql)
+close connection to sql server -- (database :: shutdown)
+save changes to database -- name=cart -- (table :: shutdown)
+ERROR -- CAN NOT PERFORM SQL -- NOT CONNECTED TO SERVER -- (database :: do_sql)
+===============================================================================
+
+It should be noted that register_shutdown_function() does not guarantee that
+the connection will be closed before executing the function.  In particular on
+Apache 1.3.27 w/ PHP 4.3.0 on OS X as well as Apache 1.3.22 w/ PHP 4.1.2 on Red
+Hat I have discovered that Apache does not close the connection until after the
+registered shutdown function has completed execution.  I am not sure what the
+circumstances that cause this are, but there is a bug at http://bugs.php.net/
+bug.php?id=20447
+
+This is important, because as far as I can tell, the documented functionality
+of register_shutdown_function() is the *ONLY* way to achieve anything
+resembling asynchronous processing with PHP in a web server environment.  In my
+mind this is a severe limitation, because if you have some processing intensive
+task that needs to be done and you want to do it in PHP, there is no way to
+have it occur without an accompanying wait in a browser window.  Sure you can
+use ignore_user_abort() to ensure that processing doesn't get cancelled by an
+impatient user (or impatient browser for that matter), but usability is still
+compromised.
+===============================================================================
+
+Note that under Windows 2003/IIS6 and PHP5 5.1.2 ISAPI the
+register_shutdown_function executes under IUSR_, regardless of what user the
+script executes under.
+This means that even if you use Application Pools and NETWORK SERVICE as user,
+shutdown functions will run under the default IIS user.
+===============================================================================
+
+If you use register_shutdown_function under fastCGI (using php 5.4.4, Apache
+2.2/Debian) and the user clicks cancel request in the browser
+register_shutdown_function will not be called.
+My solution was to use ignore_user_abort(true) to ignore the user abort.
+Example (you may test request abort in the browser with and without
+ignore_user_abort):
+
+<?php
+
+    // use this to make sure the shutdown function will be called
+    ignore_user_abort(true);
+
+    $f = fopen("debug.out.txt", "wt");
+
+    function qShutdown()
+    {
+        global $f;
+       
+        // use __DIR__ as the shutdown it's not invoke under the same folder
+        file_put_contents(__DIR__. "/qShutdown.txt", "qShutdown called");
+       
+        fwrite($f, "I was called\n");
+        fclose($f);
+
+        echo "I was called\n";
+    }
+
+    register_shutdown_function("qShutdown");
+   
+    // do some random stuff
+
+    echo "things were executed\n";
+    fwrite($f, "things were executed\n");
+    fflush($f);
+   
+    $n = 10;
+    $i = 0;
+    while ($i < $n)
+    {
+        sleep(1);
+        $i++;
+       
+        echo "Working {$i} ...\n";
+        fwrite($f, "Working {$i} ...\n");
+        fflush($f);
+       
+        ob_flush();
+        flush();
+        ob_flush();
+    }
+   
+    fwrite($f, "die called\n");
+    fflush($f);
+   
+    die("die called\n");
+
+?>
+===============================================================================
+
+According to tests shown in this comment on the PHP5 deconstructor page:
+
+http://us3.php.net/manual/en/language.oop5.decon.php#76710
+
+Functions registered with register_shutdown_function are called before
+deconstructors, at least as of PHP 5.2.1. This contradicts an earlier commenter
+who claims that objects cannot be utilized in functions called from
+register_shutdown_function. This is good news for those who want to use
+register_shutdown_function to work around the (fairly nasty) problems with
+using objects in a session write handler.
+===============================================================================
+
+This simple function (i gues)  is for measuring page generation time in
+microseconds, using earlier mentioned register_shutdown_function...
+
+Here is an example:
+
+<?php
+set_time_limit(0);
+
+function check_time($time_str, $end = false){
+
+    global $start; //Need some global variable where we will ceep our start
+time
+
+    list($msec, $sec) = explode(' ', $time_str);
+    $result = bcadd($msec, $sec, 10);
+
+    if(!$end){
+
+        $start = $result;
+        register_shutdown_function('check_time', microtime(), 'true'); //
+Function registrates itself only with some parametrs now
+
+    }elseif($end){
+
+        $end = $result;
+        echo '<br />Page was generated in '.bcsub($end, $start, 10).'
+seconds...<br />';
+
+    }
+
+}
+
+check_time(microtime()); //Caling our function once!
+
+//Doing some job which we will measure...
+
+$fd = fopen('users.txt', 'r');
+while(!feof($fd)){
+    $buffer .= fread($fd, 1024);
+}
+fclose($fd);
+
+?>
+
+As you see may be its large, but you dont have to call "check_time" function
+twice, in the start and at the end of the script, as many users usually do...
+===============================================================================
+
+if you want to make use of php5 __construct and _destruct functionality this
+functions is your rescue.
+
+so say you have a class called 'fiveclass', you need some code like this:
+
+<?php
+class fiveclass
+{
+
+  function fiveclass()
+  {
+   return $this->__construct(); // forward php4 to __construct
+  }
+
+  function __construct()
+  {
+    // register __destruct method as shutdown function
+    register_shutdown_function(array(&$this, "__destruct"));
+
+   return true;
+  }
+
+  function __destruct()
+  {
+    // finish what where doing;
+    close_db();
+    flush_output();
+    write_cache_away();
+
+   return true;
+  }
+
+}
+
+$obj = new fiveclass();
+?>
+
+now you have the same functionality. __destruct is automaticly called at the
+end of your script.
+===============================================================================
+
+There is a note "Shutdown function is called during the script shutdown so
+headers are always already sent.", but my php 5.1 seems to act differently.
+Example:
+<?php
+class Test {
+   
+    private $running;
+   
+    public function main() {
+        $this->running = true;
+        ob_start();
+        error_reporting(E_ALL);
+        register_shutdown_function(array($this, "clean_exit"));
+        echo "Hello";
+        // triggers E_ERROR
+        $fatal->error();
+       
+        $this->running = false;   
+    }
+
+    public function clean_exit() {
+        if ($this->running) {
+            header("Location: error.php");   
+        }   
+    }
+}
+$t = new Test();
+$t->main();
+?>
+This example redirects you on error.php, this could be a simple way to handle
+E_ERROR.

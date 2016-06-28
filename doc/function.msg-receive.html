@@ -1,0 +1,234 @@
+
+msg_receive
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+msg_receive — Receive a message from a message queue
+
+说明
+
+bool msg_receive ( resource $queue , int $desiredmsgtype , int &$msgtype , int
+$maxsize , mixed &$message [, bool $unserialize = true [, int $flags = 0 [, int
+&$errorcode ]]] )
+
+msg_receive() will receive the first message from the specified queue of the
+type specified by desiredmsgtype.
+
+参数
+
+queue
+
+desiredmsgtype
+
+    If desiredmsgtype is 0, the message from the front of the queue is
+    returned. If desiredmsgtype is greater than 0, then the first message of
+    that type is returned. If desiredmsgtype is less than 0, the first message
+    on the queue with the lowest type less than or equal to the absolute value
+    of desiredmsgtype will be read. If no messages match the criteria, your
+    script will wait until a suitable message arrives on the queue. You can
+    prevent the script from blocking by specifying MSG_IPC_NOWAIT in the flags
+    parameter.
+
+msgtype
+
+    The type of the message that was received will be stored in this parameter.
+
+maxsize
+
+    The maximum size of message to be accepted is specified by the maxsize; if
+    the message in the queue is larger than this size the function will fail
+    (unless you set flags as described below).
+
+message
+
+    The received message will be stored in message, unless there were errors
+    receiving the message.
+
+unserialize
+
+    If set to TRUE, the message is treated as though it was serialized using
+    the same mechanism as the session module. The message will be unserialized
+    and then returned to your script. This allows you to easily receive arrays
+    or complex object structures from other PHP scripts, or if you are using
+    the WDDX serializer, from any WDDX compatible source.
+
+    If unserialize is FALSE, the message will be returned as a binary-safe
+    string.
+
+flags
+
+    The optional flags allows you to pass flags to the low-level msgrcv system
+    call. It defaults to 0, but you may specify one or more of the following
+    values (by adding or ORing them together).
+
+                          Flag values for msg_receive
+                   If there are no messages of the desiredmsgtype, return
+    MSG_IPC_NOWAIT immediately and do not wait. The function will fail and
+                   return an integer value corresponding to MSG_ENOMSG.
+                   Using this flag in combination with a desiredmsgtype greater
+    MSG_EXCEPT     than 0 will cause the function to receive the first message
+                   that is not equal to desiredmsgtype.
+                   If the message is longer than maxsize, setting this flag
+    MSG_NOERROR    will truncate the message to maxsize and will not signal an
+                   error.
+
+errorcode
+
+    If the function fails, the optional errorcode will be set to the value of
+    the system errno variable.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+Upon successful completion the message queue data structure is updated as
+follows: msg_lrpid is set to the process-ID of the calling process, msg_qnum is
+decremented by 1 and msg_rtime is set to the current time.
+
+参见
+
+  • msg_remove_queue() - Destroy a message queue
+  • msg_send() - Send a message to a message queue
+  • msg_stat_queue() - Returns information from the message queue data
+    structure
+  • msg_set_queue() - Set information in the message queue data structure
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+It looks like msg_receive() allocates a memory with size $maxsize, and only
+then tries to receive a message from queue into allocated memory. Because my
+script dies with $maxsize = 1 Gib, but works with $maxsize = 10 Kib.
+===============================================================================
+
+<?php error_reporting(E_ALL);
+/**
+* Example for sending and receiving Messages via the System V Message Queue
+*
+* To try this script run it synchron/asynchron twice times. One time with ?typ=
+send and one time with ?typ=receive
+*
+* @author          Thomas Eimers - Mehrkanal GmbH
+*
+* This document is distributed in the hope that it will be useful, but without
+any warranty;
+* without even the implied warranty of merchantability or fitness for a
+particular purpose.
+*/
+
+header('Content-Type: text/plain; charset=ISO-8859-1');
+echo "Start...\n";
+
+// Create System V Message Queue. Integer value is the number of the Queue
+$queue = msg_get_queue(100379);
+
+// Sendoptions
+$message='nachricht';     // Transfering Data
+$serialize_needed=false;  // Must the transfer data be serialized ?
+$block_send=false;        // Block if Message could not be send (Queue full...)
+(true/false)
+$msgtype_send=1;          // Any Integer above 0. It signeds every Message. So
+you could handle multible message
+                          // type in one Queue.
+
+// Receiveoptions
+$msgtype_receive=1;       // Whiche type of Message we want to receive ? (Here,
+the type is the same as the type we send,
+                          // but if you set this to 0 you receive the next
+Message in the Queue with any type.
+$maxsize=100;             // How long is the maximal data you like to receive.
+$option_receive=MSG_IPC_NOWAIT; // If there are no messages of the wanted type
+in the Queue continue without wating.
+                          // If is set to NULL wait for a Message.
+
+// Send or receive 20 Messages
+for ($i=0;$i<20;$i++) {
+  sleep(1);
+  // This one sends
+  if ($_GET['typ']=='send') {
+    if(msg_send($queue,$msgtype_send, $message,$serialize_needed, $block_send,
+$err)===true) {
+      echo "Message sendet.\n";
+    } else {
+      var_dump($err);
+    }
+  // This one received
+  } else {
+    $queue_status=msg_stat_queue($queue);
+    echo 'Messages in the queue: '.$queue_status['msg_qnum']."\n";
+
+    // WARNUNG: nur weil vor einer Zeile Code noch Nachrichten in der Queue
+waren, muss das jetzt nciht mehr der Fall sein!
+    if ($queue_status['msg_qnum']>0) {
+      if (msg_receive($queue,$msgtype_receive ,$msgtype_erhalten,$maxsize,
+$daten,$serialize_needed, $option_receive, $err)===true) {
+              echo "Received data".$daten."\n";
+      } else {
+              var_dump($err);
+      }
+    }
+  }
+}
+
+?>
+===============================================================================
+
+Consider this e.g. Linux situation:
+
+<?php
+//file send.php
+$ip = msg_get_queue(12340);
+msg_send($ip,8,"abcd",false,false,$err);
+//-----------------------------------------------------
+<?php
+//file receive.php
+$ip = msg_get_queue(12340);
+
+msg_receive($ip,0,$msgtype,4,$data,false,null,$err);
+echo "msgtype {$msgtype} data {$data}\n";
+
+msg_receive($ip,0,$msgtype,4,$data,false,null,$err);
+echo "msgtype {$msgtype} data {$data}\n";
+?>
+
+Now run:
+in terminal #1   php5 receive.php
+in terminal #2   php5 receive.php
+in terminal #3   php5 send.php
+
+Showing messages from queue will flip-flop. It means you run once send.php, the
+message will be shown in terminal #1. Second run it will be in t#2, third #1
+and so on.
+===============================================================================
+
+The behaviour of msg_recieve function depends on value of $desiredmsgtype:
+If zero: the first message with any $msgtype will be recieved.
+Positive: the first message with $msgtype = desiredmsgtype
+Negative: the first message with $msgtype <= abs ($desiredmsgtype)
+(where "$msgtype" means msgtype the message was sent with)
+===============================================================================
+
+This is meant to be run as your apache user in a terminal, call script in note
+of msg_send and they will communicate.
+
+#! /usr/bin/env php
+<?php
+    $MSGKEY = 519051; // Message
+
+    $msg_id = msg_get_queue ($MSGKEY, 0600);
+
+    while (1) {
+        if (msg_receive ($msg_id, 1, $msg_type, 16384, $msg, true, 0, 
+$msg_error)) {
+            if ($msg == 'Quit') break;
+            echo "$msg\n";
+        } else {
+            echo "Received $msg_error fetching message\n";
+            break;
+        }
+    }
+
+    msg_remove_queue ($msg_id);
+?>

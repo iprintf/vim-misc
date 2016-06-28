@@ -1,0 +1,579 @@
+
+session_regenerate_id
+
+(PHP 4 >= 4.3.2, PHP 5, PHP 7)
+
+session_regenerate_id — 使用新生成的会话 ID 更新现有会话 ID
+
+说明
+
+bool session_regenerate_id ([ bool $delete_old_session = false ] )
+
+session_regenerate_id() 在不修改当前会话中数据的前提下使用新的 ID 替换原有会话
+ID。
+
+如果启用了 session.use_trans_sid 选项，那么必须在调用 session_regenerate_id()
+函数之后开始进行输出工作，否则会导致使用原有的会话 ID。
+
+参数
+
+delete_old_session
+
+    是否删除原 ID 所关联的会话存储文件。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+4.3.3 如果启用会话 cookie，调用 session_regenerate_id() 函数会使用新的会话 ID
+      来生成 cookie 并发送给客户端。
+5.1.0 加入 delete_old_session 参数。
+
+范例
+
+Example #1 A session_regenerate_id() 示例
+
+<?php
+session_start();
+
+$old_sessionid = session_id();
+
+session_regenerate_id();
+
+$new_sessionid = session_id();
+
+echo "Old Session: $old_sessionid<br />";
+echo "New Session: $new_sessionid<br />";
+
+print_r($_SESSION);
+?>
+
+参见
+
+  • session_id() - 获取/设置当前会话 ID
+  • session_start() - 启动新会话或者重用现有会话
+  • session_name() - 读取/设置会话名称
+
+
+User Contributed Notes 24 notes
+
+===============================================================================
+
+In a previous note, php at 5mm de describes how to prevent session hijacking by
+ensuring that the session id provided matches the HTTP_USER_AGENT and
+REMOTE_ADDR fields that were present when the session id was first issued.  It
+should be noted that HTTP_USER_AGENT is supplied by the client, and so can be
+easily modified by a malicious user.  Also, the client IP addresses can be
+spoofed, although that's a bit more difficult.  Care should be taken when
+relying on the session for authentication.
+===============================================================================
+
+Session_destroy() does not only destroy the data associated with the current
+session_id (i.e. the file if you use the default session save handler), but
+also the session itself: if you call session_destroy() and then
+session_regenerate_id(), it will return false, and session_id() won't return
+anything. In order to manipulate a session after destroying it, you need to
+restart it.
+
+So in fact, the code mentionned by chris won't work. If you want to destroy the
+file associated with the old session_id, try the following:
+<?php
+session_start();
+$old_sessid = session_id();
+session_regenerate_id();
+$new_sessid = session_id();
+session_id($old_sessid);
+session_destroy();
+
+//If you don't copy the $_SESSION array, you won't be able to use the data
+associated with the old session id.
+$old_session = $_SESSION;
+session_id($new_sessid);
+session_start();
+$_SESSION = $old_session;
+//...
+?>
+
+Note: this technique will send 3 Set-Cookie headers (one on each session_start
+() and one on session_regenerate_id()). I don't think this is a problem, but if
+it appears to be one, you could either leave it alone and wait for the garbage
+collector to catch the file associated with the old session, or try to delete
+the file with unlink().
+===============================================================================
+
+I wrote the following code for a project I'm working on- it attempts to resolve
+the regenerate issue, as well as deal with a couple of other session related
+things.
+
+I tried to make it a little more generic and usable (for instance, in the full
+version it throws different types of exceptions for the different types of
+session issues), so hopefully someone might find it useful.
+
+<?php
+function regenerateSession($reload = false)
+{
+    // This token is used by forms to prevent cross site forgery attempts
+    if(!isset($_SESSION['nonce']) || $reload)
+        $_SESSION['nonce'] = md5(microtime(true));
+
+    if(!isset($_SESSION['IPaddress']) || $reload)
+        $_SESSION['IPaddress'] = $_SERVER['REMOTE_ADDR'];
+
+    if(!isset($_SESSION['userAgent']) || $reload)
+        $_SESSION['userAgent'] = $_SERVER['HTTP_USER_AGENT'];
+
+    //$_SESSION['user_id'] = $this->user->getId();
+
+    // Set current session to expire in 1 minute
+    $_SESSION['OBSOLETE'] = true;
+    $_SESSION['EXPIRES'] = time() + 60;
+
+    // Create new session without destroying the old one
+    session_regenerate_id(false);
+
+    // Grab current session ID and close both sessions to allow other scripts
+to use them
+    $newSession = session_id();
+    session_write_close();
+
+    // Set session ID to the new one, and start it back up again
+    session_id($newSession);
+    session_start();
+
+    // Don't want this one to expire
+    unset($_SESSION['OBSOLETE']);
+    unset($_SESSION['EXPIRES']);
+}
+
+function checkSession()
+{
+    try{
+        if($_SESSION['OBSOLETE'] && ($_SESSION['EXPIRES'] < time()))
+            throw new Exception('Attempt to use expired session.');
+
+        if(!is_numeric($_SESSION['user_id']))
+            throw new Exception('No session started.');
+
+        if($_SESSION['IPaddress'] != $_SERVER['REMOTE_ADDR'])
+            throw new Exception('IP Address mixmatch (possible session
+hijacking attempt).');
+
+        if($_SESSION['userAgent'] != $_SERVER['HTTP_USER_AGENT'])
+            throw new Exception('Useragent mixmatch (possible session hijacking
+attempt).');
+
+        if(!$this->loadUser($_SESSION['user_id']))
+            throw new Exception('Attempted to log in user that does not exist
+with ID: ' . $_SESSION['user_id']);
+
+        if(!$_SESSION['OBSOLETE'] && mt_rand(1, 100) == 1)
+        {
+            $this->regenerateSession();
+        }
+
+        return true;
+
+    }catch(Exception $e){
+        return false;
+    }
+}
+
+?>
+===============================================================================
+
+Also note that REMOTE_ADDR may change on every request if the user comes
+through a proxy farm. Most AOL-users do.
+===============================================================================
+
+`session_regenerate_id` sends a new cookie but doesn't overwrite the value
+stored in `$_COOKIE`. After calling `session_destroy`, the open session ID is
+discarded, so simply restarting the session with `session_start` (as done in
+Ben Johnson's code) will re-open the original, though now empty, session for
+the current request (subsequent requests will use the new session ID). Instead
+of `session_destroy`+`session_start`, use the `$delete_old_session` parameter
+to `session_regenerate_id` to delete the previous session data.
+
+<?php
+session_start();
+/* Create a new session, deleting the previous session data. */
+session_regenerate_id(TRUE);
+/* erase data carried over from previous session */
+$_SESSION=array();
+?>
+
+To start a new session and leave the old untouched, simply leave out the
+argument to `session_regenerate_id`.
+===============================================================================
+
+I wrote the current top voted comment on this and wanted to add something. The
+existing code from my previous comment generates it's nonces in an insecure
+way-
+
+<?php
+$_SESSION['nonce'] = md5(microtime(true));
+?>
+
+Since "microtime" is predictable it makes brute forcing the nonce much easier.
+A better option would be something that utilizes randomness, such as-
+
+<?php
+bin2hex(openssl_random_pseudo_bytes(32))
+?>
+===============================================================================
+
+as far as I have understood reading this online notes,
+
+session_name() is the name which is identified as session a through the cookies
+or http links.
+
+session_id is  like a transaction within a session_name() and one session_name
+may have many session_id
+
+each session_id has the corresponding data stored.
+
+session_id are used in read and write callback under a session_name
+
+whatever it is, first call the
+session_name(), 
+then call session_id ()
+and then call start_session()
+
+start_session will open the session_name, then check the session_id called
+before and use it in the read or write call back for storing or retrieving data
+
+calling start_session() without session_name or session_id will use the default
+session_name and the default session_id in that order
+
+I hope if the order is followed there should not be any problems.
+
+do not call session_name or session_id after start_session(), if you are
+specific on using them.
+
+thank you for others note.
+===============================================================================
+
+To add to php at 5mm de's comments:
+
+If the session is held over https, it's even better to save the client's cert
+or ssl session id instead of the hostname or ip, as it's proxy-transparent and
+more secure.
+===============================================================================
+
+I had problems with a proxy changing a visitors session_id-cookie, so he'd get
+a LOT of errors when visiting my site.
+I handled the bogus session-id's like this. (Note: It only works in versions >
+4.3.2.)
+
+<?php
+// Start a session and suppress error-messages.
+@session_start();
+
+// Catch bogus session-id's.
+if (!preg_match("/^[0-9a-z]*$/i", session_id())) {
+
+    // Output a warning about the messed up session-id.
+    $error->handleError("WARN", "Your session id is messed up, you might not be
+able to use some features on this site.");
+
+    // Generate a fresh session-id.
+    session_regenerate_id();
+}
+
+// Site contents.
+?>
+
+Hope someone can use it.
+===============================================================================
+
+If you are trying to maintain 2 active sessions don't use session_regenerate_id
+().  Especially if the first session is closed and it's time to open the
+second.  Because the session id is cached you also have to explicitly set it
+the second time.
+
+<?php
+session_name('PHPSESSID'); // redundant - here for clarity
+session_start();
+// ...do stuff
+session_write_close();
+
+// now switch to session 2...
+session_name('PHPSESSID_2');
+if (isset($_COOKIE['phpsessid_2']))
+    session_id($_COOKIE['phpsessid_2']); // not doing this will simply reopen
+the first session again
+else
+    session_id(sha1(mt_rand()); // dont use session_regenerate_id() here.  Not
+creating a new id will create two cookies with same session id and same session
+variables
+session_start();
+// ... do stuff with session 2
+session_write_close();
+?>
+===============================================================================
+
+This can be a very dangerous function if you're not careful about how you
+handle things, because even though it generates a whole new set of session
+data, it keeps the old data "open" until the script terminates, locking out any
+other scripts trying to run concurrently with the old session id.
+
+Recently I came across a situation where I wanted to explicitly pass in a
+session ID, copy the data from that session into a *new* session, and then
+continue operating under that new session, thereby allowing other scripts to
+use the old one concurrently. But I quickly found that these "other scripts"
+would not execute until the first script finished--even though it had already
+started a new session--because it kept the old session open.
+
+So if you're trying to copy over session data to a new session to free up the
+old session for continued, concurrent use, here's some code to ensure nobody's
+feet get stepped on:
+
+<?php
+
+//  get session id of an existing session
+$sid = $_GET['sid'];
+
+//  start the old session to retrieve $_SESSION data
+session_id($sid);
+session_start();
+
+//  start a new session; this copies the $_SESSION data over
+session_regenerate_id();
+
+//  hang on to the new session id
+$sid = session_id();
+
+//  close the old and new sessions
+session_write_close();
+
+//  re-open the new session
+session_id($sid);
+session_start();
+
+/* main code here */
+
+?>
+
+This could probably be encapsulated into a function with one parameter as well
+to save space if it was a repeated thing.
+===============================================================================
+
+In PHP 5.6 (and probably older versions), session_regenerate_id(true) do not
+trigger a read() call to the session handler for the new session id.
+
+In PHP 7, read() is triggered during session_regenerate_id(true). Nice to know
+when working with custom session handlers.
+===============================================================================
+
+Take good notice of the new cookie being sent on calling session_regenerate_id
+on cookie-enabled sessions.
+Make sure your page is reloaded otherwise you'll get an "session_destroy():
+Session object destruction failed" error. So here are the examples:
+
+Wrong:
+<?php
+    session_start();
+    session_regenerate_id();
+    session_destroy();
+?>
+
+Correct-like:
+<?php
+if (!$_GET['mode']){
+    session_start();
+    session_regenerate_id();
+    header('location: '.$_SERVER['REQUEST_URI'].'?mode=destroy');
+} else {
+    session_start();
+    session_destroy();
+}
+?>
+
+I noted this because googleing on the previous mentioned error leads to all
+kinds of bug reports, but not to the solution. (which is, of course, to read
+the manual)
+===============================================================================
+
+There could be a potential problem with elger at NOSPAM dot yellowbee dot nl's
+a few posts below. In the code, was used the REQUEST_URI server variable,
+which, in some cases might already contain the query string. Therefore, always
+apending '?whatever=foo' would occasionally cause the script to malfunction. I
+suggest using PHP_SELF, which will not contain the query string after the file.
+===============================================================================
+
+By inspecting the source code, I am not sure that after session_regenerate_id()
+run, the original session data does not destroy (still keeps at the system)
+that sniffers still hijack by applying original session identifier.
+
+In addition, I find that if user-level session storage handler is used.
+session_regenerate_id() does not work.
+===============================================================================
+
+This feature seems to create a new session ID without clearing the old session
+data. This is a very important feature for security validation:
+
+$usedns = TRUE; // for eliminating failture by proxys using IP chains, but
+slower
+
+$useragent = getenv("HTTP_USER_AGENT");
+$host = getenv("REMOTE_ADDR");
+$dns = $global['dns'] ? @gethostbyaddr($host):$host;
+
+session_start();
+
+if(session_is_registered('securitycheck')) {
+    if(
+            (($_SESSION['session']['host'] != $this->host) && !$usedns)
+         || ($_SESSION['session']['dns'] != $this->dns)
+         || ($_SESSION['session']['useragent'] != $this->useragent)
+    ) {
+        session_regenerate_id();
+        session_unset();
+    }
+} else {
+    $currentdata = array();
+    $currentdata['host'] = $this->host;
+    $currentdata['dns'] = $this->dns;
+    $currentdata['useragent'] = $this->useragent;
+   
+    session_register('securitycheck', $currentdata);
+}
+
+If sombody steals an active SID (e.g. by referrer or injection attack), he can 
+t be validated because of either the host / dns or useragent and will get a new
+(empty) SID, without interrupting the original session.
+
+Please mail me for any comments: php at 5mm de
+===============================================================================
+
+If you are storing your session data in a database you have to manually update
+the session_id in the database. The session_set_save_handler() will not do it
+for you.
+
+function UpdateSessID() {
+    $old_sess_id = session_id();
+    session_regenerate_id(false);
+    $new_sess_id = session_id();
+       
+    $query = "UPDATE `session_table` SET `session_id` = '$new_sess_id' WHERE
+session_id = '$old_sess_id'";
+        mysql_query($query);
+}
+
+Be sure to set session_regenerate_id() to FALSE since it's not really necessary
+to delete the whole record from MySQL and add it again. That's unnecessary
+overhead. Only changing the id matters.
+===============================================================================
+
+for php 5.1> user probably worth visiting is http://ilia.ws/archives/
+47-session_regenerate_id-Improvement.html
+===============================================================================
+
+A note on lost sessions and trying to fix it with session_regenerate_id:
+Make sure that you're not trying to push SimpleXML object to the session. It
+just won't go without first converting it to array. :)
+===============================================================================
+
+licp - no, session_regenerate_id() does not destroy any saved session data.
+
+elger, I prefer the following order
+
+[code]
+// populate $_SESSION with any previously saved session data for the current
+session_id
+session_start(); 
+...
+// delete any saved data associated with current session_id, $_SESSION is not
+changed
+session_destroy();
+
+// change session_id, $_SESSION not altered
+session_regenerate_id();
+...
+// save any $_SESSION data under the current session_id
+session_close();
+[/code]
+===============================================================================
+
+This function is vital in preventing session fixation attacks, but is
+unfortunately missing in PHP versions prior to 4.3.2. This creates a serious
+security problem if you can't update your PHP version, like me. Therefore I
+attempted to port this function to PHP itself:
+
+<?php
+    if (!function_exists('session_regenerate_id')) {
+        function php_combined_lcg() {
+            $tv = gettimeofday();
+            $lcg['s1'] = $tv['sec'] ^ (~$tv['usec']);
+            $lcg['s2'] = posix_getpid();
+
+            $q = (int) ($lcg['s1'] / 53668);
+            $lcg['s1'] = (int) (40014 * ($lcg['s1'] - 53668 * $q) - 12211 * $q
+);
+            if ($lcg['s1'] < 0)
+                $lcg['s1'] += 2147483563;
+
+            $q = (int) ($lcg['s2'] / 52774);
+            $lcg['s2'] = (int) (40692 * ($lcg['s2'] - 52774 * $q) - 3791 * $q);
+            if ($lcg['s2'] < 0)
+                $lcg['s2'] += 2147483399;
+
+            $z = (int) ($lcg['s1'] - $lcg['s2']);
+            if ($z < 1) {
+                $z += 2147483562;
+            }
+
+            return $z * 4.656613e-10;
+        }
+
+        function session_regenerate_id() {
+            $tv = gettimeofday();
+            $buf = sprintf("%.15s%ld%ld%0.8f", $_SERVER['REMOTE_ADDR'], $tv[
+'sec'], $tv['usec'], php_combined_lcg() * 10);
+            session_id(md5($buf));
+            if (ini_get('session.use_cookies'))
+                setcookie('PHPSESSID', session_id(), NULL, '/');
+            return TRUE;
+        }
+    }
+?>
+
+To test this:
+<?php
+    session_start();
+    $sid = session_id();
+    session_regenerate_id();
+    echo "Old session ID: ", $sid, "\nNew session ID: ", session_id(), "\n";
+?>
+
+- will output something similar to:
+Old session ID: 6e3521f44be4fc452b368e703f044ca1
+New session ID: 1c6dac9a3e794f164d4115872b902471
+===============================================================================
+
+I am calling session_regenerate_id() from inside a method in an object.  Since
+session fixation can occur at permission changes, I have my object call session
+fixation at these particular security changes.
+
+Unfortunately, it seems to fabricate some kind of temporary new session, and
+then the very next page that loads, it jumps back to the old session id.  There
+seems to be no way to make the regeneration perminent.
+===============================================================================
+
+To "start a new session", try the following:
+
+<?php
+session_start();
+session_regenerate_id();
+session_destroy();
+unset($_SESSION);
+session_start();
+?>
+===============================================================================
+
+It would be more reliable to use the following regular expression when checking
+session_ids, as HEX strings (MD5) are only of characters a-f and 0-9;
+
+preg_match('/[0-f]/i', $session_id);

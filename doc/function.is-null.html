@@ -1,0 +1,214 @@
+
+is_null
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+is_null — 检测变量是否为 NULL
+
+描述
+
+bool is_null ( mixed $var )
+
+如果 var 是 null 则返回 TRUE，否则返回 FALSE。
+
+查看 NULL 类型获知变量什么时候被认为是 NULL，而什么时候不是。
+
+参见 NULL、is_bool()、is_numeric()、is_float()、is_int()、is_string()、
+is_object()、is_array()、is_integer() 和 is_real()。
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+Micro optimization isn't worth it.
+
+You had to do it ten million times to notice a difference, a little more than 2
+seconds
+
+$a===NULL; Took: 1.2424390316s
+is_null($a); Took: 3.70693397522s
+
+difference = 2.46449494362
+difference/10,000,000 = 0.000000246449494362
+
+The execution time difference between ===NULL and is_null is less than 250
+nanoseconds. Go optimize something that matters.
+===============================================================================
+
+See how php parses different values. $var is the variable.
+
+$var        =    NULL    ""    0    "0"    1
+
+strlen($var)    =    0    0    1    1    1
+is_null($var)    =    TRUE    FALSE    FALSE    FALSE    FALSE
+$var == ""    =    TRUE    TRUE    TRUE    FALSE    FALSE
+!$var        =    TRUE    TRUE    TRUE    TRUE    FALSE
+!is_null($var)    =    FALSE    TRUE    TRUE    TRUE    TRUE
+$var != ""    =    FALSE    FALSE    FALSE    TRUE    TRUE
+$var        =    FALSE    FALSE    FALSE    FALSE    TRUE
+
+Peace!
+===============================================================================
+
+$var===NULL is much faster than is_null($var) (with the same result)
+
+I did some benchmarking with 10 million iterations:
+
+$a=null;
+isset($a); Took: 1.71841216087s
+$a==NULL; Took: 1.27205181122s
+$a===NULL; Took: 1.2424390316s
+is_null($a); Took: 3.70693397522s
+$a=5;
+isset($a); Took: 1.15165400505s
+$a==NULL; Took: 1.41901302338s
+$a===NULL; Took: 1.21655392647s
+is_null($a); Took: 3.78501200676s
+error_reporting(E_ALL&~E_NOTICE);
+unset($a);
+isset($a); Took: 1.51441502571s
+$a==NULL; Took: 16.5414860249s
+$a===NULL; Took: 16.1273870468s
+is_null($a); Took: 23.1918480396s
+
+Please note, that isset is only included because it gives a good performance in
+any case; HOWEVER isset is NOT the same, or the opposite.
+But you might be able to use isset() instead of null-checking.
+
+You should not use is_null, except when you need a callback-function, or for
+conformity with is_int, is_float, etc.
+===============================================================================
+
+Using === NULL instead of is_null(), is actually useful in loaded server
+scenarios where you have hundreds or thousands of requests per second. Saving
+microseconds on a lot of "simple" operations in the entire PHP execution chain
+usually results in being able to serve more pages per second at the same speed,
+or lowering your cpu usage. People usually write very bad and slow code.
+===============================================================================
+
+For what I realized is that  is_null($var)  returns exactly the opposite of 
+isset($var) , except that is_null($var) throws a notice if $var hasn't been set
+yet.
+
+the following will prove that:
+
+<?php
+
+$quirks = array(null, true, false, 0, 1, '', "\0", "unset");
+
+foreach($quirks as $var) {
+    if ($var === "unset") unset($var);
+
+    echo is_null($var) ? 1 : 0;
+    echo isset($var) ? 1 : 0;
+    echo "\n";
+}
+
+?>
+
+this will print out something like:
+
+10    // null
+01    // true
+01    // false
+01    // 0
+01    // 1
+01    // ''
+01    // "\0"
+Notice:  Undefined variable: var in /srv/www/htdocs/sandbox/null/nulltest.php
+on line 8
+10    // (unset)
+
+For the major quirky types/values is_null($var) obviously always returns the
+opposite of isset($var), and the notice clearly points out the faulty line with
+the is_null() statement. You might want to examine the return value of those
+functions in detail, but since both are specified to return boolean types there
+should be no doubt.
+
+A second look into the PHP specs tells that is_null() checks whether a value is
+null or not. So, you may pass any VALUE to it, eg. the result of a function.
+isset() on the other hand is supposed to check for a VARIABLE's existence,
+which makes it a language construct rather than a function. Its sole porpuse
+lies in that checking. Passing anything else will result in an error.
+
+Knowing that, allows us to draw the following unlikely conclusion:
+
+isset() as a language construct is way faster, more reliable and powerful than
+is_null() and should be prefered over is_null(), except for when you're
+directly passing a function's result, which is considered bad programming
+practice anyways.
+===============================================================================
+
+In PHP 7 (phpng), is_null is actually marginally faster than ===, although the
+performance difference between the two is far smaller.
+
+PHP 5.5.9
+is_null - float(2.2381200790405)
+===     - float(1.0024659633636)
+=== faster by ~100ns per call
+
+PHP 7.0.0-dev (built: May 19 2015 10:16:06)
+is_null - float(1.4121870994568)
+===     - float(1.4577329158783)
+is_null faster by ~5ns per call
+===============================================================================
+
+Actually, since a wrapper is going to be written, you can check for your own
+version null values...if you want to be creative for some reason.
+
+<?php
+function isnull($data)
+{
+  /** only if you need this
+  if (is_string($data)) {
+    $data = strtolower($data);
+  }
+  */
+  switch ($data) {
+    // Add whatever your definition of null is
+    // This is just an example
+    //-----------------------------
+    case 'unknown': // continue
+    case 'undefined': // continue
+    //-----------------------------
+    case 'null': // continue
+    case 'NULL': // continue
+    case NULL:
+      return true;
+  }
+  // return false by default
+  return false;
+}
+?>
+===============================================================================
+
+Regarding avoidance of NULLs in your MySQL queries, why not use  IS NULL and IS
+NOT NULL in your WHERE clauses.
+
+SELECT *
+FROM someDatabase
+WHERE someAttribute IS NOT NULL
+
+Cheers,
+
+Michael
+===============================================================================
+
+Don't try to test
+if ($intSomething==NULL) {
+...
+}
+use is_null() instead.
+The first statement misses 0 values.
+
+Regards,
+Calin
+
+[Ed. note: this is because == tests for equivalence of value, but not type.
+NULL evaluates to
+false, as does 0, so NULL == 0 is true--even though 0 is type int and NULL is
+type null.
+You should use either is_null() as noted or ===, which returns true only if its
+operands are
+equal and of the same type.]

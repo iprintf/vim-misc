@@ -1,0 +1,751 @@
+
+declare
+
+(PHP 4, PHP 5, PHP 7)
+
+declare 结构用来设定一段代码的执行指令。declare 的语法和其它流程控制结构相似：
+
+declare (directive)
+    statement
+
+directive 部分允许设定 declare 代码段的行为。目前只认识两个指令：ticks（更多信
+息见下面 ticks 指令）以及 encoding（更多信息见下面 encoding 指令）。
+
+    Note: encoding 是 PHP 5.3.0 新增指令。
+
+declare 代码段中的 statement 部分将被执行——怎样执行以及执行中有什么副作用出现取
+决于 directive 中设定的指令。
+
+declare 结构也可用于全局范围，影响到其后的所有代码（但如果有 declare 结构的文件
+被其它文件包含，则对包含它的父文件不起作用）。
+<?php
+// these are the same:
+
+// you can use this:
+declare(ticks=1) {
+    // entire script here
+}
+
+// or you can use this:
+declare(ticks=1);
+// entire script here
+?>
+
+Ticks
+
+Tick（时钟周期）是一个在 declare 代码段中解释器每执行 N 条可计时的低级语句就会
+发生的事件。N 的值是在 declare 中的 directive 部分用 ticks=N 来指定的。
+
+不是所有语句都可计时。通常条件表达式和参数表达式都不可计时。
+
+在每个 tick 中出现的事件是由 register_tick_function() 来指定的。更多细节见下面
+的例子。注意每个 tick 中可以出现多个事件。
+
+Example #1 Tick 的用法示例
+
+<?php
+
+declare(ticks=1);
+
+// A function called on each tick event
+function tick_handler()
+{
+    echo "tick_handler() called\n";
+}
+
+register_tick_function('tick_handler');
+
+$a = 1;
+
+if ($a > 0) {
+    $a += 2;
+    print($a);
+}
+
+?>
+
+Example #2 Ticks 的用法示例
+
+<?php
+
+function tick_handler()
+{
+  echo "tick_handler() called\n";
+}
+
+$a = 1;
+tick_handler();
+
+if ($a > 0) {
+    $a += 2;
+    tick_handler();
+    print($a);
+    tick_handler();
+}
+tick_handler();
+
+?>
+
+参见 register_tick_function() 和 unregister_tick_function()。
+
+Encoding
+
+可以用 encoding 指令来对每段脚本指定其编码方式。
+
+Example #3 对脚本指定编码方式
+
+<?php
+declare(encoding='ISO-8859-1');
+// code here
+?>
+
+Caution
+
+当和命名空间结合起来时 declare 的唯一合法语法是 declare(encoding='...');，其中
+... 是编码的值。而 declare(encoding='...') {} 将在与命名空间结合时产生解析错误
+。
+
+在 PHP 5.3 中除非在编译时指定了 --enable-zend-multibyte，否则 declare 中的
+encoding 值会被忽略。
+
+注意除非用 phpinfo()，否则 PHP 不会显示出是否在编译时指定了
+--enable-zend-multibyte。
+
+参见 zend.script_encoding。
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+Note that in PHP 7 <?php declare(encoding='...'); ?> throws an E_WARNING if
+Zend Multibyte is turned off.
+===============================================================================
+
+In the following example:
+
+<?php
+function handler(){
+    print "hello <br />";
+}
+
+register_tick_function("handler");
+
+declare(ticks = 1){
+    $b = 2;
+} //closing curly bracket tickable
+?>
+
+"Hello" will be displayed twice because the closing curly bracket is also
+tickable.
+
+One may wonder why the opening curly bracket is not tickable if the closing is
+tickable. This is because the instruction for PHP to start ticking is given by
+the opening curly bracket so the ticking starts immediately after it.
+===============================================================================
+
+It's amazing how many people didn't grasp the concept here. Note the wording in
+the documentation. It states that the tick handler is called every n native
+execution cycles. That means native instructions, not including system calls
+(i'm guessing). This can give you a very good idea if you need to optimize a
+particular part of your script, since you can measure quite effectively how
+many native instructions are in your actual code.
+
+A good profiler would take that into account, and force you, the developer, to
+include calls to the profiler as you're entering and leaving every function.
+That way you'd be able to keep an eye on how many cycles it took each function
+to complete. Independent of time.
+
+That is extremely powerful, and not to be underestimated. A good solution would
+allow aggregate stats, so the total time in a function would be counted,
+including inside called functions.
+===============================================================================
+
+Note that the two methods for calling declare are not identical.
+
+Method 1:
+
+<?php
+// Print "tick" with a timestamp and optional suffix.
+function do_tick($str = '') {
+    list($sec, $usec) = explode(' ', microtime());
+    printf("[%.4f] Tick.%s\n", $sec + $usec, $str);
+}
+register_tick_function('do_tick');
+
+// Tick once before declaring so we have a point of reference.
+do_tick('--start--');
+
+// Method 1
+declare(ticks=1);
+while(1) sleep(1);
+
+/* Output:
+[1234544435.7160] Tick.--start--
+[1234544435.7161] Tick.
+[1234544435.7162] Tick.
+[1234544436.7163] Tick.
+[1234544437.7166] Tick.
+*/
+
+?>
+
+Method 2:
+<?php
+// Print "tick" with a timestamp and optional suffix.
+function do_tick($str = '') {
+    list($sec, $usec) = explode(' ', microtime());
+    printf("[%.4f] Tick.%s\n", $sec + $usec, $str);
+}
+register_tick_function('do_tick');
+
+// Tick once before declaring so we have a point of reference.
+do_tick('--start--');
+
+// Method 2
+declare(ticks=1) {
+    while(1) sleep(1);
+}
+
+/* Output:
+[1234544471.6486] Tick.--start--
+[1234544472.6489] Tick.
+[1234544473.6490] Tick.
+[1234544474.6492] Tick.
+[1234544475.6493] Tick.
+*/
+?>
+
+Notice that when using {} after declare, do_tick wasn't auto-called until about
+1 second after we entered the declare {} block.  However when not using the {},
+do_tick was auto-called not once but twice immediately after calling declare
+();.
+
+I'm assuming this is due to how PHP handles ticking internally.  That is,
+declare() without the {} seems to trigger more low-level instructions which in
+turn fires tick a few times (if ticks=1) in the act of declaring.
+===============================================================================
+
+you can register multiple tick functions:
+
+<?PHP
+function a() { echo "a\n"; }
+function b() { echo "b\n"; }
+
+register_tick_function('a');
+register_tick_function('b');
+register_tick_function('b');
+register_tick_function('b');
+
+?>
+
+will output on every tick:
+a
+b
+b
+b
+===============================================================================
+
+This helper class traces executed statements. Calls it like so:
+
+       CStatementTracer::getInstance()->enableTrace( 'START' );
+
+Source Code
+
+<?php
+
+declare(ticks=1);
+
+class CStatementTracer {
+   
+    static private
+        $_instance;
+       
+    static $lastMessage;
+   
+    static $skipFunctionNames;
+   
+    protected function __construct( ) {
+
+        self::$skipFunctionNames = array(
+        );
+           
+    } // CStatData
+
+        /**
+     * Liefert die Instanz zurück
+     *
+     * @return unknown
+     */
+    static public function getInstance() {
+       
+       if ( self::$_instance === null ) {
+            self::$_instance = new CStatementTracer();
+        }
+        return self::$_instance;
+       
+    }
+   
+    public function addToSkipFunctionNames( $aName ) {
+       
+        self::$skipFunctionNames[] = $aName;
+       
+    }
+   
+    public function enableTrace() {
+       
+        $this->writeMessage( '*************** START  ********************' );
+       
+        register_tick_function( array( $this, 'traceCallback' ) );
+
+    }
+   
+    public function disableTrace() {
+
+        $this->writeMessage( 'STOP - ' );
+       
+        unregister_tick_function( array( $this, 'traceCallback' ) );
+       
+       
+    }
+
+    public function traceCallback( ) {
+       
+        $trace = debug_backtrace();
+       
+        $latestCall = $trace[ 1 ];
+       
+        $shortenedArgs = array();
+        foreach( $latestCall['args'] as $noUseKey => $someArg ) {
+           
+            if ( is_object( $someArg ) ) {
+                $someArg = get_class( $someArg ) . '{}';
+            } elseif ( is_array( $someArg ) ) {
+                $someArg = print_r( $someArg, TRUE );
+            } elseif ( is_string( $someArg )) {
+                $someArg = '"' . $someArg . '"';
+            }
+           
+            $someArg = str_replace( "\n", ' ', $someArg );
+            $someArg = str_replace( "\r", ' ', $someArg );
+            $someArg = str_replace( "    ", ' ', $someArg );
+            $someArg = str_replace( "   ", ' ', $someArg );
+            $someArg = str_replace( "  ", ' ', $someArg );
+           
+            if ( 80 < strlen( $someArg ) ) {
+                $someArg = substr( $someArg, 0, 15 ) . '...' . substr( $someArg
+, -15 );
+            }
+           
+            $shortenedArgs[] = $someArg;
+           
+        }
+
+        if ( isset( $latestCall['file'] )) {
+
+            $file = explode( '\\', $latestCall[ 'file' ] );
+            $file = $file[ count( $file ) - 1 ];
+            if ( '' == $file ) {
+                $file = '{}';
+            }
+            $file .= '/' . $latestCall[ 'line' ];
+
+        } else {
+
+            $file = '[NpFile]';
+
+        }
+       
+        if (  ( True === in_array( $latestCall['function'], self::
+$skipFunctionNames ) )
+           ) {
+            return;
+        }
+       
+        $args = implode( ', ', $shortenedArgs );
+        $newInfo = $file . ': ' . $latestCall['function'] . '( ' . $args . ' )'
+;
+       
+        $newInfo = str_pad( '', 2 * count( $trace ) ) . $newInfo;
+       
+        $this->writeMessage( $newInfo );
+    }
+
+   
+    public function writeMessage( $someData ) {
+       
+        if ( self::$lastMessage == $someData ) {
+            return;
+        }
+       
+        self::$lastMessage = $someData;
+       
+        $logfilePath = dirname( __FILE__ ) . '/../statementTracer.log';
+       
+        $fp = fopen( $logfilePath, 'a+' );
+       
+        if ( is_array( $someData ) ) {
+            fwrite( $fp,  print_r( $someData, TRUE )  . "\n" );
+        } else {
+            fwrite( $fp,  $someData  . "\n" );
+        }
+       
+        fclose( $fp );
+    }  
+    
+   
+} // CStatementTracer
+===============================================================================
+
+This is a very simple example using ticks to execute a external script to show
+rx/tx data from the server
+
+<?php
+
+function traf(){
+  passthru( './traf.sh' );
+  echo "<br />\n";
+  flush(); // keeps it flowing to the browser...
+  sleep( 1 );
+}
+
+register_tick_function( "traf" );
+
+declare( ticks=1 ){
+  while( true ){}   // to keep it running...
+}
+
+?>
+
+contents of traf.sh:
+# Shows TX/RX for eth0 over 1sec
+#!/bin/bash
+
+TX1=`cat /proc/net/dev | grep "eth0" | cut -d: -f2 | awk '{print $9}'`
+RX1=`cat /proc/net/dev | grep "eth0" | cut -d: -f2 | awk '{print $1}'`
+sleep 1
+TX2=`cat /proc/net/dev | grep "eth0" | cut -d: -f2 | awk '{print $9}'`
+RX2=`cat /proc/net/dev | grep "eth0" | cut -d: -f2 | awk '{print $1}'`
+
+echo -e "TX: $[ $TX2 - $TX1 ] bytes/s \t RX: $[ $RX2 - $RX1 ] bytes/s"
+#--= the end. =--
+===============================================================================
+
+If you misspell the directive, you won't get any error or warning.  The declare
+block will simply act as a nest for statements:
+
+<?php
+declare(tocks="four hundred")
+{
+    // Has no affect on code and produces
+    // no error or warning.
+}
+?>
+
+Tested in php 5.2.5 on XPsp2
+===============================================================================
+
+This manual doesn't say what "script's encoding" means and how declaring it
+affects its behavior.
+
+Of course declare(encoding='foo') would specify the encoding - that's
+self-explanatory and not helpful.
+===============================================================================
+
+Basically 'declare( encoding = .... );' overrides the zend.script_encoding
+configuration option (as set in php.ini). However, keep in mind that:
+
+* the file encoding must be compatible (at least in the ASCII range of
+characters) to the zend.script_encoding setting. If you set
+'zend.script_encoding' to UTF-8 and save the file in UTF-16, PHP will not be
+able to interpret the file, let alone the declare statement. As long as you use
+ASCII compatible encodings (i.e. ISO-8859-1(5), UTF-8 etc) for both the file
+encoding as the zend.script_encoding, you should be fine. (However, I have not
+experimented with adding non-ascii characters in comments above the declare
+statement).
+
+* PHP string literals are converted from your source code encoding (either set
+with the declare statement or else according to zend.script_encoding) to the
+mbstring.internal_encoding as set in your php.ini (even if you change the
+setting using mb_internal_encoding). As an example:
+
+php.ini:
+mbstring.internal_encoding = UTF-8
+
+test.php:
+<?php
+declare(encoding = 'ISO-8859-15');
+mb_internal_encoding( 'ISO-8859-15' );
+echo 'aäaß' . "\n";
+?>
+
+This will still output the string UTF-8 encoded; in a terminal/browser with
+encoding 'ISO-8859-15' the string will look (something) like this: aÃ€aÃ 
+===============================================================================
+
+The scope of the declare() call if used without a block is a little
+unpredictable, in my experience. It appears that if placed in a method or
+function, it may not apply to the calls that ensue, like the following:
+
+<?php
+function a()
+{
+   declare(ticks=2);
+   b();
+}
+
+function b()
+{
+   // The declare may not apply here, sometimes.
+}
+?>
+
+So, if all of a sudden the signals are getting ignored, check this. At the risk
+of losing the ability to make a mathematical science out of placing a number of
+activities at varying durations of ticks like many people have chosen to do,
+I've found it simple to just put this at the top of the code, and just make it
+global.
+===============================================================================
+
+check loaded server connection
+
+<?php
+$connection  = false;
+function checkConnection( $connectionWaitingTime = 3 )
+{
+    // check connection & time
+    global $time,$connection;
+    if( ($t = (time() - $time)) >= $waitingTime  && !$connection){ 
+        echo ("<p> Server not responding  for <strong>$t</strong> seconds !! </
+p>");
+        die("Connection aborted");
+           
+    }
+   
+}
+
+register_tick_function("checkConnection");
+$time = time();
+declare (ticks=1)
+{
+    while( true ){ // connecting to loaded server
+    }
+    $connection = true ;
+}
+?>
+===============================================================================
+
+We can specify different encoding to different blocks:
+
+declare(encoding=ENCODING_VALUE) {
+    //for a block
+}
+
+found this here:
+http://code2care.org/tutorials/php/
+PHP-Declare-ticks-and-tick-functions-Statements-Tutorial.php
+===============================================================================
+
+I've created memory usage monitor class using tick event.
+
+The result is returned in a fancy graph using GD library.
+
+You can get the source, readme and example script at:
+https://github.com/kampaw/profiler
+
+Usage is very simple:
+
+<?php
+  require('profiler.php');
+
+  $profiler = new profiler;
+  declare(ticks = 1000);
+
+  // monitor started
+  // insert your code here
+
+  $profiler->chart();
+?>
+===============================================================================
+
+<?php
+ob_end_clean();
+ob_implicit_flush(1);
+
+function a() {
+for($i=0;$i<=100000;$i++) { }
+echo "function a() ";
+}
+function b() {
+for($i=0;$i<=100000;$i++) { }
+echo "function b() ";
+}
+
+register_tick_function ("a");
+register_tick_function ("b");
+
+declare (ticks=4)
+{
+    while(true)
+    {
+        sleep(1);
+        echo "\n<br><b>".time()."</b><br>\n";;
+    }
+}
+?>
+You will see that a() and b() are slowing down this process. They are in fact
+not executed every second as expected. So this function is not a real
+alternative for multithreading using some slow functions..there is no
+difference to this way: while (true) { a(); b(); sleep(1); }
+===============================================================================
+
+Code evaluation script which uses debug_backtrace() to get execution time in
+ns, relative current line number, function, file, and calling function info on
+each tick, and shove it all in $script_stats array.  See debug_backtrace manual
+to customize what info is collected.
+
+Warning: this will exhaust allowed memory very easily, so adjust tick counter
+according to the size of your code.  Also, array_key_exists checking on
+debug_backtrace arrays is removed here only to keep this example simple, but
+should be added to avoid a large number of resulting PHP Notice errors.
+
+<?php
+
+$script_stats = array();
+$time = microtime(true);
+
+function track_stats(){
+    global $script_stats,$time;
+    $trace = debug_backtrace();
+    $exe_time = (microtime(true) - $time) * 1000;
+    $func_args = implode(", ",$trace[1]["args"]);
+    $script_stats[] = array(
+        "current_time" => microtime(true),
+        "memory" => memory_get_usage(true),
+        "file" => $trace[1]["file"].': '.$trace[1]["line"],
+        "function" => $trace[1]["function"].'('.$func_args.')',
+        "called_by" => $trace[2]["function"].' in '.$trace[2]["file"].': '.
+$trace[2]["line"],
+        "ns" => $exe_time
+        );
+    $time = microtime(true);
+    }
+
+declare(ticks = 1);
+register_tick_function("track_stats");
+
+// the rest of your project code
+
+// output $script_stats into a html table or something
+
+?>
+===============================================================================
+
+as i read about ticks the first time i thought "wtf, useless crap" - but then i
+discovered some usefull application...
+
+you can declare a tick-function which checks each n executions of your script
+whether the connection is still alive or not, very usefull for some kind of
+scripts to decrease serverload
+
+<?php
+
+function check_connection()
+{ if (connection_aborted())
+   { // do something here, e.g. close database connections
+      // (or  use a shutdown function for this
+      exit; }
+}
+
+register_tick_function("connection");
+
+declare (ticks=20)
+{
+  // put your PHP-Script here
+  // you may increase/decrease the number of ticks
+}
+
+?>
+===============================================================================
+
+Also note that PHP is run in a single thread and so everything it does will be
+one line of code at a time.  I'm not aware of any true threading support in
+PHP, the closest you can get is to fork.
+
+so, declare tick doens't "multi-thread" at all, it is simply is a way to
+automaticaly call a function every n-lines of code.
+===============================================================================
+
+Correction to above note:
+
+Apparently, the end brace '}' at the end of the statement causes a tick.
+
+So using
+
+------------
+declare (ticks=1) echo "1 tick after this prints";
+------------
+
+gives the expected behavior of causing 1 tick.
+
+Note: the tick is issued after the statement executes.
+
+Also, after playing around with this, I found that it is not really the
+multi-tasking I had expected. It behaves the same as simply calling the
+functions. I.e. each function must finish before passing the baton to the next
+function. They do not run in parallel.
+
+It also seems that they always run in the order in which they were registered.
+
+So,
+
+<?php
+------------
+# register tick functions
+register_tick_function ("a");
+register_tick_function ("b");
+
+# make the tick functions run
+declare (ticks=1);
+?>
+------------
+
+is equivalent to
+
+------------
+a();
+b();
+------------
+
+It is simply a convenient way to have functions called periodically while some
+other code is being executed. I.e. you could use it to periodically check the
+status of something and then exit the script or do something else based on the
+status.
+===============================================================================
+
+As Chris already noted, ticks doesn't make your script multi-threaded, but they
+are still great. I use them mainly for profiling - for example, placing the
+following at the very beginning of the script allows you to monitor its memory
+usage:
+
+<?php
+
+function profiler($return=false) {
+    static $m=0;
+    if ($return) return "$m bytes";
+    if (($mem=memory_get_usage())>$m) $m = $mem;
+}
+
+register_tick_function('profiler');
+declare(ticks=1);
+
+/*
+Your code here
+*/
+
+echo profiler(true);
+
+?>
+
+This approach is more accurate than calling memory_get_usage only in the end of
+the script. It has some performance overhead though :)

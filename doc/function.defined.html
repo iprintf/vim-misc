@@ -1,0 +1,307 @@
+
+defined
+
+(PHP 4, PHP 5, PHP 7)
+
+defined — 检查某个名称的常量是否存在
+
+说明
+
+bool defined ( string $name )
+
+检查该名称的常量是否已定义。
+
+    Note:
+
+    如果你要检查一个变量是否存在，请使用 isset()。 defined() 函数仅对 constants
+    有效。如果你要检测一个函数是否存在，使用 function_exists()。
+
+参数
+
+name
+
+    常量的名称。
+
+返回值
+
+如果该名称的常量已定义，返回 TRUE；未定义则返回 FALSE。
+
+范例
+
+Example #1 检查常量
+
+<?php
+/* Note the use of quotes, this is important.  This example is checking
+ * if the string 'TEST' is the name of a constant named TEST */
+if (defined('TEST')) {
+    echo TEST;
+}
+?>
+
+参见
+
+  • define() - 定义一个常量
+  • constant() - 返回一个常量的值
+  • get_defined_constants() - 返回所有常量的关联数组，键是常量名，值是常量值
+  • function_exists() - 如果给定的函数已经被定义就返回 TRUE
+  • Constants这一节
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+My preferred way of checking if a constant is set, and if it isn't - setting it
+(could be used to set defaults in a file, where the user has already had the
+opportunity to set their own values in another.)
+
+<?php
+
+defined('CONSTANT') or define('CONSTANT', 'SomeDefaultValue');
+
+?>
+
+Dan.
+===============================================================================
+
+You can use the late static command "static::" withing defined as well. This
+example outputs - as expected - "int (2)"
+
+<?php
+  abstract class class1
+  {
+    public function getConst()
+    {
+      return defined('static::SOME_CONST') ? static::SOME_CONST : false;
+    }
+  }
+ 
+  final class class2 extends class1
+  {
+    const SOME_CONST = 2;
+  }
+ 
+  $class2 = new class2;
+ 
+  var_dump($class2->getConst());
+?>
+===============================================================================
+
+Before using defined() have a look at the following benchmarks:
+
+true                                       0.65ms
+$true                                      0.69ms (1)
+$config['true']                            0.87ms
+TRUE_CONST                                 1.28ms (2)
+true                                       0.65ms
+defined('TRUE_CONST')                      2.06ms (3)
+defined('UNDEF_CONST')                    12.34ms (4)
+isset($config['def_key'])                  0.91ms (5)
+isset($config['undef_key'])                0.79ms
+isset($empty_hash[$good_key])              0.78ms
+isset($small_hash[$good_key])              0.86ms
+isset($big_hash[$good_key])                0.89ms
+isset($small_hash[$bad_key])               0.78ms
+isset($big_hash[$bad_key])                 0.80ms
+
+PHP Version 5.2.6, Apache 2.0, Windows XP
+
+Each statement was executed 1000 times and while a 12ms overhead on 1000 calls
+isn't going to have the end users tearing their hair out, it does throw up some
+interesting results when comparing to if(true):
+
+1) if($true) was virtually identical
+2) if(TRUE_CONST) was almost twice as slow - I guess that the substitution
+isn't done at compile time (I had to double check this one!)
+3) defined() is 3 times slower if the constant exists
+4) defined() is 19 TIMES SLOWER if the constant doesn't exist!
+5) isset() is remarkably efficient regardless of what you throw at it (great
+news for anyone implementing array driven event systems - me!)
+
+May want to avoid if(defined('DEBUG'))...
+===============================================================================
+
+This function, along with constant(), is namespace sensitive. And it might help
+if you imagine them always running under the "root namespace":
+
+<?php
+namespace FOO\BAR
+{
+    const WMP="wmp";
+    function test()
+    {
+        if(defined("WMP")) echo "direct: ".constant("WMP"); //doesn't work;
+        elseif(defined("FOO\\BAR\\WMP")) echo "namespace: ".constant("FOO\\BAR\
+\WMP"); //works
+        echo WMP; //works
+    }
+}
+namespace
+{
+    \FOO\BAR\test();
+}
+===============================================================================
+
+if you want to check id a class constant is defined use self:: before the
+constant name:
+
+<?php
+defined('self::CONSTANT_NAME');
+?>
+===============================================================================
+
+If you wish to protect files from direct access I normally use this:
+
+index.php:
+
+<?php
+// Main stuff here
+define('START',microtime());
+
+include "x.php";
+?>
+
+x.php:
+
+<?php
+defined('START')||(header("HTTP/1.1 403 Forbidden")&die('403.14 - Directory
+listing denied.'));
+?>
+===============================================================================
+
+I saw that PHP doesn't have an enum function so I created my own. It's not
+necessary, but can come in handy from time to time.
+
+<?php
+    function enum()
+    {
+        $args = func_get_args();
+        foreach($args as $key=>$arg)
+        {
+            if(defined($arg))
+            {
+                 die('Redefinition of defined constant ' . $arg);
+            }
+
+            define($arg, $key);
+        }
+    }
+   
+    enum('ONE','TWO','THREE');
+    echo ONE, ' ', TWO, ' ', THREE;
+?>
+===============================================================================
+
+In PHP5, you can actually use defined() to see if an object constant has been
+defined, like so:
+
+<?php
+
+class Generic
+{
+    const WhatAmI = 'Generic';
+}
+
+if (defined('Generic::WhatAmI'))
+{
+    echo Generic::WhatAmI;
+}
+
+?>
+
+Thought it may be useful to note.
+
+-Nick
+===============================================================================
+
+If your constants don't show up in your included or required files, then you
+probably have php safe mode turned on!
+
+I ran into this problem, I forgot to turn of safe mode when I was creating a
+new site.
+===============================================================================
+
+I found something out: defined() becomes probably false if a reference gets
+lost.
+
+<?php
+
+session_start(); // $_SESSION created
+define('SESSION_BACKUP', $_SESSION);
+if (defined('SESSION_BACKUP')) echo 'A';
+session_unset(); // $_SESSION destroyed
+if (defined('SESSION_BACKUP')) echo 'B';
+
+?>
+
+You will see "A", but not "B".
+===============================================================================
+
+You may find that if you use <?= ?> to dump your constants, and they are not
+defined, depending on your error reporting level, you may not display an error
+and, instead, just show the name of the constant. For example:
+
+<?= TEST ?>
+
+...may say TEST instead of an empty string like you might expect. The fix is a
+function like this:
+
+<?php
+
+function C(&$constant) {
+    $nPrev1 = error_reporting(E_ALL);
+    $sPrev2 = ini_set('display_errors', '0');
+    $sTest = defined($constant) ? 'defined' : 'not defined';
+    $oTest = (object) error_get_last();
+    error_reporting($nPrev1);
+    ini_set('display_errors', $sPrev2);
+    if ($oTest->message) {
+        return '';
+    } else {
+        return $constant;
+    }
+}
+
+?>
+
+And so now you can do:
+
+<?= C(TEST) ?>
+
+If TEST was assigned with define(), then you'll receive the value. If not, then
+you'll receive an empty string.
+
+Please post if you can do this in fewer lines of code or do something more
+optimal than toggling the error handler.
+===============================================================================
+
+This can be useful if you want to protect pages which get included from
+outsiders eyes, on your mail page (the page viewable by people) put define("X",
+null); then on all your other pages, you can then do something like:
+
+<?php
+if (!defined("X")) {
+    echo "You Cannot Access This Script Directly, Have a Nice Day.";
+    exit();
+}
+?>
+
+And your page is a good as protected :)
+===============================================================================
+
+For compatibility with PHP 5.3 and 5.2 and dirname(__FILE__) vs __DIR__
+constant:
+
+<?php
+$dir = NULL;
+if (defined('__DIR__')) {
+  $dir = __DIR__;
+}
+else {
+  $dir = dirname(__FILE__);
+}
+?>
+
+Not for every time; you should probably just define this elsewhere so every
+time the script needs the current directory just use $dir which was taken from
+that bit.

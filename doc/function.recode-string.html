@@ -1,0 +1,186 @@
+
+recode_string
+
+(PHP 4, PHP 5, PHP 7)
+
+recode_string — Recode a string according to a recode request
+
+说明
+
+string recode_string ( string $request , string $string )
+
+Recode the string string according to the recode request request.
+
+参数
+
+request
+
+    The desired recode request type
+
+string
+
+    The string to be recoded
+
+返回值
+
+Returns the recoded string or FALSE, if unable to perform the recode request.
+
+范例
+
+Example #1 Basic recode_string() example
+
+<?php
+echo recode_string("us..flat", 
+"The following character has a diacritical mark: á");
+?>
+
+注释
+
+A simple recode request may be "lat1..iso646-de".
+
+参见
+
+  • The GNU Recode documentation of your installation for detailed instructions
+    about recode requests.
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Here's how to convert romaji to katakana/hiragana with PHP (transliterating
+Japanese text).
+The function Romaji2Kana($s) will return with keys 'hira' and 'kata' that
+respectively contain the hiragana and katakana versions of the given string in
+UTF-8 encoding.
+
+<?php
+// eucjp: 2421; unicode: 3041
+define('HIRATABLE', 'a A i I u U e E o O
+KAGAKIGIKUGUKEGEKOGOSAZASIZISUZUSEZESOZO'.
+'TADATIDItuTUDUTEDETODONANINUNENOHABAPAHIBIPIHUBUPUHEBEPEHOBOPO'.
+'MAMIMUMEMOyaYAyuYUyoYORARIRUREROwaWAWIWEWOn ');
+// eucjp: 2521; unicode: 30A1
+define('KATATABLE', 'a A i I u U e E o O
+KAGAKIGIKUGUKEGEKOGOSAZASIZISUZUSEZESOZO'.
+'TADATIDItuTUDUTEDETODONANINUNENOHABAPAHIBIPIHUBUPUHEBEPEHOBOPO'.
+'MAMIMUMEMOyaYAyuYUyoYORARIRUREROwaWAWIWEWOn VUkake');
+
+function HiraTrans($s)
+{
+  #print "trans('$s')\n";
+  $pos = strpos(HIRATABLE, $s);
+  if($pos===false) return 0xA1BC; // ^
+  return 0xA4A1 + $pos/2;
+}
+function KataTrans($s)
+{
+  $pos = strpos(KATATABLE, $s);
+  if($pos===false) return 0xA1BC; // ^
+  return 0xA5A1 + $pos/2;
+}
+
+function Romaji2Kana($s)
+{
+  $s = strtoupper(str_replace(
+     Array('shi', 'sh', 'fu', 'chi', 'ch', 'tsu', 'dz', 'l', '-',
+           'â', 'î', 'û', 'ê', 'ô', 'ā', 'ī', 'ū', 'ē', 'ō'),
+     Array('si',  'sy', 'hu', 'ti',  'ty', 'tu',  'j',  'r', '^',
+           'a^', 'i^', 'u^', 'e^', 'o^', 'a^', 'i^', 'u^', 'e^', 'o^'),
+     $s));
+  // FO -> FUxo
+  $s = preg_replace('@F([AIOE])@e', '"HU".strtolower("\1")', $s);
+  // VO -> VUxo
+  $s = preg_replace('@V([AIUEO])@e', '"VU".strtolower("\1")', $s);
+  // KYA -> KYya
+  $s = preg_replace('@([KSTNHMRGZBPD])Y([AUO])@e',   '"\1Iy".strtolower("\2")',
+$s);
+  // XTU -> tu (make them actually small)
+  $s = preg_replace('@X(TU|Y[AUO]|[AIUEO]|KA|KE)@e', 'strtolower("\1")', $s);
+  // KKO -> tuKO
+  $s = preg_replace('@([KSTHMRYWGZBPDV]{2,})@e',
+                      'str_pad("",2*strlen("\1")-2,"tu").substr("\1",0,1)', $s
+);
+  // N -> n (but not NO -> nO)
+  // At this point, N' will work correctly
+  $s = preg_replace('@N(?![AIUEO])@', 'n', $s);
+  // Unrecognized characters off
+  $s = eregi_replace('[^^VAIUEOKSTNHMYRWGZBPD]', '', $s);
+ 
+  $pat = '@([AIUEOnaiueo^]|..)@e';
+  $rec = 'EUCJP..UTF8';
+ 
+  return
+    Array('hira' => recode_string($rec,preg_replace($pat, 'pack("n", HiraTrans
+("\1"))', $s)),
+          'kata' => recode_string($rec,preg_replace($pat, 'pack("n", KataTrans
+("\1"))', $s)));
+}
+
+print_r( Romaji2Kana('konnichiha') );
+?>
+
+Note: Due to technical limitations in the manual pages, there are two errors in
+this code:
+- Some characters in the first str_replace may appear wrong in some php.net
+mirrors. It supposed to contain aiueo with circumflex and aiueo with macron.
+- The strings in the defines should be constant, not appendage expressions.
+(Line length limitation)
+
+-Joel Yliluoma
+===============================================================================
+
+Seems to require that librecode be installed.
+Try iconv() instead.
+===============================================================================
+
+I came across a bug (and workaround) when using recode_string. When converting
+from utf-8 to iso-2022-jp, it would always return an empty string (although it
+would work fine for conversions from html to utf8). Converting with recode on
+the command line worked fine, which was odd. I noticed that if I specified "-v"
+on the command line, recode stated that it was using libiconv to do the
+conversion.
+
+Using "iconv" instead of recode got the right results.
+i.e.
+
+Works:
+$str = recode_string("html..utf-8", "&#26085;&#26412;&#35486;"); // Unicode for
+"Japanese"
+
+Doesn't work:
+$str = recode_string("utf-8..iso-2022-jp", $mystring);
+
+Works:
+$str = iconv("utf-8", "iso-2022-jp", $mystring);
+
+Don't ask me why. Hope this saves someone some frustrating hours debugging.
+===============================================================================
+
+function Romaji2Kana works pretty good but few exception: "JA" and "DZA" were
+not converted correctly as Japanese speekes expected. Following is a correction
+of that behavior.
+
+     public function convert($s, $mode='hiragana')
+     {
+         $s = strtoupper(str_replace(
+-                            Array('shi', 'sh', 'fu', 'chi', 'ch', 'tsu', 'dz',
+'l', '-',
++                            Array('shi', 'sh', 'fu', 'chi', 'ch', 'tsu',
+'dzi', 'ji', 'j', 'l', '-',
+                                   'â', 'î', 'û', 'ê', 'ô', 'ā', 'ī', 'ū', 'ē',
+'ō'),
+-                            Array('si',  'sy', 'hu', 'ti',  'ty', 'tu',  'j', 
+'r', '^',
++                            Array('si',  'sy', 'hu', 'ti',  'ty', 'tu', 
+'zi',  'zi', 'dz','r', '^',
+                                   'a^', 'i^', 'u^', 'e^', 'o^', 'a^', 'i^', 'u
+^', 'e^', 'o^'),
+                             $s));
++        // DZA -> ZIya
++        $s = preg_replace('/DZ([AUO])/e', '"ZI".strtolower("y\1")', $s);
++        // DZE -> ZIe
++        $s = preg_replace('/DZ([E])/e', '"ZI".strtolower("\1")', $s);
+         // FO -> FUxo
+         $s = preg_replace('@F([AIOE])@e', '"HU".strtolower("\1")', $s);
+         // VO -> VUxo

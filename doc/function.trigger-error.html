@@ -1,0 +1,520 @@
+
+trigger_error
+
+(PHP 4 >= 4.0.1, PHP 5, PHP 7)
+
+trigger_error — 产生一个用户级别的 error/warning/notice 信息
+
+说明
+
+bool trigger_error ( string $error_msg [, int $error_type = E_USER_NOTICE ] )
+
+用于触发一个用户级别的错误条件，它能结合内置的错误处理器所关联，或者可以使用用
+户定义的函数作为新的错误处理程序(set_error_handler())。
+
+该函数在你运行出现异常时，需要产生一个特定的响应时非常有用。
+
+参数
+
+error_msg
+
+    该 error 的特定错误信息，长度限制在了1024个字符。超过1024长度的字符都会被截
+    断。
+
+error_type
+
+    该 error 所特定的错误类型。仅 E_USER 系列常量对其有效，默认是 E_USER_NOTICE
+    。
+
+返回值
+
+如果指定了错误的 error_type 会返回 FALSE ，正确则返回 TRUE。
+
+范例
+
+Example #1 trigger_error() 示例
+
+set_error_handler() 可见到更多详细的例子。
+
+<?php
+if ($divisor == 0) {
+    trigger_error("Cannot divide by zero", E_USER_ERROR);
+}
+?>
+
+注释
+
+Warning
+
+在 error_msg 里的HTML实体并不会被转义。如果错误消息要显示在浏览器里，需要对错误
+消息使用 htmlentities()。
+
+参见
+
+  • error_reporting() - 设置应该报告何种 PHP 错误
+  • set_error_handler() - 设置一个用户定义的错误处理函数
+  • restore_error_handler() - 还原之前的错误处理函数
+  • The 错误级别常量
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+the idea is never to give out file names, line numbers, and cryptic codes to
+the user. Use trigger_error() after you used set_error_handler() to register
+your own callback function which either logs or emails the error codes to you,
+and echo a simple friendly message to the user.
+
+And turn on a more verbose error handler function when you need to debug your
+scripts. In my init.php scripts I always have:
+
+if (_DEBUG_) {
+    set_error_handler ('debug_error_handler');
+}
+else {
+    set_error_handler ('nice_error_handler');
+}
+===============================================================================
+
+trigger_error always reports the line and file that trigger_error was called
+on. Which isn't very useful.
+
+eg:
+
+main.php:
+<?php
+include('functions.php');
+$x = 'test';
+doFunction($x);
+?>
+
+functions.php:
+<?php
+function doFunction($var) {
+if(is_numeric($var)) {
+/* do some stuff*/
+} else {
+trigger_error('var must be numeric');
+}
+}
+?>
+
+will output "Notice: var must be numeric in functions.php on line 6"
+whereas "Notice: var must be numeric in main.php on line 4" would be more
+useful
+
+here's a function to do that:
+
+<?php
+
+function error($message, $level=E_USER_NOTICE) {
+$caller = next(debug_backtrace());
+trigger_error($message.' in <strong>'.$caller['function'].'</strong> called
+from <strong>'.$caller['file'].'</strong> on line <strong>'.$caller['line'].'</
+strong>'."\n<br />error handler", $level);
+}
+?>
+
+So now in our example:
+
+main.php:
+<?php
+include('functions.php');
+$x = 'test';
+doFunction($x);
+?>
+
+functions.php:
+<?php
+function doFunction($var) {
+    if(is_numeric($var)) {
+         /* do some stuff*/
+    } else {
+         error('var must be numeric');
+    }
+}
+
+function error($message, $level=E_USER_NOTICE) {
+    $caller = next(debug_backtrace());
+    trigger_error($message.' in <strong>'.$caller['function'].'</strong> called
+from <strong>'.$caller['file'].'</strong> on line <strong>'.$caller['line'].'</
+strong>'."\n<br />error handler", $level);
+}
+?>
+
+now outputs:
+
+"Notice: var must be numeric in doFunction called from main.php on line 4"
+
+http://www.puremango.co.uk
+===============================================================================
+
+i recently began using a custom error handling class. the biggest problem is
+that, with call time pass by reference deprecated, you can't manipulate the
+error handler class after assigning at as the error handler (and it appears not
+to be returned by the set_error_handler method as the old error handler). my
+goal was to be able to store up all my non-fatal errors and print them at the
+end of script execution. that way i can use 'trigger_error' (which i actually
+have wrapped in a static method ErrorHandler::throwException for portability
+purposes... which is a pain because it always has the same line number
+information!!) for all kinds of errors, including user input erros. so when i
+check a user's password, for instance i would trigger a warning that said
+'incorrect password'. of course i would only want this to print out the error
+once the script had completed.
+
+so in my error handler class i have the following in the constructor:
+
+function ErrorHandler()
+{
+    $this->error_messages  = array();
+    error_reporting (E_ALL);
+    set_error_handler(array($this,"assignError"));
+}
+
+and my assignError method:
+//accept the required arguments
+function assignError($errno, $errstr, $errfile, $errline)
+{
+    //get the error string
+    $error_message = $errstr;
+//if in debug mode, add line number and file info
+if(ErrorHandler::DEBUG())
+$error_message .= "<br>".basename($errfile).",line: ".$errline;
+
+            switch ($errno)
+            {
+                //if the error was fatal, then add the error
+                //display an error page and exit
+                case ErrorHandler::FATAL():
+                    $this->setType('Fatal');
+                    $this->addError($error_message);
+                    Display::errorPage($this->errorMessages());
+                    exit(1);
+                break;
+                //if it was an error message, add a message of
+                //type error
+                case ErrorHandler::ERROR():
+                    $this->setType('Error');
+                    $this->addError($error_message);
+                break;
+                //if it was a warning, add a message of type
+                //warning
+                case ErrorHandler::WARNING():
+                    $this->setType('Warning');
+                    $this->addError($error_message);
+                break;
+                //if it was some other code then display all
+                //the error messages that were added
+                default:
+                    Display::errorRows($this->errorMessages());
+                break;
+            }
+            //return a value so that the script will continue
+            //execution
+            return 1;
+}
+
+the key part there is the 'default' behaviour. i found that if i call
+trigger_error with anything other than E_USER_ERROR, E_USER_WARNING or
+E_USER_NOTICE, then error code '2' is passed to the handler method. so when it
+is time to print all my non-fatal errors, like 'password and confirm password
+don't match' or something, i call ErrorHandler::printAllErrors()
+
+        function printAllErrors()
+        {
+            trigger_error("",2);
+        }
+
+which leads to the default behaviour in my switch statement in the assignError
+method above. the only problem with this is that the weird bug 'Problem with
+method call' that occurs with some static method calls (that one person on the
+bug lists said was fixed and another said wouldn't be fixed until version 5)
+also produces error code 2!! i have just taken to suppressing these errors with
+@, because despite the alledged problem with the method call, the script still
+seems to execute fine.
+
+iain.
+===============================================================================
+
+I am not so familiar with this but I think you can reach some of the
+functionality of try..catch with this function. I would disagree or correct the
+previous note. The @ is not the catch, it sets the error_reporting to 0
+tempolary but with set_error_handler you can try to imitate some behavior like
+catch.
+I've just made this to try if it possible, I never tried in projects but I
+think could work in php 4. Actually if you want to have the Trace of the error
+you need to use php4.3+.
+Maybe not many of you will create new scripts in php4 and try to have some
+features from php5 but in some cases (extending older projects) this could be
+better error handling.
+
+If this is a wrong approach, waiting for comments, if its not, use it!
+
+<?
+function catch($errno, $errstr, $errfile, $errline){
+    $GLOBALS['throw'] = $errstr;
+    $GLOBALS['throw_info'] = array(
+        'Message'=>$errstr
+        ,'Code'=>$errno
+        ,'Line'=>$errline
+        ,'File'=>$errfile
+        ,'Trace'=>debug_backtrace()
+    );
+   
+}
+set_error_handler('catch');
+
+function badgirl(){
+    if(true){ //error occure
+        trigger_error("BadGirlWithError",E_USER_NOTICE); // as throw with
+notice
+        return; // ...because trigger_error does not stop the function
+    }else{
+       return true;
+    }
+}
+
+// Try
+$GLOBALS['throw'] = null; // ...try...
+$sheis = badgirl(); //could be @badgirl, display_errors is something else, this
+just the handling
+// ..try
+if($GLOBALS['throw']){  // This actually catch re-throws too...
+    switch($GLOBALS['throw']){ // Catch
+        case 'GoodGirlException':
+            die('No bad girl today!');
+        break;
+        case 'BadGirlWithError':
+            die('Bad girl has some error');
+        break;
+        default:
+            return; // or you can make another trigger_error and re-throw
+another 'exception' or some other action
+    }
+}
+echo "You will never see this line - @ only supress message, not a control
+flow";
+echo "Wrong! You could see this:)";
+
+?>
+
+.mano
+===============================================================================
+
+For those of you looking to use your own file or line number in the error
+(possibly using debug_backtrace()) instead of the ones created by trigger_error
+(), here is a solution:
+Create a custom function to handle E_USER_ERRORs that simply outputs the error
+type and message, while excluding the line number and file trigger_error()
+reports. You may also configure it to handle user warnings and notices if
+necessary (I did in the example below).
+
+<?php
+function error_handler($level, $message, $file, $line, $context) {
+    //Handle user errors, warnings, and notices ourself
+    if($level === E_USER_ERROR || $level === E_USER_WARNING || $level === 
+E_USER_NOTICE) {
+        echo '<strong>Error:</strong> '.$message;
+        return(true); //And prevent the PHP error handler from continuing
+    }
+    return(false); //Otherwise, use PHP's error handler
+}
+
+function trigger_my_error($message, $level) {
+    //Get the caller of the calling function and details about it
+    $callee = next(debug_backtrace());
+    //Trigger appropriate error
+    trigger_error($message.' in <strong>'.$callee['file'].'</strong> on line
+<strong>'.$callee['line'].'</strong>', $level);
+}
+
+//Use our custom handler
+set_error_handler('error_handler');
+
+//-------------------------------
+//Demo usage:
+//-------------------------------
+function abc($str) {
+    if(!is_string($str)) {
+        trigger_my_error('abc() expects parameter 1 to be a string', 
+E_USER_ERROR);
+    }
+}
+
+abc('Hello world!'); //Works
+abc(18); //Error: abc() expects parameter 1 to be a string in [FILE].php on
+line 31
+?>
+
+This is a pretty simple concept and I'm sure most of you know this, but for
+those that don't, let it serve as a good example!
+===============================================================================
+
+Beware, trigger_error() is absolutely useless for transporting your own
+function's error messages in $php_errormsg:
+
+ini_set('track_errors', TRUE);
+function x() { trigger_error('MY ERROR'); }
+@x();
+echo "Error 1: \\"$php_errormsg\\"\\n";
+@file_get_contents('/nonexisting');
+echo "Error 2: \\"$php_errormsg\\"\\n";
+
+This outputs:
+
+Error 1: ""
+Error 2: "failed to open stream: No such file or directory"
+
+This behaviour is consistent with the description of $php_errormsg, which says
+that the variable will only be available within the scope in which the error
+occurred. The problem can be worked around with a custom error handler like the
+one below. However, I'm undecided whether changing the language in this way is
+good:
+
+function errHandler($errno, $errstr, $errfile, $errline) {
+  global $php_errormsg; $php_errormsg = $errstr;
+}
+set_error_handler('errHandler');
+===============================================================================
+
+Some might think that trigger_error is like a throw() or an err.raise
+construction, and @ works like catch(){} one - in fact it's NOT.
+
+function badgirl(){
+    trigger_error("shame on me",E_USER_ERROR);
+    return true;
+}
+
+$sheis = @badgirl();
+echo "You will never see this line - @ only supress message, not a control
+flow";
+===============================================================================
+
+It actually turns out - at least on PHP 5.2.6 on XAMPP (Windows) that for the
+custom error handler, you will need to set $errorType as the first parameter,
+and only the second parameter as $message, i.e. in reverse order compared to
+how the manual states it now.
+===============================================================================
+
+This one took me some time ...
+
+When you use trigger_error with your own error handler, the class instances are
+destroyed (don't know how to say it better, I am not an expert).
+
+So, if you try to call a class function from within the error handler function,
+you will get 'Call to a member function on a non-object' error, even if this
+function works perfectly in the rest of your script.
+
+Solution : re-use the xxx = new yyy to re-create the instance in the beginning
+of your error handler ... and then you can call the class functions you want !
+===============================================================================
+
+For those of you wanting one (or more) lines of context on your call to
+trigger_error, I offer this. Would be nice to use \n to get a proper stack
+trace, but it seems trigger_error escapes it; therefore, I use a comma.
+
+<?php
+/**
+* Behaves like trigger_error, but appends part of a stack trace to the error
+* message. This allows you to see where trigger_error was called from, instead
+* of just seeing the file and line number of the call to trigger_error.
+*
+* @param   error_msg   The designated error message for this error
+* @param   error_type  The designated error type for this error (E_USER_*)
+* @param   context     Number of stack frames to append, defaults to 1
+* @return  FALSE if wrong error_type is specified, TRUE otherwise
+*/
+function trigger_error_with_context($error_msg, $error_type, $context = 1) {
+    $stack = debug_backtrace();
+    for ($i = 0; $i < $context; $i++)
+    {
+        if (false === ($frame = next($stack))
+            break;
+        $error_msg .= ", from " . $frame['function'] . ':' . $frame['file'] . '
+line ' . $frame['line'];
+    }
+    return trigger_error($error_msg, $error_type);
+}
+?>
+===============================================================================
+
+If error_type is E_USER_ERROR then trigger_error throw FATAL ERROR and script
+stopped after this line.
+
+<?php
+
+$msg = 'This is the test message for echo';
+
+trigger_error('Error message', E_USER_ERROR); // Script stopped after this
+line...
+
+echo $msg; // This line does not appear...
+
+?>
+===============================================================================
+
+We wanted to be able to pass an SQL query to the error handler on our site so
+we could monitor SQL problems, you cant do this through normal methods so we
+came up with this bridge script that 100% works
+
+<?php
+
+function myErrorHandler($errno, $errstr, $errfile, $errline){
+    switch ($errno) {
+    case E_USER_ERROR:
+        if ($errstr == "(SQL)"){
+            // handling an sql error
+            echo "<b>SQL Error</b> [$errno] " . SQLMESSAGE . "<br />\n";
+            echo "Query : " . SQLQUERY . "<br />\n";
+            echo "On line " . SQLERRORLINE . " in file " . SQLERRORFILE . " ";
+            echo ", PHP " . PHP_VERSION . " (" . PHP_OS . ")<br />\n";
+            echo "Aborting...<br />\n";
+        } else {
+            echo "<b>My ERROR</b> [$errno] $errstr<br />\n";
+            echo "  Fatal error on line $errline in file $errfile";
+            echo ", PHP " . PHP_VERSION . " (" . PHP_OS . ")<br />\n";
+            echo "Aborting...<br />\n";
+        }
+        exit(1);
+        break;
+
+    case E_USER_WARNING:
+    case E_USER_NOTICE:
+    }
+    /* Don't execute PHP internal error handler */
+    return true;
+}
+
+// function to test the error handling
+
+function sqlerrorhandler($ERROR, $QUERY, $PHPFILE, $LINE){
+    define("SQLQUERY", $QUERY);
+    define("SQLMESSAGE", $ERROR);
+    define("SQLERRORLINE", $LINE);
+    define("SQLERRORFILE", $PHPFILE);
+    trigger_error("(SQL)", E_USER_ERROR);
+}
+
+set_error_handler("myErrorHandler");
+
+// trigger an sql error
+$query = "SELECT * FROM tbl LIMIT 1";
+$sql = @mysql_query($query)
+    or sqlerrorhandler("(".mysql_errno().") ".mysql_error(), $query, $_SERVER[
+'PHP_SELF'], __LINE__);
+   
+
+?>
+===============================================================================
+
+Well this is a good way on debuging your php scripts, but i wouldn't feel
+too comfortable by giving out my web servers structure.
+Notice that what helps you finding and isolating errors in your php helps also
+a potential attacker.
+Or maybe i am just paranoid, but its worth mention it.
+===============================================================================
+
+You should be using set_error_handler (possibly in conjuction with error_log
+and/or trigger_error) if you want FILE and LINE number information.
+You don't need macros for this.

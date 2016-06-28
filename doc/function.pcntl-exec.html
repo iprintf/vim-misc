@@ -1,0 +1,133 @@
+
+pcntl_exec
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pcntl_exec — 在当前进程空间执行指定程序
+
+说明
+
+void pcntl_exec ( string $path [, array $args [, array $envs ]] )
+
+以给定参数执行程序。
+
+参数
+
+path
+
+    path必须时可执行二进制文件路径或一个在文件第一行指定了一个可执行文件路径标
+    头的脚本（比如文件第一行是#!/usr/local/bin/perl的perl脚本）。更多的信息请查
+    看您系统的execve（2）手册。
+
+args
+
+    args是一个要传递给程序的参数的字符串数组。
+
+envs
+
+    envs是一个要传递给程序作为环境变量的字符串数组。这个数组是 key => value格式
+    的，key代表要传递的环境变量的名称，value代表该环境变量值。
+
+返回值
+
+当发生错误时返回 FALSE ，没有错误时没有返回。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Some people might find it useful to run other program using the same process as
+a different user. This is very usefull if the script is running under root.
+Here is a simple code to achieve that under *nix PHP CLI:
+
+#!/usr/bin/php -q
+<?php
+//Enter run-as user below (argument needed to be passed when the script is
+called), otherwise it will run as the caller user process.
+
+$username = $_SERVER['argv'][1];
+
+$user = posix_getpwnam($username);
+posix_setuid($user['uid']);
+posix_setgid($user['gid']);
+pcntl_exec('/path/to/cmd');
+?>
+
+I use this as a part of socket program so that a program can be run under
+different user from remote location.
+===============================================================================
+
+Just a note regarding what rbemrose at vgmusic dot com said:
+Once the executed process ends, control returns to the webserver process.
+===============================================================================
+
+As a side note, if I'm reading the comments below correctly, you should not run
+this if you're using a PHP webserver module, as it will replace the webserver's
+process with whatever process you're telling it to run.
+===============================================================================
+
+//To complete my last note
+//If you use some object in your php code
+//You will have some problem if you do a exit after include the
+//child scripts
+//You must use posix_kill() like that :
+
+$CHILD_PID = pcntl_fork();
+if($CHILD_PID == 0)
+{   
+  include ($script_path);
+  posix_kill(getmypid(),9);
+}
+
+//This code is very simple it can be ameliorate ;)
+===============================================================================
+
+The pcntl_exec() function works exactly like the standard (unix-style) exec()
+function.  It differs from the regular PHP exec() function in that the process
+calling the pcntl_exec() is replaced with the process that gets called.  This
+is the ideal method for creating children.  In a simple example (that does no
+error checking):
+
+switch (pcntl_fork()) {
+  case 0:
+    $cmd = "/path/to/command";
+    $args = array("arg1", "arg2");
+    pcntl_exec($cmd, $args);
+    // the child will only reach this point on exec failure,
+    // because execution shifts to the pcntl_exec()ed command
+    exit(0);
+  default:
+    break;
+}
+
+// parent continues
+echo "I am the parent";
+
+--
+
+since this is not being executed through a shell, you must provide the exact
+path from the filesystem root.  Look at the execve() man page for more
+information.
+===============================================================================
+
+An alternative for Windows environment is to use the COM object. With this, you
+can start child process with Apache, or php.exe as parent process. Very useful
+for CLI or console PHC-Win applications.
+
+if(!function_exists('pcntl_exec')){
+  function pcntl_exec($path,$args=array()){
+    if(is_string($args)) $args = array($args);
+    if(count($args)) $path = '"'.$path.'"';
+    $shell = new COM('WScript.Shell');
+    $shell->run($path.(count($args) ? ' '.implode(' ',$args) : ''),0,true);
+  }
+}
+
+Very useful too when you want to use ansicon. Instead of make a .bat file with
+ansicon -p and php .... (somefile).php, in your .php file you can put this on
+top of your code:
+
+pcntl_exec('ansicon -p');
+
+BINGO!

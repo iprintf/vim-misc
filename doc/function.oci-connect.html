@@ -1,0 +1,737 @@
+
+oci_connect
+
+(PHP 5, PHP 7, PECL OCI8 >= 1.1.0)
+
+oci_connect — 建立一个到 Oracle 服务器的连接
+
+说明
+
+resource oci_connect ( string $username , string $password [, string $db [, 
+string $charset [, int $session_mode ]]] )
+
+oci_connect() 返回一个大多数 OCI 调用都需要的连接标识符。可选的第三个参数可以包
+含想要连接的本地 Oracle 的实例的或者在 tnsnames.ora 中的条目的名字。如果没有指
+定可选的第三个参数，PHP 使用环境变量 ORACLE_SID（Oracle 实例）或 TWO_TASK（
+tnsnames.ora）来确定连接哪一个数据库。
+
+session_mode 参数自版本 1.1 起可用并接受如下值：OCI_DEFAULT，OCI_SYSOPER 和
+OCI_SYSDBA。如果指定了 OCI_SYSOPER 或 OCI_SYSDBA 其中之一，oci_connect() 将尝试
+使用外部认证信息建立特权连接。特权连接默认被禁止。要启用，需要将
+oci8.privileged_connect 设为 On。
+
+    Note: 对 oci_connect() 用同样的参数第二次及之后的调用将返回第一次调用所返回
+    的连接句柄。也就是说对一个句柄发出的查询也适用于另一个句柄，因为它们是同一
+    个句柄。此行为演示于下面的例 1。如果需要两个句柄在事务上互相隔离开，应该使
+    用 oci_new_connect() 来替代。
+
+使用 Oracle 客户端库来确定字符集。字符集不需要与数据库的字符集相匹配。如果不匹
+配，Oracle 会尽可能地将数据从数据库字符集进行转换。因为依赖于字符集，可能不能给
+出可用的结果。转换也增加一些时间开销。
+
+如果不指定，Oracle 客户端用 NLS_LANG 环境变量来决定字符集。
+
+传递此参数可减少连接时间。
+
+Example #1 oci_connect() 例子
+
+<?php
+echo "<pre>";
+$db = "";
+
+$c1 = oci_connect("scott", "tiger", $db);
+$c2 = oci_connect("scott", "tiger", $db);
+
+function create_table($conn)
+{
+  $stmt = oci_parse($conn, "create table scott.hallo (test varchar2(64))");
+  oci_execute($stmt);
+  echo $conn . " created table\n\n";
+}
+
+function drop_table($conn)
+{
+  $stmt = oci_parse($conn, "drop table scott.hallo");
+  oci_execute($stmt);
+  echo $conn . " dropped table\n\n";
+}
+
+function insert_data($conn)
+{
+  $stmt = oci_parse($conn, "insert into scott.hallo
+            values('$conn' || ' ' || to_char(sysdate,'DD-MON-YY HH24:MI:SS'))"
+);
+  oci_execute($stmt, OCI_DEFAULT);
+  echo $conn . " inserted hallo\n\n";
+}
+
+function delete_data($conn)
+{
+  $stmt = oci_parse($conn, "delete from scott.hallo");
+  oci_execute($stmt, OCI_DEFAULT);
+  echo $conn . " deleted hallo\n\n";
+}
+
+function commit($conn)
+{
+  oci_commit($conn);
+  echo $conn . " committed\n\n";
+}
+
+function rollback($conn)
+{
+  oci_rollback($conn);
+  echo $conn . " rollback\n\n";
+}
+
+function select_data($conn)
+{
+  $stmt = oci_parse($conn, "select * from scott.hallo");
+  oci_execute($stmt, OCI_DEFAULT);
+  echo $conn."----selecting\n\n";
+  while (oci_fetch($stmt)) {
+    echo $conn . " [" . oci_result($stmt, "TEST") . "]\n\n";
+  }
+  echo $conn . "----done\n\n";
+}
+
+create_table($c1);
+insert_data($c1);   // Insert a row using c1
+insert_data($c2);   // Insert a row using c2
+
+select_data($c1);   // Results of both inserts are returned
+select_data($c2);
+
+rollback($c1);      // Rollback using c1
+
+select_data($c1);   // Both inserts have been rolled back
+select_data($c2);
+
+insert_data($c2);   // Insert a row using c2
+commit($c2);        // Commit using c2
+
+select_data($c1);   // Result of c2 insert is returned
+
+delete_data($c1);   // Delete all rows in table using c1
+select_data($c1);   // No rows returned
+select_data($c2);   // No rows returned
+commit($c1);        // Commit using c1
+
+select_data($c1);   // No rows returned
+select_data($c2);   // No rows returned
+
+drop_table($c1);
+echo "</pre>";
+?>
+
+oci_connect() 如果出错则返回 FALSE。
+
+    Note:
+
+    在 PHP 5.0.0 之前的版本必须使用 ocilogon() 替代本函数。该函数名仍然可用，为
+    向下兼容作为 oci_connect() 的别名。不过其已被废弃，不推荐使用。
+
+参见 oci_pconnect()，oci_new_connect() 和 oci_close()。
+
+参数
+
+username
+
+    The Oracle user name.
+
+password
+
+    The password for username.
+
+connection_string
+
+    包含要连接的 Oracle 实例。可以是 » Easy Connect 串，或是 tnsnames.ora 文件
+    中的连接名，或是本地 Oracle 实例名。
+
+    如果不指定，PHP 使用环境变量来确定连接的 Oracle 实例，诸如 TWO_TASK（Linux
+    下）或 LOCAL（Windows 下）与 ORACLE_SID 等。
+
+    要使用 Easy Connect 命名方法，PHP 必须与 Oracle 10g 或更高版本的客户端库进
+    行链接。Oracle 10g 的 Easy Connect 串格式：[//]host_name[:port][/
+    service_name]。Oracle 11g 则为：[//]host_name[:port][/service_name]
+    [:server_type][/instance_name]。服务名可在数据库服务器机器上运行 Oracle 实
+    用程序 lsnrctl status 找到。
+
+    tnsnames.ora 文件可在 Oracle Net 查找路径中，此路径包括 $ORACLE_HOME/
+    network/admin 和 /etc。另一种方法是设置 TNS_ADMIN 以便通过 $TNS_ADMIN/
+    tnsnames.ora 来读取。表确认 web 守护进程可读取此文件。
+
+character_set
+
+    使用 Oracle 客户端库来确定字符集。字符集不需要与数据库的字符集相匹配。如果
+    不匹配，Oracle 会尽可能地将数据从数据库字符集进行转换。因为依赖于字符集，可
+    能不能给出可用的结果。转换也增加一些时间开销。
+
+    如果不指定，Oracle 客户端用 NLS_LANG 环境变量来决定字符集。
+
+    传递此参数可减少连接时间。
+
+session_mode
+
+    此参数在 PHP 5（PECL OCI8 1.1）版本开始可用，并收受下列值：OCI_DEFAULT，
+    OCI_SYSOPER 和 OCI_SYSDBA。如为 OCI_SYSOPER 或 OCI_SYSDBA 其中之一，此函数
+    将会使用外部的证书建立有特权的连接。有特权的连接默认是禁用的。需要将
+    oci8.privileged_connect 设为 On 来启用。
+
+    PHP 5.3（PECL OCI8 1.3.4）引进了 OCI_CRED_EXT 模式值。使用外部或操作系统认
+    证必需在 Oracle 数据库中进行配置。OCI_CRED_EXT 标志只可用于用户为 "/"，密码
+    为空的情况。oci8.privileged_connect 可为 On 或 Off。
+
+    OCI_CRED_EXT 可与 OCI_SYSOPER 或 OCI_SYSDBA 模式组合使用。
+
+    OCI_CRED_EXT 由于安全的原因不支持 Windows 系统。
+
+返回值
+
+Returns a connection identifier or FALSE on error.
+
+范例
+
+Example #2 Basic oci_connect() using Easy Connect syntax
+
+<?php
+
+// Connects to the XE service (i.e. database) on the "localhost" machine
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message'], ENT_QUOTES), E_USER_ERROR);
+}
+
+$stid = oci_parse($conn, 'SELECT * FROM employees');
+oci_execute($stid);
+
+echo "<table border='1'>\n";
+while ($row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS)) {
+    echo "<tr>\n";
+    foreach ($row as $item) {
+        echo "    <td>" . ($item !== null ? htmlentities($item, ENT_QUOTES) : "
+&nbsp;") . "</td>\n";
+    }
+    echo "</tr>\n";
+}
+echo "</table>\n";
+
+?>
+
+Example #3 Basic oci_connect() using a Network Connect name
+
+<?php
+
+// Connects to the MYDB database described in tnsnames.ora file,
+// One example tnsnames.ora entry for MYDB could be:
+//   MYDB =
+//     (DESCRIPTION =
+//       (ADDRESS = (PROTOCOL = TCP)(HOST = mymachine.oracle.com)(PORT = 1521))
+//       (CONNECT_DATA =
+//         (SERVER = DEDICATED)
+//         (SERVICE_NAME = XE)
+//       )
+//     )
+
+$conn = oci_connect('hr', 'welcome', 'MYDB');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message'], ENT_QUOTES), E_USER_ERROR);
+}
+
+$stid = oci_parse($conn, 'SELECT * FROM employees');
+oci_execute($stid);
+
+echo "<table border='1'>\n";
+while ($row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS)) {
+    echo "<tr>\n";
+    foreach ($row as $item) {
+        echo "    <td>" . ($item !== null ? htmlentities($item, ENT_QUOTES) : "
+&nbsp;") . "</td>\n";
+    }
+    echo "</tr>\n";
+}
+echo "</table>\n";
+
+?>
+
+Example #4 oci_connect() with an explicit character set
+
+<?php
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE', 'AL32UTF8');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message'], ENT_QUOTES), E_USER_ERROR);
+}
+
+$stid = oci_parse($conn, 'SELECT * FROM employees');
+oci_execute($stid);
+
+echo "<table border='1'>\n";
+while ($row = oci_fetch_array($stid, OCI_ASSOC+OCI_RETURN_NULLS)) {
+    echo "<tr>\n";
+    foreach ($row as $item) {
+        echo "    <td>" . ($item !== null ? htmlentities($item, ENT_QUOTES) : "
+&nbsp;") . "</td>\n";
+    }
+    echo "</tr>\n";
+}
+echo "</table>\n";
+
+?>
+
+Example #5 Using multiple calls to oci_connect()
+
+<?php
+
+$c1 = oci_connect("hr", "welcome", 'localhost/XE');
+$c2 = oci_connect("hr", "welcome", 'localhost/XE');
+
+// Both $c1 and $c2 show the same PHP resource id meaning they use the
+// same underlying database connection
+echo "c1 is $c1<br>\n";
+echo "c2 is $c2<br>\n";
+
+function create_table($conn)
+{
+    $stmt = oci_parse($conn, "create table hallo (test varchar2(64))");
+    oci_execute($stmt);
+    echo "Created table<br>\n";
+}
+
+function drop_table($conn)
+{
+    $stmt = oci_parse($conn, "drop table hallo");
+    oci_execute($stmt);
+    echo "Dropped table<br>\n";
+}
+
+function insert_data($connname, $conn)
+{
+    $stmt = oci_parse($conn, "insert into hallo
+              values(to_char(sysdate,'DD-MON-YY HH24:MI:SS'))");
+    oci_execute($stmt, OCI_DEFAULT);
+    echo "$connname inserted row without committing<br>\n";
+}
+
+function rollback($connname, $conn)
+{
+    oci_rollback($conn);
+    echo "$connname rollback<br>\n";
+}
+
+function select_data($connname, $conn)
+{
+    $stmt = oci_parse($conn, "select * from hallo");
+    oci_execute($stmt, OCI_DEFAULT);
+    echo "$connname ----selecting<br>\n";
+    while (oci_fetch($stmt)) {
+        echo "    " . oci_result($stmt, "TEST") . "<br>\n";
+    }
+    echo "$connname ----done<br>\n";
+}
+
+create_table($c1);
+
+insert_data('c1', $c1);   // Insert a row using c1
+sleep(2);                 //
+ sleep to show a different timestamp for the 2nd row
+insert_data('c2', $c2);   // Insert a row using c2
+
+select_data('c1', $c1);   // Results of both inserts are returned
+select_data('c2', $c2);   // Results of both inserts are returned
+
+rollback('c1', $c1);      // Rollback using c1
+
+select_data('c1', $c1);   // Both inserts have been rolled back
+select_data('c2', $c2);
+
+drop_table($c1);
+
+// Closing one of the connections makes the PHP variable unusable, but
+// the other could be used
+oci_close($c1);
+echo "c1 is $c1<br>\n";
+echo "c2 is $c2<br>\n";
+
+
+// Output is:
+//    c1 is Resource id #5
+//    c2 is Resource id #5
+//    Created table
+//    c1 inserted row without committing
+//    c2 inserted row without committing
+//    c1 ----selecting
+//        09-DEC-09 12:14:43
+//        09-DEC-09 12:14:45
+//    c1 ----done
+//    c2 ----selecting
+//        09-DEC-09 12:14:43
+//        09-DEC-09 12:14:45
+//    c2 ----done
+//    c1 rollback
+//    c1 ----selecting
+//    c1 ----done
+//    c2 ----selecting
+//    c2 ----done
+//    Dropped table
+//    c1 is 
+//    c2 is Resource id #5
+
+?>
+
+注释
+
+    Note:
+
+    An incorrectly installed or configured OCI8 extension will often manifest
+    itself as a connection problem or error. See Installing/Configuring for
+    troubleshooting information.
+
+    Note:
+
+    In PHP versions before 5.0.0 use ocilogon() instead. 在当前版本中，旧的函数
+    名还可以被使用，但已经被废弃并不建议使用。
+
+参见
+
+  • oci_pconnect() - 使用一个持久连接连到 Oracle 数据库
+  • oci_new_connect() - 建定一个到 Oracle 服务器的新连接
+  • oci_close() - 关闭 Oracle 连接
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+If you want to specify a connection timeout in case there is network problem,
+you can edit the client side (e.g. PHP side) sqlnet.ora file and set
+SQLNET.OUTBOUND_CONNECT_TIMEOUT. This sets the upper time limit for
+establishing a connection right through to the DB, including the time for
+attempts to connect to other services.   It is available from Oracle 10.2.0.3
+onwards.
+
+In Oracle 11.1, a slightly lighter-weight solution TCP.CONNECT_TIMEOUT was
+introduced.  It also is a sqlnet.ora parameter.  It bounds just the TCP
+connection establishment time, which is mostly where connection problem are
+seen.
+
+The client sqlnet.ora file should be put in the same directory as the
+tnsnames.ora file.
+===============================================================================
+
+If your oracle database is on a remote system within your local network and you
+don't want to worry about the tnsnames file you can try this.
+
+$db = "(DESCRIPTION=(ADDRESS_LIST = (ADDRESS = (PROTOCOL = TCP)(HOST =
+192.168.XX.XXX)(PORT = 1521)))(CONNECT_DATA=(SID=XXXX)))";
+
+$c1 = ocilogon("name","password",$db);
+
+Hope this helps someone.
+===============================================================================
+
+When using the OCI_CRED_EXT in php
+if the ENV $ORACLE_SID is set the DB does not need to be specified explicitly
+and the connection will fail unless you provide a NULL DB value when creating
+the connection.
+
+The $ORACLE_SID trumps the TNS name look up for the connection. So even a
+manual connection string in the DB parameter will fail.
+
+So when the $ORACLE_SID Env is set a NULL passed instead of the DB name
+connects successfully.
+
+Hope this saves some hair pulling when moving to %.3 and OS Authentications
+===============================================================================
+
+ONE ALTERNATIVE OF CONNECT IN ORACLE RAC "Real Application Clusters"
+
+<?php
+$dbstr ="(DESCRIPTION =(ADDRESS = (PROTOCOL = TCP)(HOST =ip1)(PORT = 1521))
+(CONNECT_DATA =
+(SERVER = DEDICATED)
+(SERVICE_NAME = banco)
+(INSTANCE_NAME = banco1)))";
+
+$dbstr1 ="(DESCRIPTION =(ADDRESS = (PROTOCOL = TCP)(HOST =ip2)(PORT = 1521))
+(CONNECT_DATA =
+(SERVER = DEDICATED)
+(SERVICE_NAME = banco)
+(INSTANCE_NAME = banco2)))";
+
+if(!@($conn = oci_connect('user','password',$dbstr1)))
+{ $conn = oci_connect('user','password',$dbstr) or die (ocierror()); }
+?>
+===============================================================================
+
+How to connect from PHP to an Oracle database using OID (Oracle Internet
+Directory):
+
+OID is like a lookup index that contains connection strings for connecting to
+various databases. Without OID, a database connection string would be stored
+directly in the code settings and used by the PHP code to connect to a
+database. With OID, a lookup can be made to the OID LDAP to acquire the
+database connection string. Then the PHP code will use the acquired database
+connection string to connect to the database as before.
+
+OID allows a DBA to manage/change which database server that an application
+uses without having to change any database settings in the PHP application
+itself or on the application server.
+
+Here are the basic steps for PHP to connect to a database via OID:
+
+- The DBA should provide you the connection information for the OID LDAP as
+well as the username/password for the database connection.
+- Connect to the OID LDAP using the provided information
+- Search for the appropriate LDAP record
+- Get the connection string data from the record attribute, \&quot;
+orclnetdescstring\&quot;
+- Close the LDAP connection
+- Use the acquired connection string data to connect to the database as usual
+using the provided database username/password.
+
+Here is basic sample code to do this:
+
+// Get connection string from OID LDAP
+
+    $ds=ldap_connect($servername,$serverport); // Connect to ldap
+    $r=ldap_bind($ds); // Bind to ldap
+    $sr = ldap_search($ds, \&quot;cn=OracleContext,dc=___,dc=___,dc=___\&quot;,
+\&quot;cn=$sid\&quot;); // Run query
+    $info = ldap_get_entries($ds, $sr); // Get entries
+    ldap_close($ds); // Close connection
+
+    $dbconnectstring = $info[0][\&quot;orclnetdescstring\&quot;][0]; // Extract
+db connect string from ldap search result array
+
+// Connect to database using acquired connection string from OID
+
+    $dbconnection = oci_connect ($username,$password,$dbconnectstring);
+===============================================================================
+
+Regarding the following statement in the documentation:
+"The second and subsequent calls to oci_connect() with the same parameters will
+return the connection handle returned from the first call."
+
+There's one caveat here.  Subsequent calls to oci_connect() will only return
+the same connection handle as the first call as long as a reference is held to
+the original handle.
+
+For example, the following code will generate *one* connection handle:
+
+<?php
+$dbh = oci_connect($username, $password, $conn_info);
+// Do stuff
+$dbh = oci_connect$username, $password, $conn_info);
+// Do more stuff
+
+The follow code will generate *two* connection handles:
+getData();
+// Do stuff
+getData();
+// Do more stuff
+
+getData() {
+    $dbh = oci_connect($username, $password, $conn_info);
+    // Do stuff
+}
+?>
+
+This is the result of PHP garbage collecting the handle at the end of the
+method scope.
+
+If you want to isolate your DB layer through function calls but still want to
+leverage the fact that oci_connect can return the same handle, just keep a
+reference to the handle like so:
+
+<?php
+getData($username, $password, $conn_info) {
+    $dbh = oci_connect($username, $password, $conn_info);
+    $key = hash('md5', "$username|$password|$conn_info");
+    $GLOBALS[$key] = $dbh;
+    // Do stuff
+}
+?>
+
+I originally logged this as a bug but apparently this is the expected
+behaviour, likely because oci_close($dbh) just calls unset($dbh).
+===============================================================================
+
+I started getting "ORA-12514: TNS:listener does not currently know of service
+requested in connect descriptor" errors when I upgraded my database instance
+from 10.2 to 11.2.  For some reason it would not resolve the oci_connect calls
+with the Easy Connect syntax (easy connect calls from sqlplus were fine).  I
+was able to workaround the issue by passing a tns connect string:
+
+<?php
+$db = "(DESCRIPTION=(ADDRESS_LIST = (ADDRESS = (PROTOCOL = TCP)(HOST =
+192.168.XX.XXX)(PORT = 1521)))(CONNECT_DATA=(SID=XXXX)))";
+
+$c1 = oci_connect("name","password",$db);
+?>
+===============================================================================
+
+Using ldap for Oracle name resolution:
+
+  The web server will need the environmental variable TNS_ADMIN='Directory of
+tnsname.ora' unless the default location is used. I use '/etc/tns_admin'.
+Confirm using the phpinfo().
+
+  There are three files needed in the TNS_ADMIN location: tnsnames.ora,
+sqlnet.ora and ldap.ora. If you are only using ldap, tnsnames.ora is not
+needed.
+
+  To sqlnet.ora add:
+     NAMES.DIRECTORY_PATH=(TNSNAMES,LDAP)
+
+  To ldap.ora add:
+     DIRECTORY_SERVERS=(ldap_server_fqdn:port)
+     DEFAULT_ADMIN_CONTEXT=""
+     DIRECTORY_SERVER_TYPE=OID
+
+  For a quick and dirty ldap tnsnames server use tnsManager by Dave Berry.
+Oracle OID or Openldap can used, but are complicated to setup. tnsManager is a
+no brainer. The quick part: give it a tnsnames.ora file and start it up. The
+dirty parts: I can't get Toad and SQLDeveloper to work with it, it ignores the
+domain and it is no longer being maintained.
+
+  The order of values in NAMES.DIRECTORY_PATH in sqlnet.ora determines which
+look up 'adapter' is used, in this case it is tnsnames.ora file and then ldap.
+I use ldap for general consumption and tnsnames.ora file to override ldap or
+entries that are not for general consumption.
+
+  If you have the full Oracle client you have tnsping. 'tnsping ORACLE_SID'
+will tell you what adapter you are using: 'Used LDAP adapter to resolve the
+alias'.
+
+<?php
+  echo system("/PATH/tnsping ".$ORACLE_SID." 2>&1")."<br />";
+  echo 'TNS_ADMIN='.getenv('TNS_ADMIN');
+?>
+
+ISSUE:
+  If connecting with only ORACLE_SID and not ORACLE_SID.DB_DOMAIN, the value of
+NAMES.DEFAULT_DOMAIN from sqlnet.ora is appended, then for some reason PHP
+tries the HOSTNAME adapter, and if the database name resolves in DNS, it will
+fail connecting using the database name as the hostname, because neither SID
+nor SERVICE_NAME are defined.
+  If using tnsManager append '.ANY_DOMAIN' to $ORACLE_SID to hack around the
+issue above.
+
+  I have tested with:
+       11.1.0.7 full client and PHP 5.1.6
+       11.2.0.2 full client and PHP 5.4.11
+
+  I have heard that LDAP lookup does not work with older instantclients.
+===============================================================================
+
+There is a useful solution to the problem of securing connection information in
+the PHP Cookbook (O'Reilly) by David Sklar and Adam Trachtenberg. They propose
+using 'SetEnv' in the Apache configuration and then accessing the values from
+within a script using $_SERVER.
+
+Unfortunately using the 'SetEnv' solution exposes your connection information
+to all users of that virtual host. If they run phpinfo.php or display $_SERVER,
+I found that they will see the password from any file under the root of that
+virtual host.
+
+To restrict exposure to a particular directory or specific file:
+
+1. First put an 'Include' to the secret file in httpd.conf. For example:
+
+Include "/web/private/secret.txt"
+
+2. In the password file, use the 'SetEnvIf' directive to enable the Environment
+variables by directory only or within a specific file. For example:
+
+- For all files in the directory:
+
+SetEnvIf Request_URI "/path/to/my/directory" ORACLE_PASS=5gHj790j
+
+- For a specific file in the directory
+
+SetEnvIf Request_URI "/path/to/my/directory/connection.oracle.php" ORACLE_PASS=
+5gHj790j
+===============================================================================
+
+When you are using Oracle 9.2+ I would say that you MUST use the CHARSET
+parameter.
+
+Of course, you will not notice it until there is accented character... so just
+specify it and you will avoid a big headache.
+
+So for example here is our Oracle internal conf:
+select * from nls_database_parameters;
+
+PARAMETER                      VALUE
+------------------------------ ----------------------------------------
+…
+NLS_LANGUAGE                   AMERICAN
+NLS_TERRITORY                  AMERICA
+NLS_ISO_CURRENCY               AMERICA
+NLS_CHARACTERSET               WE8ISO8859P15
+…
+
+And there our oci_connect call:
+
+$dbch=ocilogon($user,$pass,$connectString,"WE8ISO8859P15");
+
+Without that, you will get question mark (inversed), squares… instead of most
+accented character.
+
+Don’t forget to use that for writing as well as for reading.
+===============================================================================
+
+Using ldap for Oracle name resolution:
+
+  The web server needs the environmental variable TNS_ADMIN='Directory of
+tnsname.ora'. I use '/etc/tns_admin'. Confirm using the phpinfo() function.
+
+  There are three files needed in the TNS_ADMIN location: tnsnames.ora,
+sqlnet.ora and ldap.ora. If you are only using ldap, tnsnames.ora is not
+needed.
+
+  To sqlnet.ora add:
+     NAMES.DIRECTORY_PATH=(TNSNAMES,LDAP)
+
+  To ldap.ora add:
+     DIRECTORY_SERVERS=(ldap_fqdn_hostname:1575)
+     DEFAULT_ADMIN_CONTEXT=""
+     DIRECTORY_SERVER_TYPE=OID
+
+  For a quick and dirty ldap tnsnames server use tnsManager by Dave Berry.
+Oracle OID or Openldap can used, but are complicated to setup. tnsManager is a
+no brainer. The default port is 1575.
+
+  The order of values in NAMES.DIRECTORY_PATH from sqlnet.ora determines which
+look up 'adapter' is used first, in this case it is tnsnames.ora file and then
+ldap. I use ldap for general consumption and tnsnames.ora file to override ldap
+or entries that are not for general consumption.
+
+  If you have the full Oracle client you have tnsping. 'tnsping ORACLE_SID'
+will tell you what adapter you are using: 'Used LDAP adapter to resolve the
+alias'.
+
+<?php
+  echo system("/PATH/tnsping ".$ORACLE_SID." 2>&1")."<br />";
+  echo 'TNS_ADMIN='.getenv('TNS_ADMIN');
+?>
+
+ISSUE:
+  For some reason PHP tries the HOSTNAME adapter first, and if the database
+name resolves in DNS, it will try connecting using the database name as the
+hostname with no SID or SERVICE_NAME defined. All other Oracle clients I have
+used will not try the HOSTNAME adapter unless it is listed in
+NAMES.DIRECTORY_PATH.
+  I have heard that LDAP look up does not work with older instantclients.
+===============================================================================
+
+If you upgrades the OCI8, be sure to use the latest oracle instantclient
+version, otherwise you can receive an "ORA-24315: illegal attribute type" when
+trying to connect due to incompatibility with some versions.
+
+HTH,
+Javier Tacón

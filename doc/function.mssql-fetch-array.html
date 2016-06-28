@@ -1,0 +1,277 @@
+
+mssql_fetch_array
+
+(PHP 4, PHP 5, PECL odbtp >= 1.1.1)
+
+mssql_fetch_array — Fetch a result row as an associative array, a numeric
+array, or both
+
+Warning
+
+This function was REMOVED in PHP 7.0.0.
+
+Alternatives to this function include:
+
+  • PDOStatement::fetch()
+  • sqlsrv_fetch_array()
+  • odbc_fetch_array()
+
+说明
+
+array mssql_fetch_array ( resource $result [, int $result_type = MSSQL_BOTH ] )
+
+mssql_fetch_array() is an extended version of mssql_fetch_row(). In addition to
+storing the data in the numeric indices of the result array, it also stores the
+data in associative indices, using the field names as keys.
+
+An important thing to note is that using mssql_fetch_array() is NOT
+significantly slower than using mssql_fetch_row(), while it provides a
+significant added value.
+
+参数
+
+result
+
+    The result resource that is being evaluated. This result comes from a call
+    to mssql_query().
+
+result_type
+
+    The type of array that is to be fetched. It's a constant and can take the
+    following values: MSSQL_ASSOC, MSSQL_NUM, and MSSQL_BOTH.
+
+返回值
+
+Returns an array that corresponds to the fetched row, or FALSE if there are no
+more rows.
+
+范例
+
+Example #1 mssql_fetch_array() example
+
+<?php
+// Send a select query to MSSQL
+$query = mssql_query('SELECT [username], [name] FROM [php].[dbo].[userlist]');
+
+// Check if there were any records
+if (!mssql_num_rows($query)) {
+    echo 'No records found';
+} else {
+    // The following is equal to the code below:
+    //
+    // while ($row = mssql_fetch_row($query)) {
+
+    while ($row = mssql_fetch_array($query, MSSQL_NUM)) {
+        // ...
+    }
+}
+
+// Free the query result
+mssql_free_result($query);
+?>
+
+注释
+
+    Note: 此函数返回的字段名大小写敏感。
+
+    Note: 此函数将 NULL 字段设置为 PHP NULL 值。
+
+参见
+
+  • mssql_fetch_row() - Get row as enumerated array
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Calling this function with the option second parameter is causing a "Wrong
+parameter count" message. If you run into this problem, you can get the same
+effect by calling different functions:
+
+mssql_fetch_array: MSSQL_BOTH
+mssql_fetch_assoc: MSSQL_ASSOC
+mssql_fetch_row: MSSQL_NUM
+===============================================================================
+
+Note that if you fetch varchar fields larger than 255 letters the result will
+be cut off at 255 letters.
+
+To prevent this you have to do a CONVERT(TEXT,data_field) for this fields in
+your select clause.
+===============================================================================
+
+[Editor's Note: NULLs *are* distinguishable from 0.  See the manual section on
+comparison operators. ]
+
+microsoft sql 2000 server
+php running on windows 2000
+
+Using the $row = mssql_fetch_array($result)
+
+A null value will return 0, this is a problem if you are using 0 and some
+identifier for a value.  you should convert all nulls to something like -1 or
+"NO VALUE"
+
+******
+
+After extensive testing, the above statements both seem to be true. You *can*
+distinguish between 0 and null values in PHP; however, the mssql_fetch_array
+function does not set null colums to the php NULL value.
+
+if ($row['Null_Column'] === 0) { print('pass'); }
+
+A null column passes the above test. Seems to be a bug in the function.
+===============================================================================
+
+from php-dev mailing list article -
+#26012 [Bgs]: mssql_fetch_array
+
+"Previously mssql data was always rtrimed, however that's wrong because it
+modifies the original data. This caused a problem for people who needed those
+trailing space. Ultimately, the job of database extension is to fetch the data
+as is (like other db extensions already do) and not to mangle it in any way."
+
+moving from <4.3.4 to a higher version you will have this now:
+
+$query = "Select dumb_spaces from dbo.table where weak_sause = 'true'";
+$result = mssql_query($query) or die("Spicy Sause! Query = $query");
+
+while($line = mssql_fetch_array($result, MSSQL_ASSOC) {
+     foreach($line as $bs_trim) {
+          //Trim whitespace from end of query
+          $bs_trim = rtrim($bs_trim);
+          echo "Clean!".$bs_trim;
+     }
+}
+===============================================================================
+
+Apparently php 4.0.6 does not support the second parameter. When used the error
+sounds
+"Wrong parameter count for mssql_fetch_array"
+===============================================================================
+
+Note that the second parameter is the same as the msql version of this function
+(http://www.php.net/manual/en/function.msql-fetch-array.php) with the constants
+(MSQL_ASSOC, MSQL_NUM, and MSQL_BOTH) changing to MSSQL_.
+
+Also note that if you don't specify this parameter you'll get both the numbers
+and column names, which can cause some frustration.
+===============================================================================
+
+I just spent a few hours trying to get ntext data with this function, CASTing
+and CONVERTing every which way, and scouring the 'net. Nothing worked, I just
+got a NULL.
+
+Then on a whim I tried it with mssql_fetch_row instead, and that DOES work.
+===============================================================================
+
+To write Unicode (nvarchar) to SQL2000/2005 use PHP
+用PHP在SQL Server 存取Unicode資料
+----------------------------------------------
+
+Let's assume, we have following data table, that allows us to store unicode
+values (using UCS-2 encoding):
+
+    create table mytable    (
+        myfield nvarchar (100) null
+    );
+
+Below is the code to work with:
+
+<?php
+    $link = mssql_connect('dbhost', 'username', 'password');
+    mssql_select_db('database', $link);
+
+    // sending data to database
+    $utf8 = 'some unicode UTF-8 data';  // some Greek text for example ;)
+    $ucs2 = iconv('UTF-8', 'UCS-2LE', $utf8);
+
+    // converting UCS-2 string into "binary" hexadecimal form
+    $arr = unpack('H*hex', $ucs2);
+    $hex = "0x{$arr['hex']}";
+
+    // IMPORTANT!
+    // please note that value must be passed without apostrophes
+    // it should be "... values(0x0123456789ABCEF) ...", not "... values
+('0x0123456789ABCEF') ..."
+    mssql_query("insert into mytable (myfield) values ({$hex})", $link);
+
+    // retrieving data from database
+    // IMPORTANT!
+    // please note that "varbinary" expects number of bytes
+    // in this example it must be 200 (bytes), while size of field is 100
+(UCS-2 chars)
+
+    $result = mssql_query("select convert(varbinary(200), myfield) from
+mytable", $link);
+
+    while (($row = mssql_fetch_array($result, MSSQL_BOTH)))
+    {
+        // we get data in UCS-2
+        // I use UTF-8 in my project, so I encode it back
+        echo(iconv('UCS-2LE', 'UTF-8', $row['myfield']));
+    }
+
+    mssql_free_result($result);
+    mssql_close($link);
+?>
+===============================================================================
+
+Allthough probably obvious to people who have used the functions available to
+other databases it during writing is not present in this entry that result type
+can be entered as MSSQL_ASSOC or MSSQL_NUM, and the default value when nothing
+entered being MSSQL_BOTH
+
+//Gillis Danielsen
+===============================================================================
+
+In response to my last post:
+
+After further testing, it appears as though the null column bug only affects
+windows installations. On my linux installation using freetds-0.61.2, the
+function behaves properly. It must exist either in the php_mssql.dll or the
+Microsoft connection libraries. And since I use this functionality through ASP
+as well (which uses the Microsoft connection libraries), it would lead me to
+believe that it's an issue within the php_mssql.dll.
+===============================================================================
+
+It seems that this function creates arrays wich keys can not be longer than 30
+chars. So when you're having a DB-field like
+"this_is_a_very_long_db_field_name"
+its array-key is cut off after 30 chars and you will have to access the value
+with
+rs["this_is_a_very_long_db_field_n"]
+===============================================================================
+
+[Editor's Note: NULLs *are* distinguishable from 0.  See the manual section on
+comparison operators. ]
+
+microsoft sql 2000 server
+php running on windows 2000
+
+Using the $row = mssql_fetch_array($result)
+
+A null value will return 0, this is a problem if you are using 0 and some
+identifier for a value.  you should convert all nulls to something like -1 or
+"NO VALUE"
+===============================================================================
+
+The array_walk function is also useful for stripping the whitespace returned in
+an mssql_query.
+
+function modify_field(&$array) {
+    $array = trim($array);
+}
+
+$query = "select * from dbo.table where value = '0'";
+$result = mssql_query($query) or die;
+
+while ($row = mssql_fetch_array($result)) {
+    // This will call the above function.
+    array_walk($row, 'modify_field');
+    array_push($eventresults, $row);
+}
+
+An added benefit is that you can expand the modify_field function to handled
+unexpected returned column data.

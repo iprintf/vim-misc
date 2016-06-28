@@ -1,0 +1,682 @@
+
+xml_set_character_data_handler
+
+(PHP 4, PHP 5, PHP 7)
+
+xml_set_character_data_handler — 建立字符数据处理器
+
+说明
+
+bool xml_set_character_data_handler ( resource $parser , callable $handler )
+
+为 parser 变量指向的 XML 解析器指定字符数据处理函数。
+
+参数
+
+parser
+
+    XML 解析器的引用，用于建立字符数据处理器。
+
+handler
+
+    handler 为表示一个函数名称的字符串，该函数必须在为 parser 指定的解析器调用 
+    xml_parse() 函数时已存在。
+
+    由 handler 参数命名的函数名必须接受两个参数：
+    handler ( resource $parser , string $data )
+
+    parser
+        第一个参数 parser 为指向要调用处理器的 XML 解析器的指针。
+    data
+        第二个参数 data 为包含有字符数据的字符串。
+
+    Character data handler is called for every piece of a text in the XML
+    document. It can be called multiple times inside each fragment (e.g. for
+    non-ASCII strings).
+
+    如果处理器函数名被设置为空字符串或者 FALSE，则该有问题的处理器将被屏蔽。
+
+        Note: 除了函数名，含有对象引用的数组和方法名也可以作为参数。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+
+User Contributed Notes 21 notes
+
+===============================================================================
+
+For those who are having their character entities eaten by this function (e.g.
+&amp; &lt; and so forth):
+
+You will notice that your callback gets called several times.
+
+input: Give me some beans &amp; rice. &#032;
+
+call 1: Give me some beans
+call 2: amp; and rice
+call 3: #032;
+
+There is an obvious workaround. This is not perfect:
+
+<?php
+        $text = preg_replace('/^([a-z]+;)/','&\1', $text);
+        $text = preg_replace('/^(#[0-9]+;)/', '&\1', $text);
+?>
+===============================================================================
+
+re. to Philippe Marc , and  karuna_gadde examples
+
+i found out that the xml_set_character_data_handler call back  function can be
+called more often for the same element in particular the content is just a few
+chars long (happen on windows)
+
+so a check up can give you the answer an may be for long strings too.
+eg:
+<?php
+xml_set_character_data_handler($this->parser, "cdata");
+//...
+function cdata($parser, $cdata) {
+// ...
+if(isset($this->data[$this->currentItem][$this->currentField])) {
+    $this->data[$this->currentItem][$this->currentField] .= $cdata;
+} else {
+    $this->data[$this->currentItem][$this->currentField] = $cdata;
+}     
+?>
+===============================================================================
+
+To detect that concatenation of data is taking place, you can keep track of
+whether the last function call was to the data processing function.
+e.g. using $this->inside_data variable below:
+
+<?php
+xml_set_element_handler($this->parser, "start_tag", "end_tag");
+xml_set_character_data_handler($this->parser, "contents");
+
+protected function contents($parser, $data)
+{
+    switch ($this->current_tag) {
+            case "name":
+                if ($this->inside_data)
+                    $this->name .= $data; // need to concatenate data
+                else
+                    $this->name = $data;
+                break;
+         ...
+    }
+    $this->inside_data = true;
+}
+
+protected function start_tag($parser, $name)
+{
+    $this->current_tag = $name;
+    $this->inside_data = false;
+}
+       
+protected function end_tag() {
+    $this->current_tag = '';
+    $this->inside_data = false;
+}
+?>
+===============================================================================
+
+I too love the undocumented "splitting" functionality :-p.
+
+Rather than concatinating the data based on whether or not the current tag name
+has changed from the previous tag name I suggest always concatinating like the
+following with the $catData variable being unset in the endElement function:
+
+<?php
+
+function endElement ($parser, $data) {
+  global $catData;
+
+  // Because we are at an element end we know any splitting is finished
+  unset($GLOBALS['catData']);
+}
+
+function characterData ($parser, $data) {
+  global $catData;
+
+  // Concatinate data in case splitting is taking place
+  $catData.=$data;
+
+}
+
+?>
+
+This got me around a problem with data like the following where, because
+characterData is not called for empty tags, the previous and current tag names
+were the same even though splitting was not taking place.
+
+<companydept>
+<companydeptID></companydeptID>
+<companyID>1</companyID>
+<companydeptName></companydeptName>
+</companydept>
+<companydept>
+<companydeptID></companydeptID>
+<companyID>2</companyID>
+<companydeptName></companydeptName>
+</companydept>
+<companydept>
+<companydeptID></companydeptID>
+<companyID>3</companyID>
+<companydeptName></companydeptName>
+</companydept>
+===============================================================================
+
+It would be nice if someone could complete documentation of this function. I
+think that the "splitting" behaviour should (at least) be mentioned within the
+documentation, if not explained (please!). I'm not quite sure whether the cut
+comes after each 1024bytes/chars of data.
+
+My experience looks as follows:
+[xmlFile]
+...
+    <label>slo| ka</label>
+    <comment>koment| &#345; slo ky</comment>
+...
+[/xmlFile]
+(Places where the character-data got splitted are marked with pipes. Plus there
+was latin small letter 'r' with caron instead of &#345;.)
+
+Since the splitting is not mentioned in documentation one could assume that it
+is a bug; especially when you work with UTF-8 and the cuts come right before
+some special characters.
+(Should the concatenating of $cData be considered to be the proper & 'final'
+way of processing character-data?)
+
+Also I'd suggest to add another line in "Description" when fc has an alternate
+usage (instead of hiding it within the "Note" :o); in this particular case I'd
+prefer this:
+
+Description:
+bool xml_set_character_data_handler ( resource parser, callback handler )
+bool xml_set_character_data_handler ( resource parser, object reference, method
+name )
+
+... there are dozens of functions ofcourse where documentation works this way
+(I mean not mentioning the alternate usage in the "Description" part).
+
+Have a nice day
+  Yaroukh
+===============================================================================
+
+How to overide the 1024 characters limitation of
+xml_set_character_data_handler.
+Took me some time to find out how to deal with that!
+
+When calling a basic XML parser:
+$parseurXML = xml_parser_create();
+xml_set_element_handler($parseurXML, "opentagfunction", "closetagfunction");
+xml_set_character_data_handler($parseurXML, "textfunction");
+
+The textfunction only receive 1024 characters at once, even if the text is 4000
+characters long. In facts, the parser seems to split the data in pieces of 1024
+characters. The way to handle that is to concatenate them.
+
+example:
+If you have an XML tag called UNIPROT_ABSTRACT containing a 4000 characters
+protein description:
+function textfunction($parser, $text)
+    {
+     if ($last_tag_read=='UNIPROT_ABSTRACT') $uniprot.=$text;
+    }
+The function is called 4 times and receives 1024+1024+1024+928 characters that
+will be concatenated in the $uniprot variable using the ".=" concatenation
+fonction.
+
+Easy to do, but not documented!
+===============================================================================
+
+re: jason at omegavortex dot com below, another way to deal with whitespace
+issues is:
+
+        function charData($parser,$data)
+        {
+            $char_data = trim($data);
+
+            if($char_data)
+                $char_data = preg_replace('/  */',' ',$data);
+
+            $this->cdata .= $char_data;
+        }
+
+This means that:
+
+    <p>here is my text <a href="something">my text</a>
+    and here is some more after some spaces at the
+    beginning of the line</p>
+
+comes out properly. You could do further replacements if you want to deal with
+tabs in your files. i only ever use spaces. if you only use trim() then you
+would lose the space before the <a> tag above, but trim() is a good way to
+check for completely empty char data, then just replace more than one space
+with a single space. this will preserve a single space at the beginning and end
+of the cdata.
+===============================================================================
+
+I don't believe the problem has been addressed, but if you're parsing an XML
+file and run into the line break (or tab) problem I believe this function may
+help:
+
+if (!preg_match("/((\r|)\n)/i", $data) || preg_match("/\\t+/i", $data)) {
+(Code Here)
+}
+===============================================================================
+
+If you need to trim the white space for HTML code and don't rely on spaces for
+formatting text (if you are then it is time to use Style Sheets) then this code
+will come in very useful.
+
+$data=eregi_replace(">"."[[:space:]]+"."<","><",$data);
+$data=eregi_replace(">"."[[:space:]]+",">",$data);
+$data=eregi_replace("[[:space:]]+"."<","<",$data);
+===============================================================================
+
+<?
+class Parser {
+
+var $att;
+var $id;
+var $title;
+var $content;
+var $index=-1;
+var $xml_parser;
+var $tagname;
+
+function parser()
+{
+$file = "data.xml";
+$this->xml_parser = xml_parser_create();
+xml_set_object($this->xml_parser,$this);
+xml_set_element_handler($this->xml_parser, "startElement", "endElement");
+xml_set_character_data_handler($this->xml_parser, 'elementContent');
+if (!($fp = fopen($file, "r"))) {
+die("could not open XML input");
+}
+
+while ($data = fread($fp, 4096)) {
+    $data=eregi_replace(">"."[[:space:]]+"."<","><",$data);
+if (!xml_parse($this->xml_parser, $data, feof($fp))) {
+die(sprintf("XML error: %s at line %d",
+xml_error_string(xml_get_error_code($this->xml_parser)),
+xml_get_current_line_number($this->xml_parser)));
+}
+}
+xml_parser_free($this->xml_parser);
+}
+
+function startElement($parser, $name, $attrs) {
+if (($name=="TREE") or ($name=="NODE") or ($name=="LEAFNODE"))
+    {
+         $this->index++;
+         $this->att[$this->index]=$name;
+    }
+    $this->tagname=$name;
+}
+
+function elementContent($parser, $data) {
+switch ($this->tagname)
+{
+     case 'ID':
+                 $this->id[$this->index]=trim($data);
+                 break;
+     case 'TITLE' :
+                 $this->title[$this->index]=trim($data);
+                 //echo $data;
+                 break;
+     case 'CONTENT'    :
+                 $this->content[$this->index]=trim($data);
+                 break;
+                     
+}
+}
+function endElement($parser, $name){
+$this->tagname=="";
+}
+}
+?>
+
+I thought this class is more help full to know about xml_parser with no white
+spaces
+===============================================================================
+
+Hello,
+
+This is an addition to the note posted by:
+wiart at yahoo dot com
+22-Aug-2003 05:31
+Which is located below.
+
+I had similar problems manually creating XML docs and adding new-lines within
+my node data, e.g.
+
+<root>
+    ...
+    <node attribute="something">
+        Here is some data. There is a lot of data, and I want to
+        be able to read the data from a terminal window, so I add
+        newlines to fit everything within 80 columns.
+    </node>
+    ...
+</root>
+
+So, given the above example, my data handler gets called 3 times and the result
+left in my variable is:
+
+"newlines to fit everything within 80 columns."
+
+Instead of all of the data within "node", which I was expecting.
+
+By using the concatenation operator; however, as suggested by the mentioned
+note, I was able to get what I needed. Which is of course:
+
+"Here is some data. There is a lot of data, and I want to be able to read the
+data from a terminal window, so I add newlines to fit everything within 80
+columns."
+===============================================================================
+
+I just want to mention that i ran into a problem when parsing an xml file using
+the character data handler. If you happen to have a string which is also an
+internal php function stored in your xml data file and you want to output it as
+a string the parser dosent seem to recognize it.
+   I found a way around this problem. In my case i was storing a string with
+the value read. This would not allow me to output the data so to work around
+this problem i added a backslash for every character in the data element.
+
+   e.g.      <xml>
+    from    <element>read</element>
+    to       <element>////read</element>
+
+i dont know if anyone has ran into this problem or not but i thought i would
+just put it here just so in case someone is getting stuck with this.
+===============================================================================
+
+WARNING !!!
+Always use concatenation for getting the content of a XML tag when you write
+the function that will deal with the Character Data handling
+
+Example:
+
+$mycontent = '';
+$xml_parser = xml_parser_create ();
+xml_set_character_data_handler($xml_parser, "_characterdata");
+
+function _characterdata($parser, $data){
+  global $mycontent;
+  //HERE: use .= and not =
+  $mycontent .= $data;
+}
+
+...
+
+while ($data = fread($fp, 4096)) {
+    xml_parse($xml_parser, $data, feof($fp));
+}
+
+I had the following problem with the use of '=$data' :
+
+In one of my XML documents, the parsing stopped in the middle of a character
+data :
+
+In original document:
+<prop name="nbres">100</prop>
+
+What happened:
+<prop name="nbres">10[parsing stopped here in chunck of 4096bytes]0</prop>
+
+As I did not use the concatenation, when I displayed the value of the 'nbres'
+property, the value was 0 instead of 100 because the first time the function
+characterdata was called :
+$mycontent = 10;
+
+and the second time:
+$mycontent = 0;      //!!!!!!!!!!!!! HO HO !! some problem occured ...
+
+Instead of $mycontent = 100;   
+
+CONCLUSION:
+IN YOUR CHARACTER DATA HANDLER FUNCTIONS, NEVER FORGET THE . (concatenation
+operator) !!!!! IF YOU DON'T WANT TO HAVE WEIRD BUGS SOME TIMES
+===============================================================================
+
+Thanks to Christian Stocker for clearing up my entity issues,  where some
+entities are parsed correctly and others not.
+
+The problem is the ''wide'' entities that have a large numeric code simply can
+not fit in a single byte, which is the default encoding for both source input
+to the parser and data output from the parser.  So the parser puts out a ''?''
+to say it could not store the code value. One could argue that if the input has
+a &1234; the output should simply copy it as &1234; instead of the ''?'' but
+that would still mean the  parser behaves two different ways according to the
+code values, and anyway they don't do it.
+
+So, we need utf8 encoding for the output, and the slightly not obvious way to
+say so is
+
+  $xml_parser = xml_parser_create ("UTF-8");
+
+which means BOTH source input and data output are utf8.
+Remember that utf8 is a superset of basic ASCII but not of extended ASCII, so
+your input can contain e.g. &eacute;
+spelled out, but a native eacute character is wrong here.
+Just utf8_encode your input to be sure.
+
+That should do it, and thanks again for the help.
+===============================================================================
+
+Here are two ways to deal with named entities in the XML.
+
+1. Put a list of named entities at the front so the parser knows what they all
+mean
+
+  $decl = '<!DOCTYPE rootname [
+
+<!ENTITY frac12  "&#x00BD;" >
+<!ENTITY frac14  "&#x00BC;" >
+<!ENTITY frac34  "&#x00BE;" >
+<!ENTITY frac18  "&#x215B;" >
+<!ENTITY frac38  "&#x215C;" >
+<!ENTITY frac58  "&#x215D;" >
+<!ENTITY frac78  "&#x215E;" >
+<!ENTITY frac13  "&#x2153;" >
+<!ENTITY frac23  "&#x2154;" >
+<!ENTITY frac15  "&#x2155;" >
+<!ENTITY frac25  "&#x2156;" >
+<!ENTITY frac35  "&#x2157;" >
+<!ENTITY frac45  "&#x2158;" >
+<!ENTITY frac16  "&#x2159;" >
+<!ENTITY frac56  "&#x215A;" >
+
+<!ENTITY mdash  "&#x2014;" >
+
+..... lots of others
+
+<!ENTITY uuml    "&#252;" >
+<!ENTITY yacute  "&#253;" >
+<!ENTITY thorn   "&#254;" >
+<!ENTITY yuml    "&#255;" >
+
+]>';
+
+$parseThis = $decl . "<rootname> ..... </rootname>";
+
+This works fine for all the single-byte (European) codes,
+but not the wide codes like emdash or frac18.
+They seem to be trashed when the character data handler gets them.  They all
+echo as "?"
+
+There may be a way to make them work, but until I find it,
+or a newer release takes care of it, here is a work-around that does work.
+
+2. Rewrite every ampersand as &amp; in the input stream
+
+$ampXML = str_replace ("&", "&amp;", $sourceXML);
+
+Now the parser will see &amp;foo; instead of &foo;
+
+It does not try to decode it, so wide (two byte) values are not a problem, and
+no list of names is needed.
+
+When you write that to your output you have &foo;
+
+which is usually fine for the next stage of your process.
+===============================================================================
+
+In some cases it's better to avoid storing data which is not needed. In these
+cases the function
+
+chop()  ( => Alias of function rtrim() )
+
+could be usefull to prevent data like
+
+"\t"
+"\r"
+"\o"
+"\n"
+"\x0B"
+" "
+
+to be stored in a array or a string or something like this.
+
+Example: (storing data in a string)
+________________
+$filename="xyz.xml";
+
+if(!($fp=fopen($filename,"r"))){
+   die("Cannot open $filename ");
+}
+
+while (!feof($fp))
+{
+   $data .= chop(fgets($fp, 4096));
+}
+
+fclose($fp);
+________________
+
+Have a look at the documentation of rtrim() http://www.php.net/manual/en/
+function.rtrim.php.
+
+Greetz
+PhoC
+===============================================================================
+
+Here's a way to strip all the spaces between tags in an xml document.
+
+//strip white space between tags
+$data=eregi_replace(">"."[[:space:]]+"."<","><",$data);
+
+So this:
+
+<house>
+  <garage>
+    <car>Waldo</car>
+  </garage>
+</house>
+
+would be changed to:
+
+<house><garage><car>Waldo</car></garage></house>
+
+It was useful to me. Maybe you too?
+===============================================================================
+
+the function handler is called several times when it parses the character
+data.  It doesn't return the entire string as it suggests.  There are special
+exceptions that will always force the parser to stop scanning and call the
+character data handler.  This is when:
+
+- The parser runs into an Entity Declaration, such as &amp; (&) or &apos; ( )
+- The parser finishes parsing an entity
+- The parser runs into the new-line character (\n)
+- The parser runs into a series of tab characters (\t)
+
+And perhaps others.
+
+For instance, if we have this xml content:
+
+<mytag name= Ken Egervari  title= Chief Technology Officer >
+    Ken has been Positive Edge&apos;s Chief Technology Officer for 2 years.
+</mytag>
+
+The parser will call the character data handler 6 times.  This is what will
+happen:
+
+1    \n
+2    \t
+3    Ken has been Positive Edge
+4     
+5    s Chief Technology Officer for 2 years.
+6    \n
+
+I hope that helps people out.
+===============================================================================
+
+If you want to strip unwanted whitespace in an HTML-like manner then there are
+two steps.
+
+The first you need to strip consecutive whitespaces from all you input data
+like this:  $data = eregi_replace ( "[[:space:]]+", " ", $data );
+
+Then in your cdata handler make a check to see if it's blank space. An easy way
+is like this: if ( trim ( $cdata ) ) { work on cdata }
+
+That should take care of any whitespace issues you might have.
+===============================================================================
+
+The maximum size of the second parmeter $data seems to be 1024. Is there more
+character data  in the XML text the handler is called again immediately with
+the next portion.
+===============================================================================
+
+That give an example about the note.
+When you are creating a class and you need to use a method of your class to the
+function xml_set_character_data_handler that is the way to point give the
+method:
+
+class example
+{
+   function example()
+   {
+   }
+
+  function data($parseur, $texte)
+  {
+      switch ($this->derniereBaliseRencontree)
+      {
+         case "TITLE":
+                     -----
+          break;
+         case "LINK"
+                    -----
+         break;
+        case "DESCRIPTION":
+                    -----
+        break;
+     }
+  }
+
+  function fetchOpen($parseur, $nomBalise, $tableauAttributs)
+  {
+     ----------------
+  }
+
+  function fetchClose($parseur, $nomBalise)
+  {
+     ----------------
+  }
+
+  function ZZZ()
+  {
+      $parseurXML = xml_parser_create();
+       xml_set_element_handler($parseurXML, Array(&$this, 'fetchOpen'),   Array
+(&$this, 'fetchClose'));
+         ---------------- <IMPORTANT> --------------------------
+       xml_set_character_data_handler($parseurXML, Array(&$this, 'data'));
+        ---------------- </IMPORTANT> --------------------------
+}

@@ -1,0 +1,609 @@
+
+mysqli::query
+
+mysqli_query
+
+(PHP 5, PHP 7)
+
+mysqli::query -- mysqli_query — 对数据库执行一次查询
+
+说明
+
+面向对象风格
+
+mixed mysqli::query ( string $query [, int $resultmode = MYSQLI_STORE_RESULT ]
+)
+
+过程化风格
+
+mixed mysqli_query ( mysqli $link , string $query [, int $resultmode =
+MYSQLI_STORE_RESULT ] )
+
+Performs a query against the database.
+
+For non-DML queries (not INSERT, UPDATE or DELETE), this function is similar to
+calling mysqli_real_query() followed by either mysqli_use_result() or 
+mysqli_store_result().
+
+    Note:
+
+    In the case where you pass a statement to mysqli_query() that is longer
+    than max_allowed_packet of the server, the returned error codes are
+    different depending on whether you are using MySQL Native Driver (mysqlnd)
+    or MySQL Client Library (libmysqlclient). The behavior is as follows:
+
+      □ mysqlnd on Linux returns an error code of 1153. The error message means
+        "got a packet bigger than max_allowed_packet bytes".
+
+      □ mysqlnd on Windows returns an error code 2006. This error message means
+        "server has gone away".
+
+      □ libmysqlclient on all platforms returns an error code 2006. This error
+        message means "server has gone away".
+
+参数
+
+link
+
+    仅以过程化样式：由mysqli_connect() 或 mysqli_init() 返回的链接标识。
+
+query
+
+    The query string.
+
+    Data inside the query should be properly escaped.
+
+resultmode
+
+    Either the constant MYSQLI_USE_RESULT or MYSQLI_STORE_RESULT depending on
+    the desired behavior. By default, MYSQLI_STORE_RESULT is used.
+
+    If you use MYSQLI_USE_RESULT all subsequent calls will return error
+    Commands out of sync unless you call mysqli_free_result()
+
+    With MYSQLI_ASYNC (available with mysqlnd), it is possible to perform query
+    asynchronously. mysqli_poll() is then used to get results from such
+    queries.
+
+返回值
+
+失败时返回 FALSE，通过mysqli_query() 成功执行SELECT, SHOW, DESCRIBE或 EXPLAIN查
+询会返回一个mysqli_result 对象，其他查询则返回TRUE。
+
+更新日志
+
+版本                 说明
+5.3.0 Added the ability of async queries.
+
+范例
+
+Example #1 mysqli::query() example
+
+面向对象风格
+
+<?php
+$mysqli = new mysqli("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if ($mysqli->connect_errno) {
+    printf("Connect failed: %s\n", $mysqli->connect_error);
+    exit();
+}
+
+/* Create table doesn't return a resultset */
+if ($mysqli->query("CREATE TEMPORARY TABLE myCity LIKE City") === TRUE) {
+    printf("Table myCity successfully created.\n");
+}
+
+/* Select queries return a resultset */
+if ($result = $mysqli->query("SELECT Name FROM City LIMIT 10")) {
+    printf("Select returned %d rows.\n", $result->num_rows);
+
+    /* free result set */
+    $result->close();
+}
+
+/* If we have to retrieve large amount of data we use MYSQLI_USE_RESULT */
+if ($result = $mysqli->query("SELECT * FROM City", MYSQLI_USE_RESULT)) {
+
+    /* Note, that we can't execute any functions which interact with the
+       server until result set was closed. All calls will return an
+       'out of sync' error */
+    if (!$mysqli->query("SET @a:='this will not work'")) {
+        printf("Error: %s\n", $mysqli->error);
+    }
+    $result->close();
+}
+
+$mysqli->close();
+?>
+
+过程化风格
+
+<?php
+$link = mysqli_connect("localhost", "my_user", "my_password", "world");
+
+/* check connection */
+if (mysqli_connect_errno()) {
+    printf("Connect failed: %s\n", mysqli_connect_error());
+    exit();
+}
+
+/* Create table doesn't return a resultset */
+if (mysqli_query($link, "CREATE TEMPORARY TABLE myCity LIKE City") === TRUE) {
+    printf("Table myCity successfully created.\n");
+}
+
+/* Select queries return a resultset */
+if ($result = mysqli_query($link, "SELECT Name FROM City LIMIT 10")) {
+    printf("Select returned %d rows.\n", mysqli_num_rows($result));
+
+    /* free result set */
+    mysqli_free_result($result);
+}
+
+/* If we have to retrieve large amount of data we use MYSQLI_USE_RESULT */
+if ($result = mysqli_query($link, "SELECT * FROM City", MYSQLI_USE_RESULT)) {
+
+    /* Note, that we can't execute any functions which interact with the
+       server until result set was closed. All calls will return an
+       'out of sync' error */
+    if (!mysqli_query($link, "SET @a:='this will not work'")) {
+        printf("Error: %s\n", mysqli_error($link));
+    }
+    mysqli_free_result($result);
+}
+
+mysqli_close($link);
+?>
+
+以上例程会输出：
+
+Table myCity successfully created.
+Select returned 10 rows.
+Error: Commands out of sync;  You can't run this command now
+
+参见
+
+  • mysqli_real_query() - 执行一个mysql查询
+  • mysqli_multi_query() - Performs a query on the database
+  • mysqli_free_result() - Frees the memory associated with a result
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+This may or may not be obvious to people but perhaps it will help someone.
+
+When running joins in SQL you may encounter a problem if you are trying to pull
+two columns with the same name. mysqli returns the last in the query when
+called by name. So to get what you need you can use an alias.
+
+Below I am trying to join a user id with a user role. in the first table
+(tbl_usr), role is a number and in the second is a  text name (tbl_memrole is a
+lookup table). If I call them both as role I get the text as it is the last
+"role" in the query. If I use an alias then I get both as desired as shown
+below.
+
+<?php
+$sql = "SELECT a.uid, a.role AS roleid, b.role,
+            FROM tbl_usr a
+            INNER JOIN tbl_memrole b
+            ON a.role = b.id
+            ";
+
+    if ($result = $mysqli->query($sql)) {
+        while($obj = $result->fetch_object()){
+            $line.=$obj->uid;
+            $line.=$obj->role;
+            $line.=$obj->roleid;
+        }
+    }
+    $result->close();
+    unset($obj);
+    unset($sql);
+    unset($query);
+   
+?>
+In this situation I guess I could have just renamed the role column in the
+first table roleid and that would have taken care of it, but it was a learning
+experience.
+===============================================================================
+
+The cryptic "Couldn't fetch mysqli" error message can mean any number of
+things, including:
+
+1. You're trying to use a database object that you've already closed (as noted
+by ceo at l-i-e dot com). Reopen your database connection, or find the call to 
+<?php mysqli_close($db); ?> or <?php $db->close(); ?> and remove it.
+2. Your MySQLi object has been serialized and unserialized for some reason.
+Define a wakeup function to re-create your database connection. http://php.net/
+__wakeup
+3. Something besides you closed your mysqli connection (in particular, see
+http://bugs.php.net/bug.php?id=33772)
+4. You mixed OOP and functional calls to the database object. (So, you have <?
+php $db->query() ?> in the same program as <?php mysqli_query($db) ?>).
+===============================================================================
+
+When calling multiple stored procedures, you can run into the following error:
+"Commands out of sync; you can't run this command now".
+This can happen even when using the close() function on the result object
+between calls.
+To fix the problem, remember to call the next_result() function on the mysqli
+object after each stored procedure call. See example below:
+
+<?php
+// New Connection
+$db = new mysqli('localhost','user','pass','database');
+
+// Check for errors
+if(mysqli_connect_errno()){
+echo mysqli_connect_error();
+}
+
+// 1st Query
+$result = $db->query("call getUsers()");
+if($result){
+     // Cycle through results
+    while ($row = $result->fetch_object()){
+        $user_arr[] = $row;
+    }
+    // Free result set
+    $result->close();
+    $db->next_result();
+}
+
+// 2nd Query
+$result = $db->query("call getGroups()");
+if($result){
+     // Cycle through results
+    while ($row = $result->fetch_object()){
+        $group_arr[] = $row;
+    }
+     // Free result set
+     $result->close();
+     $db->next_result();
+}
+else echo($db->error);
+
+// Close connection
+$db->close();
+?>
+===============================================================================
+
+I like to save the query itself in a log file, so that I don't have to worry
+about whether the site is live.
+
+For example, I might have a global function:
+
+<?php
+function UpdateLog ( $string , $logfile )  {
+   $fh = fopen ( $logfile , 'a' );
+   $fwrite ( $fh , strftime ('%F %T %z')." ".$string."\n";
+   fclose ( $fh );
+}
+?>
+
+Then in my mysql function error trapper, something like this:
+
+<?php
+   $error_msg = "Database error in [page].php / ";
+   $error_msg .= mysqli_error ( $link )." / ";
+   $error_msg .= $query;
+   UpdateLog ( $error_msg , DB_ERROR_LOG_FILE );
+?>
+
+I also include the remote IP, user agent, etc., but I left it out of these code
+samples.  And have it e-mail me when an error is caught, too.
+
+Jeff
+===============================================================================
+
+Hi, i created function that add  a new table using array , i work with it on my
+projects ...
+<?PHP
+                   /* this function was learned from PHP.net */
+function array_keys_exist(&$key,array &$array){
+                $keys = split("\|",$key);
+                foreach($keys as $key_s){
+                    if(array_key_exists($key_s, $array)) return true;
+                    }
+                return false;
+            }
+/*and this is my function */
+array_create_table(array &$array){
+        if(is_array($array)){
+           $key = "table|rows|values";   
+        $info = "";
+        if(array_keys_exist($key,$array)){
+        if(is_array($array["rows"]) and is_array($array["values"]) ){
+                                        
+            if(count($array["rows"]) == count($array["values"])) {
+                        for($i=0; $i<=count($array["rows"]); $i++){
+    $info = $info." ".$array["rows"][$i]." ".$array["values"][$i]." NOT NULL ";
+            if($i < count($array["rows"])-1 ) $info = $info.",";
+                    }
+    $query = "CREATE TABLE ".$this->private_tables_name.$array["table"]." ";
+    $query .= "( id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, ".$info." )";
+                    return $query;   
+                        }
+                        }
+                }else return "Error";
+                    }
+            }
+
+/* the use is simple */
+$database = new database(); // connection to database i used mysqli ...
+$array = array("table"=>"MRO", "rows"=>array("name","username") , "values" =>
+array("VARCHAR (50) "," VARCHAR (50) ") );
+
+$query = array_create_table($array); // convert and create the query ...
+if($database->query($query)) echo "Work"; else echo "Error"; // result : work
+
+?>
+===============================================================================
+
+When building apps, i like to see the whole statement when if fails.
+<?php
+$q="SELECT somecolumn FROM sometable"; //some instruction
+$r=mysqli_query($DBlink,$q) or die(mysqli_error($DBlink)." Q=".$q);
+?>
+If theres an error (like my numerous typing mistakes) this shows the entire
+instruction.
+Good for development (not so good on production servers - simply find and
+replace when finished: $r=mysqli_query($DBlink,$q); )
+
+Hope it helps. Jon
+===============================================================================
+
+Stored Procedures.
+
+Use mysqli_query to call a stored procedure that returns a result set.
+
+Here is a short example:
+
+<?php
+$mysqli = new mysqli(DBURI,DBUSER,DBPASS,DBNAME);
+if (mysqli_connect_errno())
+{
+  printf("Connection failed: %s\n", mysqli_connect_error());
+  exit();
+}
+
+$SQL = "CALL my_procedure($something)";
+if ( ($result = $mysqli->query($SQL))===false )
+{
+  printf("Invalid query: %s\nWhole query: %s\n", $mysqli->error, $SQL);
+  exit();
+}
+
+while ($myrow = $result->fetch_array(MYSQLI_ASSOC))
+{
+  $aValue[]=$myrow["a"];
+  $bValue[]=$myrow["b"];
+}
+$result->close();
+$mysqli->close();
+?>
+I hope this saves someone some time.
+===============================================================================
+
+Translation:
+"Couldn't fetch mysqli"
+
+You closed your connection and are trying to use it again.
+
+It has taken me DAYS to figure out what this obscure error message means...
+===============================================================================
+
+mysqli::query() can only execute one SQL statement.
+
+Use mysqli::multi_query() when you want to run multiple SQL statements within
+one query.
+===============================================================================
+
+For those using with replication enabled on their servers,  add a
+mysqli_select_db() statement before any data modification queries.  MySQL
+replication does not handle statements with db.table the same and will not
+replicate to the slaves if a scheme is not selected before.
+
+Found out after days of resetting master and slaves on another site http://
+www.linuxquestions.org/questions/linux-server-73/
+mysql-5-1-not-replicating-properly-with-slave-823296/
+===============================================================================
+
+Building inserts can be annoying. This helper function inserts an array into a
+table, using the key names as column names:
+
+<?php
+  private function store_array (&$data, $table, $mysqli)
+  {
+    $cols = implode(',', array_keys($data));
+    foreach (array_values($data) as $value)
+    {
+      isset($vals) ? $vals .= ',' : $vals = '';
+      $vals .= '\''.$this->mysql->real_escape_string($value).'\'';
+    }
+    $mysqli->real_query('INSERT INTO '.$table.' ('.$cols.') VALUES ('.$vals.')'
+);
+  }
+?>
+
+Adapt it to your specific needs.
+===============================================================================
+
+The exact type returned by a successful query is mysqli_result.
+===============================================================================
+
+WARNING: This function was buggy on 64bit machines till 5.0.5. Affected
+versions 5.0.0-5.0.4. The problem appears when a value for the third parameter
+is passed - this will lead to instant FALSE returned by the function. Therefore
+if you need to use unbuffered query don't use this function with the
+aforementioned versions but you mysqli_real_query() and mysqli_use_result().
+If you have the rights to patch you PHP installation the fix is easy:
+In file ext/mysqli/myslqi_nonapi.c, function PHP_FUNCTION(mysqli_query)
+change
+unsigned int resultmode=0;
+to
+unsigned long resultmode=0;
+
+Thanks!
+===============================================================================
+
+Recently I had puzzling problem when performing DML queries, update in
+particular, each time a update query is called and then there are some more
+queries to follow this error will show on the page and go in the error_log:
+"Fatal error:  Exception thrown without a stack frame in Unknown on line 0"
+
+The strange thing is that all queries go through just fine so it didn't make
+much sense:
+
+$update = mysqli_query($connection, $query_string);
+if(!$update){
+echo 'Houston we have a problem '.mysqli_error($connection);
+exit;
+}
+
+In the above example "$update" is "true", mysqli_error() is empty and of course
+the update operation goes through, however the nasty super cryptic error
+appears on the page.
+What makes even less sense to me is how I fixed it - just called
+"mysqli_free_result" after the update query and the problem was gone, however
+because mysqli_free_result is not supposed to be called after DML queries (to
+free what, a boolean? lol) it needs to be wrapped in a try catch block:
+
+try{
+mysqli_free_result($update);
+}catch (Exception $e){
+//do nothing
+}
+
+So, I don't know why but it seems that when DML queries are responsible for:
+"Fatal error:  Exception thrown without a stack frame in Unknown on line 0"
+calling "mysqli_free_result" after the query seems to be fixing the issue
+===============================================================================
+
+Calling Stored Procedures
+
+Beeners' note/example will not work. Use mysqli_multi_query() to call a Stored
+Procedure. SP's have a second result-set which contains the status: 'OK' or
+'ERR'. Using mysqli_query will not work, as there are multiple results.
+
+<?php
+$sQuery="CALL SomeSP('params')";
+if(!mysqli_multi_query($sqlLink,$sQuery)) {
+  // your error handler
+}
+$sqlResult=mysqli_store_result($sqlLink);
+
+if(mysqli_more_results($this->sqlLink))//Catch 'OK'/'ERR'
+  while(mysqli_next_result($this->sqlLink));
+?>
+
+You will have to rewrite/expand this a bit for more usability of course, but
+it's just an example.
+===============================================================================
+
+this is a variant of mysqli_query that returns output parameters as a rowset.
+
+<?php
+  function mysqli_exec($link, $command)
+  {
+      $select = '';
+      $i2 = 0;
+     
+      while (true)
+      {
+      $i1 = strpos($command, '@', $i2);
+     
+      if ($i1 === false)
+          break;
+         
+      $field = '';
+      $i2 = $i1 + 1;
+     
+      while ($i2 < strlen($command) &&
+          ($command[$i2] >= '0' && $command[$i2] <= '9') ||
+          ($command[$i2] >= 'A' && $command[$i2] <= 'Z') ||
+          ($command[$i2] >= 'a' && $command[$i2] <= 'z') ||
+          ($command[$i2] == '_'))
+          $i2++;
+         
+      $field = substr($command, $i1 + 1, $i2 - $i1 - 1);
+         
+      if (strlen($select) == 0)
+        $select = "select @{$field} as $field";
+      else                   
+          $select = $select . ", @{$field} as $field";
+      }
+     
+      if (strlen($select) > 0)
+      {     
+        mysqli_query($link, $command);
+        return mysqli_query($link, $select);
+      }
+      else
+        return mysqli_query($link, $command);
+  }
+?>
+
+an example:
+
+<?php
+  $link = mysqli_connect('localhost', 'myusr', 'mypass') or die ('Error
+connecting to mysql: ' . mysqli_error($link));
+  mysqli_select_db($link, 'clips');
+ 
+  $user_name = 'test';
+  $result = mysqli_exec($link, "call do_user_login('$user_name', @session_id,
+@msg)");
+ 
+  while ($row = mysqli_fetch_assoc($result))
+  {
+    echo "session_id : {$row['session_id']} <br>";
+    echo "msg        : {$row['msg']} <br>";
+  }
+?>
+===============================================================================
+
+Use difference collation/character for connect, result.
+You can set the collation before your query.
+
+E.g. want to set the collation to utf8_general_ci
+you can send the query "SET NAMES 'utf8'" first
+
+<?php
+$mysqli=new mysqli('localhost', 'root', 'password', 'test');
+$mysqli->query("SET NAMES 'utf8'");
+$q=$mysqli->query("select * from test");
+while($r=$q->fetch_assoc()) {
+    print_r($r);
+}
+?>
+
+There are many variables about character settings.
+By running sql command, SHOW VARIABLES LIKE 'char%';
+There are some variables control the character usage.
+
+character_set_client
+character_set_connection
+character_set_database
+character_set_results
+character_set_server
+character_set_system
+
+Also SET NAMES can repalce with one or some settings like SET
+character_set_results='utf8';
+===============================================================================
+
+or you could just extend the class...
+in my case i already had a wraper for the db so something like this was easy :
+
+public function  free($result) {
+ 
+  $result->free_result();
+$this->link->next_result();
+}
+
+just tried it and it works like a charm ;-)

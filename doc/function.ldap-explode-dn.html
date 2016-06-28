@@ -1,0 +1,222 @@
+
+ldap_explode_dn
+
+(PHP 4, PHP 5, PHP 7)
+
+ldap_explode_dn — Splits DN into its component parts
+
+说明
+
+array ldap_explode_dn ( string $dn , int $with_attrib )
+
+Splits the DN returned by ldap_get_dn() and breaks it up into its component
+parts. Each part is known as Relative Distinguished Name, or RDN.
+
+参数
+
+dn
+
+    The distinguished name of an LDAP entity.
+
+with_attrib
+
+    Used to request if the RDNs are returned with only values or their
+    attributes as well. To get RDNs with the attributes (i.e. in attribute=
+    value format) set with_attrib to 0 and to get only values set it to 1.
+
+返回值
+
+Returns an array of all DN components. The first element in this array has
+count key and represents the number of returned values, next elements are
+numerically indexed DN components.
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+I came accros this page and enjoyed the comments.
+
+Since a LDAP string can sometimes be lengthy and have many attributes, I needed
+to be able to sort through all that is in.
+
+In my case, I needed to get the subdomain part and other parameters.
+
+Here is how I built my method.
+<?php
+    /**
+     * Parse, and format a DN string to Array
+     *
+     * Read a LDAP DN, and return an array keys
+     * listing all similar attributes.
+     *
+     * Also takes care of the character escape and unescape
+     *
+     * Example:
+     * CN=username,OU=UNITNAME,OU=Region,OU=Country,DC=subdomain,DC=domain,DC=
+com
+     *
+     * Would normally return:
+     * Array (
+     *     [count] => 9
+     *     [0] => CN=username
+     *     [1] => OU=UNITNAME
+     *     [2] => OU=Region
+     *     [5] => OU=Country
+     *     [6] => DC=subdomain
+     *     [7] => DC=domain
+     *     [8] => DC=com
+     * )
+     *
+     * Returns instead a manageable array:
+     * array (
+     *     [CN] => array( username )
+     *     [OU] => array( UNITNAME, Region, Country )
+     *     [DC] => array ( subdomain, domain, com )
+     * )
+     *
+     *
+     * @author gabriel at hrz dot uni-marburg dot de 05-Aug-2003 02:27 (part of
+the character replacement)
+     * @author Renoir Boulanger
+     *
+     * @param  string $dn          The DN
+     * @return array
+     */
+    function parseLdapDn($dn)
+    {
+        $parsr=ldap_explode_dn($dn, 0);
+        //$parsr[] = 'EE=Sôme Krazï string';
+        //$parsr[] = 'AndBogusOne';
+        $out = array();
+        foreach($parsr as $key=>$value){
+            if(FALSE !== strstr($value, '=')){
+                list($prefix,$data) = explode("=",$value);
+                $data=preg_replace("/\\\\\\([0-9A-Fa-f]{2})/e", "''.chr(hexdec
+('\\\\1')).''", $data);
+                if(isset($current_prefix) && $prefix == $current_prefix){
+                    $out[$prefix][] = $data;
+                } else {
+                    $current_prefix = $prefix;
+                    $out[$prefix][] = $data;
+                }
+            }
+        }
+        return $out;
+    }
+?>
+===============================================================================
+
+Keep attention on UTF8 encoded DNs. Since openLDAP >=2.1.2
+ldap_explode_dn turns unprintable chars (in the ASCII sense, UTF8
+encoded) into \<hexcode>.
+
+Example:
+
+$dn="ou=Universität ,c=DE";
+var_dump(ldap_explode_dn($dn,0));
+
+//returns
+
+array(3) {
+  ["count"]=>
+  int(2)
+  [0]=>
+  string(19) "ou=Universit\C3\A4t"
+  [1]=>
+  string(4) "c=DE"
+}
+
+Unfortunately, PHP don't support the ldap functions ldap_str2dn and
+ldap_dn2str, but by means of preg_replace a workaround is possible to
+recover the old behaviour of ldap_explode_dn
+
+// workaround
+function myldap_explode_dn($dn,$with_attribute){
+
+$result=ldap_explode_dn ($dn, $with_attrib);
+//translate hex code into ascii again
+    foreach($result as $key=>$value){
+          $result[$key]=preg_replace("/\\\([0-9A-Fa-f]{2})/e", "''.chr(hexdec('
+\\1')).''", $value);
+    }
+    return($result);
+
+}
+//
+//then follows for the example
+
+$dn="ou=Universität ,c=DE";
+var_dump(myldap_explode_dn($dn,0));
+
+//returns
+
+array(3) {
+  ["count"]=>
+  int(2)
+  [0]=>
+  string(15) "ou=Universität"
+  [1]=>
+  string(4) "c=DE"
+}
+===============================================================================
+
+[ Editor's Note: The segfault has been fixed and will not occur in PHP 4.3.4 or
+PHP 5.0.0 when they are released.  However, it is still important to escape
+special characters as detailed below. ]
+
+If your DN contains < or > characters, you must escape them with a backslash or
+ldap_explode_dn() will give you a "wrong parameter count" error or even a
+segmentation fault.
+
+For example, these calls will fail with a "wrong parameter count" or a seg
+fault:
+
+  ldap_explode_dn( "cn=<bob>,dc=example,dc=com", 0 );
+  ldap_explode_dn( 'cn=<bob>,dc=example,dc=com', 0 );
+
+But this will succeed
+
+  ldap_explode_dn( "cn=\<bob\>,dc=example,dc=com", 0 );
+
+Notice also that the < and > are escaped with hex codes as noted above. This
+function is a nice wrapper that properly formats all DNs and can safely be
+called with < and > characters, and UTF-8 characters:
+
+function my_explode_dn( $dn, $with_attributes=0 )
+{
+        $dn = addcslashes( $dn, "<>" );
+        $result = ldap_explode_dn( $dn, $with_attributes );
+        //translate hex code into ascii again
+        foreach( $result as $key => $value )
+                $result[$key] = preg_replace("/\\\([0-9A-Fa-f]{2})/e", "''.chr
+(hexdec('\\1')).''", $value);
+        return $result;
+}
+
+I am using php 4.3.1. Good luck!
+===============================================================================
+
+Copying is much better than typing!!!!
+Just modify the constants.
+Best wishes (and thanX 4 this helpfull site),
+Bernd Schwaegerl
+Mueller-Knoche GmbH, Systemhaus fuer EDV-Loesungen
+
+# Example:
+
+$HOST = "Yourhostname";
+$USER_DN = "Yourldapuser_dn";
+$PWD = "Ldapuserpassword";
+$BASE_DN = "o=Your_organisation";
+$SEARCH_OBJECT="sn=YOUR_SEARCH_PERSON_OBJECTS_SN";
+
+$ldap_handle=ldap_connect($HOST);
+$bind_result=ldap_bind($ldap_handle,$USER_DN,$PWD);
+
+$search_result=ldap_search($ldap_handle,$BASE_DN,$SEARCH_OBJECT);
+$result=ldap_get_entries($ldap_handle,$search_result);
+$result_array=ldap_get_entries($ldap_handle,$result);
+$whole_dn=$result_array[0]["dn"];
+
+$dn_parts=ldap_explode_dn($whole_dn,0);

@@ -1,0 +1,429 @@
+
+imap_mail_compose
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_mail_compose — Create a MIME message based on given envelope and body
+sections
+
+说明
+
+string imap_mail_compose ( array $envelope , array $body )
+
+Create a MIME message based on the given envelope and body sections.
+
+参数
+
+envelope
+
+    An associative array of headers fields. Valid keys are: "remail",
+    "return_path", "date", "from", "reply_to", "in_reply_to", "subject", "to",
+    "cc", "bcc", "message_id" and "custom_headers" (which contains associative
+    array of other headers).
+
+body
+
+    An indexed array of bodies
+
+    A body is an associative array which can consist of the following keys:
+    "type", "encoding", "charset", "type.parameters", "subtype", "id",
+    "description", "disposition.type", "disposition", "contents.data", "lines",
+    "bytes" and "md5".
+
+返回值
+
+Returns the MIME message.
+
+范例
+
+Example #1 imap_mail_compose() example
+
+<?php
+
+$envelope["from"]= "joe@example.com";
+$envelope["to"]  = "foo@example.com";
+$envelope["cc"]  = "bar@example.com";
+
+$part1["type"] = TYPEMULTIPART;
+$part1["subtype"] = "mixed";
+
+$filename = "/tmp/imap.c.gz";
+$fp = fopen($filename, "r");
+$contents = fread($fp, filesize($filename));
+fclose($fp);
+
+$part2["type"] = TYPEAPPLICATION;
+$part2["encoding"] = ENCBINARY;
+$part2["subtype"] = "octet-stream";
+$part2["description"] = basename($filename);
+$part2["contents.data"] = $contents;
+
+$part3["type"] = TYPETEXT;
+$part3["subtype"] = "plain";
+$part3["description"] = "description3";
+$part3["contents.data"] = "contents.data3\n\n\n\t";
+
+$body[1] = $part1;
+$body[2] = $part2;
+$body[3] = $part3;
+
+echo nl2br(imap_mail_compose($envelope, $body));
+
+?>
+
+
+User Contributed Notes 14 notes
+
+===============================================================================
+
+How can I do if I have multi mime headers?
+By example:
+
+Content-Type: multipart/related;
+                   type="multipart/alternative";
+or:
+
+Content-Type: multipart/mixed;
+                   type="multipart/alternative";
+
+or both methods: nested and multi mime headers:
+
+Content-Type: multipart/mixed;
+        boundary="147147"
+
+--147147
+Content-Type: multipart/related;
+        type="multipart/alternative";
+        boundary="247247"
+
+These headers are used when you need attach files and
+insert files in a body into mime mails.
+===============================================================================
+
+So following on from their example, once you've composed your email with
+attachment or whatever, you'll probably want to send it.
+
+since imap_mail(...) takes the message as body and re-encodes it, ignoring all
+the hard work you've done already.
+
+Only real solution I found is to post it yourself:
+
+// open connect to mail server
+$socket=socket_create(AF_INET,SOCK_STREAM,SOL_TCP);
+if ($socket===false) {
+    die('Error: socket_create, '.socket_strerror(socket_last_error()));
+}
+
+$server="myserver.com"; // say 10.0.0.1 or whatever your mail sever is
+$port=25;  // again your mail server port, here generic smtp
+if (socket_connect($socket,$server,$port)) {
+    print "Connection successful\n";
+}else {
+    die('Error: socket_connect, '.socket_strerror(socket_last_error()));
+}
+
+// send it...
+socket_write($socket,"HELO {$envelope["from"]}\n");
+socket_write($socket,"MAIL FROM: {$envelope["from"]}\n");
+socket_write($socket,"RCPT TO: {$envelope["to"]}\n");
+socket_write($socket,"DATA\n");
+socket_write($socket,"$message\n");
+socket_write($socket,".\n");
+socket_write($socket,"QUIT\n");
+
+// done...
+socket_close($socket);
+
+Ofcourse the shell may work for you?
+
+echo "Hello World" | mail -s "Greeting..." -a "attachSomeFile.txt"
+gspot@gmail.com
+===============================================================================
+
+The documentation above does not mention that you can use the index ["charset"]
+to set the character set of the messsage part.
+
+Example:
+
+$part1["type"]= "TEXT";
+$part1["subtype"]="PLAIN";
+$part1["charset"] = "koi8-r";
+
+to send a message in Russian-koi8.
+
+Scott  =)
+===============================================================================
+
+For some email clients its necessary first to start with the body text and end
+with the attachment(s). Otherwise all the parts end up in attachments, also the
+body text (took a while to find this).
+
+So example #1 (above) should be switched over, like:
+
+$body[1] = $part1;
+$body[2] = $part3;
+$body[3] = $part2;
+===============================================================================
+
+imap_mail_compose modifies $envelope! Subsequent calls with the same $envelope
+may not work depending on the contents of the header. The best way (at least it
+works) I found, is:
+
+$temp_env=unserialize(serialize($envelope));
+$mail=imap_mail_compose($temp_env,$body);
+
+(just $temp_env=$envelope does not work either)
+===============================================================================
+
+If you wish to send the output of this function, simply use it for the headers
+argument of imap_mail() or mail().  Keep in mind that those functions set the
+To: and Subject: headers, so including them in the envelope will create double
+entries.
+===============================================================================
+
+Since at least PHP 4.3 the $part[] hash can contain the $part
+['type.parameters'] which expects a hash.
+
+Unfortunately for "hans at lintoo dot dk" there doesn't appear to have ever
+been $part['parameters.name'] or a $part['dparameters.filename']
+
+So it would appear the corrected code for his function is
+
+<?php
+            $part["type"] = TYPEAPPLICATION;
+            $part["encoding"] = ENCBASE64;
+            $part["subtype"] = "octet-stream";
+            $part["description"] = $file_name;
+            $part['disposition.type'] = 'attachment';
+            $part['disposition'] = array ('filename' => $file_name);
+            $part['type.parameters'] = array('name' => $file_name);
+            $part["contents.data"] = base64_encode(fread($file_handle,
+$file_size));
+?>
+While this correctly sets the header
+
+Content-Type: application/octet-stream; name="file_name"
+Content-Transfer-Encoding: BASE64
+Content-Description: file_name
+Content-Disposition: attachment; filename="file_name"
+
+But this is still not a good idea to blanket set every attachment as a
+application/octet-stream so please consider using the unix command file, or
+Fileinfo functions (or even trusting file upload mimetype) and pay attention to
+the code from "derf dot m at reseaunix dot net"
+===============================================================================
+
+I got a lot of problems with attachments (multipart emails) and the fix
+directly below this note.
+instead just include it in the optional headers argument as previously
+suggested:
+
+<?php
+$mail = str_replace("\r","",imap_mail_compose($envelope, $body));
+imap_mail($_POST["to"],$_POST["subject"],'',$mail);
+?>
+"Nothing like a fix on a fix".
+
+If you want to copy the message to ie: a sent folder do:
+<?php
+//take note of the link: $this->mbox, and the constant: self::$imapStream
+$envelope["to"]  = $_POST["to"]; //included with imap_mail
+$envelope["subject"]  = $_POST["subject"]; //included with imap_mail
+$mail = imap_mail_compose($envelope, $body); //note no problems with \r
+imap_append($this->mbox,self::$imapStream."INBOX.Sent",$mail ,"\\Seen");
+?>
+See imap_append for more info.... Enjoy!
+===============================================================================
+
+In regards to my earlier note about "charset", this feature seems to have been
+added in the 4.1.X series  I have not actually checked 4.1.0, but it is in
+4.1.1 and not it 4.0.6.
+===============================================================================
+
+At least the following items in $part[] hashes are parsed:
+
+type
+encoding
+charset
+subtype
+id
+description
+disposition.type
+disposition
+contents.data
+lines
+bytes
+md5
+
+Note: $part['disposition'] is a hash:
+
+$part['disposition.type'] = 'attachment';
+$part['disposition'] = array ('filename'=>'file.txt');
+
+This will transform in such part header:
+
+Content-disposition: attachment; filename="file.txt"
+===============================================================================
+
+... and the headers (elements of the envelope) are case-sensitive and are
+listed below:
+
+remail
+return_path
+date
+from
+reply_to
+in_reply_to
+subject
+to
+cc
+bcc
+message_id
+custom_headers
+
+If you can't find a header you need in this list, you can use 'custom_headers'.
+It is just an array of lines to be appended to the header without any
+formatting, like this:
+
+$envelope["custom_headers"] = Array("User-Agent: My Mail Client", "My-Header:
+My Value");
+
+TODO: This should really migrate from a note to documentation
+===============================================================================
+
+class ImapCompose
+{
+    var $DATA;
+    var $MIME;
+    var $TYPE;
+    var $BASENAME;
+   
+    function ImapCompose()
+    {}
+   
+    function LECTURE_FICHIER($filename,$mime,$filetmp)
+    {
+        $filetmp = "/tmp/".$filetmp;
+        $fp=fopen($filetmp,"r");
+        $this->DATA     = fread($fp,filesize($filetmp));
+        fclose($fp);
+        //unlink($filetmp);
+
+        $mime = explode("/",$mime);
+        $this->BASENAME = basename($filename);
+        $this->TYPE        = $mime[1];
+       
+        switch($mime[0])
+        {
+            case "image":   
+                        $this->MIME = TYPEIMAGE;
+                        break;
+                       
+            case "text":
+                        $this->MIME = TYPETEXT;
+                        break;
+                       
+            case "audio":
+                        $this->MIME = TYPEAUDIO;
+                        break;
+                       
+            case "autre":
+            default:
+                        $this->MIME = TYPEAPPLICATION;
+                        break;
+        }   
+    }
+
+    function LECTURE_FILE_MAIL($file,$data,$mime,$type)
+    {
+        $this->BASENAME = $file;
+        $this->MIME        = $mime;
+        $this->DATA     = $data;   
+        $this->TYPE        = $type;
+    }
+   
+    function ATTACHER_FICHIER()
+    {
+        $part["type"]        =$this->MIME."<br>";
+        $part["encoding"]    =ENCBINARY."<br>";
+        $part["subtype"]     =$this->TYPE."<br>";
+        $part["description"]=$this->BASENAME."<br>";
+        $part["contents.data"]=$this->DATA."<br>";
+        return $part;
+    }
+       
+    function ATTACHER_MSG($msg)
+    {
+        $part["type"]=TEXT;
+        $part["subtype"]="plain";
+        $part["description"]="message mode texte";
+        $part["contents.data"]="$msg\n\n\n\t";
+
+        return $part;
+    }
+
+    function ENVELLOPE_MAIL($from,$to,$cc,$sujet="")
+    {
+        $envelope["from"]=$from;
+        $envelope["to"]=$to;
+        $envelope["cc"]=$cc;
+       
+        if($sujet != "")
+            $envelope["subject"]=$sujet;
+       
+        return $envelope;
+    }
+   
+    function ENETE_MAIL()
+    {
+        $part["type"]=TYPEMULTIPART;
+        $part["subtype"]="mixed";       
+        return $part;
+    }
+}   
+?>
+===============================================================================
+
+It is a good idea to set the date header:
+$envelope['date']=date('r');
+===============================================================================
+
+Here is a little something for attaching files... This is already documented in
+the manual, but my solution involves some changes. This is based on testing and
+suggestions from others notes on this page.
+<?php
+//snip
+if (count($_FILES) > 0) {
+    $multipart["type"] = TYPEMULTIPART;
+    $multipart["subtype"] = "mixed";
+    $body[] = $multipart; //add multipart stuff
+}
+//snip
+$uploaddir = ini_get("upload_tmp_dir"); //Get tmp upload dir from PHP.ini
+foreach ($_FILES as $fieldName => $file) {
+    for ($i=0;$i < count($file['tmp_name']);$i++) {
+        if (is_uploaded_file($file['tmp_name'][$i])) {
+            $file_handle = fopen($file["tmp_name"][$i], "rb");
+            $file_name = $file["name"][$i];
+            $file_size = filesize($file["tmp_name"][$i]);
+           
+            $part["type"] = TYPEAPPLICATION;
+            $part["encoding"] = ENCBASE64;
+            $part["subtype"] = "octet-stream";
+            $part["description"] = $file_name;
+            $part['disposition.type'] = 'attachment';
+            $part['disposition'] = array ('filename' => $file_name);
+            $part['dparameters.filename'] = $file_name;
+            $part['parameters.name'] = $file_name;
+            $part["contents.data"] = base64_encode(fread($file_handle,
+$file_size));
+           
+            $body[] = $part;
+            unlink($file["tmp_name"][$i]);
+        }
+    }
+}
+//snip
+?>
+hope someone can use this...
+Regards, Hans @ http://lintoo.dk/

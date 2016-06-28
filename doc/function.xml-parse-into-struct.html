@@ -1,0 +1,4327 @@
+
+xml_parse_into_struct
+
+(PHP 4, PHP 5, PHP 7)
+
+xml_parse_into_struct — 将 XML 数据解析到数组中
+
+说明
+
+int xml_parse_into_struct ( resource $parser , string $data , array &$values [,
+array &$index ] )
+
+该函数将 XML 文件解析到两个对应的数组中，index 参数含有指向 values 数组中对应值
+的指针。最后两个数组参数可由指针传递给函数。
+
+    Note:
+
+    xml_parse_into_struct() 失败返回 0，成功返回 1。这和 FALSE 与 TRUE 不同，使
+    用例如 === 的运算符时要注意。
+
+以下范例显示了由该函数生成的数组的内部结构。我们简单地将一个 note 嵌入到一个
+para 标记中，解析后我们可以打印出生成的数组的结构：
+
+Example #1 xml_parse_into_struct() 示例
+
+<?php
+$simple = "<para><note>simple note</note></para>";
+$p = xml_parser_create();
+xml_parse_into_struct($p, $simple, $vals, $index);
+xml_parser_free($p);
+echo "Index array\n";
+print_r($index);
+echo "\nVals array\n";
+print_r($vals);
+?>
+
+运行以上代码，我们得到的输出将是：
+
+Index array
+Array
+(
+    [PARA] => Array
+        (
+            [0] => 0
+            [1] => 2
+        )
+
+    [NOTE] => Array
+        (
+            [0] => 1
+        )
+
+)
+
+Vals array
+Array
+(
+    [0] => Array
+        (
+            [tag] => PARA
+            [type] => open
+            [level] => 1
+        )
+
+    [1] => Array
+        (
+            [tag] => NOTE
+            [type] => complete
+            [level] => 2
+            [value] => simple note
+        )
+
+    [2] => Array
+        (
+            [tag] => PARA
+            [type] => close
+            [level] => 1
+        )
+
+)
+
+如果您的 XML 文档很复杂，基于该文档的事件处理（Event-driven）解析（基于 expat
+扩展库）也会对应的变得复杂。该函数生成的并非 DOM 风格的对象，而是横向的树状结构
+。因此，我们能够方便的建立表达 XML 文件数据的对象。我们假设以下 XML 文件表示一
+个关于氨基酸信息的小型数据库：
+
+Example #2 moldb.xml - 分子信息的小型数据库
+
+<?xml version="1.0"?>
+<moldb>
+
+    <molecule>
+        <name>Alanine</name>
+        <symbol>ala</symbol>
+        <code>A</code>
+        <type>hydrophobic</type>
+    </molecule>
+
+    <molecule>
+        <name>Lysine</name>
+        <symbol>lys</symbol>
+        <code>K</code>
+        <type>charged</type>
+    </molecule>
+
+</moldb>
+
+以下是解析该文档并生成相应对象的代码：
+
+Example #3 parsemoldb.php - 将 moldb.xml 解析到分子（molecular）对象的数组中
+
+<?php
+
+class AminoAcid {
+    var $name;  // aa 姓名
+    var $symbol;    // 三字母符号
+    var $code;  // 单字母代码
+    var $type;  // hydrophobic, charged 或 neutral
+
+    function AminoAcid ($aa)
+    {
+        foreach ($aa as $k=>$v)
+            $this->$k = $aa[$k];
+    }
+}
+
+function readDatabase($filename)
+{
+    // 读取 aminoacids 的 XML 数据
+    $data = implode("",file($filename));
+    $parser = xml_parser_create();
+    xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+    xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
+    xml_parse_into_struct($parser, $data, $values, $tags);
+    xml_parser_free($parser);
+
+    // 遍历 XML 结构
+    foreach ($tags as $key=>$val) {
+        if ($key == "molecule") {
+            $molranges = $val;
+            // each contiguous pair of array entries are the
+            // lower and upper range for each molecule definition
+            for ($i=0; $i < count($molranges); $i+=2) {
+                $offset = $molranges[$i] + 1;
+                $len = $molranges[$i + 1] - $offset;
+                $tdb[] = parseMol(array_slice($values, $offset, $len));
+            }
+        } else {
+            continue;
+        }
+    }
+    return $tdb;
+}
+
+function parseMol($mvalues)
+{
+    for ($i=0; $i < count($mvalues); $i++) {
+        $mol[$mvalues[$i]["tag"]] = $mvalues[$i]["value"];
+    }
+    return new AminoAcid($mol);
+}
+
+$db = readDatabase("moldb.xml");
+echo "** Database of AminoAcid objects:\n";
+print_r($db);
+
+?>
+在执行完 parsemoldb.php 后，变量 $db 将包含有一个由 AminoAcid 对象组成的数组，
+该脚本的输出如下：
+
+** Database of AminoAcid objects:
+Array
+(
+    [0] => aminoacid Object
+        (
+            [name] => Alanine
+            [symbol] => ala
+            [code] => A
+            [type] => hydrophobic
+        )
+
+    [1] => aminoacid Object
+        (
+            [name] => Lysine
+            [symbol] => lys
+            [code] => K
+            [type] => charged
+        )
+
+)
+
+
+User Contributed Notes 76 notes
+
+===============================================================================
+
+Perhaps the one true parser:? I modified xademax's fine code to tidy it up,
+codewise and style wise, rationalize some minor crazyness, and make names fit
+nomenclature from the XML spec. (There are no uses of eval, and shame on you
+people who do.)
+
+<?php
+class XmlElement {
+  var $name;
+  var $attributes;
+  var $content;
+  var $children;
+};
+
+function xml_to_object($xml) {
+  $parser = xml_parser_create();
+  xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+  xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
+  xml_parse_into_struct($parser, $xml, $tags);
+  xml_parser_free($parser);
+
+  $elements = array();  // the currently filling [child] XmlElement array
+  $stack = array();
+  foreach ($tags as $tag) {
+    $index = count($elements);
+    if ($tag['type'] == "complete" || $tag['type'] == "open") {
+      $elements[$index] = new XmlElement;
+      $elements[$index]->name = $tag['tag'];
+      $elements[$index]->attributes = $tag['attributes'];
+      $elements[$index]->content = $tag['value'];
+      if ($tag['type'] == "open") {  // push
+        $elements[$index]->children = array();
+        $stack[count($stack)] = &$elements;
+        $elements = &$elements[$index]->children;
+      }
+    }
+    if ($tag['type'] == "close") {  // pop
+      $elements = &$stack[count($stack) - 1];
+      unset($stack[count($stack) - 1]);
+    }
+  }
+  return $elements[0];  // the single top-level element
+}
+
+// For example:
+$xml = '
+<parser>
+   <name language="en-us">Fred Parser</name>
+   <category>
+       <name>Nomenclature</name>
+       <note>Noteworthy</note>
+   </category>
+</parser>
+';
+print_r(xml_to_object($xml));
+?>
+
+will give:
+
+xmlelement Object
+(
+    [name] => parser
+    [attributes] =>
+    [content] =>
+    [children] => Array
+        (
+            [0] => xmlelement Object
+                (
+                    [name] => name
+                    [attributes] => Array
+                        (
+                            [language] => en-us
+                        )
+
+                    [content] => Fred Parser
+                    [children] =>
+                )
+
+            [1] => xmlelement Object
+                (
+                    [name] => category
+                    [attributes] =>
+                    [content] =>
+                    [children] => Array
+                        (
+                            [0] => xmlelement Object
+                                (
+                                    [name] => name
+                                    [attributes] =>
+                                    [content] => Nomenclature
+                                    [children] =>
+                                )
+
+                            [1] => xmlelement Object
+                                (
+                                    [name] => note
+                                    [attributes] =>
+                                    [content] => Noteworthy
+                                    [children] =>
+                                )
+
+                        )
+
+                )
+
+        )
+
+)
+===============================================================================
+
+I really need to make the "xml_parse_into_array" function, and I figured out
+this "recursive function" solution. (I just test that with ISO-8859-1 charset,
+but I think it works with ASCII and UTF-8)
+
+/*------------------------------------------------------------------*/
+function xml_parse_into_array($xml)
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DESCRIPCION:
+Convierte un texto en xml codificado en ISO-8859-1 a un arreglo de php.
+--------------------------------------------------------------------*/
+{
+    $retorno = array();
+
+    $p = xml_parser_create();
+    xml_parser_set_option($p, XML_OPTION_TARGET_ENCODING, "ISO-8859-1");
+    xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+    xml_parser_set_option($p, XML_OPTION_SKIP_WHITE, 1);
+    xml_parse_into_struct($p, $xml, $elementos, $llaves);
+    xml_parser_free($p);
+
+    $Qprocesados = 0;
+    $retorno = xml_sub_parse_into_array($elementos, $Qprocesados);
+
+    return array($retorno, $Qprocesados);
+}
+
+/*------------------------------------------------------------------*/
+function xml_sub_parse_into_array($xml, &$i, $abierto = null)
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DESCRIPCION:
+--------------------------------------------------------------------*/
+{
+    $retorno = array();
+
+    //----------------------------------------
+    // Caso trivial: TAG COMPLETO
+    //----------------------------------------
+    if ($xml[$i]['type'] == 'complete' && isset($xml[$i]['value'])) {
+        $retorno[$xml[$i]['tag']] = trim($xml[$i]['value']);
+        $i ++;
+        return $retorno;
+    //----------------------------------------
+    // Caso trivial: TAG COMPLETO
+    //----------------------------------------
+    } else if ($xml[$i]['type'] == 'cdata' && isset($xml[$i]['value'])) {
+        $retorno = trim($xml[$i]['value']);
+        $i ++;
+        return $retorno;
+    //----------------------------------------
+    // Caso trivial: TAG VACIO
+    //----------------------------------------
+    } else if ($xml[$i]['type'] == 'complete') {
+        // $retorno = "<".$xml[$i]['tag']." />";
+        $retorno[$xml[$i]['tag']] = null;
+        $i ++;
+        return $retorno;
+    //----------------------------------------
+    // Caso recursivo: TAG CON TAGS ADENTRO
+    //----------------------------------------
+    } else if ($xml[$i]['type'] == 'open') {
+        $abierto = $xml[$i]['tag'];
+        $nivel   = $xml[$i]['level'];
+
+        if (!isset($retorno[$abierto]))
+            $retorno[$abierto] = array();
+
+        if (isset($xml[$i]['value'])) {
+            $retorno[$abierto][] = trim($xml[$i]['value']);
+        }
+
+        $i ++;
+        $termino = false;
+        while (!$termino && $i < count($xml)) {
+            if ($xml[$i]['tag'] == $abierto &&
+                $xml[$i]['type'] == 'close' &&
+                $xml[$i]['level'] == $nivel ) {
+                $termino = true;
+            } else {
+                $retorno[$abierto][] = xml_sub_parse_into_array($xml, $i,
+$abierto);
+                if ($i < count($xml))
+                    if ($xml[$i]['type'] == 'close') {
+                        $i ++;
+                        return $retorno;
+                    }
+            }
+        }
+        return $retorno;
+    }
+}
+===============================================================================
+
+<?php
+/*
+  An easy lightweight (Array ->) XML -> Array algorithm..
+
+  Typical case: You have an array you want to export to an external server,
+                so you make XML out of it, exports it, and "on the other side"
+                make it into an array again. These two functions will take care
+                of that last part, ie XML -> Array
+ 
+  NOTE! The function XMLToArray assumes that the XML _dont_ have nodes on the
+        same level with the same name, then it just wont work. This is not a
+        problem, as this case deals with Array -> XML -> Array, and an array
+        cant have to identical indexes/keys.
+*/
+
+function XMLToArray($xml) {
+  $parser = xml_parser_create('ISO-8859-1'); // For Latin-1 charset
+  xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0); // Dont mess with
+my cAsE sEtTings
+  xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1); // Dont bother with
+empty info
+  xml_parse_into_struct($parser, $xml, $values);
+  xml_parser_free($parser);
+ 
+  $return = array(); // The returned array
+  $stack = array(); // tmp array used for stacking
+  foreach($values as $val) {
+    if($val['type'] == "open") {
+      array_push($stack, $val['tag']);
+    } elseif($val['type'] == "close") {
+      array_pop($stack);
+    } elseif($val['type'] == "complete") {
+      array_push($stack, $val['tag']);
+      setArrayValue($return, $stack, $val['value']);
+      array_pop($stack);
+    }//if-elseif
+  }//foreach
+  return $return;
+}//function XMLToArray
+ 
+function setArrayValue(&$array, $stack, $value) {
+  if ($stack) {
+    $key = array_shift($stack);
+    setArrayValue($array[$key], $stack, $value);
+    return $array;
+  } else {
+    $array = $value;
+  }//if-else
+}//function setArrayValue
+ 
+// USAGE:
+$xml = <<<QQQ
+<?xml version="1.0"?>
+<root>
+  <node1>Some text</node1>
+  <node2a>
+    <node2b>
+      <node2c>Some text</node2c>
+    </node2b>
+  </node2a>
+</root>\n
+QQQ;
+$array = XMLToArray($xml);
+print "<pre>";
+print_r($array);
+print "</pre>";
+//  Output:
+//
+//  Array
+//  (
+//      [root] => Array
+//          (
+//              [node1] => Some text
+//              [node2a] => Array
+//                  (
+//                      [node2b] => Array
+//                          (
+//                              [node2c] => Some text
+//                          )
+//                  )
+//          )
+//  )
+?>
+===============================================================================
+
+This is extending what Alf Marius Foss Olsen had posted above.
+
+It takes into account array keys with the same name and uses an increment for
+them instead of overwriting the keys.
+
+I am using it for SOAP requests (20K - 150K) and it parses very fast compared
+to PEAR.
+
+<?
+
+class XMLParser  {
+   
+    // raw xml
+    private $rawXML;
+    // xml parser
+    private $parser = null;
+    // array returned by the xml parser
+    private $valueArray = array();
+    private $keyArray = array();
+   
+    // arrays for dealing with duplicate keys
+    private $duplicateKeys = array();
+   
+    // return data
+    private $output = array();
+    private $status;
+
+    public function XMLParser($xml){
+        $this->rawXML = $xml;
+        $this->parser = xml_parser_create();
+        return $this->parse();
+    }
+
+    private function parse(){
+       
+        $parser = $this->parser;
+       
+        xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0); // Dont
+mess with my cAsE sEtTings
+        xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);     // Dont
+bother with empty info
+        if(!xml_parse_into_struct($parser, $this->rawXML, $this->valueArray,
+$this->keyArray)){
+            $this->status = 'error: '.xml_error_string(xml_get_error_code
+($parser)).' at line '.xml_get_current_line_number($parser);
+            return false;
+        }
+        xml_parser_free($parser);
+
+        $this->findDuplicateKeys();
+
+        // tmp array used for stacking
+        $stack = array();        
+        $increment = 0;
+       
+        foreach($this->valueArray as $val) {
+            if($val['type'] == "open") {
+                //if array key is duplicate then send in increment
+                if(array_key_exists($val['tag'], $this->duplicateKeys)){
+                    array_push($stack, $this->duplicateKeys[$val['tag']]);
+                    $this->duplicateKeys[$val['tag']]++;
+                }
+                else{
+                    // else send in tag
+                    array_push($stack, $val['tag']);
+                }
+            } elseif($val['type'] == "close") {
+                array_pop($stack);
+                // reset the increment if they tag does not exists in the stack
+                if(array_key_exists($val['tag'], $stack)){
+                    $this->duplicateKeys[$val['tag']] = 0;
+                }
+            } elseif($val['type'] == "complete") {
+                //if array key is duplicate then send in increment
+                if(array_key_exists($val['tag'], $this->duplicateKeys)){
+                    array_push($stack, $this->duplicateKeys[$val['tag']]);
+                    $this->duplicateKeys[$val['tag']]++;
+                }
+                else{               
+                    // else send in tag
+                    array_push($stack,  $val['tag']);
+                }
+                $this->setArrayValue($this->output, $stack, $val['value']);
+                array_pop($stack);
+            }
+            $increment++;
+        }
+
+        $this->status = 'success: xml was parsed';
+        return true;
+
+    }
+   
+    private function findDuplicateKeys(){
+       
+        for($i=0;$i < count($this->valueArray); $i++) {
+            // duplicate keys are when two complete tags are side by side
+            if($this->valueArray[$i]['type'] == "complete"){
+                if( $i+1 < count($this->valueArray) ){
+                    if($this->valueArray[$i+1]['tag'] == $this->valueArray[$i]
+['tag'] && $this->valueArray[$i+1]['type'] == "complete"){
+                        $this->duplicateKeys[$this->valueArray[$i]['tag']] = 0;
+                    }
+                }
+            }
+            // also when a close tag is before an open tag and the tags are the
+same
+            if($this->valueArray[$i]['type'] == "close"){
+                if( $i+1 < count($this->valueArray) ){
+                    if(    $this->valueArray[$i+1]['type'] == "open" && $this->
+valueArray[$i+1]['tag'] == $this->valueArray[$i]['tag'])
+                        $this->duplicateKeys[$this->valueArray[$i]['tag']] = 0;
+                }
+            }
+           
+        }
+       
+    }
+   
+    private function setArrayValue(&$array, $stack, $value){
+        if ($stack) {
+            $key = array_shift($stack);
+            $this->setArrayValue($array[$key], $stack, $value);
+            return $array;
+        } else {
+            $array = $value;
+        }
+    }
+   
+    public function getOutput(){
+        return $this->output;
+    }
+   
+    public function getStatus(){
+        return $this->status;   
+    }
+      
+}
+
+?>
+
+Usage:
+
+$p = new XMLParser($xml);
+$p->getOutput();
+===============================================================================
+
+here you can [re]assemble xml from a xml_parse_into_struct generated array: ie
+array2xml
+
+<?php
+$xml_parser = xml_parser_create( 'UTF-8' ); // UTF-8 or ISO-8859-1
+xml_parser_set_option( $xml_parser, XML_OPTION_CASE_FOLDING, 0 );
+xml_parser_set_option( $xml_parser, XML_OPTION_SKIP_WHITE, 1 );
+xml_parse_into_struct( $xml_parser, $my_text_xml, $aryXML );
+xml_parser_free($xml_parser);
+
+//now use aryXML array to xml string:
+        $o='';
+        foreach( $aryXML as $tag ){
+            //tab space:
+            for($i=1; $i < $tag['level'];$i++)
+                $o.="\t";
+            if($tag['type']!='close'){
+                if($tag['type']!='cdata')
+                    $o.='<'.$tag['tag'];
+                if(isset($tag['attributes'])){               
+                    foreach($tag['attributes'] as $attr=>$aval){
+                        $o.=' '.$attr.'="'.$aval.'"';
+                    }
+                }
+                if($tag['type']!='cdata'){
+                    $o.=($tag['type']=='complete')?'/>'."\n":'>'."\n";
+                }
+                $o.=(isset($tag['value']))?$tag['value']:'';
+            }else{
+                $o.='</'.$tag['tag'].'>';
+            }               
+        }
+?>
+===============================================================================
+
+Simple method for format XML to Array
+
+function xml2array($xml){
+    $opened = array();
+    $xml_parser = xml_parser_create();
+    xml_parse_into_struct($xml_parser, $xml, $xmlarray);
+    $array = array();
+    $arrsize = sizeof($xmlarray);
+    for($j=0;$j<$arrsize;$j++){
+        $val = $xmlarray[$j];
+        switch($val["type"]){
+            case "open":
+                $opened[$val["tag"]] = $array;
+                unset($array);
+                break;
+            case "complete":
+                $array[$val["tag"]][] = $val["value"];
+            break;
+            case "close":
+                $opened[$val["tag"]] = $array;
+                $array = $opened;
+            break;
+        }
+    }
+    return $array;
+}
+===============================================================================
+
+To get out of an XML-Structure like this:
+<root><element><subelement attribute="value">some text</subelement></element>
+<anotherelement>Hello World</anotherelement></root>
+something like this:
+
+Array
+(
+    [tag] => ROOT
+    [0] => Array
+        (
+            [tag] => ELEMENT
+            [0] => Array
+                (
+                    [tag] => SUBELEMENT
+                    [attributes] => Array
+                        (
+                            [ATTRIBUTE] => value
+                        )
+
+                    [value] => some text
+                )
+
+        )
+
+    [1] => Array
+        (
+            [tag] => ANOTHERELEMENT
+            [value] => Hello World
+        )
+
+)
+
+I have written a short and pretty simple function:
+
+<?php
+function xml2array($xml){
+    $opened = array();
+    $opened[1] = 0;
+    $xml_parser = xml_parser_create();
+    xml_parse_into_struct($xml_parser, $xml, $xmlarray);
+    $array = array_shift($xmlarray);
+    unset($array["level"]);
+    unset($array["type"]);
+    $arrsize = sizeof($xmlarray);
+    for($j=0;$j<$arrsize;$j++){
+        $val = $xmlarray[$j];
+        switch($val["type"]){
+            case "open":
+                $opened[$val["level"]]=0;
+            case "complete":
+                $index = "";
+                for($i = 1; $i < ($val["level"]); $i++)
+                    $index .= "[" . $opened[$i] . "]";
+                $path = explode('][', substr($index, 1, -1));
+                $value = &$array;
+                foreach($path as $segment)
+                    $value = &$value[$segment];
+                $value = $val;
+                unset($value["level"]);
+                unset($value["type"]);
+                if($val["type"] == "complete")
+                    $opened[$val["level"]-1]++;
+            break;
+            case "close":
+                $opened[$val["level"]-1]++;
+                unset($opened[$val["level"]]);
+            break;
+        }
+    }
+    return $array;
+}
+?>
+===============================================================================
+
+following function use to get the value for given XML tag
+
+<?php
+function getXmlValueByTag($inXmlset,$needle){
+        $resource    =    xml_parser_create();//Create an XML parser
+        xml_parse_into_struct($resource, $inXmlset, $outArray);// Parse XML
+data into an array structure
+        xml_parser_free($resource);//Free an XML parser
+       
+        for($i=0;$i<count($outArray);$i++){
+            if($outArray[$i]['tag']==strtoupper($needle)){
+                $tagValue    =    $outArray[$i]['value'];
+            }
+        }
+        return $tagValue;
+    }
+
+    echo getXmlValueByTag($inXmlset,$needle);
+?>
+===============================================================================
+
+Here's another attempt at dealing with rebuilding the xml from the array.  I'm
+basically preventing certain tags from being self closing by just checking for
+them explicitly (sure wish expat didn't interpret <textarea /> and <textarea></
+textarea> the same way (as "complete" tags).
+
+<?php
+function array2xml($xmlary){
+  $o='';
+  foreach($xmlary as $tag ){
+    if($tag['tag'] == 'textarea' && !isset($tag['value'])){
+      //fake a value so it won't self close
+      $tag['value']='';
+    }
+    //tab space:
+    $t = '';
+    for($i=1; $i < $tag['level'];$i++){
+      $t.="\t";
+    }
+    switch($tag['type']){
+      case 'complete':
+      case 'open':
+        $o.=$t.'<'.$tag['tag'];
+        if(isset($tag['attributes'])){
+          foreach($tag['attributes'] as $attr=>$aval){
+            $o.=' '.$attr.'="'.$aval.'"';
+          }//foreach
+        }//attributes
+        if($tag['type'] == 'complete'){
+          if(!isset($tag['value'])){
+            $o .= ' />'."\n";
+          } else {
+            $o .= '>'."\n".$t.$tag['value']."\n".$t.'</'.$tag['tag'].'>'."\n";
+          }
+        }else{
+          $o .= '>'."\n";
+        }
+        break;
+      case 'close':
+        $o .= $t.'</'.$tag['tag'].'>'."\n";
+        break;
+      case 'cdata':
+        $o .= $t.$tag['value']."\n";
+        break;
+    }//switch
+  }//foreach
+}
+?>
+===============================================================================
+
+Sorry, forgot my last post below, I confused CDATA sections (<![CDATA[]]>) with
+the value type "cdata", which despite its name it's very different! The first
+allows adding markup (&,<,>) as regular text and the second is to indicate a
+not complete node between the open and close nodes. What is true is that the
+CDATA delimiters are lost after xml_parse_into_struct so it's not possible to
+revert the process.
+
+Please, feel free to remove my comments or leave them if you think they can
+help anyone.
+===============================================================================
+
+Had a comment up that was removed saying I'd found drawbacks, but here's a
+class what I wrote which works fine for me.  Comments removed due to post
+restrictions.  Pass the xml into the parse method or in the constructor.  Php4
+and 5 safe.
+
+class XMLThing
+{
+    var $rawXML;
+    var $valueArray = array();
+    var $keyArray = array();
+    var $parsed = array();
+    var $index = 0;
+    var $attribKey = 'attributes';
+    var $valueKey = 'value';
+    var $cdataKey = 'cdata';
+    var $isError = false;
+    var $error = '';
+
+    function XMLThing($xml = NULL)
+    {
+        $this->rawXML = $xml;
+    }
+
+    function parse($xml = NULL)
+    {
+        if (!is_null($xml))
+        {
+            $this->rawXML = $xml;
+        }
+
+        $this->isError = false;
+           
+        if (!$this->parse_init())
+        {
+            return false;
+        }
+
+        $this->index = 0;
+        $this->parsed = $this->parse_recurse();
+        $this->status = 'parsing complete';
+
+        return $this->parsed;
+    }
+
+    function parse_recurse()
+    {       
+        $found = array();
+        $tagCount = array();
+
+        while (isset($this->valueArray[$this->index]))
+        {
+            $tag = $this->valueArray[$this->index];
+            $this->index++;
+
+            if ($tag['type'] == 'close')
+            {
+                return $found;
+            }
+
+            if ($tag['type'] == 'cdata')
+            {
+                $tag['tag'] = $this->cdataKey;
+                $tag['type'] = 'complete';
+            }
+
+            $tagName = $tag['tag'];
+
+            if (isset($tagCount[$tagName]))
+            {       
+                if ($tagCount[$tagName] == 1)
+                {
+                    $found[$tagName] = array($found[$tagName]);
+                }
+                   
+                $tagRef =& $found[$tagName][$tagCount[$tagName]];
+                $tagCount[$tagName]++;
+            }
+            else   
+            {
+                $tagCount[$tagName] = 1;
+                $tagRef =& $found[$tagName];
+            }
+
+            switch ($tag['type'])
+            {
+                case 'open':
+                    $tagRef = $this->parse_recurse();
+
+                    if (isset($tag['attributes']))
+                    {
+                        $tagRef[$this->attribKey] = $tag['attributes'];
+                    }
+                       
+                    if (isset($tag['value']))
+                    {
+                        if (isset($tagRef[$this->cdataKey]))   
+                        {
+                            $tagRef[$this->cdataKey] = (array)$tagRef[$this->
+cdataKey];   
+                            array_unshift($tagRef[$this->cdataKey], $tag
+['value']);
+                        }
+                        else
+                        {
+                            $tagRef[$this->cdataKey] = $tag['value'];
+                        }
+                    }
+                    break;
+
+                case 'complete':
+                    if (isset($tag['attributes']))
+                    {
+                        $tagRef[$this->attribKey] = $tag['attributes'];
+                        $tagRef =& $tagRef[$this->valueKey];
+                    }
+
+                    if (isset($tag['value']))
+                    {
+                        $tagRef = $tag['value'];
+                    }
+                    break;
+            }           
+        }
+
+        return $found;
+    }
+
+    function parse_init()
+    {
+        $this->parser = xml_parser_create();
+
+        $parser = $this->parser;
+        xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);    
+        xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);       
+        if (!$res = (bool)xml_parse_into_struct($parser, $this->rawXML, $this->
+valueArray, $this->keyArray))
+        {
+            $this->isError = true;
+            $this->error = 'error: '.xml_error_string(xml_get_error_code
+($parser)).' at line '.xml_get_current_line_number($parser);
+        }
+        xml_parser_free($parser);
+
+        return $res;
+    }
+}
+===============================================================================
+
+concerning Adam Tylmad's code, note that the line
+
+if ($data = xml::cleanString($data))
+
+prevents 0 values to be considered, as this will evaluate to false. I just
+tracked down this bug in our system .. ouch
+===============================================================================
+
+To beaudurrant - that class is great and structures things in a very sensible
+way.  Only problem is that it raises an error if a tag is empty, so would
+suggest a simple mod to the parse method just to add an isset test.
+
+if (isset($val['value']))
+{
+    $this->setArrayValue($this->output, $stack, $val['value']);
+}
+===============================================================================
+
+In response to Anonymous' post at 26-Feb-2008 11:50:
+
+Saying that you "don't understand everything" isn't going to get you very
+popular - you should understand the code you use.
+foreach isn't *slow* in PHP, it is actually faster than the equivalent
+for-construct (which, in many cases, isn't available).
+
+The reason your script is slow is simply your use of xml_parse_into_struct - it
+reads the whole XML-string and doesn't return until it has parsed and validated
+it all. If you're looking for efficiency, you'll have to use the more low-level
+xml_parser_create, xml_set_*_handler functions. Then make sure you don't keep
+everything in a huge array before outputting it (at least don't if you're going
+for efficiency).
+===============================================================================
+
+Hi, I actually use this parser without understanding everything. I read
+somewhere that using "foreach" is very slow, and I indeed noticed that this
+parser was slow, when getting a lot of data, so how should I edit it to make it
+faster ? (with the exact same output) thanks in advance
+
+    $xml_parser = xml_parser_create();
+    $data = $outputone;
+   
+    xml_parse_into_struct($xml_parser, $data, $vals, $index);
+    xml_parser_free($xml_parser);
+   
+    $params = array();
+    $level = array();
+    $i="1";
+   
+    foreach ($vals as $xml_elem) {
+        if ($xml_elem['type'] == 'open' && $xml_elem['level'] == '1') {
+                $level[$xml_elem['level']] = $xml_elem['tag'];
+        }
+        if ($xml_elem['type'] == 'open' && $xml_elem['level'] == '2') {
+                $level[$xml_elem['level']] = $xml_elem['tag']."".$i;
+                $i++;
+        }       
+        if ($xml_elem['type'] == 'complete') {
+            $start_level = 1;
+            $php_stmt = '$params';
+            while($start_level < $xml_elem['level']) {
+                $php_stmt .= '[$level['.$start_level.']]';
+                $start_level++;
+            }
+            $php_stmt .= '[$xml_elem[\'tag\']] = $xml_elem[\'value\'];';
+                eval($php_stmt);
+        }
+    }
+===============================================================================
+
+There's an updated version of cs-phpxml (http://sf.net/projects/cs-phpxml, or
+https://cs-phpxml.svn.sourceforge.net/svnroot/cs-phpxml/releases for the latest
+out of subversion) which easily converts an XML string into a PHP array.  Using
+my previous example:::
+
+<?php
+/**
+*
+* *********** EXAMPLE ***********
+*
+* Original file contents:
+* <test xmlns="stuff">
+*         <indexOne>hello</indexOne>
+*         <my_single_index testAttribute="hello" />
+*         <multiple_items>
+*             <item>1</item>
+*             <item>2</item>
+*         </multiple_items>
+* </test>
+*
+* Would return:::
+*
+* array(
+*     TEST => array(
+*         indexOne => hello,
+*         my_single_index => NULL,
+*         multiple_items => array(
+*               items => array(
+*                   0 => 1,
+*                   1 => 2
+*               )
+*         ),
+*     ),
+* );
+*/
+?>
+
+I've been using this in many production environments, and it's been very
+stable.  The syntax is pretty simple, too:::
+
+<?php
+require_once(dirname(__FILE__) ."/cs-phpxml/xmlParserClass.php");
+$xmlParser = new xmlParser(file_get_contents("test.xml"));
+$myArray = $xmlParser->get_tree(TRUE);
+
+?>
+===============================================================================
+
+My previous code was having some bugs in, that is fixed now
+
+<?php
+class CSLXmlReader {
+    private $tagstack;
+    private $xmlvals; 
+    private  $xmlvarArrPos;
+    private $xmlfile;
+    function __construct($filename)  // constructor to intialize the stack and
+val array
+    {
+      
+        $this->tagstack = array();   // contain the open tags till now
+        $this->xmlvals = array();
+        $this->xmlvarArrPos = $this->xmlvals;  // temporary variable to hold
+the current tag position   
+        $this->xmlfile = $filename;
+    }
+    function readDatabase()
+    {
+        // read the XML database
+        $data = implode("", file($this->xmlfile));
+        $parser = xml_parser_create();
+        xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+        xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
+        xml_parse_into_struct($parser, $data, $values, $tags);
+        xml_parser_free($parser);
+   
+        foreach($values as $key => $val)  //
+        {
+            if($val['type'] == "open")
+            {
+                array_push($this->tagstack, $val['tag']);
+                $this->getArrayPath();
+                if(count($this->xmlvarArrPos) > 0 && (!array_key_exists(0,$this
+->xmlvarArrPos)))
+                {
+                    $temp1 = $this->xmlvarArrPos;
+                    $this->xmlvarArrPos =  array();
+                    $this->xmlvarArrPos[0] = $temp1;
+                    array_push($this->tagstack, 1);
+                }   
+                else if( array_key_exists(0,$this->xmlvarArrPos)){
+                    $opncount = count($this->xmlvarArrPos);
+                    array_push($this->tagstack, $opncount);
+                }
+                $tagStackPointer += 1;
+            }else if($val['type'] == "close")
+            {
+                while( $val['tag'] != ($lastOpened = array_pop($this->tagstack
+))){}
+            }else if($val['type'] ==  "complete")
+            {
+                $this->getArrayPath();
+                if( array_key_exists($val['tag'],$this->xmlvarArrPos))
+                {   
+                    if(array_key_exists(0,$this->xmlvarArrPos[$val['tag']]))
+                    {
+                        $elementCount = count($this->xmlvarArrPos[$val['tag'
+]]);
+                        $this->xmlvarArrPos[$val['tag']][$elementCount] = $val[
+'value'];
+                    }else
+                    {       
+                        $temp1 = $this->xmlvarArrPos[$val['tag']];
+                        $this->xmlvarArrPos[$val['tag']] =  array();
+                        $this->xmlvarArrPos[$val['tag']][0] = $temp1;
+                        $this->xmlvarArrPos[$val['tag']][1] = $val['value'];
+                    }
+                } else
+                {
+                    $this->xmlvarArrPos[$val['tag']] = $val['value'];
+                }
+            }
+        }
+        reset($this->xmlvals);
+        return $this->xmlvals;
+    }
+    function getArrayPath()
+    {
+
+        reset($this->xmlvals);
+        $this->xmlvarArrPos = &$this->xmlvals;
+        foreach($this->tagstack as $key)
+        {   
+            $this->xmlvarArrPos = &$this->xmlvarArrPos[$key];
+                   
+        }
+    }
+       
+}
+
+$readerObj  = new CSLXmlReader("test.xml");
+$xmlvals = $readerObj->readDatabase();
+
+echo "########## XML Values In array as the multidimentional array  ###########
+##\n";
+echo "<pre>";
+print_r($xmlvals);
+echo "</pre>";
+
+?>
+===============================================================================
+
+If you're interested in something that creates arrays in PHP, handles
+attributes well, and is easily transferrable back into XML, you may want to
+take a look at the cs-phpxml project at SourceForge.net (http://sf.net/projects
+/cs-phpxml).  It's not necessarily documented very well, but it will do
+something like this:
+
+<?php
+/**
+*
+* *********** EXAMPLE ***********
+*
+* Original file contents:
+* <test xmlns="stuff">
+*         <indexOne>hello</indexOne>
+*         <my_single_index testAttribute="hello" />
+*         <multiple_items>
+*             <item>1</item>
+*             <item>2</item>
+*         </multiple_items>
+* </test>
+*
+* Would return:
+*
+* array(
+*     TEST => array(
+*         type => 'open',
+*         attributes => array(
+*             xmlns => 'stuff'
+*         )
+*         INDEXONE => 'hello',
+*         MY_SINGLE_INDEX = array(
+*             type => 'complete',
+*            
+*         )
+*     )
+* );
+*/
+?>
+
+It's presently under development, but I'm using it in several production
+environments.  The XMLCreator is kinda clunky (builds XML within PHP code). 
+NOTE: it has a dependency on "cs-arraytopath", also available at sourceforge
+via http://sf.net/projects/cs-arraytopath .  The setup is a bit irritating, and
+it's fragile when handling quoting & formatting the data, but I think it's
+worth the hassle for most projects.
+===============================================================================
+
+PHP: XML to Array and backwards:
+
+Here the XML with PHP solution: XML->Array and Array->XML.
+Work with it as with usual array.
+
+Sources are here:
+http://mysrc.blogspot.com/2007/02/php-xml-to-array-and-backwards.html
+(leave me comments:)
+
+Example #1 (1.xml):
+
+<ddd>
+<onemore dd="55">
+  <tt>333</tt>
+  <tt ss="s1">555</tt>
+  <tt>777</tt>
+</onemore>
+<two>sdf rr</two>
+</ddd>
+
+The code:
+
+$xml=xml2ary(file_get_contents('1.xml'));
+print_r($xml);
+
+Here is the Array result:
+
+Array
+(
+   [ddd] => Array (
+           [_c] => Array (
+                   [_p] => Array *RECURSION*
+                   [onemore] => Array (
+                           [_a] => Array (
+                                   [dd] => 55
+                               )
+                           [_c] => Array (
+                                   [_p] => Array  *RECURSION*
+                                   [tt] => Array (
+                                           [0] => Array (
+                                                   [_v] => 333
+                                               )
+                                           [1] => Array (
+                                                   [_a] => Array (
+                                                           [ss] => s1
+                                                       )
+                                                   [_v] => 555
+                                               )
+                                           [2] => Array (
+                                                   [_v] => 777
+                                               )
+                                       )
+                               )
+                       )
+                   [two] => Array (
+                           [_v] => sdf rr
+                       )
+               )
+       )
+)
+===============================================================================
+
+Previous parser worked great for me, except a few issues. It did not work well
+if the element has attributes. I had a huge xml with so many elements, and
+attributes. Somehow, it mixed up my array, and messed up the keys. Hope
+following code help fix those issues....
+
+$xml_response = "
+<test>
+   <item>
+     <name att=\"this should show up\">Item1</name>
+     <id>item_1</id>
+     <description> This is Item 1</description>
+     <quantity>10</quantity>
+     <navigation website='site1'>test1</navigation>
+     <navigation website='site2'>test2</navigation>
+   </item>
+</test>
+"
+
+$parser = xml_parser_create();
+xml_parser_set_option($parser,XML_OPTION_CASE_FOLDING,0);   
+xml_parser_set_option($parser,XML_OPTION_SKIP_WHITE,1);   
+xml_parse_into_struct($parser,$xml_response,$values,$tags);   
+xml_parser_free($parser);
+
+$params = array();
+$level = array();
+
+foreach ($values as $xml_elem) {
+    $start_level = 1;
+           if ($xml_elem['type'] == 'open') {
+            if (array_key_exists('attributes',$xml_elem)) {
+                 list($level[$xml_elem['level']],$extra) = array_values
+($xml_elem['attributes']);
+             } else {
+                 $level[$xml_elem['level']] = $xml_elem['tag'];
+             }
+               $name_array    =    array();
+         $i=0;
+           }
+
+           if ($xml_elem['type'] == 'complete') {
+           if(!in_array($xml_elem['tag'], $name_array)){
+                 array_push($name_array, $xml_elem['tag']);
+                   $i=0;
+              }else{
+            $i++;
+             }
+             $php_stmt = '$params';
+             while($start_level < $xml_elem['level']) {
+                      $php_stmt .= '[$level['.$start_level.']]';               
+    
+                    $test    =    $php_stmt;
+                    $start_level++;
+             }
+             $php_stmt .= '[$xml_elem[\'tag\']][$i] = $xml_elem[\'value\'];';
+             if(isset($xml_elem['attributes'])){
+                         foreach ($xml_elem['attributes'] as $key=>$va){
+                     $attribute    =    '';
+                     $new_stmt    =    '';
+                     $attribute    =    "".$i."_attribute_".$key.""; 
+                       $new_stmt .= $test.'[$xml_elem[\'tag\']][$attribute] =
+$va;';                      
+                     eval($new_stmt);
+                    }
+              }
+              eval($php_stmt);
+              $start_level--;
+           }
+           if ($xml_elem['type'] == 'close') {
+           array_pop($level);
+           }
+}
+===============================================================================
+
+That parser also has a problem in which it will not parse more items than the
+current level it is on. That is, parsing this:  <1><2>A</2><2>B</2><2>C</2></1>
+Will only result in this: A B
+C is never processed.
+
+It might be better with something like this:
+          $file = get_url('http://news.search.yahoo.com/news/rss?p=
+current+events', URL_CONTENT);
+          $data = $file['content'];
+          $xml_parser = xml_parser_create();
+          xml_parse_into_struct($xml_parser, $data, $vals, $index);
+          xml_parser_free($xml_parser);
+          //Uncomment the lines below to see the entire structure of your XML
+document
+          //echo "<pre>INDEX: \n";
+          //print_r ($index);
+          //echo "\n \n \n VALUES:";
+          //print_r ($vals);
+          //echo "</pre>";
+          $params = array();
+          $level = array();
+          $start_level = 1;
+          foreach ($vals as $xml_elem) {
+            if ($xml_elem['type'] == 'open') {
+              if (array_key_exists('attributes',$xml_elem)) {
+                list($level[$xml_elem['level']],$extra) = array_values
+($xml_elem['attributes']);
+              } else {
+                $level[$xml_elem['level']] = $xml_elem['tag'];
+              }
+            }
+            if ($xml_elem['type'] == 'complete') {
+              $php_stmt = '$params';
+              while($start_level < $xml_elem['level']) {
+                $php_stmt .= '[$level['.$start_level.']]';
+                $start_level++;
+              }
+              $php_stmt .= '[$xml_elem[\'tag\']][] = $xml_elem[\'value\'];';
+              eval($php_stmt);
+              $start_level--;
+            }
+          }
+          echo "<pre>";
+          print_r ($params);
+          echo "</pre>";
+
+~Tim_Myth
+===============================================================================
+
+This is just another simple xml parser :)
+
+<?php
+
+class Xml
+{
+    var $tag;
+    var $value;
+    var $attributes;
+    var $next;
+}
+
+function xml2array($xml_string)
+{
+    $Parser = xml_parser_create();
+    xml_parser_set_option($Parser, XML_OPTION_CASE_FOLDING, 0);
+    xml_parser_set_option($Parser, XML_OPTION_SKIP_WHITE, 1);
+    xml_parse_into_struct($Parser, $xml_string, $Xml_Values);
+    xml_parser_free($Parser);
+    $XmlClass = array();
+    $LastObj = array();
+    $NowObj = &$XmlClass;
+
+    foreach($Xml_Values as $Xml_Key => $Xml_Value)
+    {
+        $Index = count($NowObj);
+        if($Xml_Value["type"] == "complete")
+        {
+            $NowObj[$Index] = new Xml;
+            $NowObj[$Index]->tag = $Xml_Value["tag"];
+            $NowObj[$Index]->value = $Xml_Value["value"];
+            $NowObj[$Index]->attributes = $Xml_Value["attributes"];
+        }
+        elseif($Xml_Value["type"] == "open")
+        {
+            $NowObj[$Index] = new Xml;
+            $NowObj[$Index]->tag = $Xml_Value["tag"];
+            $NowObj[$Index]->value = $Xml_Value["value"];
+            $NowObj[$Index]->attributes = $Xml_Value["attributes"];
+            $NowObj[$Index]->next = array();
+            $LastObj[count($LastObj)] = &$NowObj;
+            $NowObj = &$NowObj[$Index]->next;
+        }
+        elseif($Xml_Value["type"] == "close")
+        {
+            $NowObj = &$LastObj[count($LastObj) - 1];
+            unset($LastObj[count($LastObj) - 1]);
+        }
+       
+    }
+
+    return $XmlClass;
+}
+
+$String = "
+<parser>
+    <parseur_name>MyParser</parseur_name>
+    <category>
+        <name>Name 1</name>
+        <note>A note 1</note>
+    </category>
+</parser>
+";
+$Xml = xml2array($String);
+
+print_r($Xml);
+?>
+
+This exemple will show :
+Array
+(
+    [0] => Xml Object
+        (
+            [tag] => parser
+            [value] =>
+            [attributes] =>
+            [next] => Array
+                (
+                    [0] => Xml Object
+                        (
+                            [tag] => parseur_name
+                            [value] => MyParser
+                            [attributes] =>
+                            [next] =>
+                        )
+
+                    [1] => Xml Object
+                        (
+                            [tag] => category
+                            [value] =>
+                            [attributes] =>
+                            [next] => Array
+                                (
+                                    [0] => Xml Object
+                                        (
+                                            [tag] => name
+                                            [value] => Name 1
+                                            [attributes] =>
+                                            [next] =>
+                                        )
+
+                                    [1] => Xml Object
+                                        (
+                                            [tag] => note
+                                            [value] => A note 1
+                                            [attributes] =>
+                                            [next] =>
+                                        )
+
+                                )
+
+                        )
+
+                )
+
+        )
+
+)
+===============================================================================
+
+WHUPS! that was a broken test version.here is the real one:
+
+class xml2array{
+/* This class parses XML tags into a recursive, associative array with the tags
+as the associative array elements names.
+
+if it encounters multiples of the same tag within a stream, it enumerates them
+as a sub array under the tag thus:
+
+Array (
+    [Lvl1tag] => Array (
+        [0] => Array(
+            [Lvl2tag] = "foo")
+        [1]=> Array(
+            [Lvl2tag] = "bar")
+    )
+)
+
+It tries to detect when there is only one copy of a tag under another, and
+concatinate properly.
+*/
+
+    function readxmlfile($xmlfile){ // reads XML file in and returns it
+      $xmlstream =fopen($xmlfile,r);
+      $xmlraw=fread($xmlstream,1000000);
+      fclose($xmlstream);
+      return $xmlraw;
+    }
+
+    function parseXMLintoarray ($xmldata){ // starts the process and returns
+the final array
+      $xmlparser = xml_parser_create();
+      xml_parse_into_struct($xmlparser, $xmldata, $arraydat);
+      xml_parser_free($xmlparser);
+      $semicomplete = $this->subdivide($arraydat);
+      $complete = $this->correctentries($semicomplete);
+      return $complete;
+    }
+   
+    function subdivide ($dataarray, $level = 1){
+      foreach ($dataarray as $key => $dat){
+        if ($dat[level] === $level && $dat[type] === "open"){
+          $toplvltag = $dat[tag];
+        } elseif ($dat[level] === $level && $dat[type] === "close" && $dat[tag]
+=== $toplvltag){
+          $newarray[$toplvltag][] = $this->subdivide($temparray,($level +1));
+        
+        
+          unset($temparray,$nextlvl);
+        } elseif ($dat[level] === $level && $dat[type] === "complete"){
+          $newarray[$dat[tag]]=$dat[value];
+        } elseif ($dat[type] === "complete"||$dat[type] === "close"||$dat[type]
+=== "open"){
+          $temparray[]=$dat;
+        }
+      }
+      return $newarray;
+    }
+function correctentries($dataarray){
+
+if (is_array($dataarray)){
+  $keys =  array_keys($dataarray);
+  if (count($keys)== 1 && is_int($keys[0])){
+    $tmp = $dataarray[0];
+    unset($dataarray[0]);
+       $dataarray = $tmp;
+  }
+  $keys2 = array_keys($dataarray);
+  foreach($keys2 as $key){
+    $tmp2 = $dataarray[$key];
+    unset($dataarray[$key]);
+    $dataarray[$key] = $this->correctentries($tmp2);
+    unset($tmp2);
+  }
+  }
+return $dataarray;
+}
+}
+===============================================================================
+
+Something similar to kieran's _xml2array, however much more faster.
+------
+class ObjectFromXML
+{
+    var $parser;
+    var $iter = 0;
+    var $path = array();
+    var $xml = array();
+
+    function ObjectFromXML($XML)
+    {
+        $this->parser = xml_parser_create();
+       
+        xml_set_object($this->parser, &$this);
+       
+        xml_parser_set_option($this->parser, XML_OPTION_SKIP_WHITE, 1);
+        xml_parser_set_option($this->parser, XML_OPTION_CASE_FOLDING, 0);
+
+        xml_set_element_handler($this->parser, "hanleTagStart", "hanleTagEnd");
+        xml_set_character_data_handler($this->parser, "hanleTagCData");
+
+        xml_parse($this->parser, $XML);
+        xml_parser_free($this->parser);
+       
+        $this->xml = $this->xml['_children'][0];
+    }
+
+    function getEvalPath()
+    {
+        return '$this->xml[' . "'" . implode("']['", $this->path) . "'" . ']';
+    }
+
+    function hanleTagStart($parser, $tag, $attributes)
+    {
+        array_push($this->path, '_children');
+        array_push($this->path, ($this->iter++));
+
+        $e = $this->getEvalPath();
+        eval ($e . "['_name'] = \$tag;");
+        if ($attributes !== array())
+        {
+            eval ($e . "['_attributes'] = \$attributes;");
+        }
+    }
+
+    function hanleTagCData($parser, $cdata)
+    {
+        $e = $this->getEvalPath();
+        eval ($e . "['_value'] = \$cdata;");
+    }
+
+    function hanleTagEnd($parser, $tag)
+    {
+        array_pop($this->path);
+        array_pop($this->path);
+    }
+}
+===============================================================================
+
+Searching for a nice and working way to get a RSS feed into an array-structure,
+I found the solution posted by kieran but disliked those several eval()s. So I
+wrote my own using references/pointers.
+
+<?php
+
+class RSSParser {
+ 
+  var $struct = array();  // holds final structure
+  var $curptr;  // current branch on $struct
+  var $parents = array();  // parent branches of current branch
+ 
+  function RSSParser($url) {
+    $this->curptr =& $this->struct;  // set ref to base
+    $xmlparser = xml_parser_create();
+    xml_set_object($xmlparser, $this);
+    xml_set_element_handler($xmlparser, 'tag_open', 'tag_close');
+    xml_set_character_data_handler($xmlparser, 'cdata');
+    $fp = fopen($url, 'r');
+
+    while ($data = fread($fp, 4096))
+      xml_parse($xmlparser, $data, feof($fp))
+      || die(sprintf("XML error: %s at line %d",
+         xml_error_string(xml_get_error_code($xmlparser)),
+         xml_get_current_line_number($xmlparser)));
+
+    fclose($fp);
+    xml_parser_free($xmlparser);
+  }
+ 
+  function tag_open($parser, $tag, $attr) {
+    $i = count($this->curptr['children']);
+    $j = count($this->parents);
+    $this->curptr['children'][$i]=array();  // add new child element
+    $this->parents[$j] =& $this->curptr;  // store current position as parent
+    $this->curptr =& $this->curptr['children'][$i];  // submerge to newly
+created child element
+    $this->curptr['name'] = $tag;
+    if (count($attr)>0) $this->curptr['attr'] = $attr;
+  }
+ 
+  function tag_close($parser, $tag) {
+    $i = count($this->parents);
+    if ($i>0) $this->curptr =& $this->parents[$i-1];  // return to parent
+element
+    unset($this->parents[$i-1]);  // clear from list of parents
+  }
+ 
+  function cdata($parser, $data) {
+    $data = trim($data);
+    if (!empty($data)) {
+      $this->curptr['value'] .= $data;
+    }
+  }
+ 
+}
+
+$myparser = new RSSParser('getitems.xml');
+$anotherparser = new RSSParser('http://johndoe:secret@myfeeds.com/getfeed.xml'
+);
+
+print_r($myparser->struct);
+print_r($anotherparser->struct);
+
+?>
+===============================================================================
+
+<?
+/*
+|
+| _xml2array - another abstraction layer on xml_parse_into_struct
+|              that returns a nice nested array.
+|
+|      @param: $xml is a string containing a full xml document
+|
+|     returns: a nested php array that looks like this:
+|                  
+|              array
+|              (
+|                  [_name] => the name of the tag
+|                  [_attributes] => an array of 'attribute'=>'value' combos
+|                  [_value] => the text contents of the node
+|                  [_children] => an array of these arrays, one for each node.
+|              )
+|
+|       notes: thanks to 'jeffg at activestate dot com' who inspired
+|              me to essentially re-write his example code from php.net
+|
+|           me: Kieran Huggins < kieran[at]kieran[dot]ca >
+|
+*/
+function _xml2array($xml){
+    global $keys;
+    global $level;
+    if(!is_array($xml)){ // init on first run
+        $raw_xml = $xml;
+        $p = xml_parser_create();
+        xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+        xml_parser_set_option($p, XML_OPTION_SKIP_WHITE, 1);
+        xml_parse_into_struct($p, $raw_xml, $xml, $idx);
+        xml_parser_free($p);
+    }
+    for($i=0;$i<count($xml,1);$i++){
+        // set the current level
+        $level = $xml[$i]['level'];
+
+        if($level<1)break;
+
+        // mark this level's tag in the array
+        $keys[$level] = '['.$i.']';
+       
+        // if we've come down a level, sort output and destroy the upper level
+        if(count($keys)>$level) unset($keys[count($keys)]);
+
+        // ignore close tags, they're useless
+        if($xml[$i]['type']=="open" || $xml[$i]['type']=="complete"){
+
+            // build the evalstring
+            $e = '$output'.implode('[\'_children\']',$keys);
+
+            // set the tag name
+            eval($e.'[\'_name\'] = $xml[$i][\'tag\'];');
+
+            // set the attributes
+            if($xml[$i]['attributes']){
+                eval($e.'[\'_attributes\'] = $xml[$i][\'attributes\'];');
+            }
+           
+            // set the value
+            if($xml[$i]['value']){
+                eval($e.'[\'_value\'] = trim($xml[$i][\'value\']);');
+            }
+
+        }
+
+    }
+
+    return $output;
+}
+?>
+===============================================================================
+
+I was working with the xml2array functions below and had big performance
+problems. I fired them on a 20MB XML file and had to quit since all approaches
+of parsing where just too slow (more than 20 Minute parsing etc..). The
+solution was parsing it manually with preg_match, which increased performance
+by more than 20 times (processing time about 1 minute).
+
+Rough example function with high performance:
+
+<?php
+
+function customXMLtoARRAY($xmlstring) {
+
+    // get all nodes
+    preg_match_all("#<node>(.*?)</node>#s",$xmlstring,$nodes);
+    $xmlstring = NULL;
+
+    $allnodes = array();
+
+    // put subnodes into node
+    while($nodes = array_pop($nodes[1])) {
+
+        $nodecontent = array();
+
+        // Content1
+        preg_match("#<content1>(.*?)</content1>#",$eventreihe,$val);
+        $nodecontent['content1'] = $val[1];
+       
+        $allnodes[] = $nodecontent;
+       
+    }
+    return $allnodes;
+}
+
+?>
+===============================================================================
+
+The array generated from XML stores not only the elements but also any spaces
+and linebreaks between the tags. This results in a much longer array. (I had 24
+array fields instead of 10!) To cure this use the following code when creating
+the parser:
+
+<?php
+$xml_parser = xml_parser_create();
+xml_parser_set_option($xml_parser,XML_OPTION_SKIP_WHITE,1);
+?>
+===============================================================================
+
+Here is a simple patch to peter's xml2array function.
+
+Replace:
+
+<?
+case 'open':
+$tag_or_id = (array_key_exists ('attributes', xml_elem)) ? $xml_elem
+['attributes']['ID'] : $xml_elem['tag'];
+$ptrs[$level][$tag_or_id] = array ();
+$ptrs[$level+1] = & $ptrs[$level][$tag_or_id];
+break;
+?>
+
+with:
+
+<?
+case 'open':
+$tag_or_id = (array_key_exists ('attributes', $xml_elem)) ? $xml_elem
+['attributes']['ID'] : $xml_elem['tag'];
+$ptrs[$level][$tag_or_id][] = array ();
+$ptrs[$level+1] = & $ptrs[$level][$tag_or_id][count($ptrs[$level][$tag_or_id])
+-1];
+break;
+?>
+
+and now code should handle multiple element case :)
+===============================================================================
+
+If you happen to have problems with weird charaters, I added this code to the
+first line of dUDA's function:
+
+$XML = utf8_decode($XML);
+===============================================================================
+
+The code previously posted by noob at noobsrule dot com doesn't work when the
+same tag name is used at different levels.
+(but perhaps "$php_used_prefix" was intended for that ?)
+For example:
+<RatedShipment>
+  <TransportationCharges>
+    ...
+  </TransportationCharges>
+  <RatedPackage>
+    <TransportationCharges>
+      ...
+    </TransportationCharges>
+  </RatedPackage>
+</RatedShipment>
+<?php
+    $p = xml_parser_create();
+    xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+    xml_parser_set_option($p, XML_OPTION_SKIP_WHITE, 1);
+    xml_parse_into_struct($p, $UPSxml, $values, $idx);
+    xml_parser_free($p);
+   
+    // tracking used keys
+    $usedKeys = array();
+    $deepLevel = -1;
+
+    // start a php array string (evaluated later)
+    $forEvalPrefix = '$xml_array';
+   
+    // loop throught the value array
+    foreach ($values as $key => $val) {
+        $tagName = $val['tag']; // pass the key tag into a more friendly
+looking variable
+        $level = $val['level']; // idem
+        if($val['type'] == 'open') {
+            $deepLevel++; // increase deep level
+            $forEvalPrefix .= '[\''. $tagName .'\']';
+           
+            // begin used keys checks to allow multidimensionatity under the
+same tag
+            (isset($usedKeys[$level][$tagName])) ? $usedKeys[$level][$tagName]
+++ : $usedKeys[$level][$tagName] = 0;
+            $forEvalPrefix .= '['. $usedKeys[$level][$tagName] .']';
+        }
+        if($val['type'] == 'complete') {
+            ($level > $deepLevel) ? $deepLevel++ : ''; // increase $deepLevel
+only if current level is bigger
+            $tagValue = addslashes($val['value'] ); // format the value for
+evaluation as a string
+            $forEvalSuffix = '[\''. $tagName .'\'] = \''. $tagValue .'\';'; //
+create a string to append to the current prefix
+            $forEval = $forEvalPrefix . $forEvalSuffix; // (without
+"$php_used_prefix"...)
+            eval($forEval); // write the string to the array structure
+        }
+        if($val['type'] == 'close') {
+            unset($usedKeys[$deepLevel]); // Suppress tagname's keys useless
+            $deepLevel--;
+            $forEvalPrefix = substr($forEvalPrefix, 0, strrpos($forEvalPrefix, 
+'[')); // cut off the used keys node
+            $forEvalPrefix = substr($forEvalPrefix, 0, strrpos($forEvalPrefix, 
+'[')); // cut off the end level of the array string prefix
+        }
+    }
+echo '<pre>';
+print_r ($xml_array);
+echo '</pre>';
+?>
+
+MADmac ;-)
+===============================================================================
+
+Quick addendum to my post below... The code does *not* handle cases where
+multiple elements are used without attribute IDs, as is the case with the moldb
+example.  (It is probably worth noting that some of the other code below
+doesn't do this either, and is still more complex.)
+
+It is not difficult to add that functionality, but I have yet to find an
+elegant way to integrate that feature, and since I don't need that
+functionality at the moment, I'm going leave that as an exercise to the
+reader.  ;-)
+
+-p.
+===============================================================================
+
+Some of the code posted previously seemed absurdly complex, so I thought I'd
+see if I could simplify things a bit. Here's what I came up with.  (I'm still a
+PHP newbie, so perhaps I simplified too much.  ;-)  Untested for speed, but it
+*should* be pretty quick since it uses references instead of lookups or (gack)
+evals.
+
+Enjoy!
+
+/*
+*  Convert a string containing XML into a nested array
+*
+*  Takes a raw XML string as input
+*  Returns a nested array
+*/
+
+function xml2array ($xml_data)
+{
+    // parse the XML datastring
+    $xml_parser = xml_parser_create ();
+    xml_parse_into_struct ($xml_parser, $xml_data, $vals, $index);
+    xml_parser_free ($xml_parser);
+
+    // convert the parsed data into a PHP datatype
+    $params = array();
+    $ptrs[0] = & $params;  
+    foreach ($vals as $xml_elem) {
+        $level = $xml_elem['level'] - 1;
+        switch ($xml_elem['type']) {
+        case 'open':
+            $tag_or_id = (array_key_exists ('attributes', $xml_elem)) ?
+$xml_elem['attributes']['ID'] : $xml_elem['tag'];
+            $ptrs[$level][$tag_or_id] = array ();
+            $ptrs[$level+1] = & $ptrs[$level][$tag_or_id];
+            break;
+        case 'complete':
+            $ptrs[$level][$xml_elem['tag']] = (isset ($xml_elem['value'])) ?
+$xml_elem['value'] : '';
+            break;
+        }
+    }
+   
+    return ($params);
+
+}
+===============================================================================
+
+XMLtoArray created by dudus at onet dot pl was not good enough for me, that's
+why i decided to create my own version, and here's the result:
+
+<?php
+
+function &last(&$array) {
+if (!count($array)) return null;
+end($array);
+return $array[key($array)];
+}
+
+function myParseXML(&$vals, &$dom, &$lev) {
+    do {
+        $curr = current($vals);
+        $lev = $curr['level'];
+        switch ($curr['type']) {
+            case 'open':
+                if (isset($dom[$curr['tag']])) {
+                    $tmp = $dom[$curr['tag']];
+                    if (!$tmp['__multi'])
+                        $dom[$curr['tag']] = array('__multi' => true, $tmp);
+                    array_push($dom[$curr['tag']], array());
+                    $new =& last($dom[$curr['tag']]);
+                } else {
+                    $dom[$curr['tag']] = array();
+                    $new =& $dom[$curr['tag']];
+                }
+                next($vals);
+                myParseXML(&$vals, $new, $lev);
+                break;
+            case 'cdata':
+                break;
+            case 'complete':
+                if (!isset($dom[$curr['tag']]))
+                    $dom[$curr['tag']] = $curr['value'];
+                else {
+                    if (is_array($dom[$curr['tag']]))
+                        array_push($dom[$curr['tag']] , $curr['value']);
+                    else
+                        array_push($dom[$curr['tag']] = array($dom[$curr['tag'
+]]) , $curr['value']);
+                }
+                break;
+            case 'close':
+                return;
+        }
+    }
+    while (next($vals)!==FALSE);
+}
+
+function MyXMLtoArray($XML) {
+       $xml_parser = xml_parser_create();
+       xml_parse_into_struct($xml_parser, $XML, $vals);
+       xml_parser_free($xml_parser);
+       reset($vals);
+       $dom = array(); $lev = 0;
+       myParseXML($vals, $dom, $lev);
+       return $dom;
+}
+
+?>
+
+MyXMLtoArray() is that function you should call, other are for "internal" use.
+
+P.S. It's 4-5 time faster then dudus at onet dot pl 's code
+===============================================================================
+
+This is my first time contributing but I found all the examples either didn't
+work or were beyond my comprehension.  I also wanted to maintain the XML
+multi-dimensionality so I could do loops based on keys I was expecting rather
+than numbers or some other whatnot.  This script is probably way inefficient,
+but should give you a multidimensional array with a depth that will match the
+XML source.  Great for situations when you aren't sure what you'll be getting
+back.  Its also only based on the values array of xml_parse_into_str() using
+the 3 tag types (open, complete, and close) -- hopefully it will make more
+sense to other noobs.
+
+Basically it just constructs a string ($php_prefix) that is tweaked if it hits
+an "open" or "close" tag and evaluated if it hits a "complete" tag.
+
+Thanks.
+
+<?php
+
+# initiate curl session...
+$ch = curl_init( "http://yourtargethost" ) or die ( "could not initialize curl"
+);
+
+# set curl options...
+curl_setopt( $ch, CURLOPT_HEADER, 0 );
+curl_setopt( $ch, CURLOPT_POST, 1 );
+curl_setopt( $ch, CURLOPT_POSTFIELDS, $request_str );
+curl_setopt( $ch, CURLOPT_FOLLOWLOCATION, 0 );
+curl_setopt( $ch, CURLOPT_REFERER, https://foobar.com" );
+curl_setopt( $ch, CURLOPT_RETURNTRANSFER, 1 );
+
+# execute curl commands...
+$curl_result = curl_exec( $ch ) or die ( "could not execute the post" );
+curl_close( $ch ); // close curl session
+
+# pass the XML result into 2 arrays ( index and values )...
+$p = xml_parser_create();
+xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+xml_parser_set_option($p, XML_OPTION_SKIP_WHITE, 1);
+xml_parse_into_struct($p, $curl_result, $vals, $index);
+xml_parser_free($p);
+
+# create an empty used key tracker...
+$used_keys = array();
+
+# start a php array string (evaluated later)...
+$php_prefix = "$"."my_array";
+
+# loop through the values array...
+foreach ($vals as $key => $val) {
+    if( $val['type'] == "open" ) {
+        $my_tag = $val['tag']; // pass the key tag into a more friendly looking
+variable...
+        $php_prefix .= "['".$my_tag."']"; # add a new level to the array
+string...
+
+        # begin used key checks to allow multidimensionality under the same
+tag, adds a number to the prefix if necessary...
+        if( ! array_key_exists( $my_tag, $used_keys ) ) {
+            $used_keys[$my_tag] = 0;
+            $php_prefix .= "[".$used_keys[$my_tag]."]";
+        }else {
+            $used_keys[$my_tag]++; // increment the key tracker to avoid
+overwriting existing key...
+            $php_prefix .= "[".$used_keys[$my_tag]."]";
+        }
+    } elseif( $val['type'] == "complete" ) {
+        $my_value = addslashes( $val['value'] ); # format the value for
+evaluation as a string...
+        $php_suffix = "['".$val['tag']."'] = \"".$my_value."\";"; # create a
+string with the tag and value to append to the current prefix (just used
+here)...
+        $php_str = $php_prefix.$php_used_prefix.$php_suffix;
+        eval( $php_str ); # write the string to the array structure...
+    }
+    if( $val['type'] == "close" ) {
+        $php_prefix = substr( $php_prefix, 0, strrpos( $php_prefix, "[" ) ); #
+cut off the used keys node...
+        $php_prefix = substr( $php_prefix, 0, strrpos( $php_prefix, "[" ) ); #
+cut off the end level of the array string prefix...
+    }
+}
+
+echo "<pre>";
+//print_r ($index);
+//echo "<br><br><br>";
+//print_r ($vals);
+//echo "<br><br><br>";
+print_r ($my_array);
+echo "</pre>";
+
+?>
+===============================================================================
+
+This function return array from XML. Included attributes and tags in same
+level.
+I wrote this function based on mmustafa code.
+
+enjoy!
+dUDA
+
+-------------------------------
+
+<?
+function XMLtoArray($XML)
+{
+    $xml_parser = xml_parser_create();
+    xml_parse_into_struct($xml_parser, $XML, $vals);
+    xml_parser_free($xml_parser);
+    // wyznaczamy tablice z powtarzajacymi sie tagami na tym samym poziomie
+    $_tmp='';
+    foreach ($vals as $xml_elem)
+    {
+        $x_tag=$xml_elem['tag'];
+        $x_level=$xml_elem['level'];
+        $x_type=$xml_elem['type'];
+        if ($x_level!=1 && $x_type == 'close')
+        {
+            if (isset($multi_key[$x_tag][$x_level]))
+                $multi_key[$x_tag][$x_level]=1;
+            else
+                $multi_key[$x_tag][$x_level]=0;
+        }
+        if ($x_level!=1 && $x_type == 'complete')
+        {
+            if ($_tmp==$x_tag)
+                $multi_key[$x_tag][$x_level]=1;
+            $_tmp=$x_tag;
+        }
+    }
+    // jedziemy po tablicy
+    foreach ($vals as $xml_elem)
+    {
+        $x_tag=$xml_elem['tag'];
+        $x_level=$xml_elem['level'];
+        $x_type=$xml_elem['type'];
+        if ($x_type == 'open')
+            $level[$x_level] = $x_tag;
+        $start_level = 1;
+        $php_stmt = '$xml_array';
+        if ($x_type=='close' && $x_level!=1)
+            $multi_key[$x_tag][$x_level]++;
+        while($start_level < $x_level)
+        {
+              $php_stmt .= '[$level['.$start_level.']]';
+              if (isset($multi_key[$level[$start_level]][$start_level]) &&
+$multi_key[$level[$start_level]][$start_level])
+                  $php_stmt .= '['.($multi_key[$level[$start_level]]
+[$start_level]-1).']';
+              $start_level++;
+        }
+        $add='';
+        if (isset($multi_key[$x_tag][$x_level]) && $multi_key[$x_tag][$x_level]
+&& ($x_type=='open' || $x_type=='complete'))
+        {
+            if (!isset($multi_key2[$x_tag][$x_level]))
+                $multi_key2[$x_tag][$x_level]=0;
+            else
+                $multi_key2[$x_tag][$x_level]++;
+             $add='['.$multi_key2[$x_tag][$x_level].']';
+        }
+        if (isset($xml_elem['value']) && trim($xml_elem['value'])!='' && !
+array_key_exists('attributes',$xml_elem))
+        {
+            if ($x_type == 'open')
+                $php_stmt_main=$php_stmt.'[$x_type]'.$add.'[\'content\'] =
+$xml_elem[\'value\'];';
+            else
+                $php_stmt_main=$php_stmt.'[$x_tag]'.$add.' = $xml_elem[\'value\
+'];';
+            eval($php_stmt_main);
+        }
+        if (array_key_exists('attributes',$xml_elem))
+        {
+            if (isset($xml_elem['value']))
+            {
+                $php_stmt_main=$php_stmt.'[$x_tag]'.$add.'[\'content\'] =
+$xml_elem[\'value\'];';
+                eval($php_stmt_main);
+            }
+            foreach ($xml_elem['attributes'] as $key=>$value)
+            {
+                $php_stmt_att=$php_stmt.'[$x_tag]'.$add.'[$key] = $value;';
+                eval($php_stmt_att);
+            }
+        }
+    }
+     return $xml_array;
+}    // END XMLtoArray
+?>
+===============================================================================
+
+a BREAK on right place, will be faster and bugprevent
+
+    /**
+    * @return bool
+    * @param xml_array $values
+    * @param xml_array[reference] $tags
+    * @desc Reconstruct xml_parse_into_struct to open and close concept
+    */
+    function reconstruct_tag($values, &$tags) {
+        unset($return);
+        foreach ($tags as $tkey => $tvalue) {
+            foreach ($tvalue as $vvalue) {
+                if ($values[$vvalue]['type'] == 'open' or $values[$vvalue]
+['type'] == 'complete') {
+                    $return[$tkey][] = $vvalue;
+                }
+                if ($values[$vvalue]['type'] == 'open') {
+                    foreach ($tvalue as $tv_value) {
+                        if ($values[$tv_value]['type'] == 'close'
+                        and $values[$tv_value]['level'] == $values[$vvalue]
+['level']
+                        and $tv_value > $vvalue) {
+                            $return[$tkey][] = $tv_value;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        $tags = $return;
+        return (bool) $tags;
+    }
+===============================================================================
+
+If you have de XML:
+<?xml version="1.0" encoding="iso-8859-1"?>
+<teste>
+    <teste>
+        <teste>
+        </teste>
+    </teste>
+</teste>
+
+this function will return this tags:
+Array
+(
+    [teste] => Array
+        (
+            [0] => 0
+            [1] => 1
+            [2] => 2
+            [3] => 3
+            [4] => 4
+        )
+
+)
+
+With this function (right below) will convert the struc to OPEN and CLOSE
+concept.
+
+The New Struct:
+Array
+(
+    [teste] => Array
+        (
+            [0] => 0
+            [1] => 4
+            [2] => 1
+            [3] => 3
+            [4] => 2
+        )
+
+)
+The Function:
+/**
+* @return bool
+* @param xml_array $values
+* @param xml_array[reference] $tags
+* @desc Reconstruct xml_parse_into_struct
+*/
+function reconstruct_tag($values, &$tags) {
+    unset($return);
+    foreach ($tags as $tkey => $tvalue) {
+        foreach ($tvalue as $vvalue) {
+            if ($values[$vvalue]['type'] == 'open' or $values[$vvalue]['type']
+== 'complete') {
+                $return[$tkey][] = $vvalue;
+            }
+            if ($values[$vvalue]['type'] == 'open') {
+                foreach ($tvalue as $tv_value) {
+                    if ($values[$tv_value]['type'] == 'close'
+                    and $values[$tv_value]['level'] == $values[$vvalue]
+['level']) {
+                        $return[$tkey][] = $tv_value;
+                    }
+                }
+            }
+        }
+    }
+    $tags = $return;
+    return (bool) $tags;
+}
+
+Ahh, DO NOT forget this comment:
+
+jukkaho at mail dot student dot oulu dot fi
+29-Jun-2004 12:17
+Everyone seems to forget the return value of this function (including people
+making examples!), but it is there for a reason:
+0 if failed (invalid XML), 1 if succeeded.
+
+Return value really is an integer, be careful with those === operators.
+===============================================================================
+
+I would just add something about the solution proposed by "gordon at kanazawa
+dot ac dot jp".
+
+Something went wrong about the fact that "cdata" are treated the same way as
+"complete" in the xml_get_children first and in the xml_get_child then.
+
+When ?
+with this method, something like this :
+<tagA>
+  <tagB>valueB</tagB>
+  valueA
+  <tagC>valueC</tagC>
+</tagA>
+is considered as the same thing as
+<tagA>
+  <tagB>valueB</tagB>
+  <tagA>valueA</tagA>
+  <tagC>valueC</tagC>
+</tagA>
+
+The algorithm is nomore bijective.
+
+Even if it might not be perfect :-) i propose a little modification of the
+xml_get_child function :
+
+function xml_get_child(&$v, $children=NULL) {
+      $c = array(); // the "child"
+      if (isset($v['tag']) && $v['type'] != 'cdata') $c['tag'] = $v['tag'];
+      if (isset($v['value'])) $c['value'] = $v['value'];
+      if (isset($v['attributes'])) $c['attributes'] = $v['attributes'];
+      if (is_array($children)) $c['children'] = $children;
+      return $c;
+}
+
+moreover, the following function will take the tree (made from the xml_get_tree
+function) as a parameter and build the xml content back
+
+    /*
+    // setTree
+    // set xml Tree from a well-formed array
+    // manage indentation
+    // Parameters are :
+    // $1 (needed) : Tree to transform
+    // $2 (optional) : Indentation type (default is one tabulation)
+    // $3 (optional) : First indent (default is empty string)
+    */
+
+    function setTree($Atree, $indentType = '    ', $Sindent = '')
+    {
+      if (! isset ($Atree['tag']) && isset ($Atree['value'])) return
+($Sindent.trim($Atree['value'])."\r\n") ;
+      else {
+        $Stemp = $Sindent.'<'.$Atree['tag'].' ' ;
+        if (isset ($Atree['attributes']) && is_array ($Atree['attributes'])) {
+          foreach ($Atree['attributes'] as $Aattribute => $Svalue) $Stemp .=
+$Aattribute.'="'.$Svalue.'" ' ;
+        }
+        if (! isset ($Atree['children']) && ! isset ($Atree['value'])) $Stemp .
+= '/>'."\r\n" ;
+        else {
+          $Stemp .= '>'."\r\n" ;
+          if (isset ($Atree['value'])) $Stemp .= $Sindent.$indentType.trim
+($Atree['value'])."\r\n" ;
+          if (isset ($Atree['children']) && is_array ($Atree['children']))
+            foreach ($Atree['children'] as $Achild) $Stemp .= $this->setTree
+($Achild, $indentType, $Sindent.$indentType) ;
+          $Stemp .= $Sindent.'</'.$Atree['tag'].'>'."\r\n" ;
+        }
+        return ($Stemp) ;
+      }
+    }
+===============================================================================
+
+(The previous post I wrote was incorrect.  I fix that herein)
+I used the algorithm from stephane for writing back to a file, but ran into the
+following problem.  My original XML looks like
+
+<ENTRY id="1"> ... </ENTRY><ENTRY id="2"> ... </ENTRY>
+
+This got saved back as
+
+<1> ... </1><2> ... </2>,
+
+which expat doesn't like.  So I propose the following modification:
+
+function writeXmlToFile($data, $f, $niv = 0) {
+  foreach($data as $name => $elem) {
+    if (preg_match("/\A[0-9]/",$name)) {
+      $open = "ENTRY id=\"$name\""; $name = "ENTRY";
+    } else {
+      $open = $name;
+    }
+    if(is_array($elem)) {
+      fwrite($f, str_repeat("  ", $niv)."<".$open.">"."\n");
+      writeXmlToFile($elem, $f, $niv + 1);
+      fwrite($f, str_repeat("  ", $niv)."</".$name.">"."\n");
+    } else {
+      fwrite($f, str_repeat("  ", $niv)."<".$open.">".$elem."</".$name.">"."\
+n");
+    }
+  }
+}
+===============================================================================
+
+for writing the array of mmustafa back to a xml file, use this code:
+
+function writeXmlFile($fileName, $struct){
+  $f = fopen($fileName, "w");
+  writeXmlToFile($struct, $f);
+  fclose($f);
+}
+
+function writeXmlToFile($data, $f, $niv = 0){
+  foreach($data as $name => $elem){
+    if(is_array($elem)){
+      fwrite($f, str_repeat("  ", $niv)."<".$name.">"."\n");
+      writeXmlToFile($elem, $f, $niv + 1);
+      fwrite($f, str_repeat("  ", $niv)."</".$name.">"."\n");
+    }
+    else{
+      fwrite($f, str_repeat("  ", $niv)."<".$name.">".$elem."</".$name.">"."\
+n");
+    }
+  }
+}
+===============================================================================
+
+Many thanks to "dave at ovumdesign dot com" for his excellent routines based on
+the fine work of "gdemartini at bol dot com". I offer a further refinement
+below, which removes the duplication of the code to create a child node. The
+resulting tree is the same as in Dave's earlier version and so can be compacted
+using his "xml_condense_tree"
+
+function xml_get_child(&$v, $children=NULL) {
+   $c = array(); // the "child"
+   if (isset($v['tag'])) $c['tag'] = $v['tag'];
+   if (isset($v['value'])) $c['value'] = $v['value'];
+   if (isset($v['attributes'])) $c['attributes'] = $v['attributes'];
+   if (is_array($children)) $c['children'] = $children;
+   return $c;
+}
+function xml_get_children(&$values, &$i) {
+   $children = array();
+   while ($i < count($values)) {
+      $v = &$values[$i++];
+      switch ($v['type']) {
+         case 'cdata':
+         case 'complete':
+            $children[] = xml_get_child($v);
+            break;
+         case 'open':
+            $children[] = xml_get_child($v, xml_get_children($values, $i));
+            break;
+         case 'close':
+            break 2; // leave "while" loop
+      }
+   }
+   return $children;
+}
+function xml_get_tree($file) {
+   $data = join('', file($file));
+
+   $p = xml_parser_create();
+   xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+   xml_parser_set_option($p, XML_OPTION_SKIP_WHITE,  1);
+   xml_parse_into_struct($p, $data, $values);
+   xml_parser_free($p);
+
+   return xml_get_children($values, $i=0);
+}
+===============================================================================
+
+A small and simple php code to convert the raw array returned by
+xml_parse_into_struct into a proper data structure ..
+
+<?php
+$file = "data.xml";
+$xml_parser = xml_parser_create();
+
+if (!($fp = fopen($file, "r"))) {
+    die("could not open XML input");
+}
+
+$data = fread($fp, filesize($file));
+fclose($fp);
+xml_parse_into_struct($xml_parser, $data, $vals, $index);
+xml_parser_free($xml_parser);
+
+$params = array();
+$level = array();
+foreach ($vals as $xml_elem) {
+  if ($xml_elem['type'] == 'open') {
+    if (array_key_exists('attributes',$xml_elem)) {
+      list($level[$xml_elem['level']],$extra) = array_values($xml_elem[
+'attributes']);
+    } else {
+      $level[$xml_elem['level']] = $xml_elem['tag'];
+    }
+  }
+  if ($xml_elem['type'] == 'complete') {
+    $start_level = 1;
+    $php_stmt = '$params';
+    while($start_level < $xml_elem['level']) {
+      $php_stmt .= '[$level['.$start_level.']]';
+      $start_level++;
+    }
+    $php_stmt .= '[$xml_elem[\'tag\']] = $xml_elem[\'value\'];';
+    eval($php_stmt);
+  }
+}
+
+echo "<pre>";
+print_r ($params);
+echo "</pre>";
+?>
+
+Converts an XML document like ..
+
+<country id="ZZ">
+<name>My Land</name>
+<location>15E</location>
+<area>40000</area>
+<state1>
+<name>Hi State</name>
+<area>1000</area>
+<population>2000</population>
+<city1>
+<location>13E</location>
+<population>500</population>
+<area>500</area>
+</city1>
+<city2>
+<location>13E</location>
+<population>500</population>
+<area>5000</area>
+</city2>
+</state1>
+<state2>
+<name>Low State</name>
+<area>3000</area>
+<population>20000</population>
+<city1>
+<location>15E</location>
+<population>5000</population>
+<area>1500</area>
+</city1>
+</state2>
+</country>
+
+To a php datastructure like ..
+
+Array
+(
+    [ZZ] => Array
+        (
+            [NAME] => My Land
+            [LOCATION] => 15E
+            [AREA] => 40000
+            [STATE1] => Array
+                (
+                    [NAME] => Hi State
+                    [AREA] => 1000
+                    [POPULATION] => 2000
+                    [CITY1] => Array
+                        (
+                            [LOCATION] => 13E
+                            [POPULATION] => 500
+                            [AREA] => 500
+                        )
+
+                    [CITY2] => Array
+                        (
+                            [LOCATION] => 13E
+                            [POPULATION] => 500
+                            [AREA] => 5000
+                        )
+
+                )
+
+            [STATE2] => Array
+                (
+                    [NAME] => Low State
+                    [AREA] => 3000
+                    [POPULATION] => 20000
+                    [CITY1] => Array
+                        (
+                            [LOCATION] => 15E
+                            [POPULATION] => 5000
+                            [AREA] => 1500
+                        )
+
+                )
+
+        )
+
+)
+===============================================================================
+
+actually, using the notation
+
+$object->property is the right one
+
+and you can use it always, preventing errors with arrays
+===============================================================================
+
+Yet another XML -> nested array converter.
+
+This is based on http://www.devdump.com/phpxml.php, but adds features while
+reducing code complexity.
+
+It can take several forms of input:
+- string (buffer)
+- file handle (pipe)
+- file name -or-
+- URL
+
+It can optionally collapse arrays of same-named tags to a single element if
+there is only one tag with a given name.
+
+It can optionally preserve tag order for XML applications where position is
+significant, such as CallXML.
+
+XMLParser.obj at:
+http://eric.pollmann.net/work/public_domain/
+
+Corrections and suggestions enthusiastically welcomed.  :)
+===============================================================================
+
+I've just debugged and optimized my xmlparser.
+
+gdemartini's xml-example generates this structure:
+
+stdClass Object
+(
+    [FORM] => stdClass Object
+        (
+            [SECTION] => stdClass Object
+                (
+                    [NAME] => Data
+                    [EDITFIELD] => stdClass Object
+                        (
+                            [LABEL] => Text:
+                            [NAME] => poll_text
+                            [LENGTH] => 255
+                            [SIZE] => 56
+                            [REQUIRED] => T
+                        )
+
+                    [MEMOFIELD] => stdClass Object
+                        (
+                            [LABEL] => Options
+                            [NAME] => options
+                            [COLS] => 56
+                            [ROWS] => 5
+                            [REQUIRED] => T
+                        )
+                )
+        )
+)
+
+the moldb example generates this structure:
+
+stdClass Object
+(
+    [MOLDB] => stdClass Object
+        (
+            [MOLECULE] => Array
+                (
+                    [0] => stdClass Object
+                        (
+                            [NAME] => Alanine
+                            [SYMBOL] => ala
+                            [CODE] => A
+                            [TYPE] => hydrophobic
+                        )
+
+                    [1] => stdClass Object
+                        (
+                            [NAME] => Lysine
+                            [SYMBOL] => lys
+                            [CODE] => K
+                            [TYPE] => charged
+                        )
+                )
+        )
+)
+
+here is the code. enjoy!
+
+<?php
+
+class XMLParser {
+    var $path;
+    var $result;
+
+    function cleanString($string) {
+        return trim(str_replace("'", "&#39;", $string));
+    }
+   
+    function XMLParser($encoding, $data) {
+        $this->path = "\$this->result";
+        $this->index = 0;
+       
+        $xml_parser = xml_parser_create($encoding);
+        xml_set_object($xml_parser, &$this);
+        xml_set_element_handler($xml_parser, 'startElement', 'endElement');
+        xml_set_character_data_handler($xml_parser, 'characterData');
+
+        xml_parse($xml_parser, $data, true);
+        xml_parser_free($xml_parser);
+    }
+   
+    function startElement($parser, $tag, $attributeList) {
+        $this->path .= "->".$tag;
+        eval("\$data = ".$this->path.";");
+        if (is_array($data)) {
+            $index = sizeof($data);
+            $this->path .= "[".$index."]";
+        } else if (is_object($data)) {
+            eval($this->path." = array(".$this->path.");");
+            $this->path .= "[1]";
+        }
+
+        foreach($attributeList as $name => $value)
+            eval($this->path."->".$name. " = '".XMLParser::cleanString($value).
+"';");
+    }
+   
+    function endElement($parser, $tag) {
+        $this->path = substr($this->path, 0, strrpos($this->path, "->"));
+    }
+   
+    function characterData($parser, $data) {
+        if ($data = XMLParser::cleanString($data))
+            eval($this->path." = '$data';");
+    }
+}
+
+?>
+===============================================================================
+
+Quick and dirty function to get original file from $vals array in manual
+example. Build on this for custom parsing of individual elements (something
+like this should be built-in IMO).
+
+<pre>
+function parseVals($vals){
+    foreach($vals as $valobj){
+        if($valobj['type']=='open' || $valobj['type']=='complete'){
+            $retstr .= '<'.$valobj['tag'];
+            if(is_array($valobj['attributes'])){
+                foreach($valobj['attributes'] as $key=>$val){
+                    $retstr .= " $key=\"$val\"";
+                }
+            }
+        }
+        if($valobj['type']=='open'){
+            $retstr .= '>'.$valobj['value'];
+        }elseif($valobj['type']=='complete' && $valobj['value']){
+            $retstr .= '>'.$valobj['value'].'</'.$valobj['tag'].'>';
+        }elseif($valobj['type']=='complete'){
+            $retstr .= ' />';
+        }elseif($valobj['type']=='cdata'){
+            $retstr .= $valobj['value'];
+        }elseif($valobj['type']=='close'){
+            $retstr .= '</'.$valobj['tag'].'>';
+        }
+
+    }
+    return $retstr;
+}
+
+</pre>
+===============================================================================
+
+wanna load object from xml file? this function take a tree returned by
+xml_get_tree() [dave@ovumdesign.com's version] and return an object.
+it can't work with attributes, i hate attributes (except id), but may be useful
+for you.
+
+- how to use :
+------------------------- xml file -------------
+<config>
+   <images>
+      <image id="1">
+        <name>my pet</name>
+        <file>pet001.jpg</file>
+      </image>
+      <image id="2">
+        <name>harry's pet</name>
+        <file>pet003.jpg</file>
+      </image>
+   </images>
+   <library>lib_functions.php</library>
+</config>
+----------------------------------------------
+$config=xml_to_object($xml_tree);
+$config->library;    #return "lib_functions.php"
+$config->images->image__1->name; #return "my pet"
+----------------------------------------------
+function xml_to_object($xml_tree,$root=false){
+             $object_name=$xml_tree['tag'];
+             foreach ($xml_tree['children'] as $children){
+                          $child_id=$children['attributes']['id'];
+                          $child_name=$children['tag'];
+                          $child_name.=($child_id) ? "__".$child_id:'';
+
+                          if (is_array($children['children'])) {   
+                                      $child_object=xml_to_object($children);
+                                      $temp_object->$child_name=$child_object;
+                          } else {
+                                    $temp_object->$child_name=$children
+['value'];
+                         }
+             }
+
+             if (!$root)
+                          $xml_object=$temp_object;
+             else       $xml_object->$object_name=$temp_object;
+
+             return $xml_object;
+}
+
+also you can use this function for loading array from xml , but i suggest you
+to use kris@h3x.com's functions[ http://www.devdump.com/phpxml.php ].
+
+function xml_to_array($xml_tree,$root=false){
+   $array_name=$xml_tree['tag'];
+   foreach ($xml_tree['children'] as $children){
+       $child_id=$children['attributes']['id'];
+       $child_name=$children['tag'];
+       $child_name.=($child_id) ? "__".$child_id:'';
+       if (is_array($children['children'])) {
+            $child_array=xml_to_array($children);
+            $temp_array[$child_name]=$child_array;
+       } else {           
+            $temp_array[$child_name]=$children['value'];
+       }
+   }
+   
+   if (!$root)
+      $xml_array=$temp_array;
+   else
+      $xml_array[$array_name]=$temp_array;
+   
+    return $xml_array;
+}
+===============================================================================
+
+I made my own xml2tree()-function.
+The difference to the previously suggested ones on this manual page is that
+this creates a tree where the tags are keys.
+
+Example input:
+
+<tree>
+<leaf name="gruu"> pl   </leaf>
+<animal type="cat" />
+</tree>
+
+Example output:
+
+Array
+( 'tree' => Array
+     ( 0 => Array
+          ( 'children' => Array
+               ( 'leaf' => Array
+                    ( 0 => Array
+                         ( 'attrs' => Array('name' => 'gruu'),
+                           'values' => Array(0 => ' pl   ')
+                    )    ),
+                 'animal' => Array
+                    ( 0 => Array
+                         ( 'attrs' => Array('type' => 'cat')
+)    )   )    )    )   )
+
+function xml2tree2($string)
+{
+  $parser = xml_parser_create();
+  xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+  xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
+  xml_parse_into_struct($parser, $string, $vals, $index);
+  xml_parser_free($parser);
+ 
+  $stack = array( array() );
+  $stacktop = 0;
+  $parent = array();
+  foreach($vals as $val)
+  {
+    $type = $val['type'];
+    if($type=='open' || $type=='complete')
+    {
+      // open tag
+      $stack[$stacktop++] = $tagi;
+      $tagi = array('tag' => $val['tag']);
+
+      if(isset($val['attributes']))  $tagi['attrs'] = $val['attributes'];     
+      if(isset($val['value']))
+        $tagi['values'][] = $val['value'];
+    }
+    if($type=='complete' || $type=='close')
+    {
+      // finish tag
+      $tags[] = $oldtagi = $tagi;
+      $tagi = $stack[--$stacktop];
+      $oldtag = $oldtagi['tag']; 
+      unset($oldtagi['tag']);
+      $tagi['children'][$oldtag][] = $oldtagi;
+      $parent = $tagi;
+    }
+    if($type=='cdata')
+    {
+      $tagi['values'][] = $val['value'];
+    }
+  }
+  return $parent['children'];
+}       
+
+Ps: Note that the xml parsing for some reason chokes if the values contain <>
+(even inside ""). You need to escape them as &lt; and &gt;.
+Same for & (for obvious reasons). Escape it as &amp;.
+For example "&nbsp;" should be written as "&amp;nbsp;".
+===============================================================================
+
+Using one of the nice function above, I was able to get these two great
+structures below on nmap info for a machine and then the PID lists for each
+open port.. Very handy for my current project.
+
+$test = `nmap -sU -sS localhost -oX -`;
+$ret = xml2array($test);
+$z=0;
+while (list($key,$val)=each($ret["host"][0][3]["children"])){
+    if ($val["tag"] == "PORT"){
+        $new[$z]["PROTOCOL"] = $val["attributes"]["PROTOCOL"];
+        $new[$z]["PORT"] = $val["attributes"]["PORTID"];
+       
+        //echo $val["attributes"]["PROTOCOL"]."\n";   
+        //echo $val["attributes"]["PORTID"]."\n";
+        $z++;
+    }//fi
+}//wend
+
+print_r($new);
+
+function port_pids($portnum){
+    $ret = `lsof -i :$portnum -F pc`;
+    $ret = explode("\n", $ret);
+    $z=0;
+    for($a=0;$a<count($ret);$a++){
+        $port = $ret[$a];
+        $a++;
+        $com = $ret[$a];
+        $new[$z]["PID"]=substr($port, 1);
+        $new[$z]["COMMAND"]=substr($com, 1);
+        $z++;
+    }//wend
+    return $new;
+}//end function
+
+print_r(port_pids("3306"));
+===============================================================================
+
+Thanks to gdemartini's tree algorithm , I was able to create a variation that
+display's the information in a way that allows you to then easily parse the
+information with less code and process time. Here's the variation and I've also
+posted a quick function at the bottom that allows you to visually display
+complex arrays in human readable format. Hope this helps someone as much as
+gdemartini's functions helped me.
+
+I decided to post it on my server as opposed to the forums as it was too large
+and needed some good html formatting.  It can found at http://www.devdump.com/
+phpxml.php .
+===============================================================================
+
+This is based on a comment above by mh@mainlab.de.  This version makes more
+sense to me and I included a few comments that might make it more usefull for
+specific purposes.
+
+// Look through $vals and $index,
+// generated by parse_xml_data(),
+// for $location.  $location resembles a unix path.
+// E.g. "my/xml/path/to/my/data".
+// Note: This is NOT a full-feature xml utility.
+// Your path must be unique in the xml data
+// and the tags must not contain slashes.
+//
+// returns: cdata from last element of $location
+//          or NULL.
+function get_xml_values($vals, $index, $location) {
+  $location = explode('/', $location);
+  $location_level = count($location);
+  for ($n=0; $n<$location_level; ++$n) {
+    $val_indexes=$index[$location[$n]];
+    $good=0;
+    for ($i=0; $i<count($val_indexes); ++$i) {
+      $v = $vals[$val_indexes[$i]];
+      // level is 1 based, n is 0 based:
+      if ($v['level']-1 == $n) {
+        if ($v['type'] == 'open') {
+          // We found an open tag at the correct level.
+          $good=1;
+          break; // Remove break to avoid 'open' hiding
+                 // 'complete' at last $n. (Speed Vs. Robustness:
+                 // For now, I'm going with speed).
+        }
+        if ($v['type'] == 'complete') {
+          // We found it, after finding all the prior elements:
+          // You may want to change this to
+          // return $v
+          // so you can call $v['value'] and $v['attributes']
+          return $v['value'];
+        }
+      }
+    }
+    if (!$good) {
+      return NULL;
+    }
+  }
+}
+===============================================================================
+
+Wow, took a while to consume all of this. I am a noobie at XML, in fact i just
+really started working with it today. I went ahead and added to the above code
+by gdemartini@bol.com.br. I also added the update by nyk@cowham.net.
+
+Added 'value' => $vals[$i]['value'] to the open case, as some nodes have both
+cdata as well as a children node. In previous versions of the functions the
+cdata of a node(a) that also had children would get stored in the children's
+array of the parent node(a). Now only children values are in the children array
+and the cdata is in the value key of the parent node(a).
+
+Added 'value' => $vals[$i]['value'] to tree array as the vals array produced by
+PHP includes a value to the top most node if no children exist (for
+completeness).
+
+Also, using xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE,1) will strip
+all white space from both around the XML tags as well as inside the cdata. I
+added a piece of code by waldo@wh-e.com to take care of this. All SPACE
+characters are now only stripped from around the XML tags and cdata spacing is
+retained.
+
+CODE:
+***************************************
+
+function GetChildren($vals, &$i) {
+
+    $children = array();
+
+    while (++$i < sizeof($vals)) {
+
+        // compair type
+        switch ($vals[$i]['type']) {
+
+            case 'cdata':
+                $children[] = $vals[$i]['value'];
+                break;
+            case 'complete':
+                $children[] = array(
+                    'tag' => $vals[$i]['tag'],
+                    'attributes' => $vals[$i]['attributes'],
+                    'value' => $vals[$i]['value']
+                );
+                break;
+            case 'open':
+                $children[] = array(
+                    'tag' => $vals[$i]['tag'],
+                    'attributes' => $vals[$i]['attributes'],
+                    'value' => $vals[$i]['value'],
+                    'children' => GetChildren($vals, $i)
+                );       
+                break;
+            case 'close':
+                return $children;
+        }
+    }
+}
+
+function GetXMLTree($file) {
+
+    $data = implode('', file($file));
+
+    // by: waldo@wh-e.com - trim space around tags not within
+    $data = eregi_replace(">"."[[:space:]]+"."<","><",$data);
+
+    // XML functions
+    $p = xml_parser_create();
+
+    // by: anony@mous.com - meets XML 1.0 specification
+    xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+    xml_parse_into_struct($p, $data, &$vals, &$index);
+    xml_parser_free($p);
+
+    $i = 0;
+    $tree = array();
+    $tree[] = array(
+        'tag' => $vals[$i]['tag'],
+        'attributes' => $vals[$i]['attributes'],
+        'value' => $vals[$i]['value'],
+        'children' => GetChildren($vals, $i)
+    );
+
+    return $tree;
+}
+
+***************************************
+===============================================================================
+
+Here is another variation on gdemartini@bol.com.br's nice tree algorithm. I
+have included nyk@cowham.net's "cdata" suggestion. I made a few changes to
+suppress unitialized variable warnings with error_reporting(E_ALL), and made a
+few stylistic changes.
+
+There are two functional modifications as well. The first is the added option
+to expat to turn off "case folding", since XML is technically a case-sensitive
+language. The second is the returned tree - instead of returning a
+single-element list (an array with index 0 pointing to the top node) like the
+original algorithm, it returns the top node itself. This saves you an
+unnecessary level of indirection.
+
+function xml_get_children($vals, &$i) {
+    $children = array();
+    if (isset($vals[$i]['value'])) $children[] = $vals[$i]['value'];
+
+    while (++$i < count($vals)) {
+        switch ($vals[$i]['type']) {
+        case 'cdata':
+            $children[] = $vals[$i]['value'];
+            break;
+
+        case 'complete':
+            $children[] = array(
+                'tag'        => $vals[$i]['tag'],
+                'attributes' => isset($vals[$i]['attributes'])?
+                                $vals[$i]['attributes'] : null,
+                'value'      => $vals[$i]['value'],
+            );
+            break;
+
+        case 'open':
+            $children[] = array(
+                'tag'        => $vals[$i]['tag'],
+                'attributes' => isset($vals[$i]['attributes'])?
+                                $vals[$i]['attributes'] : null,
+                'children'   => xml_get_children($vals, $i),
+            );
+            break;
+
+        case 'close':
+            return $children;
+        }
+    }
+}
+
+function xml_get_tree($file) {
+    $data = join('', file($file));
+
+    $parser = xml_parser_create();
+    xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+    xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE,   1);
+    xml_parse_into_struct($parser, $data, $vals, $index);
+    xml_parser_free($parser);
+
+    return array(
+        'tag'        => $vals[0]['tag'],
+        'attributes' => isset($vals[0]['attributes'])?
+                        $vals[0]['attributes'] : null,
+        'children'   => xml_get_children($vals, $i = 0),
+    );
+}
+
+This function takes a tree returned by xml_get_tree() and simplifies it
+similarly to voncken@mailandnews.com and oknapp@soly.de's suggestions. It finds
+any nodes that expat considered "complete" (childless) and contain no
+attributes, and it moves the tag name (as the key) and value into an element in
+the parent node's "values" array.
+
+For example:
+$tree = xml_get_tree('moldb.xml');  
+$tree = xml_condense_tree($tree);
+echo $tree['children'][1]['values']['name'];
+
+Outputs:
+Lysine
+
+function xml_condense_tree($tree) {
+    foreach ($tree['children'] as $index => $node) {
+        if (isset($node['children'])) {
+            $tree['children'][$index] = xml_condense_tree($node);
+
+        } elseif (isset($node['value']) and !$node['attributes']) {
+            $tree['values'][$node['tag']] = $node['value'];
+            unset($tree['children'][$index]);
+        }
+    }
+    
+    if (!$tree['children']) unset($tree['children']);
+    return $tree;
+}
+
+Enjoy,
+Dave
+===============================================================================
+
+@ dale at ucsc dot edu
+I modified your code for entries like <caption>Value</caption>
+<?php
+$o='';
+foreach( $vals as $tag ){
+    //tab space:
+    for($i=1; $i < $tag['level'];$i++)
+        $o.="\t";
+    if($tag['type']!='close'){
+        if($tag['type']!='cdata')
+            $o.='<'.$tag['tag'];
+        if(isset($tag['attributes'])){
+            foreach($tag['attributes'] as $attr=>$aval){
+                $o.=' '.$attr.'="'.$aval.'"';
+            }
+        }
+        if($tag['type']!='cdata'){
+            $o.=($tag['type']=='complete' && (!isset($tag['value']) || $tag[
+'value']==''))?'/>':'>';
+        }
+        $o.=(isset($tag['value']))?$tag['value']:'';
+        if($tag['type']!='cdata'){
+            $o.=($tag['type']=='complete' && (isset($tag['value']) && $tag[
+'value']<>''))?'</'.$tag['tag'].'>':'';
+        }
+        $o.="\n";
+    }else{
+        $o.='</'.$tag['tag'].'>'."\n";
+    }
+}
+?>
+===============================================================================
+
+Many examples below using this function check if a given tag returned is of
+type "cdata". It seems to me nowadays CDATA sections are not detected by all
+implementations, if any. In the servers I could test (FreeBSD 6.2 with PHP
+5.2.6 and libxml 2.6.26 or PHP 4.4.8 and expat 2.0.0 - MacOSX 10.5.4 with PHP
+5.2.6 and libxml 2.6.16) my CDATA sections were reported as being of type
+"complete".
+
+This problem was reported earlier as a bug (#26188), but was discarded because
+"the behaviour is quite dependent on the backend XML parsing implementation"
+(sic).
+
+So if you want to detect CDATA sections and not depend on a given
+implementation, you'll have to forget this function and use xml_parse and
+xml_set_character_data_handler instead.
+===============================================================================
+
+I wrote a simple function which totally flattens any xml structure. You can
+then directly get the data or use regular expression functions to fetch data
+from the output. E.g., if the input is
+   <gallery xmlns='http://www.pspaeth.de/joomlaPlugins/psg'>
+        <g imageDir='einsatzGallerie'></g>
+          <caption for="f1.jpg"}This is picture number 1</caption>
+          <caption for="f2.jpg"}This is picture number 2</caption>
+        </g>
+   </gallery>
+the output will be an array:
+   ['.gallery0@xmlns']=> 
+      ".gallery0@xmlns=http://www.pspaeth.de/joomlaPlugins/psg"
+   ['.gallery0.g0@imageDir']=>
+      ".gallery0.g0@imageDir=einsatzGallerie"
+   ['.gallery0.g0.caption0@for']=>
+      ".gallery0.g0.caption0@for=f1.jpg"
+   ['.gallery0.g0.caption0']=>
+      ".gallery0.g0.caption0=This is picture number 1"
+   ['.gallery0.g0.caption1@for']=> 
+      ".gallery0.g0.caption1@for=f2.jpg"
+   ['.gallery0.g0.caption1']=> 
+      ".gallery0.g0.caption1=This is picture number 2"
+
+Here the code:
+<?php
+function _xmlToArray($xml) {
+   $parser = xml_parser_create('UTF-8'); // UTF-8 or ISO-8859-1
+   xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+   xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
+   xml_parse_into_struct($parser, $xml, $values);
+   xml_parser_free($parser);
+    
+   $return = array();
+   $stack = '';
+   $attrs = array();
+   $levelCounters = array(0);
+   foreach($values as $val) {
+     if($val['type'] == "open") {
+       $ind = array_pop($levelCounters);
+       $stack = $stack . "." . $val['tag'] . $ind;
+       if ($val['attributes']) {
+           foreach($val['attributes'] as $attrKey => $attrVal)
+             $return[$stack . '@' . $attrKey] = $stack . '@' . $attrKey . "=" .
+                $attrVal;
+       }
+       array_push($levelCounters,$ind+1);
+       array_push($levelCounters,0);          
+     } elseif($val['type'] == "close") {
+       $stack = substr($stack,0,strrpos($stack,'.'));
+     } elseif($val['type'] == "complete") {
+       $ind = array_pop($levelCounters);
+       $stack = $stack . "." . $val['tag'] . $ind;
+       if ($val['attributes']) {
+           foreach($val['attributes'] as $attrKey => $attrVal)
+             $return[$stack . '@' . $attrKey] = $stack . '@' . $attrKey . "=" .
+                $attrVal;
+       }
+       $return[$stack] = $stack . "=" . $val['value'];
+       $stack = substr($stack,0,strrpos($stack,'.'));
+       array_push($levelCounters,$ind+1);
+     }
+   }
+   return $return;
+}  
+?>
+===============================================================================
+
+@jemptymethod:
+
+I found only one downfall to your function. If you have duplicates, the first
+one cannot be accessed iteratively.
+
+I added the following to fix the problem:
+
+<?php
+...
+        else if (is_array($parent['children'][$tag])) {
+            if(!isset($parent['children'][$tag][0])) {
+                $oldSingle = $parent['children'][$tag];
+                $parent['children'][$tag] = null;
+                $parent['children'][$tag][] = $oldSingle;
+               
+            }
+              $parent['children'][$tag][] = $pop['children'];
+        }
+...
+?>
+===============================================================================
+
+I didn't fount an appropiate xml2array translaction for my purpose, so I wrote
+this:
+
+(convert an xml string to an associative array allowing multiple elements with
+the same name)
+
+/////////////////////////////////// Inicio XML
+//
+//
+//
+// Convierte un XML en un array asociativo cuyos elementos son arrays
+// (para permitir varios elementos del mismo nombre)
+//
+// Limitación: el elemento "attributos" no puede aparecer en el XML, pues
+corresponde al
+// de attribs de un tag (un Tag empieza con "T",no "t")
+//
+////////////////////////////////////
+
+function xml_analiza($xml) {
+global $xml_resul,$xml_n,$xml_cont,$xml_attr;
+$xml_n = 0;
+$xml_resul = array();
+$xml_cont = array();
+$xml_attr = array();
+$p = xml_parser_create();
+//Si quisiéramos distinguir Mayúsculas-Minúsculas en los nombres de etiquetas:
+xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+xml_set_element_handler($p, "xml_inicio", "xml_fin");
+xml_set_character_data_handler($p, "xml_char");
+
+// Recorta hasta el primer tag del XML:
+$i = instr($xml,"<" . "?xml");
+if (!$i) return array();
+$j = instr($i,$xml,"?" . ">");
+if (!$j) return array();
+$xml = substr($xml,$j+2);
+
+if (!xml_parse($p, $xml))
+  alarma("URG","xml_analiza","XML error: " . xml_error_string
+(xml_get_error_code($p))
+   . " en la línea " . xml_get_current_line_number($p) . " ($xml)");
+xml_parser_free($p);
+if (!sizeof($xml_resul)) return array();
+return $xml_resul[0];
+}
+
+function xml_inicio($p, $nombre, $atributos) {
+global $xml_resul,$xml_n,$xml_cont,$xml_attr;
+$xml_n++;
+$xml_resul[] = array();
+$xml_cont[] = "";
+$xml_attr[] = $atributos;
+}
+
+function xml_fin($p, $nombre) {
+global $xml_resul,$xml_n,$xml_cont,$xml_attr;
+$xml_n--;
+$nuevo = array_pop($xml_resul);
+$nombre = $nombre;
+if ($nombre == "attributos") alarma("URG","xml_analiza","Tag con nombre no
+permitido (attributos)");
+$conte = array_pop($xml_cont);
+$attrib = array_pop($xml_attr);
+if ($conte) $xml_resul[$xml_n][$nombre][] = $conte;
+else {
+  if ($nuevo) {
+   if ($attrib) $nuevo["attributos"][] = $attrib;
+   $xml_resul[$xml_n][$nombre][] = $nuevo;
+  }
+  else
+   $xml_resul[$xml_n][$nombre][] = "";
+}
+}
+
+function xml_char($p, $data) {
+global $xml_cont;
+$xml_cont[sizeof($xml_cont)-1] .= trim(str_replace("\n","",$data));
+}
+
+function xml_a($a) {
+// Devuelve un elemento del array XML, p.e.: xml_a($v,"FichaCircuito","Red",0)
+$n = func_num_args();
+for ($i=1;$i<$n;$i++) {
+  $b = func_get_arg($i);
+  if (isset($a[$b]))
+   $a = $a[$b];
+  else {
+   if (!isset($a[0][$b][0])) return "";
+   $a = $a[0][$b];
+  }
+}
+return $a;
+}
+===============================================================================
+
+To John.
+
+The reason that you only get the last item is that you declare a array of one
+element that is constantly overwritten by the last element...
+
+I don't know if you want to put the items as two different childarrays of the
+parent or if you want to put the items in one childarray with two elements.
+
+To put the items in two different childarrays, change the line
+$php_stmt .= '[$level['.$start_level.']]';
+to
+$php_stmt .= '[$level['.$start_level.']][]';
+
+To put in same childarray change line
+$php_stmt .= '[$xml_elem[\'tag\']] = $xml_elem[\'value\'];';
+to
+$php_stmt .= '[$xml_elem[\'tag\']][] = $xml_elem[\'value\'];';
+
+Hope this helps you!
+
+tsivert
+===============================================================================
+
+I'm currently using this parser and it's working the way I want it to, but it
+has a little glitch and I was hoping maybe someone can let me know why.
+
+Here's the parser and use for example purposes the following input:
+
+$xml_response = '<?xml version="1.0" encoding="UTF-8"?>
+<test>
+    <item>First Item</item>
+    <item>Second Item</item>
+</test>'
+
+$xml_parser = xml_parser_create();
+xml_parse_into_struct($xml_parser, $xml_response, $vals, $index);
+xml_parser_free($xml_parser);
+
+$params = array();
+$level = array();
+foreach ($vals as $xml_elem) {
+  if ($xml_elem['type'] == 'open') {
+   if (array_key_exists('attributes',$xml_elem)) {
+     list($level[$xml_elem['level']],$extra) = array_values($xml_elem
+['attributes']);
+   } else {
+     $level[$xml_elem['level']] = $xml_elem['tag'];
+   }
+  }
+  if ($xml_elem['type'] == 'complete') {
+   $start_level = 1;
+   $php_stmt = '$params';
+   while($start_level < $xml_elem['level']) {
+     $php_stmt .= '[$level['.$start_level.']]';
+     $start_level++;
+   }
+   $php_stmt .= '[$xml_elem[\'tag\']] = $xml_elem[\'value\'];';
+   eval($php_stmt);
+  }
+}
+
+echo "<pre>";
+print_r ($params);
+echo "</pre>";
+
+At the output, only the last <item> shows (i.e.Second Item). The first one is
+lost.
+
+What should I change so it keeps ALL <item> tags.
+===============================================================================
+
+XML -> Array
+<?
+    $data = '<root><a><b x="s" a="2">asdf</b><c></c></a></root>';
+   
+    $p = xml_parser_create();
+    xml_parse_into_struct($p, $data, $vals);
+    xml_parser_free($p);
+   
+    $key = $output = array();
+   foreach ($vals as $id=>$item) {
+      if ($item["type"]=="open" || $item["level"]>count($key)) {// && count
+($key)<=$item["level"])
+          array_push($key, $id);
+          $temp = array("tag"=>$item["tag"], "value"=>"", "attributes"=>array
+());
+          eval("\$output[".implode("][", $key)."] = \$temp;");
+      }
+      if ($item["type"]=="close" || $item["level"]<count($key))// && $item
+["level"]>=count($key))
+          array_pop($key);
+      if (isset($item["attributes"]))
+          eval("\$output[".implode("][", $key)."]['attributes'] = array_merge(\
+$output[".implode("][", $key)."]['attributes'], \$item['attributes']);");
+      if (isset($item["value"]))
+          eval("\$output[".implode("][", $key)."]['value'] .= \$item['value'];
+");
+   }
+?>
+===============================================================================
+
+This is a quick fix for parsing XML from remote URL, some of the example above
+will work when trying to parse on your local server without "http://" but not
+when trying to parse from remote server using "http://www.URL"...
+
+<?
+$file="http://www.URL.com/file.XML";
+
+$xml_parser = xml_parser_create();
+
+$handle = fopen($file, "rb");
+$contents = '';
+while (!feof($handle)) {
+  $data .= fread($handle, 8192);
+}
+fclose($handle);
+
+xml_parse_into_struct($xml_parser, $data, $vals, $index);
+xml_parser_free($xml_parser);
+
+$params = array();
+$level = array();
+foreach ($vals as $xml_elem) {
+  if ($xml_elem['type'] == 'open') {
+   if (array_key_exists('attributes',$xml_elem)) {
+     list($level[$xml_elem['level']],$extra) = array_values($xml_elem
+['attributes']);
+   } else {
+     $level[$xml_elem['level']] = $xml_elem['tag'];
+   }
+  }
+  if ($xml_elem['type'] == 'complete') {
+   $start_level = 1;
+   $php_stmt = '$params';
+   while($start_level < $xml_elem['level']) {
+     $php_stmt .= '[$level['.$start_level.']]';
+     $start_level++;
+   }
+   $php_stmt .= '[$xml_elem[\'tag\']] = $xml_elem[\'value\'];';
+   eval($php_stmt);
+  }
+}
+
+echo "<pre>";
+print_r ($params);
+echo "</pre>";
+?>
+===============================================================================
+
+this my love function:
+<?php
+function mc_parse_xml($filename)
+{
+    $xml = file_get_contents($filename);
+    $p = xml_parser_create();
+    xml_parse_into_struct($p, $xml, $values, $index);
+    xml_parser_free($p);
+    for ($i=0;$i<count($values);$i++) {
+        if (isset($values[$i]['attributes'])) {
+            $parent = $values[$i]['tag'];
+            $keys = array_keys($values[$i]['attributes']);
+            for ($z=0;$z<count($keys);$z++)
+            {
+                $content[$parent][$i][$keys[$z]] = $values[$i]['attributes'][
+$keys[$z]];
+                if (isset($content[$parent][$i]['VALUE'])) $content[$parent][$i
+]['VALUE'] = $values[$i]['value'];
+            }
+        }
+    }
+    foreach ($content as $key => $values) {
+        $content[$key] = array_values($content[$key]);
+    }
+    if (is_array($content)) return $content;
+    else return false;
+}
+?>
+===============================================================================
+
+Ps keep in mind that some Rss feeds include spurious tags as... html entities
+(see Google news Rss feeds: they include tables as &lt;table blah blah!).
+
+If so, in my rssSnapper below add this:
+
+<?php
+$input=preg_replace("/(<!\\[CDATA\\[)|(\\]\\]>)/", '', $input);
+$input=html_entity_decode($input); //<-- added line
+?>
+
+You may play around with the code and make it perfect, testing it on various
+feeds. Not _all_ XML is worth of an XML parser and the sleepless nights it
+entails.
+===============================================================================
+
+It may be not entirely immaterial to stress that when you are dealing with
+incoming XML files such as RSS feeds, and you are about to include several of
+them in some page of yours, resorting to the PHP XML oriented functions is
+neither _necessarily_ the best idea, nor it is _strictly_ indispensable.
+
+I have in mind, here, also a note that time ago was on this documentation by
+some info at gramba dot tv:
+
+QUOTE
+I was working with the xml2array functions below and had big performance
+problems. I fired them on a 20MB XML file and had to quit since all approaches
+of parsing where just too slow (more than 20 Minute parsing etc..). The
+solution was parsing it manually with preg_match, which increased performance
+by more than 20 times (processing time about 1 minute).
+UNQUOTE
+
+Calling in a specific XML structure function, and arranging a whole class, when
+all you want from an incoming files may be the contents of a few tags, is not
+the only option you are left with, when you are at PHP.
+
+Here is a simple function that parses a XML RSS feed using no XML oriented
+function: keeping this in mind may spare you the need to create extremely
+complex classes as the ones we see here when _all_ you may want is a few titles
+and descriptions from an RSS (if that's your goal, you don't need XML parsers):
+
+<?php
+function rssSnapper($input='', $limit=0, $feedChannel='Yahoo!News'){
+$input=file_get_contents($input);
+    if(!$input){return '';};
+$input=preg_replace("/[\\n\\r\\t]+/", '', $input);
+$input=preg_replace("/(<!\\[CDATA\\[)|(\\]\\]>)/", '', $input);
+preg_match_all("/<item>(.*?)<\\/item>/", $input, $items, PREG_SET_ORDER);
+$limit=(int)$limit;
+$limit=($limit && is_numeric($limit) && abs($limit)<sizeof($items))? sizeof(
+$items)-abs($limit): 0;
+while(sizeof($items)>$limit){
+    $item=array_shift($items);
+    $item=$item[1];
+    preg_match_all("/<link>(.*?)<\\/link>/", $item, $link, PREG_SET_ORDER);
+    preg_match_all("/<title>(.*?)<\\/title>/", $item, $title, PREG_SET_ORDER);
+    preg_match_all("/<author>(.*?)<\\/author>/", $item, $author, PREG_SET_ORDER
+);
+    preg_match_all("/<pubDate>(.*?)<\\/pubDate>/", $item, $pubDate, 
+PREG_SET_ORDER);
+    preg_match_all("/<description>(.*?)<\\/description>/", $item, $description,
+PREG_SET_ORDER);
+        if(sizeof($link)){ $link = strip_tags($link[0][1]); };
+        if(sizeof($title)){ $title = strtoupper( strip_tags($title[0][1]) ); };
+        if(sizeof($author)){ $author = strip_tags($author[0][1]); };
+        if(sizeof($pubDate)){ $pubDate = strip_tags($pubDate[0][1]); };
+        if(sizeof($description)){ $description = strip_tags($description[0][1
+]); };
+    print <<<USAVIT
+   
+    <!-- ITEM STARTS -->
+    <div class="news_bg_trick">
+    <a href="$link" class="item" target="_blank">
+    <span class="title">$title<span class="channel">$feedChannel</span></span>
+    <span class="title_footer">
+    by <span class="author">$author</span> -
+    <span class="date">$pubDate</span>
+    </span>
+    <span class="description">$description</span>
+    </a>
+    </div>
+    <!-- ITEM ENDS -->
+   
+USAVIT;
+}//out of loop
+/*unitedscripters.com*/}
+?>
+
+The printing phase assigns Css class names: the output is thus fully
+customizable by a mere style sheet.
+
+The use of strip_tags is a reminder from Chris Shiflett: distrust incoming
+data, always, anyway.
+I hope no typos slipped in in transcription. Arguably not perfect, but I hope a
+good alternative idea to spending three days on a full fledged XML parser just
+to grab... three tags from a RSS feed!
+bye, ALberto
+===============================================================================
+
+I needed a very simple parser for a set of name-value pairs to be stored in a
+single database field. I started with the mold example, paired it down, picked
+up the "id" attributes. Perhaps it will be useful for someone else.
+
+<?php
+/* simple conversion for name-value fields */
+
+$xmlInput = "<?xml version=\"1.0\"?>
+<mcw_settings>
+  <field id=\"imageAlign\">left</field>
+  <field id=\"caption\">What a nice picture.</field>
+</mcw_settings>";
+
+$desiredResult = array (
+    'imageAlign' => "left",
+    'caption' => "What a nice picture."
+);
+
+function parseFields ($data)
+{
+    // read the XML database of fields
+    $parser = xml_parser_create();
+    xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+    xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
+    xml_parse_into_struct($parser, $data, $values, $tags);
+    xml_parser_free($parser);
+    $fields = null;
+
+    // loop through the structures
+    $fieldIndices = $tags['field'];
+    for ( $i=0; $i < count($fieldIndices); $i++ ) {
+        $fieldInfo = $values[$fieldIndices[$i]];
+        $fields[$fieldInfo['attributes']['id']] = $fieldInfo['value'];
+    }
+    return $fields;
+}
+
+$test = parseFields($xmlInput);
+echo "** Result:\n";
+print_r($test);
+?>
+===============================================================================
+
+I liked VampBoy's code as it gave me structure pretty much as I wanted it. Just
+two notes, though:
+
+There is a bug in this code. subdivide() checks for pre-existing values, but
+not in the case of a "complete" element.
+
+In the following (appallingly bad) XML
+
+<Names>
+<Name>Matt</Name>
+<Name>Stacy</Name>
+<Names>
+
+Only Stacy is added to Names in the array, wiping Matt in the process.
+
+To fix this replace the following code
+<?php
+elseif ($dat[level] === $level && $dat[type] === "complete"){
+   $newarray[$dat[tag]]=$dat[value];
+}
+?>
+with
+<?php
+elseif ($dat[level] === $level && $dat[type] === "complete"){
+     if (isset($newarray[$dat['tag']]) && is_array($newarray[$dat['tag']])){
+          $newarray[$dat['tag']][] = $dat['value'];
+     } elseif (isset($newarray[$dat['tag']]) && !is_array($newarray[$dat['tag'
+]])){
+          $newarray[$dat['tag']] = array($newarray[$dat['tag']], $dat['value'
+]);
+     } else {
+          $newarray[$dat['tag']]=$dat['value'];
+     }
+}?>
+
+Oh, also, note that the $dat[level], etc, WILL generate warnings, and should be
+more correctly written as $dat['level'].
+
+The other thing I thought I should point out is that the array keys when
+created using xml_parse_into_struct will be an UPPERCASE version of your
+existing element names. If case is important, especially if you, like me, need
+mixedCase, do the following:
+
+<?php
+$xml_parser = xml_parser_create();
+xml_parser_set_option($xml_parser,XML_OPTION_CASE_FOLDING,0);
+?>
+===============================================================================
+
+$simple = '<?xml version="1.0"?>
+<moldb>
+    <molecule>
+        <name>Alanine</name>
+        <symbol>ala</symbol>
+        <code>A</code>
+        <type>hydrophobic</type>
+    </molecule>
+    <molecule>
+        <name>Lysine</name>
+        <symbol>lys</symbol>
+        <code>K</code>
+        <type>charged</type>
+    </molecule>
+</moldb>';
+
+$p = xml_parser_create();
+xml_parse_into_struct($p, $simple, $vals, $index);
+xml_parser_free($p);
+echo "<pre>";
+echo "Index array\n";
+print_r($index);
+echo "\nVals array\n";
+print_r($vals);
+
+foreach ($vals as $k => $v) {
+    $i = 0;
+    if (trim($v['value']) != '') {
+        if ($arr[$i][$v['tag']] != '') {
+            $i ++;
+        }
+        $arr[$i][$v['tag']] = $v['value'];
+    }
+}
+===============================================================================
+
+Sorry.. unreachable and unneeded code in my posting above :-)
+Here is the fixed version:
+function xml_condense_tree($tree) {
+    if ($tree["children"]) {
+            unset($nodecounters);
+            foreach ($tree['children'] as $index => $node) {
+                if (!isset($nodecounters[$node['tag']]))
+                $nodecounters[$node['tag']]=1;
+                else $nodecounters[$node['tag']]++;
+            }
+        foreach ($tree['children'] as $index => $node) {
+            if (isset($node['children'])) {
+                $tree['children'][$index] = xml_condense_tree($node);
+            } elseif (isset($node['value']) and !$node['attributes'] and
+$nodecounters[$node['tag']]==1) {
+                $tree['values'][$node['tag']] = $node['value'];
+                unset($tree['children'][$index]);
+            }
+        }
+    }
+    if (!$tree['children']) unset($tree['children']);
+   
+    return $tree;
+}
+===============================================================================
+
+I needed something a bit different:
+this is the result of my xml2array function (from the moldb example)
+
+Array
+(
+    [molecule] => Array
+        (
+            [0] => Array
+                (
+                    [name] => Alanine
+                    [symbol] => ala
+                    [code] => A
+                    [type] => hydrophobic
+                )
+
+            [1] => Array
+                (
+                    [name] => Lysine
+                    [symbol] => lys
+                    [code] => K
+                    [type] => charged
+                )
+
+        )
+
+)
+
+function xml2array($data)
+  {
+    //mvo voncken@mailandnews.com
+    //original ripped from  on the php-manual:gdemartini@bol.com.br   
+    //to be used for data retrieval(result-structure is Data oriented)   
+    $p = xml_parser_create();
+    xml_parser_set_option($p, XML_OPTION_SKIP_WHITE, 1);
+    xml_parse_into_struct($p, $data, &$vals, &$index);
+    xml_parser_free($p);
+
+    $tree = array();
+    $i = 0;
+    //array_push($tree, array('tag' => $vals[$i]['tag'], 'attributes'=> $vals
+[$i]['attributes'],                            'children' => ));
+    $tree = GetChildren($vals, $i);
+    return $tree;
+  }
+
+function GetChildren($vals, &$i)
+  {                 
+    $children = array();
+    if ($vals[$i]['value']) array_push($children, $vals[$i]['value']);
+       
+    $prevtag = "";
+    while (++$i < count($vals)) // so pra nao botar while true ;-)
+    {     
+      switch ($vals[$i]['type'])
+      {         
+         case 'cdata':
+           array_push($children, $vals[$i]['value']);
+           break;
+         case 'complete':                     
+           $children[ strtolower($vals[$i]['tag']) ] = $vals[$i]['value'];     
+     
+           break;
+
+         case 'open':                                
+          
+           //restartindex on unique tag-name
+           $j++;
+           if ($prevtag <> $vals[$i]['tag']) {
+                   $j = 0;   
+                   $prevtag = $vals[$i]['tag'];
+            }                             
+           $children[ strtolower($vals[$i]['tag']) ][$j] = GetChildren
+($vals,$i);
+           break;
+
+         case 'close':          
+           return $children;
+      }
+    }   
+  }
+===============================================================================
+
+I wrote this function in a bad mood, to get some data you can loop through.
+sprint_r or var_dump its output to see what it does. It's not pretty, but at
+least you can loop through the data without a LOT of hassle.
+
+This can also be done with handlers, but I couldn't be bothered with global
+variables.
+
+<?php
+
+$data = xml_parse_into_struct($somexml);
+
+function xml_getmeaningfuldata($data) {
+foreach($data as $element) {
+        if ($element['type'] == "open") {
+                if (!$elementnos[$parents.$element['tag']]) {
+                        $elementnos[$parents.$element['tag']] = 1;
+                }
+                $elements[$parents.$element['tag'].":". $elementnos[$parents.
+$element['tag']]]['attributes'] = $element['attributes'];
+                $elements[$parents.$element['tag'].":". $elementnos[$parents.
+$element['tag']]]['value'] = trim($element['value']);
+                $parents .= $element['tag'].":".$elementnos[$parents.$element[
+'tag']]."^";
+        }
+        if ($element['type'] == "cdata") {
+                if (trim($element['value'])) {
+                        $elements[$parents.$element['tag'].":". $elementnos[
+$parents.$element['tag']]]['values'] = $element['value'];
+                }
+        }
+        if ($element['type'] == "complete") {
+                if (!$elementnos[$parents.$element['tag']]) {
+                        $elementnos[$parents.$element['tag']] = 1;
+                }
+                $elements[$parents.$element['tag'].":". $elementnos[$parents.
+$element['tag']]]['attributes'] = $element['attributes'];
+                $elements[$parents.$element['tag'].":". $elementnos[$parents.
+$element['tag']]]['value'] = trim($element['value']);
+                $elementnos[$parents.$element['tag']]++;
+        }
+        if ($element['type'] == "close") {
+                $parents = substr($parents, 0, strrpos(substr($parents, 0, -1),
+"^")+1);
+                $elementnos[$parents.$element['tag']]++;
+//              if (sizeof($parents) == 1) unset($parents);
+        }
+}
+
+return $elements;
+
+}
+===============================================================================
+
+Thanx to jukea i've upgraded the characterData-function to allow the value 0.
+Here is the new complete code:
+
+<?php
+
+class XMLParser {
+    var $path;
+    var $result;
+
+    function cleanString($string) {
+        return trim(str_replace("'", "&#39;", $string));
+    }
+  
+    function XMLParser($encoding, $data) {
+        $this->path = "\$this->result";
+        $this->index = 0;
+      
+        $xml_parser = xml_parser_create($encoding);
+        xml_set_object($xml_parser, &$this);
+        xml_set_element_handler($xml_parser, 'startElement', 'endElement');
+        xml_set_character_data_handler($xml_parser, 'characterData');
+
+        xml_parse($xml_parser, $data, true);
+        xml_parser_free($xml_parser);
+    }
+  
+    function startElement($parser, $tag, $attributeList) {
+        $this->path .= "->".$tag;
+        eval("\$data = ".$this->path.";");
+        if (is_array($data)) {
+            $index = sizeof($data);
+            $this->path .= "[".$index."]";
+        } else if (is_object($data)) {
+            eval($this->path." = array(".$this->path.");");
+            $this->path .= "[1]";
+        }
+
+        foreach($attributeList as $name => $value)
+            eval($this->path."->".$name. " = '".XMLParser::cleanString($value).
+"';");
+    }
+  
+    function endElement($parser, $tag) {
+        $this->path = substr($this->path, 0, strrpos($this->path, "->"));
+    }
+  
+    function characterData($parser, $data) {
+        if (strlen($data = XMLParser::cleanString($data)))
+            eval($this->path." = '$data';");
+    }
+}
+
+?>
+===============================================================================
+
+@wickedfather, re: beaudurrant....I just cannot concur that the latter's class
+is "great"....First of all, it doesn't handle attributes.  Second of all, as my
+code below demonstrates, there is no need waste processing by determining
+duplicates within their own loop.  Thirdly, when there are duplicates, it
+collapses the layer in the array above the duplicates.
+
+Here is some much more consise code, though not (yet) object oriented, and also
+not yet handling attributes; it maintains a stack for each level:
+
+<?php
+function xml_parse_into_assoc($file) {
+  $data = implode("", file($file));
+  $p = xml_parser_create();
+ 
+  xml_parser_set_option($p, XML_OPTION_CASE_FOLDING, 0);
+  xml_parser_set_option($p, XML_OPTION_SKIP_WHITE, 1);
+ 
+  xml_parse_into_struct($p, $data, $vals, $index);
+  xml_parser_free($p);
+
+  $levels = array(null);
+ 
+  foreach ($vals as $val) {
+    if ($val['type'] == 'open' || $val['type'] == 'complete') {
+      if (!array_key_exists($val['level'], $levels)) {
+        $levels[$val['level']] = array();
+      }
+    }
+   
+    $prevLevel =& $levels[$val['level'] - 1];
+    $parent = $prevLevel[sizeof($prevLevel)-1];
+   
+    if ($val['type'] == 'open') {
+      $val['children'] = array();
+      array_push(&$levels[$val['level']], $val);
+      continue;
+    }
+   
+    else if ($val['type'] == 'complete') {
+      $parent['children'][$val['tag']] = $val['value'];
+    }
+   
+    else if ($val['type'] == 'close') {
+      $pop = array_pop($levels[$val['level']]);
+      $tag = $pop['tag'];
+     
+      if ($parent) {
+        if (!array_key_exists($tag, $parent['children'])) {
+          $parent['children'][$tag] = $pop['children'];
+        }
+        else if (is_array($parent['children'][$tag])) {
+          $parent['children'][$tag][] = $pop['children'];
+        }
+      }
+      else {
+        return(array($pop['tag'] => $pop['children']));
+      }
+    }
+   
+    $prevLevel[sizeof($prevLevel)-1] = $parent;
+  }
+}
+?>
+===============================================================================
+
+This is a great little function for a lot of XML work, but note that this
+function does not handle XML entities properly.
+
+The basic XML entities &lt; &gt; &amp; &quot; are fine, just anything else will
+not work:
+
+If the entity is defined in the XML header, the parser will drop it completely
+from the struct it creates.
+
+If the entity is not defined in the XML then the parser will crash out with an
+undefined entity error.
+
+You should be able to work around this limitation by using a preg_replace on
+your XML string before passing it to the parser.
+
+(Further details in Bug #35271; this is just a warning to those thinking of
+using this function for parsing real XML documents not just trivial XML
+examples)
+===============================================================================
+
+Thanx to jukea i've upgraded the characterData-function to allow the value 0.
+Here is the new complete code:
+
+<?php
+
+class XMLParser {
+    var $path;
+    var $result;
+
+    function cleanString($string) {
+        return trim(str_replace("'", "&#39;", $string));
+    }
+  
+    function XMLParser($encoding, $data) {
+        $this->path = "\$this->result";
+        $this->index = 0;
+      
+        $xml_parser = xml_parser_create($encoding);
+        xml_set_object($xml_parser, &$this);
+        xml_set_element_handler($xml_parser, 'startElement', 'endElement');
+        xml_set_character_data_handler($xml_parser, 'characterData');
+
+        xml_parse($xml_parser, $data, true);
+        xml_parser_free($xml_parser);
+    }
+  
+    function startElement($parser, $tag, $attributeList) {
+        $this->path .= "->".$tag;
+        eval("\$data = ".$this->path.";");
+        if (is_array($data)) {
+            $index = sizeof($data);
+            $this->path .= "[".$index."]";
+        } else if (is_object($data)) {
+            eval($this->path." = array(".$this->path.");");
+            $this->path .= "[1]";
+        }
+
+        foreach($attributeList as $name => $value)
+            eval($this->path."->".$name. " = '".XMLParser::cleanString($value).
+"';");
+    }
+  
+    function endElement($parser, $tag) {
+        $this->path = substr($this->path, 0, strrpos($this->path, "->"));
+    }
+  
+    function characterData($parser, $data) {
+        if (strlen($data = XMLParser::cleanString($data)))
+            eval($this->path." = '$data';");
+    }
+}
+
+?>

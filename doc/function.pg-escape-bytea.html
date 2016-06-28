@@ -1,0 +1,139 @@
+
+pg_escape_bytea
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pg_escape_bytea — 转义 bytea 类型的二进制数据
+
+说明
+
+string pg_escape_bytea ( string $data )
+
+pg_escape_bytea() 转义 bytea 数据类型的二进制字符串，返回转义后的字符串。
+
+    Note:
+
+    当对 bytea 类型字段进行 SELECT 操作时，PostgreSQL 返回前导 \ 的八进制字节值
+    （例如 \032）。用户需要自己将结果转换为二进制格式。
+
+    本函数需要 PostgreSQL 7.2 或以上版本。在 PostgreSQL 7.2.0 和 7.2.1 版中，如
+    果使用了多字节支持，bytea 类型必须被强制转换。例如 INSERT INTO test_table
+    (image) VALUES ('$image_escaped'::bytea);。PostgreSQL 7.2.2 或以上版本不需
+    要强制转换。异常情况是当客户端和后端字符编码不匹配时，可能会有多字节流错误
+    。用户必须强制转换 bytea 以避免此错误。
+
+参见 pg_unescape_bytea() 和 pg_escape_string()。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+To prevent any problems with encoding you could use hexadecimal or base64 input
+to save and retrieve data to the database:
+
+<?php
+  // Connect to the database
+  $dbconn = pg_connect( 'dbname=foo' );
+ 
+  // Read in a binary file
+  $data = file_get_contents( 'image1.jpg' );
+ 
+  // Escape the binary data
+  $escaped = bin2hex( $data );
+ 
+  // Insert it into the database
+  pg_query( "INSERT INTO gallery (name, data) VALUES ('Pine trees', decode('{
+$escaped}' , 'hex'))" );
+
+  // Get the bytea data
+  $res = pg_query("SELECT encode(data, 'base64') AS data FROM gallery WHERE
+name='Pine trees'"); 
+  $raw = pg_fetch_result($res, 'data');
+ 
+  // Convert to binary and send to the browser
+  header('Content-type: image/jpeg');
+  echo base64_decode($raw);
+?>
+===============================================================================
+
+to unescape_bytea use stripcslashes(). If you need to escape bytea and don't
+have pg_escape_bytea() function then use:
+
+<?php
+function escByteA($binData) {
+  /**
+   * \134 = 92 = backslash, \000 = 00 = NULL, \047 = 39 = Single Quote
+   *
+   * str_replace() replaces the searches array in order. Therefore, we must
+   * process the 'backslash' character first. If we process it last, it'll
+   * replace all the escaped backslashes from the other searches that came
+   * before.
+   */
+  $search = array(chr(92), chr(0), chr(39));
+  $replace = array('\\\134', '\\\000', '\\\047');
+  $binData = str_replace($search, $replace, $binData);
+  return $binData;
+  //echo "<pre>$binData</pre>";
+  //exit;
+}
+?>
+===============================================================================
+
+using  pg_escape_bytea without 'E' escape tag
+<?php
+  // Die Binärdaten maskieren
+  $escaped = pg_escape_bytea($data);
+
+  // und in die Datenbank einfügen (falsch/wrong)
+  pg_query("INSERT INTO gallery (name, data) VALUES ('Pine trees', E'$escaped')
+");
+
+  // und in die Datenbank einfügen (richtig/right)
+  pg_query("INSERT INTO gallery (name, data) VALUES ('Pine trees', '$escaped')"
+);
+?>
+===============================================================================
+
+If you're getting errors about nonstandard use of \\ in a string literal, then
+you need to escape the encoded bytea as follows:
+
+<?php
+$escaped = pg_escape_bytea($data);
+pg_query("INSERT INTO gallery (name, data) VALUES ('Pine trees', E'$escaped
+'::bytea)");
+?>
+===============================================================================
+
+The reason pg_unescape_bytea() do not exactly reproduce the binary data created
+by pg_escape_bytea() is because the backslash \ and single quote ' are double
+escaped by the pg_escape_bytea() function. This will lead to image seems
+corrupted when retrieve from the bytea field. The proper way to escape&unescape
+a binary string into a PG bytea field as follow:
+
+<?php
+$escaped_data = str_replace(array("\\\\", "''"), array("\\", "'"), 
+pg_escape_bytea($data));
+/* and later unescape the escaped data from the bytea field with following to
+get the original binary data */
+
+$original_data = pg_unescape_bytea($escaped_data));
+?>
+
+more details at: http://archives.postgresql.org/pgsql-php/2007-02/msg00014.php
+===============================================================================
+
+if you need to change back bytea from the db to normal data, this will do that:
+
+<?php
+function pg_unescape_bytea($bytea) {
+return eval("return \"".str_replace('$', '\\$', str_replace('"', '\\"', $bytea
+))."\";");
+}
+
+// use like this
+$rs = pg_query($conn, "SELECT image from images LIMIT 1");
+$image = pg_unescape_bytea(pg_fetch_result($rs, 0, 0));
+?>
+
+/Tobias

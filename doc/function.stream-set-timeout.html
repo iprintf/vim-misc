@@ -1,0 +1,311 @@
+
+stream_set_timeout
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+stream_set_timeout — Set timeout period on a stream
+
+说明
+
+bool stream_set_timeout ( resource $stream , int $seconds [, int $microseconds
+= 0 ] )
+
+Sets the timeout value on stream, expressed in the sum of seconds and
+microseconds.
+
+When the stream times out, the 'timed_out' key of the array returned by 
+stream_get_meta_data() is set to TRUE, although no error/warning is generated.
+
+参数
+
+stream
+
+    The target stream.
+
+seconds
+
+    The seconds part of the timeout to be set.
+
+microseconds
+
+    The microseconds part of the timeout to be set.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+      As of PHP 4.3, this function can (potentially) work on any kind of
+4.3.0 stream. In PHP 4.3, socket based streams are still the only kind
+      supported in the PHP core, although streams from other extensions may
+      support this function.
+
+范例
+
+Example #1 stream_set_timeout() example
+
+<?php
+$fp = fsockopen("www.example.com", 80);
+if (!$fp) {
+    echo "Unable to open\n";
+} else {
+
+    fwrite($fp, "GET / HTTP/1.0\r\n\r\n");
+    stream_set_timeout($fp, 2);
+    $res = fread($fp, 2000);
+
+    $info = stream_get_meta_data($fp);
+    fclose($fp);
+
+    if ($info['timed_out']) {
+        echo 'Connection timed out!';
+    } else {
+        echo $res;
+    }
+
+}
+?>
+
+注释
+
+    Note:
+
+    This function doesn't work with advanced operations like 
+    stream_socket_recvfrom(), use stream_select() with timeout parameter
+    instead.
+
+This function was previously called as set_socket_timeout() and later 
+socket_set_timeout() but this usage is deprecated.
+
+参见
+
+  • fsockopen() - 打开一个网络连接或者一个Unix套接字连接
+  • fopen() - 打开文件或者 URL
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+In case anyone is puzzled, stream_set_timeout DOES NOT work for sockets created
+with socket_create or socket_accept. Use socket_set_option instead.
+
+Instead of:
+<?php
+stream_set_timeout($socket,$sec,$usec);
+?>
+
+Use:
+<?php
+socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, array('sec'=>$sec, 'usec'=>
+$usec));
+socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, array('sec'=>$sec, 'usec'=>
+$usec));
+?>
+===============================================================================
+
+Here is a working example for loops:
+
+<?php
+// Timeout in seconds
+$timeout = 5;
+
+$fp = fsockopen("www.server.com", 80, $errno, $errstr, $timeout);
+
+if ($fp) {
+        fwrite($fp, "GET /file.php HTTP/1.0\r\n");
+        fwrite($fp, "Host: www.server.com\r\n");
+        fwrite($fp, "Connection: Close\r\n\r\n");
+
+        stream_set_blocking($fp, TRUE);
+        stream_set_timeout($fp,$timeout);
+        $info = stream_get_meta_data($fp);
+
+        while ((!feof($fp)) && (!$info['timed_out'])) {
+                $data .= fgets($fp, 4096);
+                $info = stream_get_meta_data($fp);
+                ob_flush;
+                flush();
+        }
+
+        if ($info['timed_out']) {
+                echo "Connection Timed Out!";
+        } else {
+                echo $data;
+        }
+}
+?>
+===============================================================================
+
+If the timeout fails, because the server remains completely silent, one may
+have to add stream_select() to make the timeout work. This may be much more
+efficient that a non-blocking reading operation.
+
+<?php
+stream_set_timeout($c, $timeout);
+$data = '';
+$stR = array($this->smtp_conn);
+$stW = null;
+while (is_resource($c) && !feof($c)) {
+    if (!stream_select($stR, $stW, $stW, $timeout)) {
+        trigger_error('Timeout');
+        break;
+    }
+    $str = fgets($c, 515);
+    $data.= $str;
+
+    // Handling of "traditional" timeout
+    $info = stream_get_meta_data($c);
+     if ($info['timed_out']) {
+        trigger_error('Timeout');
+        break;
+    }
+}
+?>
+
+Background: We had issues with a SMTP server that was addresses unencrypted
+while expecting TLS encryption. The stream_set_timeout() alone did not work as
+expected and the script hung for an hour or more.
+===============================================================================
+
+This function seems to have no effect when running as a CLI script, see http://
+bugs.php.net/bug.php?id=36030
+===============================================================================
+
+Another note alread states that blocking-reads may be an issue, if the
+counterpart responds very slowly - or not at all. The stream timeout may not
+work as expected in such a situation.
+
+However, php.net provides very little information on how to use non-blocking
+reading operations. Here's a code sample:
+
+<?php
+        stream_set_timeout($c, $timeout);
+        $data = '';
+        while (is_resource($c) && !feof($c)) {
+            // Use non-blocking reading for first loop
+            if (($data === '') and ($timeout > 0)) {
+                stream_set_blocking($c, false);
+                $endtimeOut = time() + $timeout;
+                $str = '';
+                while ((time() < $endtimeOut) and (strlen($str) < 515) and !
+feof($c)) {
+                    sleep(1);  // Note: This may require tuning
+                    $str.= fgets($c, 515);
+                }
+                // Handling first-read timeout
+                if (time() >= $endtimeOut) {
+                    trigger_error('Timeout', E_USER_WARNING);
+                    break;
+                }
+                stream_set_blocking($c, true);
+            } else {
+                $str = fgets($c, 515);
+            }
+            $data.= $str;
+
+            // Handling of "traditional" timeout
+            $info = stream_get_meta_data($c);
+            if ($info['timed_out']) {
+                    trigger_error('Timeout', E_USER_WARNING);
+                    break;
+            }
+        }
+?>
+===============================================================================
+
+If you are using fsockopen() to create a connection, first going to write into
+the stream and then waiting for the reply (e.g. simulating HTTP request with
+some extra headers), then stream_set_timeout() must be set only after the write
+- if it is before write, it has no effect on the read timeout :-(
+Noticed at least on PHP/4.3.10
+===============================================================================
+
+stream_set_timeout() is not suitable for such files as UNIX-devices (/dev/...),
+i suggest to use select() instead with desirable timeout value - that works
+well.
+===============================================================================
+
+I have found it required to add
+
+"stream_set_blocking($fp, FALSE )"
+
+prior to any fgets(), fread(), etc. to prevent the code from hanging up when
+remote files are called and the response is slow.
+===============================================================================
+
+I have found that in order to actually stop the socket from timing out the
+script, you must call stream_get_meta_data and check for a timeout within the
+loop reading from the socket.
+
+Example:
+
+<?php
+$sock = fsockopen($host, 80, $errno, $errstr, 30);
+if(!$sock){
+    echo "Unable to get server status";
+}else{
+    $out = "GET /server.php HTTP/1.1\r\n";
+    $out .= "Host: $host\r\n";
+    $out .= "Connection: Close\r\n\r\n";
+
+    fwrite($sock, $out);
+
+    stream_set_blocking($fp, FALSE );
+    stream_set_timeout($sock, $timeout);
+    $info = stream_get_meta_data($sock);
+
+    while (!feof($sock) && !$info['timed_out']) {
+        $file .= fgets($sock, 4096);
+        $info = stream_get_meta_data($sock);
+    }
+
+    fclose($sock);
+?>
+===============================================================================
+
+I didn't have much luck with the suggestions below (although I likely applied
+them wrong).
+Instead, I used stream_context_create() and set an http option for timeout. I
+fed that context into file_get_contents() and voila!
+
+To my desperate friend below: the https transport can also use the http stream
+context options. I haven't verified this works as I don't have a slow
+responding ssl to test on. But if you are still stressing, give the below a
+shot (you may need to modify a bit...)
+
+<?php
+    $timeout = 5*60;
+    $options = array(
+          'http'=>array(
+            'method'=>"GET",
+            'header'=>"Accept-language: en\r\n",
+              'timeout' => $timeout
+              )
+        );
+    $context = stream_context_create($options);
+    $contents = file_get_contents($source, false, $context);
+?>
+
+Yes...that is a 5 minute timeout.
+===============================================================================
+
+Just in case someone stumbles into my situation... I was trying to get the
+microseconds part to work and it just wasn't working as expected.
+
+Assuming blocking mode is true and I use
+
+<?php stream_set_timeout($s, 1, 0);?>
+
+I get a 1s delay as expected. However when I do
+
+<?php stream_set_timeout($s, 0, 500);?>
+
+I expect a 500microsecond delay but I get no delays at all. However when i do
+this
+
+<?php stream_set_timeout($s, 0, 500000);?>
+
+I get a 500 microsecond delay which is what I was expecting

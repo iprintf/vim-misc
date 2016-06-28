@@ -1,0 +1,421 @@
+
+xml_set_object
+
+(PHP 4, PHP 5, PHP 7)
+
+xml_set_object — 在对象中使用 XML 解析器
+
+描述
+
+pool xml_set_object ( resource $parser , object &$object )
+
+该函数使得 parser 指定的解析器可以被用在 object 对象中。所有的回叫函数（
+callback function）都可以由 xml_set_element_handler() 等函数来设置，它们被假定
+为 object 对象的方法。
+
+Example #1 xml_set_object() 示例
+
+<?php
+class xml  {
+    var $parser;
+
+    function xml() 
+    {
+        $this->parser = xml_parser_create();
+
+        xml_set_object($this->parser, $this);
+        xml_set_element_handler($this->parser, "tag_open", "tag_close");
+        xml_set_character_data_handler($this->parser, "cdata");
+    }
+
+     function parse($data) 
+    {
+        xml_parse($this->parser, $data);
+    }
+
+    function tag_open($parser, $tag, $attributes) 
+    {
+        var_dump($parser, $tag, $attributes); 
+    }
+
+    function cdata($parser, $cdata) 
+    {
+        var_dump($parser, $cdata);
+    }
+
+    function tag_close($parser, $tag) 
+    {
+        var_dump($parser, $tag);
+    }
+
+} // end of class xml
+
+$xml_parser = new xml();
+$xml_parser->parse("<A ID='hallo'>PHP</A>");
+?>
+
+
+User Contributed Notes 16 notes
+
+===============================================================================
+
+I finally managed to get xml_set_object() to work, after much documentation
+searching.  As the solution I found has been hinted at, the focus has been
+wrong.
+
+There have been many problems getting class contained XML parsers to make
+changes to the members of an instance.  This is because, from what I'm
+guessing, the functions are using a either a new annonymous instance of the
+class or an uninstanced version of the class.
+
+What we want to make sure it does it that the parser is accessing its handlers
+as member methods of a particular instance of a class.  This can be done using
+the array method for passing a callback, setting the object as a reference to
+this instance.  This way, you know that the parser is going to call the
+function properly.
+
+Ex:
+<?php
+class Parser {
+
+private $parser;
+private $data;
+
+public function __construct() {
+  $this->parser = NULL;
+  $this->data = '';
+}
+
+private function ParseElementStart($parser, $name, $attrs) {
+  // Code
+}
+private function ParseElementEnd($parser, $name) {
+  // Code
+}
+
+public function Parse($XMLdata) {
+  $this->parser = xml_parser_create();
+  xml_set_object($this->parser, $this);
+  xml_set_element_handler($this->parser,
+                          array(&$this, 'ParseElementStart'),
+                          array(&$this, 'ParseElementEnd'));
+  xml_parse($this->parser, $XMLdata);
+  xml_parser_free($this->parser);
+}
+}
+?>
+
+With this, when you call the Parse method, the data in that instance can be
+modified.  I'm not sure if xml_set_object becomes unneccissary when using the
+array callbacks, but I leave it in just to make sure that the xml_parse
+function knows it's in the object.
+
+As above, I'd recommend for memory sake, that the XML parser be created, used,
+and freed all in the same function, to ensure that everything is cleaned up
+correctly.
+===============================================================================
+
+Just a note about creating abstract "call back handlers" as mentioned in some
+of the other notes.  In this case I recommend extending the base XML class and
+overwritting the handler methods.  The reason I wanted to do this, is that if
+you have a separate callback method class it causes problems, for example if
+you want to collect information out of the XML file and store it in an array. 
+You can get around it with global variables, but I prefer to use them only when
+required ;)
+
+Example:
+
+<?php
+class xml_output extends xml{
+
+  var $output = array();
+
+   function xml_output(){
+    $this->xml();
+   }
+
+    //overwrite base methods
+    function tag_open($parser, $tag, $attributes)
+    {
+        array_push($this->output, "<$tag, attributes>");
+    }
+
+    function cdata($parser, $cdata)
+    {
+         array_push($this->output, "$cdata");
+    }
+
+    function tag_close($parser, $tag)
+    {
+         array_push($this->output, "</$tag>");
+    }
+
+}
+
+$xml_parser = & new xml_output();
+$xml_parser->parse("<A ID='hallo'>PHP</A>");
+echo("$xml_parser->output");
+?>
+===============================================================================
+
+Adding to 'lmfe at mega dot ist dot utl dot pt' contribution below, I have to
+say that this behaviour is very usual for PHP if MemberVars of an Object arent
+initialized from the constructor.
+What worked best for me so far was something like this:
+<?php
+class foo {
+  var $bar
+  // the constructor
+  function foo() {
+    unset($this->bar);  // with every instanciation, the variable is cleared
+for the object
+  }
+}
+?>
+===============================================================================
+
+Using PHP 4.3.0, I got this strange behaviour:
+
+<?php
+class xml  {
+
+     /* (as specified in the documentation above) */
+
+} // end of class xml
+
+/* This code works */
+$xml_parser = new xml();
+$xml_parser->parse("<A ID='hallo'>PHP</A>");
+
+/* This code works */
+$xml_parser2 = new xml();
+$xml_parser2->parse("<A ID='hallo2'>PHP2</A>");
+
+/* This code DON'T work */
+$xml_parser = new xml();
+$xml_parser->parse("<A ID='hallo3'>PHP3</A>");
+?>
+
+In the third block of code, php complains it can't find the handlers it needs.
+It seems this problem only happens if the variable is used more than once.
+Calling xml_parser_free doesn't help
+===============================================================================
+
+(Adding to zitan's note)
+It seems easy enough to provide output functions for callback handler classes
+too.
+
+Example:
+
+<?php
+class CallBack {
+    var $name = 'Callback';
+    var $info = 'Information!';
+    function toString() {
+        return $this->name.': '.$this->info;
+    }
+}
+class Main {
+    var $name = 'Main';
+    var $callBackObject;
+    function setCallBack(&$cBIn) { $this->callBackObject = $cBIn; }
+    function toString() {
+        return $this->name.': '.$this->callBackObject->toString();
+    }
+}
+
+$cb = & new CallBack;
+$m = & new Main;
+$m->setCallBack(&$cb);
+echo $cb->toString();
+echo $m->toString();
+?>
+
+So, after collecting information during the parse operation within the callback
+handler class, e.g. in tag_close(), retrieving them is possible.
+===============================================================================
+
+passing the object as a call-time ref (&$this) as in the example will create a
+warning in php 4.1+. Pass xml_set_object($xp,$this); instead. This does not
+seem to break anything - but I dont know for sure.
+===============================================================================
+
+Just adding a little note about my above written example.  It needs some
+improvements.
+
+Because PHP passes by VALUE by default, when you pass an array like this:
+array($callback_handler, 'handler_method')
+PHP makes a copy of the callback_handler object and uses the handler_method in
+the copy.
+
+This is not an ideal situation for many reasons...which I will not get into
+here...but you should have an idea by now.
+
+The best way to fix this is to change a few things. In the function declaration
+change the parameter from $callback_handler to &$callback_handler. So now your
+declaration should look like this
+
+function set_callback_handler(&$callback_handler)
+{
+  ...
+}
+
+Now each time you reference $callback_handler change it to &$callback_handler. 
+For example:
+
+xml_set_element_handler(
+          $this->xml_parser,
+          array(&$callback_handler, 'start_element'),
+          array(&$callback_handler, 'close_Element' ));
+
+This ensures that PHP will always use the same object.
+===============================================================================
+
+xml_set_object is great, if you want to hard code your start_element,
+end_element, etc functions within your xml class.
+
+But what if you want to increase the modularity of your application?
+
+Solution, create one generic XMLParser class that handles everything *except*
+the callback funtions.  Then create an abstract XMLCallbackHandler class which
+you can extend to provide any customization you want.
+
+So how do you tell the php's xml_parser that you want to use this other class
+to handle the callback functions.
+
+xml_set_object?  This only works if the functions are *within* the object you
+called this method from.
+
+The solution lies in the xml_set_element_handler() function.
+Take a look at this sample source...
+
+class XMLParser
+{
+
+  ...
+
+  function set_callback_handler($callback_handler)
+  {
+    // Assign the startElement endElement functions
+    xml_set_element_handler(
+          $this->xml_parser,
+          array($callback_handler, 'start_element'),
+          array($callback_handler, 'close_Element' ));
+
+    /* By passing an array with this ($object, 'function_name') structure
+       to the 2nd and 3rd parameters.  We are able to tell the parser to
+       look in another object for these callback functions.
+    */
+
+    // Assign the character data function
+    xml_set_character_data_handler(
+          $this->xml_parser,
+          array($callback_handler, 'character_data'));
+    }
+}
+
+class myCallBackHandler
+{
+  function start_element(...)
+  {
+    //code goes here
+  }
+
+  function end_element(...)
+  {
+    //code goes here
+  }
+
+  function character_data(...)
+  {
+    //code goes here
+  }
+}
+
+Now all thats left to do is use these classes..
+
+$parser = new XMLParser();
+$parser->set_callback_handler(new myCallbackHandler());
+===============================================================================
+
+English explaination of why you do: $xml = & new xml();
+
+Ok, when PHP executes "new xml()" it creates an anonymous variable (one that
+you can't reference with any name) which it then runs the constructor function
+on.  Ok, now once that's done, it then assigns by VALUE in the example above. 
+This means that that lovely pointer to your parser is pointing to the anonymous
+instance of your class, and not the used instance of your class... thus making
+a "shadow" of all your variables, where assignments inside the parser access
+different variables than outside the parser.  What PHP _SHOULD_ be doing
+(similar to C++) is have this statement execute such that the assignment is
+done by REFERENCE, so that you assign the new name to the class that actually
+got constructed, and not just a copy of the class that you constructed.
+
+If they did it right, this code wouldn't be broken.
+===============================================================================
+
+Call-time pass-by-reference has been deprecated, so the example is buggy as was
+already mentionned. However since 4.04 (I think) "new" can return objects by
+reference. So the clean way to have both the parser initialised in the
+constructor, and to save the result in your object is to do
+
+$xml_parser = & new xml();
+
+see http://www.php.net/manual/en/language.oop.newref.php
+
+Ivan
+===============================================================================
+
+<p>in reply to jon9mm's question, I have found the same problem (function
+'startElement' does not exist).  I finally found the way around this, by
+re-reading this doc for xml_set_object.  You HAVE to use the xml_set_object
+($this->parser, &$this) within your parser function.</p> <p>When that function
+is called, your object temporarily becomes the parser object and shares scope
+(so it can see 'startElement', etc).   Once that function is done, the
+xml_set_object(...) call goes out of scope, and your object is no longer bound
+to the parser.  So the simplist solution is to call xml_set_object(...), do any
+parsing, and then call xml_parser_free(...) all within the same function.</p>
+<p>And remember, don't call xml_set_object(...) in your object's constructor -
+your object will be forever bound to the parser object and you'll loose all
+access to your object's member functions.</p>
+<p>This is all explained in the examples above, but it took me reading it a
+couple of times to grok how it all works.</p>
+===============================================================================
+
+If you're using the XML parser within an object, be careful not to accidentally
+call any methods that don't exist within the object. Instead of complaining
+that the missing method doesn't exist, PHP will say it's not able to find the
+handler routines, even if you've indicated them correctly. (PHP version 4.0.5
+on FreeBSD).
+===============================================================================
+
+If xml_set_object is not called in the constructor of an object, the values
+that the parser modifies will be saved. Else, the values do not seem to be
+saved as stated by "i_sofer" above.
+--- Start Example Code ---
+class foo {
+var xmlparser;
+function foo() { \\the constructor
+$this->xmlparser=xmlparser_create();
+}
+function parse() {
+xml_set_object($this->xmlparser,&$this);
+\\also include data handler
+\\and element handlers here
+}
+}
+--- End Example Code ---
+===============================================================================
+
+Using xml parser in objects seem to have a problem that values modified(even of
+the object itself) get lost as soon as parsing ends...
+===============================================================================
+
+The example will generate a warning unless allow_call_time_pass_reference is
+set to true in your INI file. It also will not accept a call by value.
+===============================================================================
+
+While true that there is no automatic destructor for PHP class objects, it is
+quite simple to create a method called destroy and perform the destruction
+manually. In the example above it may not be necessary to free the xml parser
+immediately... it would appear from the example that the object is re-useable.

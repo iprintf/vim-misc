@@ -1,0 +1,848 @@
+
+get_headers
+
+(PHP 5, PHP 7)
+
+get_headers — 取得服务器响应一个 HTTP 请求所发送的所有标头
+
+说明
+
+array get_headers ( string $url [, int $format = 0 ] )
+
+get_headers() 返回一个数组，包含有服务器响应一个 HTTP 请求所发送的标头。
+
+参数
+
+url
+
+    目标 URL。
+
+format
+
+    如果将可选的 format 参数设为 1，则 get_headers() 会解析相应的信息并设定数组
+    的键名。
+
+返回值
+
+返回包含有服务器响应一个 HTTP 请求所发送标头的索引或关联数组，如果失败则返回
+FALSE。
+
+更新日志
+
+版本                                    说明
+5.1.3 自 PHP 5.1.3 起本函数使用默认的流上下文，其可以用 
+      stream_context_get_default() 函数设定和修改。
+
+范例
+
+Example #1 get_headers() 例子
+
+<?php
+$url = 'http://www.example.com';
+
+print_r(get_headers($url));
+
+print_r(get_headers($url, 1));
+?>
+
+以上例程的输出类似于：
+
+Array
+(
+    [0] => HTTP/1.1 200 OK
+    [1] => Date: Sat, 29 May 2004 12:28:13 GMT
+    [2] => Server: Apache/1.3.27 (Unix)  (Red-Hat/Linux)
+    [3] => Last-Modified: Wed, 08 Jan 2003 23:11:55 GMT
+    [4] => ETag: "3f80f-1b6-3e1cb03b"
+    [5] => Accept-Ranges: bytes
+    [6] => Content-Length: 438
+    [7] => Connection: close
+    [8] => Content-Type: text/html
+)
+
+Array
+(
+    [0] => HTTP/1.1 200 OK
+    [Date] => Sat, 29 May 2004 12:28:14 GMT
+    [Server] => Apache/1.3.27 (Unix)  (Red-Hat/Linux)
+    [Last-Modified] => Wed, 08 Jan 2003 23:11:55 GMT
+    [ETag] => "3f80f-1b6-3e1cb03b"
+    [Accept-Ranges] => bytes
+    [Content-Length] => 438
+    [Connection] => close
+    [Content-Type] => text/html
+)
+
+Example #2 get_headers() using HEAD example
+
+<?php
+// By default get_headers uses a GET request to fetch the headers. If you
+// want to send a HEAD request instead, you can do so using a stream context:
+stream_context_set_default(
+    array(
+        'http' => array(
+            'method' => 'HEAD'
+        )
+    )
+);
+$headers = get_headers('http://example.com');
+?>
+
+参见
+
+  • apache_request_headers() - 获取全部 HTTP 请求头信息
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+Seems like there are some people who are looking for only the 3-digit HTTP
+response code  - here is a quick and nasty solution:
+
+<?php
+function get_http_response_code($theURL) {
+    $headers = get_headers($theURL);
+    return substr($headers[0], 9, 3);
+}
+?>
+
+How easy is that? Echo the function containing the URL you want to check the
+response code for, and voilà. Custom redirects, alternative for blocked is_file
+() or flie_exists() functions (like I seem to have on my servers) hence the
+cheap workaround. But hey - it works!
+
+Pudding
+===============================================================================
+
+I know you're not supposed to reference other notes, but sincere props to Nick
+at Innovaweb's comment, for which I base this addition to his idea:
+
+If you use that function, it will return a string, which is great if you are
+checking for only files that return 404, or 200, or whatnot.  If you cast the
+string value to an integer, you can perform mathematical comparison on it. 
+
+For example:
+
+<?php
+function get_http_response_code($theURL) {
+    $headers = get_headers($theURL);
+    return substr($headers[0], 9, 3);
+}
+
+if(intval(get_http_response_code('filename.jpg')) < 400){
+// File exists, huzzah!
+}
+?>
+
+Rule of thumb is if the response is less than 400, then the file's there, even
+if it doesn't return 200.
+===============================================================================
+
+I found that this function is the slowest in obtaining the headers of a page
+probably because it uses a GET request rather then a HEAD request. Over
+10,000,000 trials of obtaining the headers of a page from a server i found the
+following (results in seconds).
+
+cURL: Mean: 0.584127946. Sigma: 0.050581736.
+fsocketopen: Mean: 0.622114251. Sigma: 0.263170424.
+get_headers: Mean: 0.90375551. Sigma: 0.273823419.
+
+cURL was the fastest with fsocketopens being the second fastest. I noticed as
+well that fsocketopen had some outliers where as cURL did not.
+===============================================================================
+
+Note that get_headers **WILL follow redirections** (HTTP redirections). New
+headers will be appended to the array if $format=0. If $format=1 each redundant
+header will be an array of multiple values, one for each redirection.
+
+For example:
+
+<?php
+$url = 'http://google.com';
+var_dump(get_headers($url,0));
+/*array(18) {
+  [0]=>  string(30) "HTTP/1.0 301 Moved Permanently"
+  [1]=>  string(32) "Location: http://www.google.com/"
+  [2]=>  string(38) "Content-Type: text/html; charset=UTF-8"
+  [3]=>  string(35) "Date: Sun, 26 Sep 2010 00:59:50 GMT"
+  [4]=>  string(38) "Expires: Tue, 26 Oct 2010 00:59:50 GMT"
+  [5]=>  string(38) "Cache-Control: public, max-age=2592000"
+....
+  string(15) "HTTP/1.0 200 OK"
+  [10]=>  string(35) "Date: Sun, 26 Sep 2010 00:59:51 GMT"
+  [11]=>  string(11) "Expires: -1"
+  [12]=>  string(33) "Cache-Control: private, max-age=0"
+.....
+}*/
+
+/*===========================*/
+
+var_dump(get_headers($url,1));
+/*array(11) {
+  [0]=>
+  string(30) "HTTP/1.0 301 Moved Permanently"
+  ["Location"]=>  string(22) "http://www.google.com/"
+  ["Content-Type"]=>  array(2) {
+    [0]=>    string(24) "text/html; charset=UTF-8"
+    [1]=>    string(29) "text/html; charset=ISO-8859-1"
+  }
+  ["Date"]=>  array(2) {
+    [0]=>    string(29) "Sun, 26 Sep 2010 01:03:39 GMT"
+    [1]=>    string(29) "Sun, 26 Sep 2010 01:03:39 GMT"
+  }
+  ["Expires"]=>  array(2) {
+    [0]=>    string(29) "Tue, 26 Oct 2010 01:03:39 GMT"
+    [1]=>    string(2) "-1"
+  }
+  ["Cache-Control"]=>  array(2) {
+    [0]=>    string(23) "public, max-age=2592000"
+    [1]=>    string(18) "private, max-age=0"
+  }
+.....
+}*/
+?>
+===============================================================================
+
+In some cases, you don't want get_headers to follow redirects. For example,
+some of my servers can access a particular website, which sends a redirect
+header. The site it is redirected to, however, has me firewalled. I need to
+take the 302 redirected url, and do something to it to give me a new url that I
+*can* connect to.
+
+The following will give you output similar to get_headers, except it has a
+timeout, and it doesn't follow redirects:
+
+<?php
+function get_headers_curl($url)
+{
+    $ch = curl_init();
+
+    curl_setopt($ch, CURLOPT_URL,            $url);
+    curl_setopt($ch, CURLOPT_HEADER,         true);
+    curl_setopt($ch, CURLOPT_NOBODY,         true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT,        15);
+
+    $r = curl_exec($ch);
+    $r = split("\n", $r);
+    return $r;
+}
+
+If you do want to follow redirects, you can do something like this:
+
+$go = 1;
+$i = 1;
+
+while ($go && $i < 6)
+{
+    $headers = get_headers_curl($url);
+    $go = getNextLocation($headers);
+    if ($go)
+    {
+        $url = modifyUrl($go);
+    }
+    $i++;
+}
+
+function getNextLocation($headers)
+{
+    $array = $headers;
+    $count = count($array);
+
+    for ($i=0; $i < $count; $i++)
+    {
+        if (strpos($array[$i], "ocation:"))
+        {
+                $url = substr($array[$i], 10);
+        }
+    }
+    if ($url)
+    {
+        return $url;
+    }
+    else
+    {
+        return 0;
+    }
+}
+?>
+===============================================================================
+
+Note that get_headers should not be used against a URL that was gathered via
+user input. The timeout option in the stream context only affects the idle time
+between data in the stream. It does not affect connection time or the overall
+time of the request.
+
+(Unfortunately, this is not mentioned in the docs for the timeout option, but
+has been discussed in a number of code discussions elsewhere, and I have done
+my own tests to confirm the conclusions of those discussions.)
+
+Thus it is very easy for a user to give you a URL that acts like a Slowloris
+attack - feeding your get_headers function 1 header only often enough to avoid
+the stream timeout.
+
+If you are publishing your code, even default_socket_timeout cannot be relied
+on to remedy this, because it is broken for the HTTPS protocol on many but the
+more recent versions of PHP: https://bugs.php.net/bug.php?id=41631
+
+With get_headers accepting user input, it can be very easy for an attacker to
+make all of your PHP child processes become busy.
+
+Instead, use cURL functions to get headers for a URL provided by the user and
+parse those headers manually, as CURLOPT_TIMEOUT applies to the entire request.
+===============================================================================
+
+@Jim Greene:
+
+if the URL does not exist, it returns incomplete headers, making the substring
+default to rubbish.
+
+The integer value of rubbish is always 0. So your lower than 400 does not
+always means it exists!
+===============================================================================
+
+To check URL validity, this has been working nicely for me:
+
+function url_valid(&$url) {
+  $file_headers = @get_headers($url);
+  if ($file_headers === false) return false; // when server not found
+  foreach($file_headers as $header) { // parse all headers:
+    // corrects $url when 301/302 redirect(s) lead(s) to 200:
+    if(preg_match("/^Location: (http.+)$/",$header,$m)) $url=$m[1];
+    // grabs the last $header $code, in case of redirect(s):
+    if(preg_match("/^HTTP.+\s(\d\d\d)\s/",$header,$m)) $code=$m[1];
+  } // End foreach...
+  if($code==200) return true; // $code 200 == all OK
+  else return false; // All else has failed, so this must be a bad link
+} // End function url_exists
+===============================================================================
+
+Testing the validity of a URL that is preceded by one or more server redirects
+is tricky. There will be more than one status code returned and all but the
+first will be redirect codes.
+
+This function will return an integer containing the three digit status code of
+the last code returned, which is what you want.
+
+    function getStatus($url) {
+        $headers = @get_headers($url, true);
+        $value = NULL;
+        if ($headers === false) {
+            return $headers;
+        }
+        foreach ($headers as $k => $v) {
+            if (!is_int($k)) {
+                continue;
+            }
+            $value = $v;
+        }
+
+        return (int) substr($value, strpos($value, ' ', 8) + 1, 3);
+     }
+
+If getHeaders() fails, PHP will throw an error. Test the return value for ===
+false.
+===============================================================================
+
+If you don't want to display Warning when get_headers() function fails, you can
+simply add at-sign (@) before it.
+
+<?php
+
+// in failure, Warning will be hidden and false returned
+$withoutWarning = @get_headers("http://www.some-domain.com");
+
+// in  failure, Warning displays and false will be returned, too
+$withWarning = get_headers("http://www.some-domain.com");
+
+// bool(false)
+var_dump($withoutWarning);
+// bool(false)
+var_dump($withWarning);
+?>
+===============================================================================
+
+I tried to replicate the native behavior as much as possible for systems that
+don't have the get_headers() function. Here it is:
+<?php
+if (!function_exists('get_headers')) {
+function get_headers($Url, $Format= 0, $Depth= 0) {
+    if ($Depth > 5) return;
+    $Parts = parse_url($Url);
+    if (!array_key_exists('path', $Parts))   $Parts['path'] = '/';
+    if (!array_key_exists('port', $Parts))   $Parts['port'] = 80;
+    if (!array_key_exists('scheme', $Parts)) $Parts['scheme'] = 'http';
+
+    $Return = array();
+    $fp = fsockopen($Parts['host'], $Parts['port'], $errno, $errstr, 30);
+    if ($fp) {
+        $Out = 'GET '.$Parts['path'].(isset($Parts['query']) ? '?'.@$Parts[
+'query'] : '')." HTTP/1.1\r\n".
+               'Host: '.$Parts['host'].($Parts['port'] != 80 ? ':'.$Parts[
+'port'] : '')."\r\n".
+               'Connection: Close'."\r\n";
+        fwrite($fp, $Out."\r\n");
+        $Redirect = false; $RedirectUrl = '';
+        while (!feof($fp) && $InLine = fgets($fp, 1280)) {
+            if ($InLine == "\r\n") break;
+            $InLine = rtrim($InLine);
+
+            list($Key, $Value) = explode(': ', $InLine, 2);
+            if ($Key == $InLine) {
+                if ($Format == 1)
+                        $Return[$Depth] = $InLine;
+                else    $Return[] = $InLine;
+
+                if (strpos($InLine, 'Moved') > 0) $Redirect = true;
+            } else {
+                if ($Key == 'Location') $RedirectUrl = $Value;
+                if ($Format == 1)
+                        $Return[$Key] = $Value;
+                else    $Return[] = $Key.': '.$Value;
+            }
+        }
+        fclose($fp);
+        if ($Redirect && !empty($RedirectUrl)) {
+            $NewParts = parse_url($RedirectUrl);
+            if (!array_key_exists('host', $NewParts))   $RedirectUrl = $Parts[
+'host'].$RedirectUrl;
+            if (!array_key_exists('scheme', $NewParts)) $RedirectUrl = $Parts[
+'scheme'].'://'.$RedirectUrl;
+            $RedirectHeaders = get_headers($RedirectUrl, $Format, $Depth+1);
+            if ($RedirectHeaders) $Return = array_merge_recursive($Return, 
+$RedirectHeaders);
+        }
+        return $Return;
+    }
+    return false;
+}}
+?>
+The function will handle up to five redirects.
+Enjoy!
+===============================================================================
+
+If you want to get headers that current PHP process is going to send back to
+browser, see headers_list()
+===============================================================================
+
+<?php
+/**
+* Fetches all the real headers sent by the server in response to a HTTP request
+without redirects
+*
+* @link      http://php.net/function.get_headers
+* @link      http://bugs.php.net/bug.php?id=50719
+*/
+
+function get_real_headers($url,$format=0,$follow_redirect=0) {
+  if (!$follow_redirect) {
+    //set new default options
+    $opts = array('http' =>
+        array('max_redirects'=>1,'ignore_errors'=>1)
+    );
+    stream_context_get_default($opts);
+  }
+  //get headers
+    $headers=get_headers($url,$format);
+    //restore default options
+  if (isset($opts)) {
+    $opts = array('http' =>
+        array('max_redirects'=>20,'ignore_errors'=>0)
+    );
+    stream_context_get_default($opts);
+  }
+  //return
+    return $headers;
+}
+?>
+===============================================================================
+
+Content-Type returns a value depending only on the extension and not the real
+MIME TYPE.
+
+So, bad_file.exe renamed to good_file.doc will return application/msword
+
+A file without extension returns a 404.
+===============================================================================
+
+I've noticed it.
+Some Server will simply return the false reply header if you sent 'HEAD'
+request instead of 'GET'. The 'GET' request header always receiving the most
+actual HTTP header instead of 'HEAD' request header. But If you don't mind for
+a fast but risky method then 'HEAD' request is better for you.
+
+btw ... this is get header with additional information such as User, Pass &
+Refferer. ...
+<?php
+    function get_headers_x($url,$format=0, $user='', $pass='', $referer='') {
+        if (!empty($user)) {
+            $authentification = base64_encode($user.':'.$pass);
+            $authline = "Authorization: Basic $authentification\r\n";
+        }
+
+        if (!empty($referer)) {
+            $refererline = "Referer: $referer\r\n";
+        }
+
+        $url_info=parse_url($url);
+        $port = isset($url_info['port']) ? $url_info['port'] : 80;
+        $fp=fsockopen($url_info['host'], $port, $errno, $errstr, 30);
+        if($fp) {
+            $head = "GET ".@$url_info['path']."?".@$url_info['query']." HTTP/
+1.0\r\n";
+            if (!empty($url_info['port'])) {
+                $head .= "Host: ".@$url_info['host'].":".$url_info['port']."\r\
+n";
+            } else {
+                $head .= "Host: ".@$url_info['host']."\r\n";
+            }
+            $head .= "Connection: Close\r\n";
+            $head .= "Accept: */*\r\n";
+            $head .= $refererline;
+            $head .= $authline;
+            $head .= "\r\n";
+
+            fputs($fp, $head);      
+            while(!feof($fp) or ($eoheader==true)) {
+                if($header=fgets($fp, 1024)) {
+                    if ($header == "\r\n") {
+                        $eoheader = true;
+                        break;
+                    } else {
+                        $header = trim($header);
+                    }
+
+                    if($format == 1) {
+                    $key = array_shift(explode(':',$header));
+                        if($key == $header) {
+                            $headers[] = $header;
+                        } else {
+                            $headers[$key]=substr($header,strlen($key)+2);
+                        }
+                    unset($key);
+                    } else {
+                        $headers[] = $header;
+                    }
+                }
+            }
+            return $headers;
+
+        } else {
+            return false;
+        }
+    }
+?>
+
+Regards.
+Donovan
+===============================================================================
+
+hey, i came across this afew weeks ago and used the function in an app for
+recording info about domains that my company owns, and found that the status
+this returns was wrong most of the time (400 bad request or void for sites that
+were clearly online). then looking into it i noticed the problem was that it
+wasn't able to get the correct info about sites with redirections. but thats
+not the full problem because everything on my server was returning the wrong
+status too. i searched around on php.net for other info and found that
+fsockopen's example worked better and only needed some tweeking.
+
+heres the function i put together from it and a small change.
+
+<?php
+if(!function_exists('get_headers')) {
+   function get_headers($url,$format=0,$httpn=0){
+    $fp = fsockopen($url, 80, $errno, $errstr, 30);
+    if ($fp) {
+       $out = "GET / HTTP/1.1\r\n";
+       $out .= "Host: $url\r\n";
+       $out .= "Connection: Close\r\n\r\n";
+       fwrite($fp, $out);
+       while (!feof($fp)) {
+           $var.=fgets($fp, 1280);
+       }
+
+    $var=explode("<",$var);
+    $var=$var[0];
+    $var=explode("\n",$var);
+    fclose($fp);
+    return $var;
+    }
+    }
+}
+?>
+
+this returns an array of the header (only problem being that if the site
+doesn't have correct html it'll pull in some content too).
+
+hope this'll help someone else.
+===============================================================================
+
+The replacement updated get_headers function by aeontech at gmail dot com
+improperly formats dates when $format = 1.
+
+Replace:
+<?
+else {
+$headers[strtolower($h2[0])] = trim($h2[1]);
+}
+?>
+
+With:
+<?
+else {   
+$foo = implode( ':', $h2 );
+$foo = preg_replace( '/[a-zA-Z- ]*: /', '', $foo );
+$headers[strtolower($h2[0])] = trim( $foo );
+}
+===============================================================================
+
+For anyone reading the previous comments, here is code that takes into account
+all the previous suggestions and includes a bugfix, too.
+
+This code basically provides the "get_headers" function even on systems that
+are not running PHP 5.0.  It uses strtolower() on the keys, as suggested.  It
+uses the $h2 array instead of the $key, as suggested.  It removes a line about
+unsetting the $key -- no reason to unset something which is no longer used. 
+And I've changed the status header to be named "status" (instead of "0") in the
+array.  Note that if more than one header is returned without a label, they'll
+be stuck in "status" -- but I think status is the only header that comes back
+without a label, so it works for me.  So, first the code, then a sample of the
+usage:
+
+<?php
+if(!function_exists('get_headers')) {
+   /**
+   * @return array
+    * @param string $url
+    * @param int $format
+    * @desc Fetches all the headers
+    * @author cpurruc fh-landshut de
+    * @modified by dotpointer
+    * @modified by aeontech
+    */
+    function get_headers($url,$format=0) {
+        $url_info=parse_url($url);
+        $port = isset($url_info['port']) ? $url_info['port'] : 80;
+        $fp=fsockopen($url_info['host'], $port, $errno, $errstr, 30);
+        if($fp) {
+            $head = "HEAD ".@$url_info['path']."?".@$url_info['query'];
+            $head .= " HTTP/1.0\r\nHost: ".@$url_info['host']."\r\n\r\n";
+            fputs($fp, $head);
+            while(!feof($fp)) {
+                if($header=trim(fgets($fp, 1024))) {
+                    if($format == 1) {
+                        $h2 = explode(':',$header);
+                        // the first element is the http header type, such as
+HTTP/1.1 200 OK,
+                        // it doesn't have a separate name, so we have to check
+for it.
+                        if($h2[0] == $header) {
+                            $headers['status'] = $header;
+                        }
+                        else {
+                            $headers[strtolower($h2[0])] = trim($h2[1]);
+                        }
+                    }
+                    else {
+                        $headers[] = $header;
+                    }
+                }
+            }
+            return $headers;
+        }
+        else {
+            return false;
+        }
+    }
+}
+?>
+
+OK?  Here's the usage:
+
+<?php
+$response = get_headers('http://www.example.com/', 1);
+if (!$response) {
+    echo 'Unable to initiate connection.';
+}
+else {
+    print_r($response);
+}
+?>
+===============================================================================
+
+Should be the same than the original get_headers():
+
+<?php
+if (!function_exists('get_headers')) {
+function get_headers($url, $format=0) {
+    $headers = array();
+    $url = parse_url($url);
+    $host = isset($url['host']) ? $url['host'] : '';
+    $port = isset($url['port']) ? $url['port'] : 80;
+    $path = (isset($url['path']) ? $url['path'] : '/') . (isset($url['query'])
+? '?' . $url['query'] : '');
+    $fp = fsockopen($host, $port, $errno, $errstr, 3);
+    if ($fp)
+    {
+        $hdr = "GET $path HTTP/1.1\r\n";
+        $hdr .= "Host: $host \r\n";
+        $hdr .= "Connection: Close\r\n\r\n";
+        fwrite($fp, $hdr);
+        while (!feof($fp) && $line = trim(fgets($fp, 1024)))
+        {
+            if ($line == "\r\n") break;
+            list($key, $val) = explode(': ', $line, 2);
+            if ($format)
+                if ($val) $headers[$key] = $val;
+                else $headers[] = $key;
+            else $headers[] = $line;
+        }
+        fclose($fp);
+        return $headers;
+    }
+    return false;
+}
+}
+?>
+===============================================================================
+
+Unfortunately there is still no useful output format to handle redirects.
+
+This function will bring all non-broken headers into a usable format. Too bad
+it has to call the get_headers() funtion 2 times, but i dont see any other
+possibility right now.
+
+<?php
+function page_get_headers($crawl_uri) {
+    // get the array values where to split the second get headers return
+    $headers = get_headers($crawl_uri, 1);
+    if (empty($headers)) {
+        return array();
+    }
+    $splitmarks = array();
+    foreach ($headers as $key=>$h) {
+        if (is_numeric($key)) {
+            array_push($splitmarks, $h);
+        }
+    }
+
+    // get the "real" headers
+    $headers_final = array();
+    $i = 0;
+    $headers = get_headers($crawl_uri);
+    foreach ($headers as $head) {
+        // if the value is one of the splitmarks, start the next header
+        if (array_key_exists($i, $splitmarks) && $head === $splitmarks[$i]) {
+            $i++;
+        }  
+        else {
+            // get the headers name
+            $tmp = explode(": ", $head, 2);
+            // check if the header is already existing, if yes, parse the
+similar header to an array
+            if (!empty($headers_final[$i-1][$tmp[0]])) {
+                if (is_array($headers_final[$i-1][$tmp[0]])) {
+                    array_push($headers_final[$i-1][$tmp[0]], $tmp[1]);
+                }
+                else {
+                    $headers_final[$i-1][$tmp[0]] = array($headers_final[$i-1][
+$tmp[0]], $tmp[1]);
+                }
+            }
+            else {
+                $headers_final[$i-1][$tmp[0]] = $tmp[1];  
+            }  
+        }
+    }
+    return $headers_final;
+}
+?>
+===============================================================================
+
+It should be noted that rather than returning "false" on failure, this function
+(and others) return a big phat WARNING that will halt your script in its tracks
+if you do not have error reporting /warning turned off.
+
+Thats just insane!  Any function that does something like fetch a URL should
+simply return false, without a warning, if the URL fails for whatever reason
+other than it is badly formatted.
+===============================================================================
+
+In response to dotpointer's modification of Jamaz' solution...
+
+Here is a small modification of your function, this adds the emulation of the
+optional $format parameter.
+
+<?php
+if(!function_exists('get_headers')) {
+   
+    /**
+    * @return array
+    * @param string $url
+    * @param int $format
+    * @desc Fetches all the headers
+    * @author cpurruc fh-landshut de
+    * @modified by dotpointer
+    * @modified by aeontech
+    */
+    function get_headers($url,$format=0)
+    {
+        $url_info=parse_url($url);
+        $port = isset($url_info['port']) ? $url_info['port'] : 80;
+        $fp=fsockopen($url_info['host'], $port, $errno, $errstr, 30);
+       
+        if($fp)
+        {
+            $head = "HEAD ".@$url_info['path']."?".@$url_info['query']." HTTP/
+1.0\r\nHost: ".@$url_info['host']."\r\n\r\n";      
+            fputs($fp, $head);      
+            while(!feof($fp))
+            {
+                if($header=trim(fgets($fp, 1024)))
+                {
+                    if($format == 1)
+                    {
+                        $key = array_shift(explode(':',$header));
+                        // the first element is the http header type, such as
+HTTP 200 OK,
+                        // it doesn't have a separate name, so we have to check
+for it.
+                        if($key == $header)
+                        {
+                            $headers[] = $header;
+                        }
+                        else
+                        {
+                            $headers[$key]=substr($header,strlen($key)+2);
+                        }
+                        unset($key);
+                    }
+                    else
+                    {
+                        $headers[] = $header;
+                    }
+                }
+            }
+            return $headers;
+        }
+        else
+        {
+            return false;
+        }
+    }
+}
+?>
+===============================================================================
+
+aeontech, this the below change adds support for SSL connections. Thanks for
+the code!
+
+        if (isset($url_info['scheme']) && $url_info['scheme'] == 'https') {
+            $port = 443;
+            $fp=fsockopen('ssl://'.$url_info['host'], $port, $errno, $errstr,
+30);
+        } else {
+           $port = isset($url_info['port']) ? $url_info['port'] : 80;
+            $fp=fsockopen($url_info['host'], $port, $errno, $errstr, 30);
+        }

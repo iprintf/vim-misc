@@ -1,0 +1,214 @@
+
+ldap_sort
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+ldap_sort — Sort LDAP result entries on the client side
+
+说明
+
+bool ldap_sort ( resource $link , resource $result , string $sortfilter )
+
+Sort the result of a LDAP search, returned by ldap_search().
+
+As this function sorts the returned values on the client side it is possible
+that you might not get the expected results in case you reach the sizelimit
+either of the server or defined within ldap_search().
+
+Warning
+
+This feature has been DEPRECATED as of PHP 7.0.0. Relying on this feature is
+highly discouraged.
+
+参数
+
+link
+
+    An LDAP link identifier, returned by ldap_connect().
+
+result
+
+    An search result identifier, returned by ldap_search().
+
+sortfilter
+
+    The attribute to use as a key in the sort.
+
+范例
+
+Sorting the result of a search.
+
+Example #1 LDAP sort
+
+<?php
+     // $ds is a valid link identifier (see ldap_connect)
+
+     $dn        = 'ou=example,dc=org';
+     $filter    = '(|(sn=Doe*)(givenname=John*))';
+     $justthese = array('ou', 'sn', 'givenname', 'mail');
+
+     $sr = ldap_search($ds, $dn, $filter, $justthese);
+
+     // Sort
+     ldap_sort($ds, $sr, 'sn');
+
+     // Retrieving the data
+     $info = ldap_get_entries($ds, $sr);
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Here's a simple LDAP sort function I wrote:
+
+<?php
+function sort_ldap_entries($e, $fld, $order)
+{
+    for ($i = 0; $i < $e['count']; $i++) {
+        for ($j = $i; $j < $e['count']; $j++) {
+            $d = strcasecmp($e[$i][$fld][0], $e[$j][$fld][0]);
+            switch ($order) {
+            case 'A':
+                if ($d > 0)
+                    swap($e, $i, $j);
+                break;
+            case 'D':
+                if ($d < 0)
+                    swap($e, $i, $j);
+                break;
+            }
+        }
+    }
+    return ($e);
+}
+
+function swap(&$ary, $i, $j)
+{
+    $temp = $ary[$i];
+    $ary[$i] = $ary[$j];
+    $ary[$j] = $temp;
+}
+?>
+
+so that it can be invoked like:
+
+<?php
+    $entries = sort_ldap_entries($entries, 'mail', 'A'); // sort entries by
+ascending order of mail
+?>
+
+where,
+    `$entries' is the array returned by ldap_get_entries() function.
+
+This might be useful to those who still run older versions of PHP (<= 4.2.0) on
+their web servers :-)
+===============================================================================
+
+This note may be self-evident, but the functionality of ldap_sort threw off
+this sometime user of relational databases.
+
+The following code will NOT do what you expect:
+
+<?php
+
+// omitted calls to connect and and bind to LDAP server...
+
+// attributes we want to retrieve from LDAP server
+$ldap_attributes = array ( 'cn', 'o', 'mail' ) ;
+
+// retrieve attributes from matching entries
+$search_results = ldap_search ( $ldap_conn, 'dc=example,dc=org', '(objectclass=
+*)', 0, 500, 30 ) ;
+
+// sort entries by last name ('sn')
+ldap_sort ( $ldap_conn, $search_results, 'sn' ) ;
+
+?>
+
+The entries will NOT be sorted by last name. Why not? Because LDAP doesn't
+function like a RDBMS; you cannot sort a result set on an arbitrary field,
+regardless of whether you "selected" it. You must always include the attribute
+by which you want to sort your entries among the requested attributes (add 'sn'
+to $ldap_attributes, in this case).
+
+Hope this is helpful to some other folks who scratched their heads when they
+tried to sort entries and it didn't work out...
+===============================================================================
+
+This function applies strcmp() to each attribute (given by sortfilter) in order
+to sort the entries returned by the server.  To order search results ascending
+by last name, try passing "sn" as the sortfilter argument.  This function does
+not play nice with multi-valued attributes.
+===============================================================================
+
+I wondered how to sort after a dn, for just show a tree view. I tried to set
+$sortfilter = 'dn', but that didn't work. Than I tried with a blank string ''.
+That worked, the entries are sorted by dn.
+===============================================================================
+
+If you are wanting to sort by multiple attributes, for instance ordering by
+last name and then first name,  try this function. This is similar to "ORDER BY
+lastname, firstname"  in SQL.
+
+This function uses an insertion sort algorithm, which is somewhat faster then
+the old-fashoned bubble sort.  The second argument is an array containing the
+attributes you want to sort by. (this functon won't do descending or
+ascending..  feel free to add it!)
+
+<?php
+/**
+* @param array $entries
+* @param array $attribs
+* @desc Sort LDAP result entries by multiple attributes.
+*/
+function ldap_multi_sort(&$entries, $attribs){
+    for ($i=1; $i<$entries['count']; $i++){
+        $index = $entries[$i];
+        $j=$i;
+        do {
+            //create comparison variables from attributes:
+            $a = $b = null;
+            foreach($attribs as $attrib){
+                $a .= $entries[$j-1][$attrib][0];
+                $b .= $index[$attrib][0];
+            }
+            // do the comparison
+            if ($a > $b){
+                $is_greater = true;
+                $entries[$j] = $entries[$j-1];
+                $j = $j-1;
+            }else{
+                $is_greater = false;
+            }
+        } while ($j>0 && $is_greater);
+       
+        $entries[$j] = $index;
+    }
+    return $entries;
+}
+?>
+===============================================================================
+
+Something real simple i wrote to sort directory searches by a persons last
+name.
+
+<?php
+for($i=0;$i<$result["count"];$i++)
+{
+
+$lastname = $result[$i]["sn"][0];
+
+$lnames["$i"]=$lastname;
+
+}//for i
+
+@asort($lnames);
+?>
+===============================================================================
+
+In order to order by multiple fields you can order your array many times:
+For example:
+
+        ldap_sort($link, $result, 'givenname');
+        ldap_sort($link, $result, 'sn');

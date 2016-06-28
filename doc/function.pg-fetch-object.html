@@ -1,0 +1,180 @@
+
+pg_fetch_object
+
+(PHP 4, PHP 5, PHP 7)
+
+pg_fetch_object — 提取一行作为对象
+
+说明
+
+object pg_fetch_object ( resource $result [, int $row [, int $result_type ]] )
+
+pg_fetch_object() 返回与所提取行的属性相一致的一个对象。如果出错或者没有更多行
+可供提取时则返回 FALSE。
+
+pg_fetch_object() 和 pg_fetch_array() 相似，只有一点区别－返回一个对象而不是数
+组。间接的，这意味着只能通过字段名来访问数据而不能通过偏移量来访问（数字是非法
+的属性名）。
+
+row 是想要取得的行（记录）的编号。第一行为 0。
+
+除了速度之外，本函数和 pg_fetch_array() 完全一样，而且几乎和 pg_fetch_row() 一
+样快（速度上的差别很小）。
+
+    Note:
+
+    从 4.1.0 版本开始，参数 row 变为可选参数。
+
+    从 4.3.0 开始，result_type 默认值为 PGSQL_ASSOC，而旧版本的默认值是
+    PGSQL_BOTH。数字属性在这里没有用处，因为在 PHP 中对象的属性不能是数字。
+
+    result_type 参数在以后的版本中可能会删除。
+
+Example #1 pg_fetch_object()
+
+<?php 
+
+$database = "store";
+
+$db_conn = pg_connect("host=localhost port=5432 dbname=$database");
+if (!$db_conn) {
+    echo "Failed connecting to postgres database $database\n";
+    exit;
+}
+
+$qu = pg_query($db_conn, "SELECT * FROM books ORDER BY author");
+
+$row = 0; // postgres needs a row counter 
+
+while ($data = pg_fetch_object($qu, $row)) {
+    echo $data->author . " (";
+    echo $data->year . "): ";
+    echo $data->title . "<br />";
+    $row++;
+}
+
+pg_free_result ($qu);
+pg_close ($db_conn);
+
+?>
+
+    Note:
+
+    从 4.1.0 开始，row 成为可选参数。每次调用 pg_fetch_object()，内部的行计数器
+    都会加一。
+
+参见 pg_query()，pg_fetch_array()，pg_fetch_row() 和 pg_fetch_result()。
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+PostgreSQL boolean true becomes string "t"
+PostgreSQL boolean false becomes string "f"
+This is ambiguous, and leads to code duplication. I wonder why aren't the types
+correctly typed when fetching values. We could at least have an optional
+parameter to enable that.
+===============================================================================
+
+If you're wanting to use objects for your results, but are put off because you
+can't seem to apply a function to each field of the result (like stripslashes
+for example), try this code:
+
+<?php
+// Code to connect, do query etc etc...
+
+$row = pg_fetch_object($result);
+$vars = get_object_vars($row);
+foreach ( $vars as $key => $var )
+{
+    $row->{$key} = stripslashes($var);
+}
+
+?>
+===============================================================================
+
+I noticed that many people use FOR loops to extract query data. This is the
+method I use to extract data.
+
+<?php
+@$members = pg_query($db_conn, 'SELECT id,name FROM boards.members ORDER BY
+name;');
+if ($members AND pg_num_rows($members)) {
+  while ($member = pg_fetch_object($members)) {
+   echo $member->name.' ('.$member->id.')';
+  }
+}
+?>
+
+If an error occurs (or nothing is returned) in the above code nothing will
+output. An ELSE clause can be added to the IF to handle query errors (or
+nothing being returned). Or a seperate check can be performed for the event
+that nothing is returned by using an ELSEIF clause.
+
+I like this method because it doesn't use any temporary counter variables.
+===============================================================================
+
+Getting db results as object.
+
+<?php
+$qry = pg_query("SELECT * FROM users");
+
+$rows = array();
+while ($fch = pg_fetch_object($qry)) {
+   $rows[] = $fch;
+}
+
+// or
+
+$rows = array_map(function($a){
+   return (object) $a;
+}, (array) pg_fetch_all($qry));
+?>
+===============================================================================
+
+When you retrieve the contents of a "timestamp with timezone" field, this will
+set the environment's timezone variables. Therefore, this is dangerous:
+
+$s=$row->mydatefield;
+$unixtimestamp=postgresqltimestamp2unix($s);
+echo date("Y-m-d H:i:s",$unixtimestamp);
+
+Here, postgresqltimestamp2unix is a function that converts the postgresql
+timestamp to Unix. The retrieval of the field data in the first line of the
+example above will influence the timezone used in date() in the third line.
+===============================================================================
+
+This isn't all that useful. If you do, for example, foreach($row as $field)
+then you still get every value twice!
+
+You can do something like this, though:
+
+foreach ($line as $key => $cell){
+     if (! is_numeric($key)){
+                echo "<td>$key $cell</td>";
+     }
+}
+
+is is_numeric strict enough?
+===============================================================================
+
+The result_type arg is either invalid or incorrectly documented, since the
+"result_type is optional..." paragraph is copied verbatim from pg_fetch_array,
+and the PGSQL_NUM option is in conflict with the preceding paragraph's, "you
+can only access the data by the field names, and not by their
+offsets."
+===============================================================================
+
+Something I have learned to use:
+
+$result=$pg_query (...);
+$num = pg_numrows($result);
+
+for($count=0;$count < $num && $data=pg_fetch_object($result,$count);$count++)
+{
+    printf("<tr>\n");
+    printf("    <td>%s</td>\n",$data->foo);
+    printf("    <td>%s</td>\n",$data->bar);
+    printf("</tr>\n");
+}

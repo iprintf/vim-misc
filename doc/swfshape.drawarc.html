@@ -1,0 +1,148 @@
+
+SWFShape::drawArc
+
+(PHP 5 <= 5.3.0, PECL ming SVN)
+
+SWFShape::drawArc — Draws an arc of radius r centered at the current location,
+from angle startAngle to angle endAngle measured clockwise from 12 o'clock
+
+说明
+
+void SWFShape::drawArc ( float $r , float $startAngle , float $endAngle )
+Warning
+
+本函数还未编写文档，仅有参数列表。
+
+返回值
+
+没有返回值。
+
+参见
+
+  • SWFShape::drawCircle() - Draws a circle of radius r centered at the current
+    location, in a counter-clockwise fashion
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+It seems that the ming library up to at least v0.4.2 has some rounding issues
+with rendering the arc.  This is most evident as the radius of the arc gets
+smaller (try drawing a circle/arc with radius 1 using ming, better yet, try
+0.5).  The following code renders a much more accurate arc at smaller radii. 
+It also does range checking/normalization on the angles passed in that ming
+doesn't do.
+
+<?php
+
+function drawArc( $shape, $r, $startAngle, $endAngle  ) {
+    // Normalize the angles
+    $delta = $endAngle - $startAngle;
+    if ( abs($delta) >= 360)
+        $delta = 360;
+    else if ($delta < 0)
+        $delta += 360;
+    else if ($delta == 0)
+        return;
+    $startAngle = fmod($startAngle, 360);
+
+    /* first determine number of segments, 8 at most */
+    $nSegs = 1 + (int)round(7 * ($delta / 360));
+
+    /* subangle is half the angle of each segment */
+    $subangle = M_PI * $delta / $nSegs / 360;
+
+    $angle = M_PI * $startAngle / 180;
+
+    $x = $r * sin($angle);
+    $y = -$r * cos($angle);
+
+    $shape->movePen($x, $y);
+
+    $controlRadius = $r / cos($subangle);
+
+    for ( $i=0; $i<$nSegs; ++$i )
+    {
+        $angle += $subangle;
+        $controlx = $controlRadius * sin($angle);
+        $controly = -$controlRadius * cos($angle);
+        $angle += $subangle;
+        $anchorx = ($r*sin($angle));
+        $anchory = (-$r*cos($angle));
+
+        $shape->drawCurve($controlx-$x, $controly-$y,
+                           $anchorx-$controlx, $anchory-$controly);
+
+        $x = $anchorx;
+        $y = $anchory;
+    }
+}
+
+// SWFShape->drawCircle has the same issue with accuracy.  It's a simple thing
+to use the function above to fix this:
+function drawCircle( $shape, $r ) {
+    drawArc( $shape, $r, 0, 360 );
+}
+
+// EXAMPLE USAGE:
+
+//  Set ming defaults
+ming_setScale(20);
+ming_useswfversion(7);
+
+$movie = new SWFMovie();
+$movie->setBackground( 0xff, 0xff, 0xff );
+$movie->setRate(31);
+
+$sprite = new SWFSprite();
+$shape = new SWFShape();
+
+// Ming circles (in green)
+$shape->setLine( 0, 0, 0xff, 0 );
+$shape->movePenTo( 50, 50 );
+$shape->drawCircle( 5 );
+$shape->movePenTo( 50, 50 );
+$shape->drawCircle( 3 );
+$shape->movePenTo( 50, 50 );
+$shape->drawCircle( 1 );
+$shape->movePenTo( 50, 50 );
+$shape->drawCircle( 0.5 );
+
+// Drawn with drawCircle function below (in black)
+$shape->setLine( 0, 0, 0, 0 );
+$shape->movePenTo( 50, 50 );
+drawCircle( $shape, 5 );
+$shape->movePenTo( 50, 50 );
+drawCircle( $shape, 3 );
+$shape->movePenTo( 50, 50 );
+drawCircle( $shape, 1 );
+$shape->movePenTo( 50, 50 );
+drawCircle( $shape, 0.5 );
+
+$sprite->add($shape);
+$sprite->nextFrame();
+$d = $movie->add($sprite);
+$movie->setDimension( 100, 100 );
+$movie->save( "test.swf" );
+
+?>
+===============================================================================
+
+After the arc is drawn, the pen does not return to the original coordinate that
+the arc started on, which is the center of the circle of which the arc is a
+part. Instead, the pen will remain at the last spot of the arc.
+
+In the case of a full circle, this means the pen will now be at 12 o'clock on
+the circle after the arc is drawn.
+
+To revert back to the original position after drawing a circle, you can do
+this...
+
+<?php
+
+$shape = new SWFShape();
+$shape->drawArc(5, 0, 360);
+$shape->movePen(0, 5);
+
+?>

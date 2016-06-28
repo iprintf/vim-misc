@@ -1,0 +1,179 @@
+
+SoapClient::__call
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+SoapClient::__call — Calls a SOAP function (deprecated)
+
+说明
+
+public mixed SoapClient::__call ( string $function_name , string $arguments )
+
+Calling this method directly is deprecated. Usually, SOAP functions can be
+called as methods of the SoapClient object; in situations where this is not
+possible or additional options are needed, use SoapClient::__soapCall().
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+If you are using a WSDL, the library will strip out anything from your
+parameters that is not defined in WSDL, without giving you any notice about
+this.
+
+So if your parameters are not fully matching the WSDL, it will simply send no
+parameters at all.
+This can be a bit hard to debug if you don't have access to the target server.
+
+__soapCall() expects parameters in an array called 'parameters' as opposed to
+calling the function via it's WSDL name, where it accepts the parameters as a
+plain array.
+
+I.e. if a function called sendOrder expects a parameter (array) called
+orderDetails, you can call it like this:
+
+$orderDetails = array(/* your data */);
+$soap->sendOrder(array('orderDetails' => $orderDetails));
+
+Which is equivalent to:
+
+$client->__soapCall('sendOrder', array('parameters' => array('orderDetails' =>
+$orderDetails)));
+
+Note the additional 'parameters' key used in __soapCall().
+===============================================================================
+
+extend of __call thats adds a retry to handle the occasional 'Could not connect
+to host' exceptions
+
+<?php
+class LocalSoapClient extends SoapClient
+{
+
+  public function __call($function_name, $arguments)
+  {
+    $result = false;
+    $max_retries = 5;
+    $retry_count = 0;
+   
+    while(! $result && $retry_count < $max_retries)
+    {
+      try
+      {
+        $result = parent::__call($function_name, $arguments);
+      }
+      catch(SoapFault $fault)
+      {
+        if($fault->faultstring != 'Could not connect to host')
+        {
+          throw $fault;
+        }
+      }
+      sleep(1);
+      $retry_count ++;
+    }
+    if($retry_count == $max_retries)
+    {
+      throw new SoapFault('Could not connect to host after 5 attempts');
+    }
+    return $result;
+  }
+}
+?>
+===============================================================================
+
+I'm writing PHP SOAP client (based on php_soap extension) which uses Google
+AdService,
+today, I tried to create sample Ad using   AdService::addAds()  and discovered
+that my SOAP library does not pass
+"headline", "description1", "description2"  parameters in SOAP request.
+
+First, I thought that this was something wrong with my data, coz I was getting
+validation errors like
+"One or more input elements failed validation."   Then I decided to take a look
+at WSDL description
+https://adwords.google.com/api/adwords/v11/AdService?wsdl
+
+And voilà !  I've found this:
+
+<complexType name="Ad" abstract="true">
+<sequence>
+  <element name="adGroupId" type="xsd:int"/>
+  <element name="adType" nillable="true" minOccurs="0" type="impl:AdType"/>
+  <element name="destinationUrl" nillable="true" minOccurs="0" type=
+"xsd:string"/>
+  <element name="disapproved" type="xsd:boolean"/>
+  <element name="displayUrl" nillable="true" minOccurs="0" type="xsd:string"/>
+  <element name="exemptionRequest" nillable="true" minOccurs="0" type=
+"xsd:string"/>
+  <element name="id" type="xsd:long"/>
+  <element name="status" nillable="true" minOccurs="0" type="impl:AdStatus"/>
+</sequence>
+
+</complexType>
+
+There is no any ''description", "headline1", "headline2", however there is
+another complexType
+
+<complexType name="TextAd">
+    <complexContent>
+    <extension base="impl:Ad">
+    <sequence>
+
+<element name="description1" nillable="true" type="xsd:string"/>
+<element name="description2" nillable="true" type="xsd:string"/>
+<element name="headline" nillable="true" type="xsd:string"/>
+</sequence>
+
+</extension>
+</complexContent>
+</complexType>
+
+So, the thing is when you are working with php_soap be aware of complexType
+extensions which does not work in php_soap when you try to do things like:
+
+<?php
+
+$client = new
+    SoapClient(
+       "https://adwords.google.com/api/adwords/v11/AdService?wsdl",
+        array(  'trace'      => true,
+                'exceptions' => true,
+             )
+     
+    );
+
+$entropy     = substr(md5(rand(0, time())), 0, 10);
+//create Ad test structure
+$sample_ad =  array(
+               "id" => 0,
+               "adGroupId" => 0,
+               "adType" => 'TextAd',
+               "disapproved" => false,
+               "destinationUrl" => 'http://test.com',
+               "displayUrl" => 'www.Test.com',
+               "status" => "Paused", //  Enabled / Disabled
+               "descr_iption1" => 'D1_'.$entropy,
+               "des_cription2" => 'D2_'.$entropy,
+               "head_line" => 'H_'.$entropy
+        );
+
+$client->addAds(array('ads' => array($sample_ad) );
+?>
+===============================================================================
+
+Hi,
+This is a good example, for the SOAP function "__call".
+However it is deprecated.
+
+<?php
+$wsdl = "http://webservices.tekever.eu/ctt/?wsdl";
+$int_zona = 5;
+$int_peso = 1001;
+$cliente = new SoapClient($wsdl);
+print "<p>Envio Internacional: ";
+$vem = $cliente->__call('CustoEMSInternacional',array($int_zona, $int_peso));
+print $vem;
+print "</p>";
+?>

@@ -1,0 +1,1035 @@
+
+realpath
+
+(PHP 4, PHP 5, PHP 7)
+
+realpath — 返回规范化的绝对路径名
+
+说明
+
+string realpath ( string $path )
+
+realpath() 扩展所有的符号连接并且处理输入的 path 中的 '/./', '/../' 以及多余的
+'/' 并返回规范化后的绝对路径名。返回的路径中没有符号连接，'/./' 或 '/../' 成分
+。
+
+参数
+
+path
+
+    要检查的路径。
+
+
+        Note:
+
+        Whilst a path must be supplied, the value can be blank or NULL In these
+        cases, the value is interpreted as the current directory.
+
+返回值
+
+Returns the canonicalized absolute pathname on success. The resulting path will
+have no symbolic link, '/./' or '/../' components.
+
+realpath() 失败时返回 FALSE，比如说文件不存在的话。
+
+    Note:
+
+    The running script must have executable permissions on all directories in
+    the hierarchy, otherwise realpath() will return FALSE.
+
+    Note: 因为 PHP 的整数类型是有符号整型而且很多平台使用 32 位整型，对 2GB 以
+    上的文件，一些文件系统函数可能返回无法预期的结果。
+
+更新日志
+
+版本                                    说明
+5.3.0 在之前的版本中，在 *BSD 系统上，如果仅仅是 path 不存在的话，realpath() 并
+      不会像其它系统那样返回 FALSE。
+5.0.0 在此之前的版本中，如果 path 传入了空或者 NULL，将导致 realpath() 返回脚本
+      当前的目录。
+
+范例
+
+Example #1 realpath() 例子
+
+<?php
+chdir('/var/www/');
+echo realpath('./../../etc/passwd');
+?>
+
+以上例程会输出：
+
+/etc/passwd
+
+Example #2 Windows 上的 realpath()
+
+在 Windows 上，realpath() 会将 unix 风格的路径改成 Windows 风格的。
+
+<?php
+echo realpath('/windows/system32');
+?>
+
+以上例程会输出：
+
+C:\WINDOWS\System32
+
+参见
+
+  • basename() - 返回路径中的文件名部分
+  • dirname() - 返回路径中的目录部分
+  • pathinfo() - 返回文件路径的信息
+
+
+User Contributed Notes 32 notes
+
+===============================================================================
+
+Needed a method to normalize a virtual path that could handle .. references
+that go beyond the initial folder reference. So I created the following.
+<?php
+
+function normalizePath($path)
+{
+    $parts = array();// Array to build a new path from the good parts
+    $path = str_replace('\\', '/', $path);// Replace backslashes with
+forwardslashes
+    $path = preg_replace('/\/+/', '/', $path);// Combine multiple slashes into
+a single slash
+    $segments = explode('/', $path);// Collect path segments
+    $test = '';// Initialize testing variable
+    foreach($segments as $segment)
+    {
+        if($segment != '.')
+        {
+            $test = array_pop($parts);
+            if(is_null($test))
+                $parts[] = $segment;
+            else if($segment == '..')
+            {
+                if($test == '..')
+                    $parts[] = $test;
+
+                if($test == '..' || $test == '')
+                    $parts[] = $segment;
+            }
+            else
+            {
+                $parts[] = $test;
+                $parts[] = $segment;
+            }
+        }
+    }
+    return implode('/', $parts);
+}
+?>
+
+Will convert /path/to/test/.././..//..///..///../one/two/../three/filename
+to ../../one/three/filename
+===============================================================================
+
+Note: If you use this to check if a file exists, it's path will be cached, and
+returns true even if the file is removed (use file_exists instead).
+===============================================================================
+
+Because realpath() does not work on files that do not
+exist, I wrote a function that does.
+It replaces (consecutive) occurences of / and \\ with
+whatever is in DIRECTORY_SEPARATOR, and processes /. and /.. fine.
+Paths returned by get_absolute_path() contain no
+(back)slash at position 0 (beginning of the string) or
+position -1 (ending)
+<?php
+    function get_absolute_path($path) {
+        $path = str_replace(array('/', '\\'), DIRECTORY_SEPARATOR, $path);
+        $parts = array_filter(explode(DIRECTORY_SEPARATOR, $path), 'strlen');
+        $absolutes = array();
+        foreach ($parts as $part) {
+            if ('.' == $part) continue;
+            if ('..' == $part) {
+                array_pop($absolutes);
+            } else {
+                $absolutes[] = $part;
+            }
+        }
+        return implode(DIRECTORY_SEPARATOR, $absolutes);
+    }
+?>
+
+A test:
+<?php
+    var_dump(get_absolute_path('this/is/../a/./test/.///is'));
+?>
+Returns: string(14) "this/a/test/is"
+
+As you can so, it also produces Yoda-speak. :)
+===============================================================================
+
+Here is a small and handy method to calculate the relative path from $from to
+$to. Note: On Windows it does not work when $from and $to are on different
+drives.
+
+<?php
+function relativePath($from, $to, $ps = DIRECTORY_SEPARATOR)
+{
+  $arFrom = explode($ps, rtrim($from, $ps));
+  $arTo = explode($ps, rtrim($to, $ps));
+  while(count($arFrom) && count($arTo) && ($arFrom[0] == $arTo[0]))
+  {
+    array_shift($arFrom);
+    array_shift($arTo);
+  }
+  return str_pad("", count($arFrom) * 3, '..'.$ps).implode($ps, $arTo);
+}
+?>
+===============================================================================
+
+Please be aware that this function does NOT always strip a trailing slash!:
+
+LINUX (tested with PHP 5.2.11):
+---
+realpath('.')
+: string = "/myhttpdfolder"
+realpath('./')
+: string = "/myhttpdfolder"
+realpath('fileadmin')
+: string = "/myhttpdfolder/fileadmin"
+realpath('fileadmin/')
+: string = "/myhttpdfolder/fileadmin"
+
+WINDOWS (tested with PHP 5.2.5):
+---
+realpath('.')
+: string = "C:\\myhttpdfolder"
+realpath('./')
+: string = "C:\\myhttpdfolder\\"
+realpath('fileadmin')
+: string = "C:\\myhttpdfolder\\fileadmin"
+realpath('fileadmin/')
+: string = "C:\\myhttpdfolder\\fileadmin\\"
+===============================================================================
+
+Here's a function to canonicalize a URL containing relative paths. Ran into the
+problem when pulling links from a remote page.
+
+<?php
+
+function canonicalize($address)
+{
+    $address = explode('/', $address);
+    $keys = array_keys($address, '..');
+
+    foreach($keys AS $keypos => $key)
+    {
+        array_splice($address, $key - ($keypos * 2 + 1), 2);
+    }
+
+    $address = implode('/', $address);
+    $address = str_replace('./', '', $address);
+}
+
+$url = 'http://www.example.com/something/../else';
+echo canonicalize($url); //http://www.example.com/else
+
+?>
+===============================================================================
+
+Sometimes you may need to refer to the absolute path of a file in your website
+instead of a relative path, but the realpath() function returns the path
+relative to the server's filesystem, not a path relative to your website root
+directory.
+
+For example, realpath() may return something like this:
+
+/home/yoursite/public_html/dir1/file.ext
+
+You can't use this in an HTML document, because the web server will not find
+the file. To do so, you can use:
+
+<?php
+
+function htmlpath($relative_path) {
+    $realpath=realpath($relative_path);
+    $htmlpath=str_replace($_SERVER['DOCUMENT_ROOT'],'',$realpath);
+    return $htmlpath;
+}
+
+echo '<img src="',htmlpath('../../relative/path/to/file.ext'),'" border=1>';
+
+?>
+
+It will return something like:
+
+<img src="/dir1/relative/path/to/file.ext" border=1>
+===============================================================================
+
+Note that under Windows, a slash-rooted path will resolve on the local drive,
+and *not* necessarily C:\.
+
+For example:
+
+M:\>php -r "print realpath('/AUTOEXEC.BAT');"
+[prints nothing, because there is no M:\AUTOEXEC.BAT]
+
+But:
+
+M:\>C:
+C:\>php -r "print realpath('/AUTOEXEC.BAT');"
+C:\AUTOEXEC.BAT
+
+Same script, different response depending on current drive.
+
+I'm inclined to argue that this function *should* use the value of
+%SystemDrive% as the "slash root" base.
+===============================================================================
+
+I made this function so that I could see if a user was trying to go above the
+current directory.
+
+My top dir:
+/var/www/dir/
+
+User wanted
+/var/www/
+
+This comes in handy when you're making a php explorer/filemanager and you want
+your files in the directory above to be private.
+
+Here it is
+
+<?php
+//usage
+//$dir is the dir you are in
+//$dir_top is the highest dir allowed.
+
+//example
+/*
+if(above_dir('../', '/var/www/filemgr'))
+    die('Not allowed. Please stick to your directories');
+*/
+function above_dir($dir, $dir_top){
+    if($dir == $dir_top)
+        return false;
+   
+    $dir = realpath($dir);
+    $dir_top = realpath($dir_top);
+   
+    $dir = count(explode('/', $dir));
+    $dir_top = count(explode('/', $dir_top));
+   
+    if($dir <= $dir_top){
+        return true;
+    }else{
+        return false;
+    }
+}
+
+?>
+===============================================================================
+
+When using realpath (and similar functions) remember that PHP will take in to
+account open_basedir restrictions. So, if you do something like:
+
+<?php
+// test.php in httpdocs folder
+$path = realpath(dirname(__FILE__) . '/../application');
+?>
+
+where your open_basedir setting is set to the httpdocs folder and tmp, this
+will return false. You must set it to the level above (or off) for this to
+work.
+===============================================================================
+
+<?php
+//rp like, working with absolute/relative path & a little bit shorter :p
+
+function rp($path) {
+    $out=array();
+    foreach(explode('/', $path) as $i=>$fold){
+        if ($fold=='' || $fold=='.') continue;
+        if ($fold=='..' && $i>0 && end($out)!='..') array_pop($out);
+    else $out[]= $fold;
+    } return ($path{0}=='/'?'/':'').join('/', $out);
+}
+?>
+===============================================================================
+
+Here's a little function to return the relative path between two urls:
+
+<?php
+
+    function get_relative_path($start_dir, $final_dir){
+        //
+        $firstPathParts = explode(DIRECTORY_SEPARATOR, $start_dir);
+        $secondPathParts = explode(DIRECTORY_SEPARATOR, $final_dir);
+        //
+        $sameCounter = 0;
+        for($i = 0; $i < min( count($firstPathParts), count($secondPathParts)
+); $i++) {
+            if( strtolower($firstPathParts[$i]) !== strtolower($secondPathParts
+[$i]) ) {
+                break;
+            }
+            $sameCounter++;
+        }
+        if( $sameCounter == 0 ) {
+            return $final_dir;
+        }
+        //
+        $newPath = '';
+        for($i = $sameCounter; $i < count($firstPathParts); $i++) {
+            if( $i > $sameCounter ) {
+                $newPath .= DIRECTORY_SEPARATOR;
+            }
+            $newPath .= "..";
+        }
+        if( count($newPath) == 0 ) {
+            $newPath = ".";
+        }
+        for($i = $sameCounter; $i < count($secondPathParts); $i++) {
+            $newPath .= DIRECTORY_SEPARATOR;
+            $newPath .= $secondPathParts[$i];
+        }
+        //
+        return $newPath;
+    }
+
+?>
+===============================================================================
+
+You have a realpath.
+Now you want a htmlpath.
+
+First Suggestion:
+<?php
+
+function htmlpath($relative_path) {
+   $realpath=realpath($relative_path);
+   $htmlpath=str_replace($_SERVER['DOCUMENT_ROOT'],'',$realpath);
+   return $htmlpath;
+}
+?>
+
+But this does not work on some servers.
+
+Second Suggestion:
+
+<?php
+
+function htmlpath($realpath) {
+   $i = substr_count($_ENV["SCRIPT_URL"],'/')."<br>";
+   $baserealpath=realpath(str_repeat('../',$i-1));
+   $htmlpath=str_replace($baserealpath,'',$realpath);
+   return $htmlpath;
+}
+
+?>
+===============================================================================
+
+Be aware that realpath() doesn't work with hidden Windows UNC paths, eg  \\
+servername\share$\folder\blah.txt but other PHP file-functions can access that
+file fine.
+===============================================================================
+
+Beware of relative symbolic links like this one (ext4 file system on Ubuntu) :
+
+    vincent@vincent:~/Bureau/dirscan$ readlink sandbox/roulant/voiture/
+cabriolet/ln-loop-relative
+    ../..
+
+In this case, realpath may return false :
+
+<?php
+var_dump(realpath('sandbox/roulant/voiture/cabriolet/ln-loop-relative'));
+// => string(44) "/home/vincent/Bureau/dirscan/sandbox/roulant"
+var_dump(realpath('sandbox/roulant/voiture/cabriolet/ln-loop-relative/moto'));
+// => bool(false)
+?>
+
+But you can fix it by clearing the realpath cache, this way :
+
+<?php
+var_dump(realpath('sandbox/roulant/voiture/cabriolet/ln-loop-relative'));
+clearstatcache(true);
+var_dump(realpath('sandbox/roulant/voiture/cabriolet/ln-loop-relative/moto'));
+// => string(49) "/home/vincent/Bureau/dirscan/sandbox/roulant/moto"
+?>
+===============================================================================
+
+Sometimes it is helpful to check for the existance of a file
+which might be found by using the include_path like in
+
+<?php
+include("file_from_include_path.php");
+?>
+
+A simple function iterates the include_path and tries all
+possibilites, returns translated_local_path on success or false
+if not found.
+
+<?php
+function mappath($path_to_translate){
+  $IncludePath=explode(PATH_SEPARATOR,get_include_path());
+  foreach($IncludePath as $prefix){
+    if(substr($prefix,-1)==DIRECTORY_SEPARATOR)
+      $prefix=substr($prefix,0,-1);
+    $try_path=sprintf("%s%s%s"
+      ,$prefix,DIRECTORY_SEPARATOR,$path_to_translate);
+    if(file_exists($try_path))return($try_path);
+  }
+  return false;
+}
+?>
+===============================================================================
+
+If using Windows junction.exe to create a symlink, it seems impossible to get
+the real path to the file. Even __FILE__ contains the symlinked path, not the
+actual path of the file.
+===============================================================================
+
+You may want to change script behavior depending on the way how its code is
+invoked (included by another script / called directly). Following code do the
+job
+<?php
+if (realpath(__FILE__) == realpath($_SERVER['SCRIPT_FILENAME'])) {
+  // called directly
+  ...
+} else {
+  // included
+  ...
+}
+?>
+===============================================================================
+
+if you just need to resolve a path that is not on your system, or you don't
+want to chdir to it, a simple regular expression can do the trick:
+
+<?php
+
+$p = '/cool/yeah/../zzz';
+
+$p = preg_replace('/\w+\/\.\.\//', '', $p);
+
+echo $p; //outputs /cool/zzz
+
+?>
+===============================================================================
+
+for those who want to start realpath on windows platform and looking for
+example.
+
+OR
+
+for those who want to run zend framework on windows platform using the quick
+start guide
+
+<?php
+define( "_CUR_OS", substr( php_uname( ), 0, 7 ) == "Windows" ? "Win" : "_Nix" 
+);
+
+function checkCurrentOS( $_OS )
+{
+    if ( strcmp( $_OS, _CUR_OS ) == 0 ) {
+        return true;
+    }
+    return false;
+}
+
+// public/index.php
+//
+// Step 1: APPLICATION_PATH is a constant pointing to our
+// application/subdirectory. We use this to add our "library" directory
+// to the include_path, so that PHP can find our Zend Framework classes.
+
+if ( checkCurrentOS( "Win" ) ) {
+    $mappath = '/' . str_replace( "\\", "/", str_replace( "C:\\","", dirname(
+__FILE__) ) );
+}
+else {
+    $mappath = dirname(__FILE__);
+}
+
+define('APPLICATION_PATH', realpath(  $mappath . '/../_privateadico/application
+/') );
+set_include_path(
+    APPLICATION_PATH . '/../library'
+    . PATH_SEPARATOR . get_include_path()
+);
+?>
+
+I took the index.php for zend which is was written for unix and ported it to
+windows.
+
+The porting problem was with realpath function not understanding dirname
+(__FILE__) syntex on windows
+===============================================================================
+
+If you need to resolve a url against a base url, as the browser does with
+anchor tags, then realpath won't help, because it's not on your file system.
+
+This function does that:
+
+<?php
+function resolve_href ($base, $href) {
+     
+    // href="" ==> current url.
+    if (!$href) {
+        return $base;
+    }
+
+    // href="http://..." ==> href isn't relative
+    $rel_parsed = parse_url($href);
+    if (array_key_exists('scheme', $rel_parsed)) {
+        return $href;
+    }
+
+    // add an extra character so that, if it ends in a /, we don't lose the
+last piece.
+    $base_parsed = parse_url("$base ");
+    // if it's just server.com and no path, then put a / there.
+    if (!array_key_exists('path', $base_parsed)) {
+        $base_parsed = parse_url("$base/ ");
+    }
+
+    // href="/ ==> throw away current path.
+    if ($href{0} === "/") {
+        $path = $href;
+    } else {
+        $path = dirname($base_parsed['path']) . "/$href";
+    }
+
+    // bla/./bloo ==> bla/bloo
+    $path = preg_replace('~/\./~', '/', $path);
+
+    // resolve /../
+    // loop through all the parts, popping whenever there's a .., pushing
+otherwise.
+        $parts = array();
+        foreach (
+            explode('/', preg_replace('~/+~', '/', $path)) as $part
+        ) if ($part === "..") {
+            array_pop($parts);
+        } elseif ($part!="") {
+            $parts[] = $part;
+        }
+
+    return (
+        (array_key_exists('scheme', $base_parsed)) ?
+            $base_parsed['scheme'] . '://' . $base_parsed['host'] : ""
+    ) . "/" . implode("/", $parts);
+
+}
+?>
+
+[EDIT BY danbrown AT php DOT net:  Code contains a bugfix supplied by (Zhenya
+DOT Morozov AT gmail DOT com) on 23-JAN-09, to address the following issue:
+'If your path contains "0" (or any "false" string) directory name, the function
+removes that directory from the path.']
+===============================================================================
+
+Given real paths of two files, this function finds the relative path of one
+($dest) with respect to the other ($root).
+
+<?php
+echo rel_path('a/b/c', 'd/e'); // './../../a/b/c'
+echo rel_path('a/b/c', 'a/b/c/d/e'); // './../..'
+echo rel_path('a/b/c/d/e', 'a/b/c'); // './d/e'
+
+function rel_path($dest, $root = '', $dir_sep = '/')
+{
+$root = explode($dir_sep, $root);
+$dest = explode($dir_sep, $dest);
+$path = '.';
+$fix = '';
+$diff = 0;
+for($i = -1; ++$i < max(($rC = count($root)), ($dC = count($dest)));)
+{
+  if(isset($root[$i]) and isset($dest[$i]))
+  {
+   if($diff)
+   {
+    $path .= $dir_sep. '..';
+    $fix .= $dir_sep. $dest[$i];
+    continue;
+   }
+   if($root[$i] != $dest[$i])
+   {
+    $diff = 1;
+    $path .= $dir_sep. '..';
+    $fix .= $dir_sep. $dest[$i];
+    continue;
+   }
+  }
+  elseif(!isset($root[$i]) and isset($dest[$i]))
+  {
+   for($j = $i-1; ++$j < $dC;)
+   {
+    $fix .= $dir_sep. $dest[$j];
+   }
+   break;
+  }
+  elseif(isset($root[$i]) and !isset($dest[$i]))
+  {
+   for($j = $i-1; ++$j < $rC;)
+   {
+    $fix = $dir_sep. '..'. $fix;
+   }
+   break;
+  }
+}
+  return $path. $fix;
+}
+?>
+===============================================================================
+
+There might be other solutions like mine in here,
+but here is one more.
+
+This function converts Virtual Paths into Relative Paths.
+I needed that at one time, and I did'nt have much luck finding a solution
+amongst the PHP Functions in the manual.
+
+<?php
+function GetPath($RedPath) {
+
+  if(substr($RedPath, 0, 1) == "/") {
+    $SysPath = dirname($_SERVER['PHP_SELF']);
+
+    if(substr($RedPath, -1) == "/") $RedPath = substr($RedPath, 0, -1);
+
+    if(strlen($SysPath) == 1)
+      return ".".$RedPath;
+    elseif(strcmp($SysPath,$RedPath) == 0)
+      return "./"; 
+
+    else {
+      $s_tmp = split("/", $SysPath);
+      $r_tmp = split("/", $RedPath);
+
+      while(($r_tmp[$i] == $s_tmp[$i]) && $i < 10)
+        $i++;
+
+      $t_RedPath = end(split("/", $RedPath, ($i+1))); 
+
+      if($i == count($s_tmp))
+        return "./".$t_RedPath;
+      else
+        return str_repeat("../", count($s_tmp)-$i).$t_RedPath;
+    }
+  }
+  else
+    return $RedPath;
+
+}
+?>
+===============================================================================
+
+This is my attempt at writing a realpath replacement. I needed to to run some
+Adobe code on a server with realpath disabled and this seemed to do the job. It
+is written for a unix server, I suppose it could be made cross platform using
+DIRECTORY_SEPARATOR. (With thanks to Marc Noirot for his code).
+
+<?php
+function myRealPath($path) {
+
+    // check if path begins with "/" ie. is absolute
+    // if it isnt concat with script path
+    if (strpos($path,"/") !== 0) {
+        $base=dirname($_SERVER['SCRIPT_FILENAME']);
+        $path=$base."/".$path;
+    }
+ 
+    // canonicalize
+    $path=explode('/', $path);
+    $newpath=array();
+    for ($i=0; $i<sizeof($path); $i++) {
+        if ($path[$i]==='' || $path[$i]==='.') continue;
+           if ($path[$i]==='..') {
+              array_pop($newpath);
+              continue;
+        }
+        array_push($newpath, $path[$i]);
+    }
+    $finalpath="/".implode('/', $newpath);
+
+    // check then return valid path or filename
+    if (file_exists($finalpath)) {
+        return ($finalpath);
+    }
+    else return FALSE;
+}
+?>
+===============================================================================
+
+This function is also nice to test for security-breaches. You can forbid the
+script to access files below a certain directory to prevent "../../../etc/
+shadow" and similar attacks:
+
+<?php
+
+// declare the basic directory for security reasons
+// Please do NOT attach a "/"-suffix !
+$basedir = '/var/www/cgi-bin/scriptfolder';
+
+// compare the entered path with the basedir
+$path_parts = pathinfo($_REQUEST['file_to_get']);
+if (realpath($path_parts['dirname']) != $basedir) {
+    /* appropriate action against crack-attempt*/
+    die ('coding good - h4x1ng bad!');
+}
+
+?>
+
+The url "script.php?file_to_get=../../../etc/shadow" will now result in an
+error.
+===============================================================================
+
+realpath() seems to be equivalent to ASP's Server.MapPath.  On my Win2k box I
+have successfully used realpath() to give me the full path for a file outside
+of the document_root.  This will be very useful in conjunction with is_dir and/
+or is_file, which require a full path.
+===============================================================================
+
+mkdir (and realpath) did not work because i'd used virtual() function to
+replace server side include in my file.
+And i've just seen that virtual() function changes the current directory ...
+that's why !
+
+jerome ;)
+===============================================================================
+
+It's strange, but  realpath('C:/wamp/www/sdo-test/data') sometime retuns false,
+use // or \ instead.
+===============================================================================
+
+please note that realpath is a performance killer
+
+on my sys listing 100 files with realpath takes 0.2 sec (core2quad 6600 x64
+4gbddr2)
+
+in most cases, its better to use getcwd() instead and work with dirname() to
+resolve ".."
+===============================================================================
+
+There is no native function that does the opposite.
+
+Pure-php implementation:
+
+<?php
+function getRelativePath( $path, $compareTo ) {
+        // clean arguments by removing trailing and prefixing slashes
+        if ( substr( $path, -1 ) == '/' ) {
+            $path = substr( $path, 0, -1 );
+        }
+        if ( substr( $path, 0, 1 ) == '/' ) {
+            $path = substr( $path, 1 );
+        }
+
+        if ( substr( $compareTo, -1 ) == '/' ) {
+            $compareTo = substr( $compareTo, 0, -1 );
+        }
+        if ( substr( $compareTo, 0, 1 ) == '/' ) {
+            $compareTo = substr( $compareTo, 1 );
+        }
+
+        // simple case: $compareTo is in $path
+        if ( strpos( $path, $compareTo ) === 0 ) {
+            $offset = strlen( $compareTo ) + 1;
+            return substr( $path, $offset );
+        }
+
+        $relative  = array(  );
+        $pathParts = explode( '/', $path );
+        $compareToParts = explode( '/', $compareTo );
+
+        foreach( $compareToParts as $index => $part ) {
+            if ( isset( $pathParts[$index] ) && $pathParts[$index] == $part ) {
+                continue;
+            }
+
+            $relative[] = '..';
+        }
+
+        foreach( $pathParts as $index => $part ) {
+            if ( isset( $compareToParts[$index] ) && $compareToParts[$index] ==
+$part ) {
+                continue;
+            }
+
+            $relative[] = $part;
+        }
+
+        return implode( '/', $relative );
+    }
+?>
+
+Some tests forr phpunit:
+
+<?php
+    static public function getRelativePathProvider(  )  {
+        return array(
+            array(
+                '/srv/foo/bar',
+                '/srv',
+                'foo/bar',
+            ),
+            array(
+                '/srv/foo/bar',
+                '/srv/',
+                'foo/bar',
+            ),
+            array(
+                '/srv/foo/bar/',
+                '/srv',
+                'foo/bar',
+            ),
+            array(
+                '/srv/foo/bar/',
+                '/srv/',
+                'foo/bar',
+            ),
+            array(
+                '/srv/foo/bar',
+                '/srv/test',
+                '../foo/bar',
+            ),
+            array(
+                '/srv/foo/bar',
+                '/srv/test/fool',
+                '../../foo/bar',
+            ),
+            array(
+                '/srv/mad/xp/mad/model/static/css/uni-form.css',
+                '/srv/mad/xp/liria/',
+                '../mad/model/static/css/uni-form.css',
+            ),
+        );
+    }
+
+    /**
+     * @dataProvider getRelativePathProvider
+     */
+    public function testGetRelativePath( $path, $compareTo, $expected ) {
+        $result = getRelativePath( $path, $compareTo );
+        $this->assertEquals( $expected, $result );
+    }
+?>
+===============================================================================
+
+<?php
+
+Class RealPath
+{
+    private $ServerPath;
+    private $ScriptPath;
+    private $AddSlashEnd;
+
+    function __construct()
+    {
+        $this->AddSlashEnd = "";
+       
+        $this->ServerPath = $_SERVER['DOCUMENT_ROOT'];
+        $this->ScriptPath = substr(dirname($_SERVER['SCRIPT_FILENAME']), strlen
+($this->ServerPath));
+    }
+   
+    private function Server($adress)
+    {
+        $ThisPath = @realpath($adress);
+        $ThisPathLength = strlen($ThisPath);
+   
+        return substr($ThisPath, strlen($this->ServerPath), $ThisPathLength);
+    }
+   
+    public function Absolute($adress)
+    {
+        return $_SERVER['SERVER_NAME'] . $this->Server($adress) . $this->
+AddSlashEnd;
+    }
+   
+    public function RelativeServer($adress)
+    {
+        return $this->Server($adress) . $this->AddSlashEnd;
+    }
+
+    public function RelativeScript($adress)
+    {
+        $ScriptExplode = explode("/", $this->ScriptPath);
+        $ServerExplode = explode("/", $this->Server($adress));
+       
+        $TmpCount = $ScriptCount = count($ScriptExplode);
+        $ServerCount = count($ServerExplode);
+       
+        $ReturnPath = "";
+       
+        for($i = 1; $i < $TmpCount; $i++)
+        {
+            if($ScriptExplode[$i] == $ServerExplode[$i])
+                --$ScriptCount;
+            else
+                break;
+        }
+       
+        for($i = 1; $i < $ScriptCount; $i++)
+            $ReturnPath .= "/..";
+
+        for($i = $TmpCount - $ScriptCount + 1; $i < $ServerCount; $i++)
+            $ReturnPath .= "/" . $ServerExplode[$i];
+       
+        return $ReturnPath . $this->AddSlashEnd;
+    }
+
+    public function AddSlash($value)
+    {
+        if(is_bool($value))
+        {
+            $this->AddSlashEnd = ($value)? "/" : "";
+            return true;
+        }
+        else
+            return false;
+    }
+   
+}
+
+example:
+
+$ObjectPath = new RealPath;
+$ObjectPath->RelativeScript("../a/b../c/d/f../g../h");
+===============================================================================
+
+Here's a little function to return the shortest relative path between dest
+folder and current folder (you can be replace $_SERVER['PHP_SEFL'] by your
+variable folder) :
+
+<?php
+// if you run in /var/www/
+
+echo UnRealPath ('./'); // return "./"
+echo UnRealPath ('./ajax-browser/AJAX-B/scripts/'); // return "./ajax-browser/
+AJAX-B/scripts/"
+echo UnRealPath ('/var/'); // return "./../"
+echo UnRealPath ('/opt/picasa/wine/'); // return "./../../opt/picasa/wine/"
+
+function UnRealPath ($dest)
+{
+    $Ahere = explode ('/', realpath($_SERVER['PHP_SEFL']));
+    $Adest = explode ('/', realpath($dest));
+    $result = '.'; // le chemin retouné dois forcement commancé par ./   c'est
+le but
+    while (implode ('/', $Adest) != implode ('/', $Ahere))// && count ($Adest)>
+0 && count($Ahere)>0 )
+    {
+        if (count($Ahere)>count($Adest))
+        {
+            array_pop($Ahere);
+            $result .= '/..';
+        }
+        else
+        {
+            array_pop($Adest);
+        }
+    }
+    return str_replace('//', '/', $result.str_replace(implode ('/', $Adest), ''
+, realpath($dest)).(@is_dir(realpath($dest))?'/':''));
+}
+?>

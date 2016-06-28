@@ -1,0 +1,161 @@
+
+ldap_rename
+
+(PHP 4 >= 4.0.5, PHP 5, PHP 7)
+
+ldap_rename — Modify the name of an entry
+
+说明
+
+bool ldap_rename ( resource $link_identifier , string $dn , string $newrdn , 
+string $newparent , bool $deleteoldrdn )
+
+The entry specified by dn is renamed/moved.
+
+参数
+
+link_identifier
+
+    An LDAP link identifier, returned by ldap_connect().
+
+dn
+
+    The distinguished name of an LDAP entity.
+
+newrdn
+
+    The new RDN.
+
+newparent
+
+    The new parent/superior entry.
+
+deleteoldrdn
+
+    If TRUE the old RDN value(s) is removed, else the old RDN value(s) is
+    retained as non-distinguished values of the entry.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+    Note:
+
+    This function currently only works with LDAPv3. You may have to use 
+    ldap_set_option() prior to binding to use LDAPv3. This function is only
+    available when using OpenLDAP 2.x.x OR Netscape Directory SDK x.x.
+
+参见
+
+  • ldap_modify() - Modify an LDAP entry
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+Here's some clarification about the parameters when renaming a container in
+Novell eDirectory:
+- $new_rdn is in format "ou=new container name"
+- newparent parameter is NULL - because we're renaming and not moving
+- deleteoldrdn parameter if TRUE then old value of OU attribute is stored as a
+secondary/further value of LDAP OU attribute. Novell ConsoleOne shows it as
+'Other Name' attribute.
+
+$full_old_dn= "ou=Cuckoo,ou=London,ou=UK,ou=Europe,o=Happy";
+$new_rdn= "ou=Cuckoo Group";
+   
+ldap_rename( $conn, $full_old_dn, $new_rdn, NULL, TRUE);
+===============================================================================
+
+Since this function isn't documented to well I thought I'd help out those
+trying to get this to work.
+
+<?php
+// $dn is the full DN of the entry you wish to move
+$dn = 'cn=user1,ou=group1,dc=mydomain';
+/*
+    note that $newRdn IS NOT a full DN, it is only the start
+    I've NOT gotten it to change attributes for the RDN
+    but that could just be my schema
+*/
+$newRdn = 'cn=user2';
+// $newparent IS the full DN to the NEW parent DN that you want to move/rename
+to
+$newParent = 'ou=group2,dc=mydomain';
+ldap_rename($link, $dn, $newRdn, $newParent, true);
+?>
+
+Like I said above I haven't been able to get it to rename to a DIFFERENT
+attribute so deleteoldrdn has no affect on it.
+===============================================================================
+
+If you are using Sun Directory Server 5.2, please note that you can't use
+ldap_rename to move an entry. According to Sun's own documentation: "[...] At
+this point in time, Directory Server does not support the ability to use the
+modify DN operation to move an entry from one location in the directory tree to
+another location." (http://docs.sun.com/source/817-6707/resultcodes.html)
+The problem is that php does not return any error and the operation seems to
+complete succesfully, except for the fact that nothing really happens. If you
+check the server logs, there will be an "error 53" entry (server is unwilling
+to perform).
+hope this saves someone's couple of hours nasty searching...
+===============================================================================
+
+Though clearly mentioned, the following had me in spin for a good 10 minutes.
+
+Ensure:
+
+if (!ldap_set_option($conn, LDAP_OPT_PROTOCOL_VERSION, 3)) {
+   // do something horrible
+}
+
+has been set _before_ you actually bind :)
+===============================================================================
+
+Contrary to Richard Esplin's statement, this *is* the correct function to use
+for renaming subtrees and moving entries from one place in the tree to another.
+Just that most LDAP server implementations don't support moving non-leaf
+entries.
+
+E.g. In OpenLDAP, moving a non-leaf entry is only supported when using the
+back-hdb database backend. SunOne only has one database backend, and it
+apparently doesn't handle this type of operation.
+===============================================================================
+
+ldap_rename can only move leaf nodes of the directory tree. If your ldap entry
+has any child entries, then ldap_rename is not the tool that you need. We
+needed to change usernames, but that alters the dn. ldap_rename wouldn't work
+because each of our user ldap entries has a couple associated child entries. We
+had to write a function to recursively copy the subtree to the new location,
+and then delete the original version. Here is the basic algorithm:
+
+function recursive_move($old_username, $new_username)
+    ldap_search on the old username to get the correct entry
+    ldap_get_attributes to get an array of values from the ldap entry
+    foreach attribute in array, replace occurences of $old_username with
+$new_username
+    ldap_add the attribute array into the new location
+    ldap_modify any additional attributes
+    ldap_list each child entry
+    call function recursive_move on each child
+    ldap_delete current entry
+    return
+===============================================================================
+
+To get this function working make sure that the value for $newrdn is relative.
+===============================================================================
+
+A thing to remember when using ldap_rename or any other method that is not
+doing just renaming but creating a new parent and moving children is that
+you'll loose your original entryUUID!
+We wanted to do a local DB mapping for LDAP->DB user groups thinking that it
+would be the most stable resource identifier only to find out we were
+absolutely wrong.
+===============================================================================
+
+Works also with eDirectory 8 (NW6).
+
+If you are moving a user, remember that you also change the uid!

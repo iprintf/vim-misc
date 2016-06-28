@@ -1,0 +1,142 @@
+
+proc_terminate
+
+(PHP 5, PHP 7)
+
+proc_terminate — 杀除由 proc_open 打开的进程
+
+说明
+
+bool proc_terminate ( resource $process [, int $signal = 15 ] )
+
+向 process （由 proc_open() 函数创建）发送信号通知其终止。 proc_terminate() 调
+用之后将会立即返回，而不会等待进程终止。
+
+可以使用 proc_terminate() 终止进程并且继续其他的任务。可以使用 proc_get_status
+() 函数来检查进程是否已经终止。
+
+参数
+
+process
+
+    由 proc_open() 打开的 resource。
+
+signal
+
+    可选参数，仅用于 POSIX 操作系统。表示调用系统命令 kill(2) 来向进程发送的信
+    号。默认值为 SIGTERM。
+
+返回值
+
+返回进程的终止状态。
+
+更新日志
+
+版本                 说明
+5.2.2 之前的版本被用来销毁进程 resource。
+
+参见
+
+  • proc_open() - 执行一个命令，并且打开用来输入/输出的文件指针。
+  • proc_close() - 关闭由 proc_open 打开的进程并且返回进程退出码
+  • proc_get_status() - 获取由 proc_open 函数打开的进程的信息
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+As explained in http://bugs.php.net/bug.php?id=39992, proc_terminate() leaves
+children of the child process running. In my application, these children often
+have infinite loops, so I need a sure way to kill processes created with
+proc_open(). When I call proc_terminate(), the /bin/sh process is killed, but
+the child with the infinite loop is left running.
+
+Until proc_terminate() gets fixed, I would not recommend using it. Instead, my
+solution is to:
+1) call proc_get_status() to get the parent pid (ppid) of the process I want to
+kill.
+2) use ps to get all pids that have that ppid as their parent pid
+3) use posix_kill() to send the SIGKILL (9) signal to each of those child pids
+4) call proc_close() on process resource
+
+<?php
+$descriptorspec = array(
+0 => array('pipe', 'r'),  // stdin is a pipe that the child will read from
+1 => array('pipe', 'w'),  // stdout is a pipe that the child will write to
+2 => array('pipe', 'w')   // stderr is a pipe the child will write to
+);
+$process = proc_open('bad_program', $descriptorspec, $pipes);
+if(!is_resource($process)) {
+    throw new Exception('bad_program could not be started.');
+}
+//pass some input to the program
+fwrite($pipes[0], $lots_of_data);
+//close stdin. By closing stdin, the program should exit
+//after it finishes processing the input
+fclose($pipes[0]);
+
+//do some other stuff ... the process will probably still be running
+//if we check on it right away
+
+$status = proc_get_status($process);
+if($status['running'] == true) { //process ran too long, kill it
+    //close all pipes that are still open
+    fclose($pipes[1]); //stdout
+    fclose($pipes[2]); //stderr
+    //get the parent pid of the process we want to kill
+    $ppid = $status['pid'];
+    //use ps to get all the children of this process, and kill them
+    $pids = preg_split('/\s+/', `ps -o pid --no-heading --ppid $ppid`);
+    foreach($pids as $pid) {
+        if(is_numeric($pid)) {
+            echo "Killing $pid\n";
+            posix_kill($pid, 9); //9 is the SIGKILL signal
+        }
+    }
+       
+    proc_close($process);
+}
+
+?>
+===============================================================================
+
+on Windows platform proc_terminate() does not kill sub-processes that are not
+handling kill signals. It happens even if you call xxx.exe and call
+proc_terminate() the process will remain active.
+
+The solution is instead of calling proc_terminate() is to call the user-defined
+kill() function (already win/unix optimized)
+After that need to close all pipes and execute proc_close().
+
+function kill($pid){
+    return stripos(php_uname('s'), 'win')>-1  ? exec("taskkill /F /T /PID
+$pid") : exec("kill -9 $pid");
+}
+
+function killall($pids) {
+    $os=stripos(php_uname('s'), 'win')>-1;
+    ($_=implode($os?' /PID ':' ',$pids)) or ($_=$pids);
+    return preg_match('/success|close/', $os ? exec("taskkill /F /T /PID $_") :
+exec("kill -9 $_"));
+}
+
+Example:
+
+$pstatus = proc_get_status($resource);
+$PID = $pstatus['pid'];
+
+// other commands
+
+kill($PID); // instead of proc_terminate($resource);
+fclose($pipes[0]);
+fclose($pipes[1]);
+fclose($pipes[2]);
+proc_close($resource);
+===============================================================================
+
+/bin/sh -c CMD will fork sh and then exec CMD.
+/bin/sh -c exec CMD will NOT fork and only executes CMD.
+
+Therefore, you can get rid of this hack by prefixing your command to "exec bla
+bla bla".

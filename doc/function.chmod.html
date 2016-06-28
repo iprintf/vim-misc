@@ -1,0 +1,221 @@
+
+chmod
+
+(PHP 4, PHP 5, PHP 7)
+
+chmod — 改变文件模式
+
+说明
+
+bool chmod ( string $filename , int $mode )
+
+尝试将 filename 所指定文件的模式改成 mode 所给定的。
+
+参数
+
+filename
+
+    文件的路径。
+
+mode
+
+    注意 mode 不会被自动当成八进制数值，而且也不能用字符串（例如 "g+w"）。要确
+    保正确操作，需要给 mode 前面加上 0：
+
+    <?php
+    chmod("/somedir/somefile", 755);   // 十进制数，可能不对
+    chmod("/somedir/somefile", "u+rwx,go+rx"); // 字符串，不对
+    chmod("/somedir/somefile", 0755);  // 八进制数，正确的 mode 值
+    ?>
+
+    mode 参数包含三个八进制数按顺序分别指定了所有者、所有者所在的组以及所有人的
+    访问限制。每一部分都可以通过加入所需的权限来计算出所要的权限。数字 1 表示使
+    文件可执行，数字 2 表示使文件可写，数字 4 表示使文件可读。加入这些数字来制
+    定所需要的权限。有关 UNIX 系统的文件权限可以阅读手册“man 1 chmod”和“man 2
+    chmod”。
+
+    <?php
+    // Read and write for owner, nothing for everybody else
+    chmod("/somedir/somefile", 0600);
+
+    // Read and write for owner, read for everybody else
+    chmod("/somedir/somefile", 0644);
+
+    // Everything for owner, read and execute for others
+    chmod("/somedir/somefile", 0755);
+
+    // Everything for owner, read and execute for owner's group
+    chmod("/somedir/somefile", 0750);
+    ?>
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+    Note:
+
+    当前用户指的是执行 PHP 的用户。很可能和通常的 shell 或者 FTP 用户不是同一个
+    。在大多数系统下文件模式只能被文件所有者的用户改变。
+
+    Note: 此函数不能作用于远程文件，被检查的文件必须是可通过服务器的文件系统访
+    问的。
+
+    Note:
+
+    当安全模式打开的时候，PHP 会检查所操作的文件是否和正在执行的脚本具有相同的
+    UID （所有者）。要注意的是，不能修改 SUID，SGID 和 sticky bits。
+
+参见
+
+  • chown() - 改变文件的所有者
+  • chgrp() - 改变文件所属的组
+  • fileperms() - 取得文件的权限
+  • stat() - 给出文件的信息
+
+
+User Contributed Notes 28 notes
+
+===============================================================================
+
+BEWARE, a couple of the examples in the comments suggest doing something like
+this:
+
+chmod(file_or_dir_name, intval($mode, 8));
+
+However, if $mode is an integer then intval( ) won't modify it.  So, this
+code...
+
+$mode = 644;
+chmod('/tmp/test', intval($mode, 8));
+
+...produces permissions that look like this:
+
+1--w----r-T
+
+Instead, use octdec( ), like this:
+
+chmod(file_or_dir_name, octdec($mode));
+
+See also: http://www.php.net/manual/en/function.octdec.php
+===============================================================================
+
+BEWARE using quotes around the second parameter...
+
+If you use quotes eg
+
+chmod (file, "0644");
+
+php will not complain but will do an implicit conversion to an int before
+running chmod. Unfortunately the implicit conversion doesn't take into account
+the octal string so you end up with an integer version 644, which is 1204 octal
+===============================================================================
+
+Usefull reference:
+
+Value    Permission Level
+400    Owner Read
+200    Owner Write
+100    Owner Execute
+40    Group Read
+20    Group Write
+10    Group Execute
+4    Global Read
+2    Global Write
+1    Global Execute
+
+(taken from http://www.onlamp.com/pub/a/php/2003/02/06/php_foundations.html)
+===============================================================================
+
+Changes file mode recursive in $pathname to $filemode
+
+<?php
+
+$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(
+$pathname));
+
+foreach($iterator as $item) {
+    chmod($item, $filemode);
+}
+
+?>
+===============================================================================
+
+In the previous post, stickybit avenger writes:
+    Just a little hint. I was once adwised to set the 'sticky bit', i.e. use
+1777 as chmod-value...
+
+Note that in order to set the sticky bit on a file one must use '01777' (oct)
+and not '1777' (dec) as the parameter to chmod:
+
+<?php
+    chmod("file",01777);   // correct
+     chmod("file",1777);    // incorrect, same as chmod("file",01023), causing
+no owner permissions!
+?>
+
+Rule of thumb: always prefix octal mode values with a zero.
+===============================================================================
+
+Thanks for your code, "imoldgreg at o2 dot co dot uk". I am using it for an
+instalation script that has to CHMOD a bunch of files. I have found it faster
+to use the same connectino for each, as shown below.
+
+<?php
+
+// Thanks to "imoldgreg at o2 dot co dot uk" for the base 'CHMOD via FTP'
+script.
+
+function chmod_open()
+{
+    // Use your own FTP info
+    $ftp_user_name = 'chmod@XXXXXXXXX.com';
+    $ftp_user_pass = 'XXXXXXXXXX';
+    $ftp_root = '/';
+    $ftp_server = 'localhost';
+    $conn_id = ftp_connect($ftp_server);
+    $login_result = ftp_login($conn_id, $ftp_user_name, $ftp_user_pass);
+    return $conn_id;
+}
+
+function chmod_file($conn_id, $permissions, $path)
+{
+    if (ftp_site($conn_id, 'CHMOD ' . $permissions . ' ' . $ftp_root . $path) !
+== false)
+    {
+        return TRUE;
+    }
+    else
+    {
+        return FALSE;
+    }
+}
+
+function chmod_close($conn_id)
+{
+    ftp_close($conn_id);
+}
+
+// CHMOD the required setup files
+
+// Connect to the FTP
+$conn_id = chmod_open();
+
+// CHMOD each file and echo the results
+echo chmod_file($conn_id, 777, 'master/cache/') ? 'CHMODed successfully!' : 
+'Error';
+echo chmod_file($conn_id, 777, 'master/files/') ? 'CHMODed successfully!' : 
+'Error';
+echo chmod_file($conn_id, 777, 'master/store/') ? 'CHMODed successfully!' : 
+'Error';
+echo chmod_file($conn_id, 766, 'master/config.php') ? 'CHMODed successfully!' :
+'Error';
+echo chmod_file($conn_id, 777, 'master/images/avatars/upload/') ? 'CHMODed
+successfully!' : 'Error';
+
+// Close the connection
+chmod_close($conn_id);
+
+?>
+

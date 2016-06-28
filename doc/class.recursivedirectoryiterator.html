@@ -1,0 +1,360 @@
+
+The RecursiveDirectoryIterator class
+
+(PHP 5, PHP 7)
+
+简介
+
+The RecursiveDirectoryIterator provides an interface for iterating recursively
+over filesystem directories.
+
+类摘要
+
+RecursiveDirectoryIterator extends FilesystemIterator implements 
+SeekableIterator , RecursiveIterator {
+/* 方法 */
+public __construct ( string $path [, int $flags =
+FilesystemIterator::KEY_AS_PATHNAME | FilesystemIterator::CURRENT_AS_FILEINFO ]
+)
+public mixed getChildren ( void )
+public string getSubPath ( void )
+public string getSubPathname ( void )
+public bool hasChildren ([ bool $allow_links = false ] )
+public string key ( void )
+public void next ( void )
+public void rewind ( void )
+/* Inherits */
+public FilesystemIterator::__construct ( string $path [, int $flags =
+FilesystemIterator::KEY_AS_PATHNAME | FilesystemIterator::CURRENT_AS_FILEINFO |
+FilesystemIterator::SKIP_DOTS ] )
+public mixed FilesystemIterator::current ( void )
+public int FilesystemIterator::getFlags ( void )
+public string FilesystemIterator::key ( void )
+public void FilesystemIterator::next ( void )
+public void FilesystemIterator::rewind ( void )
+public void FilesystemIterator::setFlags ([ int $flags ] )
+}
+
+更新日志
+
+  版本                                    说明
+5.3.0     The FilesystemIterator was introduced as the parent class.
+          Previously, the parent was the DirectoryIterator.
+5.3.0     Implements SeekableIterator.
+5.2.11,   Added RecursiveDirectoryIterator::FOLLOW_SYMLINKS
+5.3.1
+
+Table of Contents
+
+  • RecursiveDirectoryIterator::__construct — Constructs a
+    RecursiveDirectoryIterator
+  • RecursiveDirectoryIterator::getChildren — Returns an iterator for the
+    current entry if it is a directory
+  • RecursiveDirectoryIterator::getSubPath — Get sub path
+  • RecursiveDirectoryIterator::getSubPathname — Get sub path and name
+  • RecursiveDirectoryIterator::hasChildren — Returns whether current entry is
+    a directory and not '.' or '..'
+  • RecursiveDirectoryIterator::key — Return path and filename of current dir
+    entry
+  • RecursiveDirectoryIterator::next — Move to next entry
+  • RecursiveDirectoryIterator::rewind — Rewind dir back to the start
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+If you would like to get, say, all the *.php files in your project folder,
+recursively, you could use the following:
+
+<?php
+
+$Directory = new RecursiveDirectoryIterator('path/to/project/');
+$Iterator = new RecursiveIteratorIterator($Directory);
+$Regex = new RegexIterator($Iterator, '/^.+\.php$/i', RecursiveRegexIterator::
+GET_MATCH);
+
+?>
+
+$Regex will contain a single index array for each PHP file.
+===============================================================================
+
+Usage example:
+
+<?php
+
+$path = realpath('/etc');
+
+$objects = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path),
+RecursiveIteratorIterator::SELF_FIRST);
+foreach($objects as $name => $object){
+    echo "$name\n";
+}
+
+?>
+
+This prints a list of all files and directories under $path (including $path
+ifself). If you want to omit directories, remove the
+RecursiveIteratorIterator::SELF_FIRST part.
+===============================================================================
+
+If you use RecursiveDirectoryIterator with RecursiveIteratorIterator and run
+into UnexpectedValueException you may use this little hack to ignore those
+directories, such as lost+found on linux.
+
+<?php
+class IgnorantRecursiveDirectoryIterator extends RecursiveDirectoryIterator {
+    function getChildren() {
+        try {
+            return new IgnorantRecursiveDirectoryIterator($this->getPathname
+());
+        } catch(UnexpectedValueException $e) {
+            return new RecursiveArrayIterator(array());
+        }
+    }
+}
+?>
+
+Use just like the normal RecursiveDirectoryIterator.
+===============================================================================
+
+Since I continue to run into implementations across the net that are
+unintentionally running into this trap — beware:
+
+RecursiveDirectoryIterator recurses without limitations into the full
+filesystem tree.
+
+Do NOT do the following, unless you intentionally want to infinitely recurse
+without limitations:
+
+<?php
+$directory = new \RecursiveDirectoryIterator($path);
+$iterator = new \RecursiveIteratorIterator($directory);
+$files = array();
+foreach ($iterator as $info) {
+  if (...custom conditions...) {
+    $files[] = $info->getPathname();
+  }
+}
+?>
+
+1. RecursiveDirectoryIterator is just a RecursiveIterator that recurses into
+its children, until no more children are found.
+
+2. The instantiation of RecursiveIteratorIterator causes
+RecursiveDirectoryIterator to *immediately* recurse infinitely into the entire
+filesystem tree (starting from the given base path).
+
+3. Unnecessary filesystem recursion is slow.  In 90% of all cases, this is not
+what you want.
+
+Remember this simple rule of thumb:
+
+→ A RecursiveDirectoryIterator must be FILTERED or you have a solid reason for
+why it shouldn't.
+
+On PHP <5.4, implement the following - your custom conditions move into a
+proper filter:
+
+<?php
+$directory = new \RecursiveDirectoryIterator($path, \FilesystemIterator::
+FOLLOW_SYMLINKS);
+$filter = new MyRecursiveFilterIterator($directory);
+$iterator = new \RecursiveIteratorIterator($filter);
+$files = array();
+foreach ($iterator as $info) {
+  $files[] = $info->getPathname();
+}
+
+class MyRecursiveFilterIterator extends \RecursiveFilterIterator {
+
+  public function accept() {
+    $filename = $this->current()->getFilename();
+    // Skip hidden files and directories.
+    if ($name[0] === '.') {
+      return FALSE;
+    }
+    if ($this->isDir()) {
+      // Only recurse into intended subdirectories.
+      return $name === 'wanted_dirname';
+    }
+    else {
+      // Only consume files of interest.
+      return strpos($name, 'wanted_filename') === 0;
+    }
+  }
+
+}
+?>
+
+On PHP 5.4+, PHP core addressed the slightly cumbersome issue of having to
+create an entirely new class and you can leverage the new
+RecursiveCallbackFilterIterator instead:
+
+<?php
+$directory = new \RecursiveDirectoryIterator($path, \FilesystemIterator::
+FOLLOW_SYMLINKS);
+$filter = new \RecursiveCallbackFilterIterator($directory, function ($current, 
+$key, $iterator) {
+  // Skip hidden files and directories.
+  if ($current->getFilename()[0] === '.') {
+    return FALSE;
+  }
+  if ($current->isDir()) {
+    // Only recurse into intended subdirectories.
+    return $current->getFilename() === 'wanted_dirname';
+  }
+  else {
+    // Only consume files of interest.
+    return strpos($current->getFilename(), 'wanted_filename') === 0;
+  }
+});
+$iterator = new \RecursiveIteratorIterator($filter);
+$files = array();
+foreach ($iterator as $info) {
+  $files[] = $info->getPathname();
+}
+?>
+
+Have fun!
+===============================================================================
+
+If you need to convert a nested directory tree into a multidimensional array,
+use this code:
+
+<?php
+$ritit = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(
+$startpath), RecursiveIteratorIterator::CHILD_FIRST);
+$r = array();
+foreach ($ritit as $splFileInfo) {
+   $path = $splFileInfo->isDir()
+         ? array($splFileInfo->getFilename() => array())
+         : array($splFileInfo->getFilename());
+
+   for ($depth = $ritit->getDepth() - 1; $depth >= 0; $depth--) {
+       $path = array($ritit->getSubIterator($depth)->current()->getFilename()
+=> $path);
+   }
+   $r = array_merge_recursive($r, $path);
+}
+
+print_r($r);
+?>
+===============================================================================
+
+In this doc page i see things for to hide hidden files  (also for opendir() or
+readdir() .... this should be mentiond all there
+<?php
+// not hidden but on most OS systems Win, *nix, OSX..
+if ($file == '.' || $file == '..') {
+     // "." current dir info,
+     // ".." dir above info,
+          continue;
+?>
+or
+<?php
+if $name[0] === '.' // NOT OK FOLKS
+?>
+Think:
+"... and then came Polly.avi" is the title of the Movi. What do you do then?
+
+Windows does it different with hidden files than unix based systems.
+
+For unix based systems  something like this should work:
+<?php
+if (preg_match('/^(\.\w+|\.$|\.\.$)/i', $location)) {
+/* is hidden:
+    .
+    ..
+    .dir
+    .file
+*/
+}
+// must be ok: "..some thing", "... some thing"
+?>
+
+I know you do it (if $name[0] === '.' ) because it is much faster. But it is
+NOT correct and some day you miss things like me today :-)
+===============================================================================
+
+Usage example:
+To see all the files, and count the space usage:
+
+<?php
+$ite=new RecursiveDirectoryIterator("/path/");
+
+$bytestotal=0;
+$nbfiles=0;
+foreach (new RecursiveIteratorIterator($ite) as $filename=>$cur) {
+    $filesize=$cur->getSize();
+    $bytestotal+=$filesize;
+    $nbfiles++;
+    echo "$filename => $filesize\n";
+}
+
+$bytestotal=number_format($bytestotal);
+echo "Total: $nbfiles files, $bytestotal bytes\n";
+?>
+===============================================================================
+
+The returned object is an iterator of SplFileInfo objects.
+===============================================================================
+
+If you want to copy all files recursively from a source directory to some
+destination  :
+
+    $directory = new RecursiveDirectoryIterator("./source_path/");
+
+    foreach (new RecursiveIteratorIterator($directory) as $filename=>$current)
+{
+           
+            $src = $current->getPathName();
+            $dest = "./destination_path/" . $current->getFileName();
+           
+            echo "copy " .  $src . " => " . $dest  . "\n";
+           
+            copy($src, $dest);
+     }
+
+I hope it can help someone because when I looked for this solution I had to
+transform another example to get it.
+===============================================================================
+
+I tried to use RecursiveDirectoryIterator to dump all files (and theirs
+properties, such as size/is_link/is_dir/mtime/perms/owner/group) from a large
+directory (~400.000 files), filtering some specific wanted files/folders.
+
+Using RecursiveDirectoryIterator and SplFileInfo, dump was taking about 50
+seconds to perform, but it was working.
+
+However, to improve performance, I decided to make another version of the same
+script, using only direct file functions, such as "readdir", "filesize",
+"filemtime", etc.., and adding recursivity myself (if(is_dir($path))
+doRecursivity($path);
+
+After running it, script went from ~50s to only ~20s to complete (On Linux
+CentOS 7, SSD 300IPs).
+
+Strangely, on Windows 7, Sata3 (with exactly same files [mirrored]) the time
+went from ~63s to ~57s.
+
+I believe that this payload is due to the OO approach of SPL, which runs lots
+of unnecessary extra code to perform the same tasks with more reliability,
+while direct file funcions are more like alias to C corresponding functions,
+and thereover, must faster.
+
+So, if you're dealing with a large amount of files, using
+RecursiveDirectoryIterator is probably not the way to go.
+===============================================================================
+
+(related to the post about exceptions in getChildren().
+
+instead of subclassing you can simply use the CATCH_GET_CHILD flag for
+RecursiveIteratorIterator
+
+new RecursiveIteratorIterator($diriter,
+RecursiveIteratorIterator::CATCH_GET_CHILD);
+===============================================================================
+
+When looping through the RecursiveDirectoryIterator , the results use 
+SplFileInfo.

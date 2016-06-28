@@ -1,0 +1,368 @@
+
+get_defined_vars
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+get_defined_vars — 返回由所有已定义变量所组成的数组
+
+描述
+
+array get_defined_vars ( void )
+
+此函数返回一个包含所有已定义变量列表的多维数组，这些变量包括环境变量、服务器变
+量和用户定义的变量。
+<?php
+$b = array(1,1,2,3,5,8);
+
+$arr = get_defined_vars();
+
+// 打印 $b
+print_r($arr["b"]);
+
+// 打印 PHP 解释程序的路径（如果 PHP 作为 CGI 使用的话）
+// 例如：/usr/local/bin/php
+echo $arr["_"];
+
+// 打印命令行参数（如果有的话）
+print_r($arr["argv"]);
+
+// 打印所有服务器变量
+print_r($arr["_SERVER"]);
+
+// 打印变量数组的所有可用键值
+print_r(array_keys(get_defined_vars()));
+?>
+
+参见 get_defined_functions() 和 get_defined_constants()。
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+Reference variables are returned by reference (tested on PHP 5.5.11):
+<?php
+$a = null;
+$b = &$a;
+get_defined_vars()['b'] = 4;
+var_dump($b); // int(4)
+?>
+===============================================================================
+
+A little gotcha to watch out for:
+
+If you turn off RegisterGlobals and related, then use get_defined_vars(), you
+may see something like the following:
+
+<?php
+Array
+(
+    [GLOBALS] => Array
+        (
+            [GLOBALS] => Array
+*RECURSION*
+            [_POST] => Array()
+            [_GET] => Array()
+            [_COOKIE] => Array()
+            [_FILES] => Array()
+        )
+
+    [_POST] => Array()
+    [_GET] => Array()
+    [_COOKIE] => Array()
+    [_FILES] => Array()
+
+)
+?>
+
+Notice that $_SERVER isn't there.  It seems that php only loads the superglobal
+$_SERVER if it is used somewhere.  You could do this:
+
+<?php
+print '<pre>' . htmlspecialchars(print_r(get_defined_vars(), true)) . '</pre>';
+print '<pre>' . htmlspecialchars(print_r($_SERVER, true)) . '</pre>';
+?>
+
+And then $_SERVER will appear in both lists.  I guess it's not really a gotcha,
+because nothing bad will happen either way, but it's an interesting curiosity
+nonetheless.
+===============================================================================
+
+Simple routine to convert a get_defined_vars object to XML.
+
+<?php
+function obj2xml($v, $indent='') {
+  while (list($key, $val) = each($v)) {
+    if ($key == '__attr') continue;
+    // Check for __attr
+    if (is_object($val->__attr)) {
+      while (list($key2, $val2) = each($val->__attr)) {
+        $attr .= " $key2=\"$val2\"";
+      }
+    }
+    else $attr = '';
+    if (is_array($val) || is_object($val)) {
+      print("$indent<$key$attr>\n");
+      obj2xml($val, $indent.'  ');
+      print("$indent</$key>\n");
+    }
+    else print("$indent<$key$attr>$val</$key>\n");
+  }
+}
+
+//Example object
+$x->name->first = "John";
+$x->name->last = "Smith";
+$x->arr['Fruit'] = 'Bannana';
+$x->arr['Veg'] = 'Carrot';
+$y->customer = $x;
+$y->customer->__attr->id='176C4';
+
+$z = get_defined_vars();
+obj2xml($z['y']);
+?>
+
+will output:
+<customer id="176C4">
+  <name>
+    <first>John</first>
+    <last>Smith</last>
+  </name>
+  <arr>
+    <Fruit>Bannana</Fruit>
+    <Veg>Carrot</Veg>
+  </arr>
+</customer>
+===============================================================================
+
+As a note, get_defined_vars() does not return a set of variable references (as
+I hoped). For example:
+
+<?php
+
+// define a variable
+$my_var = "foo";
+
+// get our list of defined variables
+$defined_vars = get_defined_vars();
+
+// now try to change the value through the returned array
+$defined_vars["my_var"] = "bar";
+
+echo $my_var, "\n";
+
+?>
+
+will output "foo" (the original value). It'd be nice if get_defined_vars() had
+an optional argument to make them references, but I imagine its a rather
+specialized request. You can do it yourself (less conveniently) with something
+like:
+
+<?php
+
+$defined_vars = array();
+$var_names = array_keys(get_defined_vars());
+
+foreach ($var_names as $var_name)
+{
+    $defined_vars[$var_name] =& $$var_name;
+}
+
+?>
+===============================================================================
+
+Here's a very simple function for debugging. It's far from perfect but I find
+it very handy. It outputs the var value and the var name on a new line. The
+problem is it'll echo any vars and their name if they share the same value. No
+big deal when debugging and saves the hassle of writing the HTML and var name
+when echoing a variable. (ev=echo variable). Using get_defined_vars() inside a
+function renames the var name to the functions variable so isn't as useful for
+debugging. Of course, you'll need access to the $GLOBALS array
+<?
+function ev($variable){
+    foreach($GLOBALS as $key => $value){
+        if($variable===$value){
+            echo '<p>'.$key.' - '.$value.'</p>';
+        }
+    }
+}
+
+$a=0;
+ev($a);
+$b=0;
+ev($b);
+$c=0;
+ev($c);
+?>
+Will output
+a - 0
+
+a - 0
+b - 0
+
+a - 0
+b - 0
+c - 0
+===============================================================================
+
+Since get_defined_vars() only gets the variables at the point you call the
+function, there is a simple way to get the variables defined within the current
+scope.
+
+<?php
+// The very top of your php script
+$vars = get_defined_vars();
+
+// Now do your stuff
+$foo = 'foo';
+$bar = 'bar';
+
+// Get all the variables defined in current scope
+$vars = array_diff(get_defined_vars(),$vars);
+
+echo '<pre>';
+print_r($vars);
+echo '</pre>';
+?>
+===============================================================================
+
+dirty code sample:
+
+print_r(compact(array_keys(get_defined_vars())));
+===============================================================================
+
+Here is a function which generates a debug report for display or email
+using get_defined_vars. Great for getting a detailed snapshot without
+relying on user input.
+
+<?php
+function generateDebugReport($method,$defined_vars,$email="undefined"){
+    // Function to create a debug report to display or email.
+    // Usage: generateDebugReport(method,get_defined_vars(),email[optional]);
+    // Where method is "browser" or "email".
+
+    // Create an ignore list for keys returned by 'get_defined_vars'.
+    // For example, HTTP_POST_VARS, HTTP_GET_VARS and others are
+    // redundant (same as _POST, _GET)
+    // Also include vars you want ignored for security reasons - i.e.
+PHPSESSID.
+    $ignorelist=array("HTTP_POST_VARS","HTTP_GET_VARS",
+    "HTTP_COOKIE_VARS","HTTP_SERVER_VARS",
+    "HTTP_ENV_VARS","HTTP_SESSION_VARS",
+    "_ENV","PHPSESSID","SESS_DBUSER",
+    "SESS_DBPASS","HTTP_COOKIE");
+
+    $timestamp=date("m/d/y h:m:s");
+    $message="Debug report created $timestamp\n";
+
+    // Get the last SQL error for good measure, where $link is the resource
+identifier
+    // for mysql_connect. Comment out or modify for your database or
+abstraction setup.
+    global $link;
+    $sql_error=mysql_error($link);
+    if($sql_error){
+      $message.="\nMysql Messages:\n".mysql_error($link);
+    }
+    // End MySQL
+
+    // Could use a recursive function here. You get the idea ;-)
+    foreach($defined_vars as $key=>$val){
+      if(is_array($val) && !in_array($key,$ignorelist) && count($val) > 0){
+        $message.="\n$key array (key=value):\n";
+        foreach($val as $subkey=>$subval){
+          if(!in_array($subkey,$ignorelist) && !is_array($subval)){
+            $message.=$subkey." = ".$subval."\n";
+          }
+          elseif(!in_array($subkey,$ignorelist) && is_array($subval)){
+            foreach($subval as $subsubkey=>$subsubval){
+              if(!in_array($subsubkey,$ignorelist)){
+                $message.=$subsubkey." = ".$subsubval."\n";
+              }
+            }
+          }
+        }
+      }
+      elseif(!is_array($val) && !in_array($key,$ignorelist) && $val){
+        $message.="\nVariable ".$key." = ".$val."\n";
+      }
+    }
+
+    if($method=="browser"){
+      echo nl2br($message);
+    }
+    elseif($method=="email"){
+      if($email=="undefined"){
+        $email=$_SERVER["SERVER_ADMIN"];
+      }
+
+      $mresult=mail($email,"Debug Report for ".$_ENV["HOSTNAME"]."",$message);
+      if($mresult==1){
+        echo "Debug Report sent successfully.\n";
+      }
+      else{
+        echo "Failed to send Debug Report.\n";     
+      }
+    }
+}
+?>
+===============================================================================
+
+get_defined_vars() returns ALL the vars (in the current scope), what if you
+just want all YOUR vars, not PHP's super-globals?
+
+<?php
+    var_export(array_diff(get_defined_vars(), array(array())));
+?>
+
+Example...
+
+<?php
+    $TOP_LEVEL_VAR=1;
+    var_export(array_diff(get_defined_vars(), array(array())));
+?>
+
+The output (with register_globals off) should be...
+
+array (
+  'TOP_LEVEL_VAR' => 1,
+)
+
+...it perfectly eliminated all the super-globals, without me having to specify
+them! (note with register_globals on, the output includes those globals, then
+TOP_LEVEL_VAR).
+
+Here it is, as a function...(it's the best I could do {I can't call
+get_defined_vars() inside get_user_defined_vars() cuz of the scope issue}).
+
+<?php
+    header('Content-type: text/plain');
+
+    $TOP_LEVEL_VAR=1;
+
+    echo 'register_globals(';
+    echo ini_get('register_globals');
+    echo ') '.phpversion()."\n";
+
+    var_export(get_user_defined_vars(get_defined_vars()));
+
+    function get_user_defined_vars($vars) {
+        return array_diff($vars, array(array()));
+    }
+?>
+
+Note that originally I had an array of the super-globals I wanted removed from
+get_defined_vars()'s array, then I noticed even an empty double-array, array
+(array()), made it give me the correct result. Weird.
+
+This was tested on PHP 5.2.9.
+===============================================================================
+
+Note that this only returns things you've used. See http://bugs.php.net/
+bug.php?id=52110 . So don't expect this to have the $this entry, unless you
+assign $this to return $this.
+===============================================================================
+
+Please be aware that function_get_vars only returns the variables defined at
+the point before you call the function_get_vars function, it does not scan the
+entire function for you, only the lines before you call it.

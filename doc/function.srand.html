@@ -1,0 +1,423 @@
+
+srand
+
+(PHP 4, PHP 5, PHP 7)
+
+srand — 播下随机数发生器种子
+
+说明
+
+void srand ([ int $seed ] )
+
+用 seed 播下随机数发生器种子。seed 参数没有给出时，会被设为随时数。
+
+    Note: 自 PHP 4.2.0 起，不再需要用 srand() 或 mt_srand() 给随机数发生器播种
+    ，因为现在是由系统自动完成的。
+
+参数
+
+seed
+
+    可选的种子值
+
+返回值
+
+没有返回值。
+
+更新日志
+
+   版本                      说明
+Since 4.2.0 seed 成为可选，省略时会默认使用随机值。
+
+范例
+
+Example #1 srand() 例子
+
+<?php
+// seed with microseconds
+function make_seed()
+{
+  list($usec, $sec) = explode(' ', microtime());
+  return (float) $sec + ((float) $usec * 100000);
+}
+srand(make_seed());
+$randval = rand();
+?>
+
+参见
+
+  • rand() - 产生一个随机整数
+  • getrandmax() - 显示随机数最大的可能值
+  • mt_srand() - 播下一个更好的随机数发生器种子
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+Keep in mind that the Suhosin patch which is installed by default on many
+PHP-installs such as Debian and DirectAdmin completely disables the srand and
+mt_srand functions for encryption security reasons. To generate reproducible
+random numbers from a fixed seed on a Suhosin-hardened server you will need to
+include your own pseudorandom generator code.
+===============================================================================
+
+To generate a random number which is different every day, I used the number of
+days after unix epoch as a seed:
+
+<?php 
+   srand(floor(time() / (60*60*24)));
+   echo rand() % 100;
+?>
+
+My provider upgraded the php server recently, and calling srand(seed) does not
+seem to set the seed anymore. To let srand set the seed, add the following line
+to your .htaccess file
+
+php_value suhosin.srand.ignore 0
+
+Kudos to doc_z (http://www.webmasterworld.com/php/3777515.htm)
+
+Harmen
+===============================================================================
+
+srand() is pretty tricky to get right. You should never seed a random number
+generator more than once per php process, if you do, your randomness is limited
+to the source of your seed.
+
+The microtime function's micro-seconds portion has a very finite resolution,
+that is why the make_seed function was added to the document. You should never
+get the same seed twice.
+
+In the later CVS versions, PHP will seed the random generator prior to
+performing a rand() if srand() was not previously called.
+===============================================================================
+
+It is REALLY essential to make sure that srand is called only once.
+This is a bit difficult if the call is hidden somewhere in third-party code you
+include. For example, I used a standard banner script that *seemed* to work
+well putting
+three random banners in one frame. But in the long run, the choice appeared
+somewhat biased - probably because srand was called once per banner, not
+once per run.
+It would be nice if the random number generator worked like in PERL: If You use
+the random function without having called srand ever before in a script,
+srand is invoked before (and automatically with a nice seed, hopefully).
+I suggest that one should do something like this:
+
+<?php
+if (!$GLOBALS["IHaveCalledSrandBefore"]++) {
+  srand((double) microtime() * 1000000);
+}
+?>
+
+(Depending on the situation, one might also work with a static variable
+instead)
+===============================================================================
+
+Sorry about that...  ok, forget have of what I said up there ^.
+
+The code that would prove my example is this:
+
+<?php
+srand(5);
+echo(rand(1, 10));
+srand(5);
+echo(rand(1, 10));
+srand(5);
+echo(rand(1, 10));
+?>
+
+Each time you SHOULD get the same answer, but if you did this:
+
+<?php
+srand(5);
+echo(rand(1, 10));
+echo(rand(1, 10));
+echo(rand(1, 10));
+?>
+
+then the answers would be different, and you'd be letting the random number
+formula do it's duty.
+===============================================================================
+
+OK, to summarize what people have been saying so far:
+
+1. DO NOT seed the RNG more than once if you can help it!
+2. You HAVE TO seed the RNG yourself if you are using PHP < 4.2.0.
+3. Using a prime multiplier to microtime() probably does very little. Use the
+Mersenne Twister instead.
+4. You can use the Mersenne Twister PRNG with the mt_rand and mt_srand
+functions. This is faster and is more random.
+===============================================================================
+
+srand and mt_srand are both initialized only once per process ID.
+
+You cannot re-seed your rand algorithms after the first "srand", "mt_srand",
+"rand", "mt_rand", "shuffle", or any other rand-like function.
+
+I have been facing an issue where after forking my process, all childs were
+generating exactly the same rand values.
+This was due a first "shuffle" call on the parent process, so I could not
+re-seed the childs.
+
+To solve my issue, I simple called "rand" N times, to offset the child rand
+generators.
+
+# Offset the child rand generator by its PID
+$n = (getmypid() % 100) * (10 * abs(microtime(true) - time()));
+for ($n; $n > 0; $n--) {
+      rand(0, $n);
+}
+
+Since each pcntl_fork takes a while to be completed, the microtime offers an
+extra offset, other than one PID increment.
+
+This small code will make at the WORST hypothesis 1000 iterations.
+===============================================================================
+
+I have a ramdon circulater that changes a piece of text once a day, and I use
+the following code to make sure the see is unique enough.
+
+$tm = time();
+$today = mktime(0, 0, 0, (int)date("n", $tm), (int)date("j", $tm), (int)date
+("Y", $tm));                                                  
+srand($today / pi());
+
+The pi works wonders for the whole thing and it works like a charm. Any other
+big decimal number will do as well, but pi is the most common "big" number.
+===============================================================================
+
+Another use of srand is to obtain the same value of rand in a determined time
+interval. Example: you have an array of 100 elements and you need to obtain a
+random item every day but not to change in the 24h period (just imagine
+"Today's Photo" or similar).
+<?php
+$seed = floor(time()/86400);
+srand($seed);
+$item = $examplearray[rand(0,99)];
+?>
+You obtain the same value every time you load the page all the 24h period.
+===============================================================================
+
+I simply use this, and it has always worked fine:
+
+function initRand ()
+{
+    static $randCalled = FALSE;
+    if (!$randCalled)
+    {
+        srand((double) microtime() * 1000000);
+        $randCalled = TRUE;
+    }
+}
+function randNum ($low, $high)
+{
+    initRand();
+    $rNum = rand($low, $high);
+    return $rNum;
+}
+===============================================================================
+
+In addition to my earlier post being stupidly coded with $wasseeded = TRUE :-|
+here is an update:
+
+In PHP4, I *BELIEVE* the random number generator will seed itself if you don't
+seed it.
+
+In PHP3, or some versions of PHP3?, that was not the case -- An unseeded rand()
+wouldn't be random.
+
+While it would "work fine" in terms of spitting out a number, an unseeded
+random number generator won't be very random in many situations unless it has
+been properly seeded.
+
+I'm afraid I can't explain all the details of why this is because A) it would
+be an entire textbook, and B) I don't know them all by heart, even if I
+understood them 20 years ago in college.
+
+If you are running PHP4, you are probably okay, and if you are happy with the
+randomness of your values, you are fine, but you may want to do a little test
+like:
+
+<?php
+  $stats[1] = 0;
+  $stats[2] = 0;
+  $stats[3] = 0;
+  for ($i = 0; $i < 1000; $i++){
+    $choice = rand(1,3);
+    if (!$i){
+      echo "First random choice: $choice<BR>\n";
+    }
+    $stats[$choice]++;
+  }
+  reset($stats);
+  while (list($num, $count) = each($stats)){
+    echo "$num: $count<BR>\n";
+  }
+?>
+
+Run the test a half-dozen times and check that the distribution of 1, 2, and 3
+is even, and that the first number chosen is not the same every time.
+
+This is hardly an exhaustive test, but it at least gives some reassurance that
+the numbers aren't completely predictable.
+
+You may also wish to switch to http://php.net/mt_rand which is faster (if you
+generate a *LOT* of numbers) and allegedly a "better" (more random) function.
+
+Again, it would be an entire book to explain why mt_rand is "more random"...
+
+YMMV.  If you're doing "Casino Slots" with real money, you'd better do your
+homework on this.  If you're giving away a free CD or something silly, who
+cares?
+===============================================================================
+
+The make_seed() function in the example code is VERY bad, and is in fact
+responsible for seeding always the same value, so that the output of rand() is
+the same with every page reload (!)
+
+ALWAYS use:
+(double)microtime()*1000000
+
+See for more details my note on the mt_srand() page [ function.mt_srand.php ]
+===============================================================================
+
+How about<br>
+<?
+srand((double)microtime()*1000000);
+$seed = rand(1000000,9999999);
+srand((double)microtime()*$seed);
+$yadda = rand (1,100);
+?><br>
+I used this in a test run with 1,000.000 calls for $yadda. Processing time
+increased by 0.0000061 seconds compared to a simple "srand((double)microtime()
+*1000000);"
+$yadda had the value of each number between 1 and 100 for between 0.99999122%
+and 1.00000872% of all calls. That's random and fast enough for me. :)
+===============================================================================
+
+As a sidenote on the usage of srand():
+
+If you are making use of modular programming, it is probably better to try and
+call the srand routine from the parent script than from any modules you may be
+using (using REQUIRE or INCLUDE).
+This way you get around the possibility of calling srand() more than once from
+different modules.
+
+The flaw in this solution, of course, is when using modules produced by another
+programmer, or when producing modules for another programmer.
+You cannot rely on another programmer calling the srand function before calling
+the modular function, so you would have to include the srand function inside
+the module in this case.
+
+If you produce modules for use by other programmers then it is good practice to
+documentise the fact you have already called the srand function.
+Or if you use a modular function produced by someone else, check their
+documentation, or check their source code.
+===============================================================================
+
+Use the srand() seed "(double)microtime()*1000000" as mentioned by the
+richard@zend.com at the top of these user notes.
+
+The most notable effect of using any other seed is that your random numbers
+tend to follow the same, or very similar, sequences each time the script is
+invoked.
+
+Take note of the following script:
+
+<?php
+  srand($val);
+
+  echo rand(0, 20) . ", ";
+  echo rand(0, 20) . ", ";
+  echo rand(0, 20) . ", ";
+  echo rand(0, 20) . ", ";
+  echo rand(0, 20);
+?>
+
+If you seed the generator with a constant, say; the number 5 ($val = 5), then
+the sequence generated is always the same, in this case (0, 18, 7, 15, 17) (for
+me at least, different processors/processor speeds/operating systems/OS
+releases/PHP releases/webserver software may generate different sequences).
+
+If you seed the generator with time(), then the sequence is more random, but
+invokations that are very close together will have similar outputs.
+
+As richard@zend.com above suggests, the best seed to use is (double) microtime
+() * 1000000, as this gives the greatest amount of psuedo-randomness. In fact,
+it is random enough to suit most users.
+In a test program of 100000 random numbers between 1 and 20, the results were
+fairly balanced, giving an average of 5000 results per number, give or take
+100. The deviation in each case varied with each invokation.
+===============================================================================
+
+Calling srand((double)microtime()*1000000),
+then $a=rand(1000000,9999999), then srand((double)microtime()*$a)
+adds nothing to the entrophy: the execution time of rand and srand is
+constant, so the second microtime() produces nothing really fascinating. You
+may safely use just the first srand().
+===============================================================================
+
+I can’t stress how important it is to seed your randomisation process in code!
+better still something we found in the BBS Days was if we didn’t seed from a
+token from outside our systems abstraction layer we would go in circles and so
+would our users. Here at chronolabs we offer a feed of randomly changing token
+on each impression, it also randomly displays a different number of them this
+is from http://seed.feeds.labs.coop in the example below I use DOM to load the
+XML, Extract the randomisation tokens and then with mt_srand and srand seed the
+random selecting processes! The following function when you call it will seed
+your random selection process in both the old and new random selection routines
+all you need to do is call the function! This will work with any version of PHP
+5 and any earlier with DOM Objectivity.
+
+function makeRandomSeeded() {
+    $file = 'http://seed.feeds.labs.coop/';
+    $doc = new DOMDocument();
+    $doc->loadHTMLFile($file);
+    $skip = array('This feed can', 'Current mode is');
+    $elements = $doc->getElementsByTagName('description');
+    foreach($elements as $element) {
+        $seed = $element->nodeValue;
+        $found = false;
+        foreach($skip as $find) {
+            if (substr($seed, 0, strlen($find))==$find) {
+                $found = true;
+            }
+        }
+        if ($found==false)
+            $seeds[] = $seed;
+    }
+    shuffle($seeds);
+    mt_srand($seeds[mt_rand(0, count($seeds)-1)]);
+    srand($seeds[mt_rand(0, count($seeds)-1)]);
+}
+
+Remember when PHP says an integer this also include any character of the Ascii
+chart if you would like to see an example of this do the following:
+
+<?php
+   $a = "000A";
+   while($a!="001B") {
+      echo $a;
+      $a++;
+   }
+?>
+===============================================================================
+
+Something we discovered in Sydney running BBS Systems before the net advent was
+here, if we didn't seed of another BBS we would going in circles in our System
+Physicality Abstraction Layers.. The important thing is to seed from a remote
+system and easy way at the Centroidal Plexus of the web (Chronolabs
+Cooperative) we offer a seed feed and the following code will randomise you out
+of the number cycle:
+
+See in PHP both the letters and numbers are seedable as letters are treated as
+numbers as well. You can always use individual tokens by extracting the Element
+with DOM.. But below is equally effective!
+
+<?php
+
+srand(file_get_contents('http://seed.feeds.labs.coop'));
+
+?>

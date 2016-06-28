@@ -1,0 +1,344 @@
+
+virtual
+
+(PHP 4, PHP 5, PHP 7)
+
+virtual — 执行 Apache 子请求
+
+说明
+
+bool virtual ( string $filename )
+
+virtual() 是一个 Apache 特有函数，类似于 mod_include 中的 <!--#include
+virtual...-->。它执行一个 Apache 子请求。可用于包含一个 CGI 脚本或 .shtml 文件
+，或任何其它可通过 Apache 解析的请求。注意对一个 CGI 脚本，该脚本生成合法的 CGI
+头，至少必须生成Content-Type 头。
+
+为运行子请求，所有缓冲将中止并刷新至浏览器，包括头信息。
+
+、仅在将 PHP 安装为 Apache 模块时，支持此函数。
+
+参数
+
+filename
+
+    virtual命令将执行的文件
+
+返回值
+
+成功执行 virtual 命令，或失败时返回 FALSE 。
+
+更新日志
+
+版本                                    说明
+      从 PHP 4.3.3 起，也可在 Netscape/iPlanet/SunONE Web 服务器的 NSAPI 服务器
+4.3.3 模块使用此函数。
+
+4.0.6 此函数可用于 PHP 文件。但是通常使用 include 或 require 更好。
+
+范例
+
+示例请看 apache_note() 。
+
+注释
+
+Warning
+
+查询字符串可被传递至被包含文件，但是 $_GET 是拷贝于父文件，仅有 $_SERVER
+['QUERY_STRING'] 将填充传递入的查询字符串。且此查询字符串只在使用 Apache 2 时被
+填充。此请求文件将不会显示在 Apache 访问日志中。
+
+    Note:
+
+    在被请求文件中设置的环境变量在原请求文件中不可见。
+
+参见
+
+  • apache_note() - 取得或设置 apache 请求记录
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+Problem with most of the scripts posted below is that virtual() flushes the
+pending headers before making the subrequest. Requesting an image with virtual
+() still returns a text/html type document.
+A workaround is to set the content-type first. But that requires getting the
+content-type first.
+
+I'm using the following script for now. A disadvantage is that Apache makes 2
+subrequests.
+
+<?PHP
+$file = '/resources/7z.gif';
+$file_info = apache_lookup_uri($file);
+header('content-type: ' . $file_info -> content_type);
+virtual($file);
+die();
+?>
+===============================================================================
+
+I have a header that's include()'ed on each of my pages. I then wanted to add a
+Perl script to that header file (header.php) via the virtual() command.
+
+Since my header is used by documents in my /www folder along with other folders
+inside that (and inside those), and virtual() seems to take only relative
+paths, I had to write some code to dynamically get the path to the perl script.
+
+Hope this helps some ppl out:
+
+  $cwd = getcwd();
+  $script_name = "cgi-bin/perl_script.pl";
+  $count = substr_count($cwd, '/');
+  $count = $count - 3;
+  // get rid of extra absolute paths since my directory is /home/user/www
+
+  // Add additional path information
+  for($i = 1; $i <= $count; $i++){
+    $script_name = "../".$script_name;     
+  }
+  virtual($script_name);
+===============================================================================
+
+This documentation is not clear enough. Parameter $filename is not a filename
+as on the filesystem, but a URI. It can be absolute, starting with /, or
+relative to URI that involved the PHP script which called virtual(). (I.e. if
+the PHP script that calls virtual() is invoked via PHP require/require_once/
+include/include_once mechanism and it passes a relative URI to virtual(), then
+that URI must be relative to the URI of the topmost PHP script on the inclusion
+stack.)
+
+Not sure how relative URIs work if the request which calls virtual() was
+processed through Apache rewrite rules.
+===============================================================================
+
+Note that QUERY_STRING seems to get inherited, so to make a virtual request
+WITHOUT one, one needs to explicitly append a "?" to the URL of the sub-request
+(to cause the creation of a "null" query string).  Of course, if the desired
+URL has its own query string, that will override and an additional "?" should
+not be appended.
+
+This was with PHP 4.4.7 (released May 2007).
+===============================================================================
+
+You can use virtual() to implement your own dispatcher/auth handler in an
+efficient and effective way.
+
+For instance if you have a bunch of images you would like to be served
+statically by Apache (its job after all), but with a more com
+plex access pattern than mod_access allows you to do (say a MySQL lookup with
+your app logic), try this simple Apache rule:
+
+  Order Allow,Deny
+  Allow from env=PHP_ALLOW
+
+Then in your PHP script, before sending any content or header:
+
+<?php
+$image = "/some/URL/path/test.png";
+if (client_may_view_image($image)) {
+  apache_setenv('PHP_ALLOW', '1');
+  if (virtual($image))
+    exit(0);
+  echo "Ops, failed to fetched granted image $image (hammer your webmaster).\n"
+;
+} else
+  echo "Sorry buddy, you're not allowed in here.\n";
+?>
+
+Of course very Apache-ish, but it's much more efficient and uniform to rely on
+Apache rather than passthru() and mime_content_type()
+hacks : it does the path lookup and auth/security audit as the admin expects,
+use the best static serving it can (think 'sendfile')
+and you can even chain your request with another embedded script eg. in
+mod_perl.
+===============================================================================
+
+when php is installed as an apache module, this works pretty well for writing
+your own php preprocessor/information logger. For example, requests to any URI
+underneath pre.php will first be executed by pre.php, then returned to the
+user.
+<?
+$docroot        = $_SERVER['DOCUMENT_ROOT'];
+$script_root    = str_replace( basename($_SERVER['SCRIPT_NAME']),'',$_SERVER
+['SCRIPT_NAME'] );
+$script_ext     = substr( $_SERVER['SCRIPT_NAME'], strrpos( $_SERVER
+['SCRIPT_NAME'],'.' ) );
+$fakework_root  = $script_root.basename( $_SERVER['SCRIPT_NAME'] ).'/';
+$framework_root = $script_root.'_'.basename( $_SERVER['SCRIPT_NAME'],
+$script_ext ).'/';
+$frequest_root  = dirname( $framework_root.substr( $_SERVER['PATH_INFO'], 1
+)).'/';
+$frequest_name  = basename( $_SERVER['PATH_INFO'] );
+$frequest_ext   = (strrpos($frequest_name,'.')===FALSE ? FALSE : strtolower
+(substr( $frequest_name, ( strrpos( $frequest_name, '.' )+1 ) ) ) );
+$frequest_full  = $frequest_root.$frequest_name;
+$doc_frequest   = $docroot.$frequest_full;
+$doc_framework   = $docroot.$framework_root;
+
+$DO_PARSE = in_array( $frequest_ext, $chk_exts );
+if( $DO_PARSE )
+{
+    $tmpfname = tempnam( $doc_framework.'tmp', 'aj_' ).($frequest_ext?
+('.'.$frequest_ext) : '');
+    if( ($to_parse=@file_get_contents($doc_frequest))===FALSE )
+        $to_parse="404";
+    $tmpvname = str_replace( $docroot, '', $tmpfname );
+    $tmpvname = str_replace( '\\\\', '/', $tmpvname );
+// - - - - - - - - - - - - - - - - - - - - - - - - - - -
+//  Do processing of data stored in $to_parse
+// - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    $to_parse = striptags( $to_parse );
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    $handle = fopen($tmpfname, "w");
+    fwrite($handle, $to_parse);
+    fclose($handle);
+    @virtual( $tmpvname.$getvars );
+    unlink( $tmpfname );
+}
+else
+    @virtual( $frequest_full.$getvars );
+
+?>
+
+So all files in http://server/sub/pre.php/path/ are really located in http://
+server/sub/_pre/path/
+
+All this needs is some kind of caching mechanism.
+
+But yeah, this could be modified to add watermarks with the image functions,
+convert to xml with Tidy, check for extensions better with mimeTypes, proxy
+content with cURL, validate $_SERVER['HTTP_REFERER'] or $_SERVER
+['HTTP_USER_AGENT'], etc etc
+
+This gives you much more over than the auto_prepend_file, and auto_append_file,
+for certain functionality
+
+The key is the virtual function _because_ it delivers the modified content with
+an apache subrequest.
+===============================================================================
+
+I saw the note above about the length of the query string... but didn't know
+what it was, so have altered the code so it can post to the script.
+Probly only works on nix systems as it makes use of the echo function...
+This code also will look evaluate the result, so you can get cgi to dynamically
+create PHP (probly best to watch out that posted variables do not include
+script!)
+<?
+$CGISCRIPT="./cgi-bin/cgiscript.cgi";
+// preparing the arguments passed to this PHP page
+$QSTRING = $QUERY_STRING;
+
+foreach ($HTTP_POST_VARS as $header=> $value ){
+if($QSTRING==""){
+    $QSTRING = $header.'='.urlencode($value);
+}else{
+    $QSTRING = $QSTRING.'&'.$header.'='.urlencode($value);
+}
+}
+
+putenv('REQUEST_METHOD=POST');
+putenv('CONTENT_TYPE=application/x-www-form-urlencoded');
+putenv('CONTENT_LENGTH='.strlen($QSTRING));
+putenv('QUERY_STRING='.$QSTRING);
+unset($return_array);
+exec('echo "'.$QSTRING.'"| '.$CGISCRIPT, $return_array, $return_val);
+
+//The 1st line of my script was "Content...." ... so remove it!
+$firstline=array_shift($return_array);
+//evaluate the code
+eval('?>'.implode($return_array,''));
+
+?>
+===============================================================================
+
+Another way of passing arguments:
+If you have some CGI programs that depend on some libraries where you can't
+change the source code (in my case an online payment library), you can pass the
+arguments by changing some environment variables.
+
+Of course the CGI program has to get the GET/POST variables in the usual
+manner.
+It simulates, more or less, a direct call from the server to a CGI program:
+
+// preparing the arguments passed to this PHP page
+$QSTRING = $QUERY_STRING;
+
+// pay attention to the maximum length of the QUERY string.
+while (list ($header, $value) = each ($HTTP_POST_VARS)){
+  if (empty($QSTRING))
+    $QSTRING = $header.'='.$value;
+else
+    $QSTRING = $QSTRING.'&'.$header.'='.$value;
+}
+
+putenv('REQUEST_METHOD=GET');
+putenv('QUERY_STRING='.$QSTRING);
+
+unset($return_array);
+exec('my_CGI', $return_array, $return_val);
+
+Now you can parse the output of 'my_CGI' in return_array.
+===============================================================================
+
+If you want to pass all post and get values to the cgi script you can use this
+code:
+
+<?php
+$QSTRING = $QUERY_STRING;
+while (list ($header, $value) = each ($HTTP_POST_VARS))
+{
+   $QSTRING = $QSTRING.'&'.$header.'='.$value;
+}
+
+virtual($script.'?'.$QSTRING);
+?>
+
+It takes all the values of $HTTP_POST_VARS and appends them in the proper
+format to the values you get in $QUERY_STRING
+===============================================================================
+
+Virtual returns the HTTP entity header after the requested file, when it's the
+first output to the page.
+
+The work-around to prevent seeing the header is, of course, to output something
+(such as echo " "; ) before calling virtual.
+===============================================================================
+
+Here's an update to tomwk's code:
+function safe_virtual( $filename )
+{
+   $curDir = getcwd();
+   virtual ( $filename );
+   chdir( $curDir );
+}
+
+This is better if you've already changed your current directory to be something
+other than your script's directory.  It works for PHP4 and above.
+===============================================================================
+
+If you are having problems using virtual include becuase of files being stored
+in different directories, a root-relative path will make things much easier:
+
+virtual ("/root directory/directory/filename.htm/");
+
+where root directory is the root directory of your site (ask your sys admin if
+you dont know what it is) Don't include the protocol or host name.
+
+This will also allow you to move your files around your site without having to
+redirect your includes which is *very* helpfull
+===============================================================================
+
+While the virtual() function has it's promising sides, there exists issues when
+using it in relation to a cache system such as eAccellerator.  The issue
+becomes that the first time you load with a virtual file, it will seem to work
+fine.  But once the cache is put into play, the virtual call will end up
+returning nothing at all, and basically returning a blank page.
+
+Please realize that this is not an issue with virtual(), but instead an issue
+of the cacheing application.  Should anyone else have a similar issue,
+hopefully this will shed some light onto this subject.
+
+Jonathon Hibbard

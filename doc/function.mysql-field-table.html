@@ -1,0 +1,242 @@
+
+mysql_field_table
+
+(PHP 4, PHP 5)
+
+mysql_field_table — 取得指定字段所在的表名
+
+说明
+
+string mysql_field_table ( resource $result , int $field_offset )
+
+返回指定字段所在的表的名字。
+
+为向下兼容仍然可以使用 mysql_fieldtable()，但反对这样做。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+This note may apply to anyone who might still be running MySQL 5.0.32 on Debian
+4.0.  The mysql_field_table function may return an empty table name if the
+SELECT query involved uses GROUP BY or ORDER BY and references a view in the
+FROM clause.  This is caused by MySQL bug 28898, which was fixed in 5.0.46.  I
+encountered this when I noticed a difference between our production RSS feeds
+generated on a Debian 5.0.10 server running MySQL 5.0.51a, and the same feed
+generated on one of our test servers running MySQL 5.0.32 on Debian 4.0.
+===============================================================================
+
+The function below takes a function and returns the col->table mapping as an
+array.
+
+For example:
+
+$query = “SELECT a.id AS a_id, b.id b_id FROM atable AS a, btable b”
+
+$cols  = queryAlias($query);
+
+print_r($cols);
+
+Returns:
+
+Array
+(
+    [a] => atable
+    [b] => btable
+)
+
+I can't promise it's perfect, but this function never hit production cause I
+ended up using mysqli methods instead.
+
+Enjoy
+-Jorge
+
+  /**
+   * Takes in a query and returns the alias->table mapping.
+   *
+   * @param string $query
+   * @return array of alias mapping
+   */
+ 
+  function queryAlias ( $query ) {
+   
+    //Make it all lower, we ignore case
+    $substr = strtolower($query);
+   
+    //Remove any subselects
+    $substr = preg_replace ( ‘/\(.*\)/’, ”, $substr);
+  
+    //Remove any special charactors
+    $substr = preg_replace ( ‘/[^a-zA-Z0-9_,]/’, ‘ ‘, $substr);
+   
+    //Remove any white space
+    $substr = preg_replace(‘/\s\s+/’, ‘ ‘, $substr);
+   
+    //Get everything after FROM
+    $substr = strtolower(substr($substr, strpos(strtolower($substr),‘ from ‘) +
+6));
+   
+    //Rid of any extra commands
+    $substr = preg_replace(
+                Array(
+                    ‘/ where .*+$/’,
+                    ‘/ group by .*+$/’,
+                    ‘/ limit .*+$/’ ,
+                    ‘/ having .*+$/’ ,
+                    ‘/ order by .*+$/’,
+                    ‘/ into .*+$/’
+                   ), ”, $substr);
+   
+    //Remove any JOIN modifiers
+    $substr = preg_replace(
+                Array(
+                    ‘/ left /’,
+                    ‘/ right /’,
+                    ‘/ inner /’,
+                    ‘/ cross /’,
+                    ‘/ outer /’,
+                    ‘/ natural /’,
+                    ‘/ as /’
+                   ), ‘ ‘, $substr);
+   
+    //Replace JOIN statements with commas
+    $substr = preg_replace(Array(‘/ join /’, ‘/ straight_join /’), ‘,’,
+$substr);
+   
+
+    $out_array = Array();
+   
+    //Split by FROM statements
+    $st_array = split (‘,’, $substr);
+ 
+    foreach ($st_array as $col) {
+     
+      $col = preg_replace(Array(‘/ on .*+/’), ”, $col);
+     
+      $tmp_array = split(‘ ‘, trim($col));
+     
+      //Oh no, something is wrong, let’s just continue
+      if (!isset($tmp_array[0]))
+        continue;
+       
+      $first = $tmp_array[0];
+     
+      //If the “AS” is set, lets include that, if not, well, guess this table
+isn’t aliased.
+      if (isset($tmp_array[1]))
+        $second = $tmp_array[1];
+        else 
+        $second = $first;
+       
+      if (strlen($first))
+       $out_array[$second] = $first;
+     
+    }
+   
+    return $out_array;
+  }
+===============================================================================
+
+<?php
+/*
+this function might help in the case described above :-)
+*/
+function mysql_field_table_resolve_alias($inQuery,$inResult,$inFieldName) {
+   $theNameOrAlias = mysql_field_table($inResult,$inFieldName);
+   //check, if AS syntax is being used
+   if(ereg(" AS ",$inQuery))  {
+      //catch words in query
+      $theWords = explode(" ",ereg_replace(",|\n"," ",$inQuery));
+      //find the words preceding and following AS
+      foreach($theWords as $theIndex => $theWord)  {
+         if(trim($theWord) == "AS"
+         && isset($theWords[$theIndex-1])
+         && isset($theWords[$theIndex+1])
+         && $theWords[$theIndex+1] == $theNameOrAlias
+         ) {
+            $theNameOrAlias = $theWords[$theIndex-1];
+            break 1;
+         }
+      }
+   }
+   return $theNameOrAlias;
+}
+?>
+===============================================================================
+
+Beware that if you upgrade to MySQL 5 from any earlier version WITHOUT dumping
+and reloading your data (just by keeping the binary data in MyISAM table
+files), you might get weird output on the "table" value for mysql_fetch_field
+and in this function. Weird means that the table name is randomly set or not.
+
+This behaviour seems to popup only if the SQL query contains a ORDER BY clause.
+A bug is already reported:
+
+http://bugs.mysql.com/bug.php?id=14915
+
+To prevent the issue, dump and reload all participating tables in your query or
+do
+
+CREATE TABLE tmp SELECT * FROM table;
+DROP TABLE table;
+ALTER TABLE tmp RENAME table;
+
+on each one via commandline client.
+===============================================================================
+
+When trying to find table names for a (My)SQL query containing 'tablename AS
+alias', mysql_field_table() only returns the alias as specified in the AS
+clause, and not the tablename.
+===============================================================================
+
+For all of you having problems accessing duplicated field names in queries with
+their table alias i have implemented the following quick solution:
+
+<?php
+function mysql_fetch_alias_array($result)
+{
+    if (!($row = mysql_fetch_array($result)))
+    {
+        return null;
+    }
+
+    $assoc = Array();
+    $rowCount = mysql_num_fields($result);
+   
+    for ($idx = 0; $idx < $rowCount; $idx++)
+    {
+        $table = mysql_field_table($result, $idx);
+        $field = mysql_field_name($result, $idx);
+        $assoc["$table.$field"] = $row[$idx];
+    }
+   
+    return $assoc;
+}
+?>
+
+Lets asume we have 2 tables student and contact each having fID as the index
+field and want to access both fID fields in php.
+
+The usage of this function will be pretty similar to calling mysql_fetch_array:
+
+<?php
+$result = mysql_query("select * from student s inner join contact c on c.fID =
+s.frContactID");
+
+while ($row = mysql_fetch_alias_array($result))
+{
+    echo "StudenID: {$row['s.fID']}, ContactID: {$row['c.fID']}";
+}
+?>
+
+Voila, that's it :)
+
+Please be aware that by using this function, you have to access all fields with
+their alias name (e.g. s.Name, s.Birhtday) even if they are not duplicated.
+
+If you have questions, just send me a mail.
+
+Best regards,
+Mehdi Haresi
+die-webdesigner.at

@@ -1,0 +1,802 @@
+
+gmmktime
+
+(PHP 4, PHP 5, PHP 7)
+
+gmmktime — 取得 GMT 日期的 UNIX 时间戳
+
+说明
+
+int gmmktime ([ int $hour [, int $minute [, int $second [, int $month [, int
+$day [, int $year [, int $is_dst ]]]]]]] )
+
+和 mktime() 完全一样，只除了返回值是格林威治标准时的时间戳。
+
+参数总是表示 GMT 日期，因此 is_dst 对结果没有影响。
+
+和 mktime() 一样，参数可以从右到左依次空着，空着的参数会被设为相应的当前 GMT 值
+。
+
+    Note:
+
+    自 5.1.0 起，is_dst 参数被废弃。因此应该用新的时区处理特性。
+
+    Note: gmmktime() 内部使用了 mktime()，因此只有转换成本地时间也合法的时间才
+    能用在其中。 so only times valid in derived local time can be used.
+
+Example #1 gmmktime() 在 Windows 中的边界
+
+<?php
+gmmktime(0, 0, 0, 1, 1, 1970); // 在 GMT 和西方合法，在东方不合法
+?>
+
+参见 mktime()，date() 和 time()。
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+The interaction of timezones with unix timestamps is a bit tricky so I thought
+I'd clarify so that people aren't led too far astray by Greg's and Glen's
+comments. :)
+
+In the POSIX standard, "unix time" does not have a specified timezone.  It is
+universal.  For most intents and purposes you can think of them as always being
+GMT/UTC.  (And you can derive the UTC time from a "timestamp" by dividing it by
+86400 and looking at the modulus.)  Do not ever try to adjust a timestamp by a
+timezone offset (specifically, do not ever use the code at the end of Glen's
+note).  Timezones are basically used only when "rendering" a timestamp from
+"unix time" into a "civil time" date/time string.
+
+Let's take an example.  PST is GMT-8, and EST is GMT-5.  So when it is 3 AM in
+PST, it is 6 AM in EST.  At that exact moment in time, the _timestamp_ is
+identical in both time zones.  If I am sitting at my computer in PST, and you
+are at yours in EST, and I call you up and read you the current unix timestamp
+on my computer, it will match yours (assuming our clocks are both set
+accurately for our timezone).
+
+So, time() always will return the same thing at the same actual moment,
+anywhere in the world.  gmmktime() and mktime(), when given specific time
+parameters, convert those time parameters FROM the appropriate timezone (GMT
+for gmmktime(), local time for mktime()), before computing the appropriate
+timestamp.  Again, for most intents and purposes you can imagine that mktime()
+first converts your input parameters to GMT and then calls gmmktime() which
+produces a GMT timestamp.  (For the purposes of this explanation, please ignore
+the fact that the PHP documentation says that internally gmmktime() calls
+mktime().)
+
+HOWEVER, when called with no arguments, gmmktime() uses the current GMT time,
+and mktime() uses the current local time.  So, if you imagine the above
+conversion taking place where mktime() converts the (current) local time to
+GMT, it ends up essentially calling gmmktime() with the _current_ GMT time,
+just like gmmktime() does all by itself.
+
+This is why time(), gmmktime(), and mktime() all return the same exact
+timestamp, _when called with no arguments_.  This is why Glen saw them all
+produce the same thing.
+
+Greg wrote that gmmktime() will return something different if you are not
+sitting in the GMT timezone, but this is only true if you have given it
+arguments from which to construct a timestamp.
+
+So let's look at that situation again.  Say I am in PST and it's 3 AM PST. 
+(And therefore it is 11 AM GMT.)  mktime() lets me override one field at at
+time, and the first argument is, conveniently, the hour field.  So if I call
+mktime(3), I get the same answer as mktime().  Makes sense, right?  I just told
+it to give me the timestamp corresponding to 3 AM local time.  If I call
+gmmktime(11), I get the same answer as gmmktime(), since it is currently 11 AM
+GMT.  mktime(3) and gmmktime(11) refer to the same exact point in time, because
+PST is 8 hours behind GMT.  So it makes sense that mktime(3) == gmmktime(11). 
+And sine mktime() == mktime(3) (at this moment), and gmmktime() == gmmktime(11)
+(at this moment), it makes sense that gmmktime() == mktime().
+
+Now, back to Greg's note about gmmktime() being different.  With identical
+arguments, their output will be different, e.g. mktime(3) != gmmktime(3).  This
+makes sense because 3 AM PST != 3 AM GMT.
+
+Okay, that should be all you need to know to deal with the interaction between
+timestamps and timezones.  Don't ever try to convert timezones by adding or
+subtracting to the timestamp.  Timestamps don't really have timezones, it is
+apples and oranges, and you'll either get the wrong answer in some situations
+or end up with code that no one can maintain.  Leave it up to the higher-level
+PHP functions to do the conversion.  (If you want to hack things, strtotime is
+handy and it can work with timezones; let it do the hard work for you.)
+===============================================================================
+
+I had a problem with hosting a UK site on a US server, the times didnt match
+(obviously) and also didnt account for daylight savings time. The daylight
+savings dates and times of change differ worldwide, so detecting if the server
+was in dst wouldnt work (see http://webexhibits.org/daylightsaving/).
+
+Here is a function for creating a timestamp which can be used by date() to
+create all the parameters required to display the local time (site not server).
+I have used GMT time to create the timestamp as there is no offset for UK time
+(+00).
+
+<?php
+function UKdst_time()
+{
+    // created by Matthew Waygood (www.waygoodstuff.co.uk)
+    $timestamp = mktime(gmdate("H, i, s, m, d, Y")); // UTC time
+    $this_year=gmdate("Y", $timestamp);
+
+    // last sunday in march at 1am UTC
+    $last_day_of_march=gmmktime(1,0,0,3,31,$this_year);
+    $last_sunday_of_march=strtotime("-".gmdate("w", $last_day_of_march)." day",
+$last_day_of_march);
+   
+    // last sunday in october at 1am UTC
+    $last_day_of_october=gmmktime(1,0,0,10,31,$this_year);
+    $last_sunday_of_october=strtotime("-".gmdate("w", $last_day_of_october)."
+day", $last_day_of_october);
+
+    if( ($timestamp > $last_sunday_of_march) && ($timestamp < 
+$last_sunday_of_october) )
+    {
+        $timestamp=$timestamp+3600; // foward one hour
+    }
+    return $timestamp;
+}
+?>
+===============================================================================
+
+GMT time is useful for avoiding the daylight's savings issue.  I had to use it
+to get a working date difference function:
+
+<?php
+function dateDiff($date1, $date2) //returns the difference, in days, between
+two dates.  avoids the daylight's savings issue by using GMT
+{
+    $date1 = date_parse($date1);
+    $date2 = date_parse($date2);
+    return ((gmmktime(0, 0, 0, $date1['month'], $date1['day'], $date1['year'])
+- gmmktime(0, 0, 0, $date2['month'], $date2['day'], $date2['year']))/3600/24);
+}
+?>
+===============================================================================
+
+<?php
+function getTimeRemaining($timeZonePass,
+$dateTimeUser,$ID,$table,$coloumnName)
+{
+global $configVars;
+
+$timeZoneDefault=explode("_",$timeZonePass);
+
+$timeZone=(substr($timeZoneDefault[0],1))*(60) ;
+
+if((substr($timeZoneDefault[0],0,1)) =="+")
+   $defaultSeconds=gmdate("Y-m-d-H-i-s",time()+
+   $timeZone);
+elseif((substr($timeZoneDefault[0],0,1)) =="-")
+   $defaultSeconds=gmdate("Y-m-d-H-i-s",time()-
+   $timeZone);
+else
+   $defaultSeconds=gmdate("Y-m-d-H-i-s",time());
+
+$defaultSecondsExp=explode("-",$defaultSeconds);
+
+$defaultGmktime=gmmktime($defaultSecondsExp[3],
+           $defaultSecondsExp[4],
+$defaultSecondsExp[5], $defaultSecondsExp[1],
+           $defaultSecondsExp[2],
+$defaultSecondsExp[0]);
+
+$dateArray=explode("-",$dateTimeUser);
+
+$slectedGmktime=gmmktime(23,59,59,$dateArray[1],
+           $dateArray[2],$dateArray[0]);
+
+if((substr($timeZoneDefault[0],0,1)) =="+")
+   $slectedGmktimeAdded=($slectedGmktime)+
+                       ($timeZone);
+elseif((substr($timeZoneDefault[0],0,1)) =="-")
+   $slectedGmktimeAdded=($slectedGmktime)+
+                       ($timeZone);
+else
+   $slectedGmktimeAdded=($slectedGmktime);
+
+//$slectedGmDate=gmdate("Y-m-d-H-i-s",
+           $slectedGmktimeAdded);
+
+$timeMinus=$slectedGmktimeAdded -
+       $defaultGmktime;
+
+$secondsInDay= 60*60*24;
+
+if ($secondsInDay <= $timeMinus)
+{
+   $daysRemaining = floor($timeMinus/
+                   $secondsInDay);
+   if($daysRemaining >1 )
+       return $daysRemaining ."&nbsp;Days&nbsp;";
+   else
+       return $daysRemaining ."&nbsp;Day&nbsp;";
+}
+
+if(empty($daysRemaining))
+{  
+   $secondsInHour= 60*60;
+   if ($secondsInHour <= $timeMinus)
+   {
+       $hoursRemaining =floor ($timeMinus/
+                       $secondsInHour);
+       if($hoursRemaining > 1 )
+           return $hoursRemaining ."&nbsp;Hours&nbsp;";
+       else
+           return $hoursRemaining ."&nbsp;Hour&nbsp;";
+   }
+}
+
+if(empty($hoursRemaining))
+{
+   //$secondsRemaining = $timeMinus. "&nbsp;Seconds";
+   $secondsInMinute = 60;
+   if ($secondsInMinute <= $timeMinus)
+   {
+       $mintuesRemaining =floor ($timeMinus/
+               $secondsInMinute);
+       if($mintuesRemaining > 1 )
+           return $mintuesRemaining ."&nbsp;Minutes&nbsp;";
+       else
+           return $mintuesRemaining ."&nbsp;Minute&nbsp;";
+   }
+}
+
+if(empty($mintuesRemaining))
+{
+   $secondsRemaining = $timeMinus;
+   if($secondsRemaining < 0)
+   {  
+       timedOutSale($ID,$table,$coloumnName);
+       return "Time out";
+   }
+   elseif($secondsRemaining > 1 )
+       return $secondsRemaining . "&nbsp;Seconds";
+   else
+       return $secondsRemaining . "&nbsp;Second";
+}
+}
+
+function timedOutSale($ID,$table)
+{
+   GLOBAL $configVars, $db,$tableNames;
+   $query =  "UPDATE " . $table
+                   . " SET status = 'T'
+                   WHERE $coloumnName = '" . $ID ."'";
+
+           $result = $db->query($query);
+   return;
+}
+
+?>
+===============================================================================
+
+Here's a play on turgut85's countDays function.  I've found it to be more
+efficient and it accepts unix timestamps rather than arrays.  Thanks for the
+ideas.
+
+<?php
+function count_days($start, $end) {
+  // Count the days between $start and $end where both $start and $end
+  //  are UNIX timestamps
+ 
+  // Swap the two values if end is greater than start (to avoid the
+  //  loop of death).
+  if ($start < $end) {
+    $t = $start;
+    $start = $end;
+    $end = $t;
+  }
+ 
+  // Increment the start time by one day until it is equal to the
+  //  end time
+ 
+  $days = 0;
+  while ( $start < $end ) {
+    $start = strtotime("+1 days", $start);
+    $days++;
+  }
+ 
+  return $days;
+}
+?>
+===============================================================================
+
+mwwaygoo's code isn't quite right. My understanding is that the relevant dates
+for changing between daylight saving time in the UK is the third sunday of
+march and october - not the last sunday!
+===============================================================================
+
+Beware that despite the documentation which states is_dst is ignored, with PHP
+5.2 at least, it is not actually ignored and will cause a 1 hour offset on the
+UTC time returned.
+
+This caused some interesting bugs, especially with the tzdelta function shown
+from previous posts below - you need to make the final parameter a 0 instead of
+$ar[8] otherwise you get an off-by-1-hour as a result.
+
+As a result, I now use :
+
+<?php
+function tzdelta ( $iTime = 0 ) {
+        if ( 0 == $iTime ) { $iTime = time(); }
+        $ar = localtime ( $iTime );
+        $ar[5] += 1900; $ar[4]++;
+        $iTztime = gmmktime ( $ar[2], $ar[1], $ar[0], $ar[4], $ar[3], $ar[5], 0
+);
+        return ( $iTztime - $iTime );
+}
+?>
+===============================================================================
+
+<?php
+function getTimeRemaining($timeZonePass,$dateTimeUser,$ID,$table,$coloumnName)
+{
+global $configVars;
+
+$timeZoneDefault=explode("_",$timeZonePass);
+
+$timeZone=(substr($timeZoneDefault[0],1))*(60) ;
+
+if((substr($timeZoneDefault[0],0,1)) =="+")
+    $defaultSeconds=gmdate("Y-m-d-H-i-s",time()+
+    $timeZone);
+elseif((substr($timeZoneDefault[0],0,1)) =="-")
+    $defaultSeconds=gmdate("Y-m-d-H-i-s",time()-
+    $timeZone);
+else
+    $defaultSeconds=gmdate("Y-m-d-H-i-s",time());
+
+$defaultSecondsExp=explode("-",$defaultSeconds);
+
+$defaultGmktime=gmmktime($defaultSecondsExp[3],
+            $defaultSecondsExp[4],
+$defaultSecondsExp[5], $defaultSecondsExp[1],
+            $defaultSecondsExp[2],
+$defaultSecondsExp[0]);
+
+$dateArray=explode("-",$dateTimeUser);
+
+$slectedGmktime=gmmktime(23,59,59,$dateArray[1],
+            $dateArray[2],$dateArray[0]);
+
+if((substr($timeZoneDefault[0],0,1)) =="+")
+    $slectedGmktimeAdded=($slectedGmktime)+
+                        ($timeZone);
+elseif((substr($timeZoneDefault[0],0,1)) =="-")
+    $slectedGmktimeAdded=($slectedGmktime)+
+                        ($timeZone);
+else
+    $slectedGmktimeAdded=($slectedGmktime);
+
+//$slectedGmDate=gmdate("Y-m-d-H-i-s",
+            $slectedGmktimeAdded);
+
+$timeMinus=$slectedGmktimeAdded -
+        $defaultGmktime;
+
+$secondsInDay= 60*60*24;
+
+if ($secondsInDay <= $timeMinus)
+{
+    $daysRemaining = floor($timeMinus/
+                    $secondsInDay);
+    if($daysRemaining >1 )
+        return $daysRemaining ." Days ";
+    else
+        return $daysRemaining ." Day ";
+}
+
+if(empty($daysRemaining))
+{   
+    $secondsInHour= 60*60;
+    if ($secondsInHour <= $timeMinus)
+    {
+        $hoursRemaining =floor ($timeMinus/
+                        $secondsInHour);
+        if($hoursRemaining > 1 )
+            return $hoursRemaining ." Hours ";
+        else
+            return $hoursRemaining ." Hour ";
+    }
+}
+
+if(empty($hoursRemaining))
+{
+    //$secondsRemaining = $timeMinus. " Seconds";
+    $secondsInMinute = 60;
+    if ($secondsInMinute <= $timeMinus)
+    {
+        $mintuesRemaining =floor ($timeMinus/
+                $secondsInMinute);
+        if($mintuesRemaining > 1 )
+            return $mintuesRemaining ." Minutes ";
+        else
+            return $mintuesRemaining ." Minute ";
+    }
+}
+
+if(empty($mintuesRemaining))
+{
+    $secondsRemaining = $timeMinus;
+    if($secondsRemaining < 0)
+    {   
+        timedOutSale($ID,$table,$coloumnName);
+        return "Time out";
+    }
+    elseif($secondsRemaining > 1 )
+        return $secondsRemaining . " Seconds";
+    else
+        return $secondsRemaining . " Second";
+}
+}
+
+function timedOutSale($ID,$table)
+{
+    GLOBAL $configVars, $db,$tableNames;
+    $query =  "UPDATE " . $table
+                    . " SET status = 'T'
+                    WHERE $coloumnName = '" . $ID ."'";
+
+            $result = $db->query($query);
+    return;
+}
+?>
+===============================================================================
+
+Here is a handy routine for counting down to the minute, hour, and day to a
+timestamp
+
+<?php
+      $minutesleft = floor(($timestamp - gmtime()) / 60);
+
+      if ($minutesleft < 0) {
+        $timeleft = 'NOW';
+      }
+      else if ($minutesleft < 60) {
+        $timeleft = ($minutesleft==1 ? '1 minute' : $minutesleft.' minutes');
+      }
+      else if ($minutesleft >= 60 && $minutesleft < (24*60)) {
+        $timeleft = (floor($minutesleft/60) == 1 ? '1 hour' : floor(
+$minutesleft/60).' hours');
+      }
+      else if ($minutesleft >= (24*60)) {
+        $days = floor($minutesleft / (24*60));
+        // hours remainder
+        $hours = ($minutesleft % (24*60)) / 60;
+        // hours left in the day
+        $hours_left = ((time() / 60) % (24*60)) / 60;
+        // see if the remainder of hours is greater than the hours left in
+today, if so increase the days by one so that the days remaining mimics the
+date rather than how many 24 hour periods there are between now and then.
+        if($hours > $hours_left) {
+          $days++;
+        }
+        $timeleft = ($days == 1 ? '1 day' : $days.' days');
+      }
+
+      echo $timeleft;
+?>
+===============================================================================
+
+Why not just do:
+
+<?php
+
+// assuming $start and $end are timestamps
+
+$day_diff = floor(abs($start - $end) / 86400);
+
+?>
+===============================================================================
+
+<?php
+
+// THIS ROUTINE COUNT DAYS BEETWEEN TWO DATE //
+// BEGIN DATE COULD BE IN THE PAST OR IN THE FUTURE //
+
+$beg['YEAR']=2004;
+$beg['MONTH']=10;
+$beg['DAY']=1;
+
+$end['YEAR']=2004;
+$end['MONTH']=10;
+$end['DAY']=3;
+
+function countDays ($beg,$end) {
+   
+$start = gmmktime(0,0,0,$beg['MONTH'],$beg['DAY'],$beg['YEAR']);
+$endin = gmmktime(0,0,0,$end['MONTH'],$end['DAY'],$end['YEAR']);
+
+// echo $start."\n";
+// echo $endin."\n";
+
+$day = 0;
+
+if ($start < $endin) {
+$toward = 1;
+} else  {
+$toward = 0;
+}
+
+$mover = $start;
+
+if ($start != $endin) {
+   
+do {
+   
+$day++;
+   
+    if ($toward)  {
+    $mover = gmmktime(0,0,0,$beg['MONTH'],($beg['DAY']+$day),$beg['YEAR']);
+    } else {
+    $mover = gmmktime(0,0,0,$beg['MONTH'],($beg['DAY']-$day),$beg['YEAR']);
+    }
+
+   
+} while ($mover != $endin);
+
+}
+
+echo $day;
+
+return $day;
+}
+
+echo countDays ($beg,$end). " days. ";
+
+?>
+
+Turgut Z. YESILYURT
+turgut85@hotmail.com
+System and Application Developer
+New Jersey, USA
+===============================================================================
+
+REF: http://www.dti.gov.uk/er/sumtimetb.htm
+
+Since 1981 EC Directives have prescribed the start and end dates of summer time
+in all Member States.  There have to date been eight Directives which have set
+summer-time arrangements for fixed periods. The Summer Time Act 1972 sets the
+appropriate dates in the UK and summer-time orders have been made as necessary
+to implement the European Directives. The 9th EC Directive prescribes the start
+and end dates of summer time as the last Sundays in March and October
+respectively. These dates are in line with those already operating in the
+United Kingdom. The 9th Directive provides that these start and end dates
+should apply indefinitely.
+---
+9th EC Directive - 19 January 2001
+
+Article 1
+For the purposes of this Directive "summer-time period" shall mean the period
+of the year during which clocks are put forward by 60 minutes compared with the
+rest of the year.
+
+Article 2
+From 2002 onwards, the summer-time period shall begin, in every Member State,
+at 1.00 a.m., Greenwich Mean Time, on the last Sunday in March.
+
+Article 3
+From 2002 onwards, the summer-time period shall end, in every Member State, at
+1.00 a.m., Greenwich Mean Time, on the last Sunday in October.
+
+You stand corrected ;-)  (well up until 2007 anyway)
+===============================================================================
+
+There appears to be a discrepency between PHP and C timestamps.  The C time()
+and gettimeofday() functions are documented to return based on UTC time, but
+the value obtained doesn't match the PHP gmmktime() function.  Instead, it
+matches the PHP mktime() function, which is supposed to be local time.
+  
+It seems that C always uses a UTC timestamp and adjusts to local time through
+different handling functions (gmtime() vs localtime()).  PHP appears to use
+differing UTC/local timestamps, but single handling functions.
+
+The exception to this rule is the PHP time() function, which appears to behave
+in the same was as the C version.
+
+In short, if your PHP is working with timestamps created in C (or vice versa)
+make sure you are comparing apples to apples.
+===============================================================================
+
+When attempting to use HTTP's If-Modified-Since features for caching I ran into
+the problem of being able to compare the GMT date the browser was sending to my
+own Last-Modified date (stored in a database field). I saw many examples of how
+to create a GMT date from a unix timestamp, but little on how to actually get a
+GMT date into a unix timestamp. Perhaps someone has a better way, here's my
+solution:
+
+<?php
+
+function gmstrtotime($sgm) {
+    $months = array(
+      'Jan'=>1,
+      'Feb'=>2,
+      'Mar'=>3,
+      'Apr'=>4,
+      'May'=>5,
+      'Jun'=>6,
+      'Jul'=>7,
+      'Aug'=>8,
+      'Sep'=>9,
+      'Oct'=>10,
+      'Nov'=>11,
+      'Dec'=>12
+    );
+    list($D, $d, $M, $Y, $H, $i, $s) = sscanf($sgm, "%3s, %2d %3s %4d
+%2d:%2d:%2d GMT");
+    return gmmktime($H, $i, $s, $months[$M], $d, $Y);
+}
+
+// test: after all is said and done
+// $time should be the same as $gmtime
+
+$time = time();
+$us = date("m/d/Y H:i:s",$time);
+$sgm = gmdate("D, d M Y H:i:s",$time) . " GMT";
+
+$gmtime = gmstrtotime($sgm);
+
+echo $us . "<BR>";
+echo $sgm . "<BR>";
+echo $time . "<BR>";
+echo $gmtime . "<BR>";
+
+?>
+
+My results:
+
+02/13/2004 10:45:42
+Fri, 13 Feb 2004 20:45:42 GMT
+1076705142
+1076705142
+
+Credit to kyle at frozenonline dot com for his strtotime example
+===============================================================================
+
+<?php
+
+/**
+* Check if given time is during Europen Summer Time
+*
+* @link http://en.wikipedia.org/wiki/European_Summer_Time
+* @param int $time UTC timestamp (GMT)
+* @return boolean true if it is EST else false
+*/
+function is_est($time)
+{
+    // get year
+    $Y = gmdate("Y", $time);
+   
+    // calc start / end dates and time for that year
+    $begin_date = (31 - (5*$Y/4 + 4) % 7);
+    $end_date = (31 - (5*$Y/4 + 1) % 7);
+    $begin_time = gmmktime(0,0,0,  3,$begin_date,$Y);
+    $end_time = gmmktime(0,0,0,  10,$end_date,$Y);
+   
+    // if it's in that period
+    $is_dst = $time >= $begin_time && $time < $end_time;
+    return $is_dst;
+}
+
+?>
+===============================================================================
+
+I have seen many different hacked versions of this function for people using
+Windows that want to support dates before Jan 1, 1970. Here is yet another one
+that is different than others you may have seen! It does not use loops like all
+the others I have seen!
+
+<?php
+
+// usage...
+
+echo win_gmmktime ( 12, 43, 16, 07, 23, 1946 );
+
+function win_gmmktime ( $hour, $minute, $second, $month, $day, $year )
+{
+    if ( $year > 1969 )
+    {
+        return ( gmmktime ( $hour, $minute, $second, $month, $day, $year ) );
+    }
+
+    $t = 0;
+    $ds = 86400;
+    $hs = 3600;
+    $dy = 365;
+    $ms = 60;
+
+    $months = array ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 );
+    $leap_year = $year % 4 == 0 && ( $year % 100 > 0 || $year % 400 == 0 ) ? 
+true : false;
+
+    if ( $year < 1969 )
+    {
+        $y = 1969 - $year;
+        $t -= ( $y * $dy ) * $ds;
+        $x = ceil ( $y / 4 );
+
+        if ( $leap_year && $month > 2 )
+        {
+            $x -= 1;
+        }
+
+        $t -= $x * $ds;
+    }
+
+    if ( $month != 12 )
+    {
+        $tm = $months;
+        $tm = array_slice ( $tm, $month );
+        $t -= array_sum ( $tm ) * $ds;
+        unset ( $tm );
+    }
+
+    $nh = ( ( $month == 2 && $leap_year ? 29 : $months[$month-1] ) - $day );
+    $t -= $nh != 0 ? $nh * $ds : 0;
+    $nh = 23 - $hour;
+    $t -= $nh != 0 ? $nh * $hs : 0;
+    $nh = 59 - $minute;
+    $t -= $nh != 0 ? $nh * $ms : 0;
+    $nh = 59 - $second;
+    $t -= $nh != 0 ? $nh + 1 : 0;
+
+    return ( $t );
+}
+
+?>
+===============================================================================
+
+In addition to GLEN's post on DEC 5th 2007
+
+(Just a note for others)
+
+The results for the three time types Glen listed under "returns" all returned
+the exact same timestamp
+- 1196812966
+
+Using those three functions will only make the exact same timestamp if the
+server the code is executed on IS in GMT timezone.
+
+'mktime()' and 'time()' will both return the timestamp for your server time,
+and will both be the same as eachother.
+gmmktime will return a GMT timestamp.
+
+So if run on a server that is NOT in the GMT timezone then gmmktime will return
+a different timestamp to the other two.
+===============================================================================
+
+As an addendum to my previous note (php.net said it was too long and I had to
+split this part off), I'll leave you with one more fun tidbit. :)
+
+(See the note below this one for a full explanation of timezones versus unix
+timestamps.)
+
+3 AM PST == 11 AM GMT, right?  11 AM _GMT_ > 3 AM _GMT_ (same timezone) right? 
+So, logically, 3 AM PST > 3 AM GMT.  (Makes sense right, it is 3 AM in
+California 8 hours after it is 3 AM in Greenwich.)  Now, because timestamps are
+timezone-independent (or, always GMT/UTC), you get a strange situation.  mktime
+(3) > gmmktime(3).  Even though PST is GMT-8, so PST is less than GMT, mktime
+(3) is _greater_ than gmmktime(3).  At first glance you'd probably expect
+mktime(3) to be less than gmmktime(3), but because of everything I described
+before, about how timestamps are always GMT/UTC (or, in some senses, no
+timezone at all), it ends up being "backwards."  (Run a few examples yourself
+if you don't believe me.)  Yet another reason not to try to deal with timezones
+at the timestamp level!
+===============================================================================
+
+gmmktime() should ONLY be used to create a timestamp when specifying a specific
+GMT date and time.
+
+If you want to make a valid time stamp for the current date & time, use mktime
+() instead.
+
+UNIX timestamps, by definition, store the GMT time relative to the UNIX epoch.
+
+gmmktime() (without any parameters specified) will effectively use the
+computer's LOCAL time values just the same as if they were explicit parameters,
+and the resulting time stamp will be incorrect.  (The resulting timestamp will
+actually be offset in the OPPOSITE direction of the local timezone offset from
+GMT!)

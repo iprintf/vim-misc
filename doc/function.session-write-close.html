@@ -1,0 +1,452 @@
+
+session_write_close
+
+(PHP 4 >= 4.0.4, PHP 5, PHP 7)
+
+session_write_close — Write session data and end session
+
+说明
+
+void session_write_close ( void )
+
+End the current session and store session data.
+
+Session data is usually stored after your script terminated without the need to
+call session_write_close(), but as session data is locked to prevent concurrent
+writes only one script may operate on a session at any time. When using
+framesets together with sessions you will experience the frames loading one by
+one due to this locking. You can reduce the time needed to load all the frames
+by ending the session as soon as all changes to session variables are done.
+
+返回值
+
+没有返回值。
+
+参见
+
+  • The session_register_shutdown() - 关闭会话
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+You can have interesting fun debugging anything with sleep() in it if you have
+a session still active.  For example, a page that makes an ajax request, where
+the ajax request polls a server-side event (and may not return immediately).
+
+If the ajax function doesn't do session_write_close(), then your outer page
+will appear to hang, and opening other pages in new tabs will also stall.
+===============================================================================
+
+Make sure that you call session_start() again after session_write_close() if
+you rely on the SID rewriting.  Otherwise it will not be rewritten.
+===============================================================================
+
+An easy gotcha here - the $_SESSIONS superglobal does not vanish because you
+call session_write_close.  If subsequent to the write_close call if you
+manipulate the superglobal the changes will not be saved when the script
+exists.  Likewise a call to session_regenrate_id will fail.
+
+Closing the session and then manipulating session variables is not something
+many would do by intent.  However, if your sessions suddenly start misbehaving,
+failing to record changes etc it is well worth checking that the cause is not
+this one!
+===============================================================================
+
+If you're saving data to a session but finding it's not actually being saved,
+check and ensure that you're not assigning any arrays with a key containing the
+pipe character (|). This will prevent the session data from being serialized
+and saved.
+===============================================================================
+
+Beware, if you overwrite the default PHP Session handling and use debugging
+code inside the write() function, the debugging code is not executed until you
+run session_write_close().
+
+I tried everything, file logging directly from the write() function, global
+debugging variable increments, static class properties. The only things written
+were the session open() and read() calls. My debugging code looks like this:
+<?php
+$Session = new Session();
+...
+class Session() {
+    public function write($id)
+        $sql = "UPDATE ... WHERE id=". mysql_real_escape_string($id);
+        self::$debug_Info .= "session_write sql=$sql";
+    ...
+}
+
+# then at the very end of the script:
+# session debugging
+session_write_close();
+error_log($Session->getDebugInfo(), 3, 'logs/sessions.log');
+?>
+
+where getDebugInfo simply returns self::$debug_Info. Without
+session_write_close() the sessions.log would only contain the open() and read()
+calls.
+
+Maybe intuitive to many, it took days to realize. hope it helps!
+===============================================================================
+
+It is a good idea to call session_write_close() before proceeding to a
+redirection using
+
+header("Location: URL");
+exit();
+
+because it ensures the session is updated (in a file or into a database,
+depending on the handler you're using) BEFORE you redirect the visitor
+somewhere else.
+
+JP.
+===============================================================================
+
+Workaround if session_write_close() still doesn't write sessions fast enough:
+
+I found with one PHP login system that even session_write_close() was not
+setting the session variables before I transferred pages with a Location:
+header.  So the user would log in, I would create the $_SESSION variables, call
+session_write_close() and then transfer to the secure page using header
+(Location:...).  The secure page would check for the session vars, not find
+them, and force the user to log in again.  After the second login the session
+would be found and they could continue.
+
+My workaround was to create the $_SESSION variables with 0 values before
+writing the initial login page.  Then I updated the session vars with the login
+results and used the header() function to switch to the secure location.  Once
+the session vars have already been created, updated values are assigned
+quickly.  Problem solved.  Just be sure the secure page checks both that the
+$_SESSION var exists AND that it's not 0.
+===============================================================================
+
+i have been using a mysql database custom session handler (not using cookies)
+and was having problems getting the session data to be saved consistantly on my
+database driven website
+
+clients also have to navigate across domains for website management at times so
+i have some special code to make all this happen relatively seamlessly and to
+ensure that each person's data is secure.
+
+i added session_write_close() at the very end of the last script that set
+session data and solved the problem.
+
+i am not sure why, but it seems the calls to write and close were not always
+being made (i was not smart enough to figure it out)
+
+now that the session_write_close() call is being made, my problems seemed to
+have disappeared - hopefully for good.
+
+hope this helps someone.
+===============================================================================
+
+Beware of session_write_close when calling PHP scripts from an Ajax page: this
+does not "finalize" the session data writing, but in fact it resets it!
+===============================================================================
+
+Along the same lines as what cenaculo at netcabo dot pt, bkatz at
+usefulengineering dot com, and editorial at literati dot ca said about making
+sure you session_write_close(), don't forget to ob_end_flush() if you're using
+output buffering.
+
+I've been having some weird hanging issues when I tried to navigate away from a
+page with content streaming in an Iframe or a separate window.
+
+Instead of:
+
+<?
+ob_start();
+session_start();
+/* Do session stuff here; security; logging; etc. */
+session_write_close();
+/* NOW write out the requested file. */
+header("Content-type: audio/x-mpeg"); /* or whatever type */
+header("Content-Disposition: attachment; filename=" . $filename);
+header("Content-Length: " . $filesize);
+header("Content-Transfer-Encoding: binary\n\n");
+header("Pragma: no-cache");
+header("Expires: 0");
+$file_contents = file_get_contents($filepath);  
+print($file_contents);
+?>
+
+Do:
+
+<?
+ob_start();
+session_start();
+/* Do session stuff here; security; logging; etc. */
+session_write_close();
+/* Make sure data is actually flushed out to the browser */
+ob_end_flush();
+/* NOW write out the requested file. */
+header("Content-type: audio/x-mpeg"); /* or whatever type */
+header("Content-Disposition: attachment; filename=" . $filename);
+header("Content-Length: " . $filesize);
+header("Content-Transfer-Encoding: binary\n\n");
+header("Pragma: no-cache");
+header("Expires: 0");
+$file_contents = file_get_contents($filepath);  
+print($file_contents);
+?>
+===============================================================================
+
+For the session problem when using header("Location:..."), I found
+session_write_close() not to help me on the my IIS server using PHP in CGI
+mode. The problem was the PHPSESSID cookie was never being set, so I did it the
+manual way:
+
+header("Set-Cookie: PHPSESSID=" . session_id() . "; path=/");
+
+Worked for me this way!
+===============================================================================
+
+My sessions were screwing up because I had 2 different session IDs going at
+once:
+
+- 1 PHPSESSID cookie for domain.com
+- 1 PHPSESSID cookie for www.domain.com
+
+This fixed it:
+
+//At the beginning of each page...
+session_set_cookie_params  (1800,"/","domain.com");
+session_start();
+===============================================================================
+
+Remember: objects with private and/or protected data members cannot be
+serialized properly by PHP. If you ever find that you are missing some objects
+from your $_SESSION, make sure you are accounting for this shortcoming in your
+application.
+===============================================================================
+
+if you are trying to work with a larger code base meant for a specific
+application... and it implements some custom session save handlers, it appears
+there is no way to reset those save handlers back to the default php state if
+they are getting in your way.  my workaround:
+
+session_write_close(); // close the session at the top of the page :)
+===============================================================================
+
+I had a problem with realizing the restore password form. First a user entered
+his login or e-mail in the system.
+
+Then the script searched the database, got the session data, and sended link
+with SID to registered e-mail. The link was configured so, that it restored
+session data and logged user in the secure interface to the change password
+form.
+
+Then was displayed a page with the message about sended message.
+
+The problem was that ID was not unique in three pages, the SID sended to e-mail
+anyone could see in cookie.
+
+I tryed to start new session before generating and after sending link with the
+code:
+
+<?php ....
+session_start();
+/*Getting user login and e-mail from database*/
+$user_login = "....";
+$user_id = "....."
+
+/*CLOSE PREVIOUS SESSION*/
+session_unlink();
+session_destroy();
+
+/*NOW GENERATING LINK FOR SESSION DATA */
+session_start();
+$_SESSION = $user_login;
+$_SESSION = $user_id;
+/*here generating link:*/
+$link = "http://host.com/restore=" . SID . "";
+mail (....);
+
+/*CLOSE THE SESSION WITH USER DATA*/
+session_write_close();
+
+/*AND STARTING A NEW SESSION*/
+session_start();
+/*THEN LOAD THE 'MESSAGE SENDED' PAGE*/
+header("Location: /restore/message_sended/");
+
+?>
+
+The trouble was that SID was the same even after session_unlink() and
+session_write_close(). The session_start() function just restored the previous
+session data!!! So the script was not safe.
+Then I added session_regenerate_id() call after each session_start().
+
+<?php ....
+session_start();
+/*Getting user login and e-mail from database*/
+$user_login = "....";
+$user_id = "....."
+
+/*CLOSE PREVIOUS SESSION*/
+session_unlink();
+session_destroy();
+
+/*NOW GENERATING LINK FOR SESSION DATA */
+session_start();
+session_regenerate_id();//Regenerating SID for sending
+
+$_SESSION = $user_login;
+$_SESSION = $user_id;
+
+/*here generating link:*/
+$link = "http://host.com/restore=" . SID . "";
+mail (....);
+
+/*CLOSE THE SESSION WITH USER DATA*/
+session_write_close();
+
+/*AND STARTING ANOTHER NEW SESSION*/
+session_start();
+session_regenerate_id(); //Regenerating SID
+/*THEN LOAD THE 'MESSAGE SENDED' PAGE*/
+header("Location: /restore/message_sended/");
+
+?>
+
+And now it works as needed! The SID sending to user we cannot see in cookies
+nor before neither after generated link, but the data is saved in session with
+this id. So only the owner of account can get it!
+===============================================================================
+
+This function is useful for forcing serialization of session data but it can
+introduce difficult-to-track bugs if it's called more than once per
+session_start() call.  Since it doesn't have a return value or raise an
+exception there won't be any indication that the serialization failed and the
+code will continue normally.  Only when a user visits a page that depends on
+unsaved session data will there be any indication of the failure.
+As far as I can tell this affects both the default and custom session handling
+functions.
+
+<?
+session_start();
+$_SESSION['foo'] = 'box';
+session_write_close();
+
+if (array_key_exists('visited',$_SESSION) {
+    echo "welcome back!\n"; # will never happen
+} else {
+    echo "I don't know you.\n";
+    $_SESSION['visited'] = true;
+    session_write_close();
+}
+?>
+===============================================================================
+
+As we all know, if an object is serialised, then the class definition must be
+included _before_ it is unserialised.
+
+My framework has an enormous number of class files, and including them all at
+the beginning of the script was really taking it's toll on my system (memory
+and execution time) so I switched to including required classes at the top of
+each class file that used them using require_once.
+
+This caused problems because I start my session at the very beginning of my
+script's execution, but all my class files aren't there at the beginning!!
+
+So no in my special 'require' function, I do the following:
+
+if(!class_exists($to_require))
+{
+    session_write_close();
+    require_once('path/to/classes/'.$to_require.'.php');
+    session_start();
+}
+
+This is a considerably smaller performance hit that including every class that
+the application uses at the very beginning of the application.
+===============================================================================
+
+Further to the comment by nakanishi at mailstyle dot com, it appears that
+calling session_write_close() followed by session_start() causes issues if you
+have more than one browser window/tab open in the session, and have a large
+session data array.  I have an intermitent (and hard to replicate reliably)
+issue with session_start() never being called or not returning - the script
+hangs before the session headers are written.  I'm puting this down to trying
+to be too clever rather than to a bug per se.
+===============================================================================
+
+When trying to use exec on Windows 2003 Server together with WAMP you probably
+will experience that the server stops to answer your requests.
+
+Through calling session_write_close before -every- exec this will solve your
+problem.
+
+Hope this will help someone!
+===============================================================================
+
+session_write_close() worked as a lifesaver for me when automatically uploading
+files to a user (forcing a download instead of a link). If files are large, and
+since session_start() does not allow another page using session_start() to
+proceed until it's done, i was not able to upload more than one file at a time.
+By using session_write_close() before beginning the file upload, my users can
+now download as many big files as they like, at the same time. Example:
+
+<?
+session_start();
+/* Do session stuff here; security; logging; etc. */
+session_write_close();
+/* NOW write out the requested file. */
+header("Content-type: audio/x-mpeg"); /* or whatever type */
+header("Content-Disposition: attachment; filename=" . $filename);
+header("Content-Length: " . $filesize);
+header("Content-Transfer-Encoding: binary\n\n");
+header("Pragma: no-cache");
+header("Expires: 0");
+$file_contents = file_get_contents($filepath);   
+print($file_contents);
+?>
+===============================================================================
+
+Using a SQL Server database and Windows Server 2003, if you use
+session_write_close() prior to a header() call, and it still appears to freeze
+up your session, check to make sure that you are not in the middle of a
+transaction.
+
+I noticed that by starting a transaction, executing some queries, attempting to
+write close the session and then redirecting without rolling back or committing
+that transaction, your session may freeze up. Just like what you may experience
+if you attempt to redirect with header() without first calling
+session_write_close().
+===============================================================================
+
+I had a similar problem with session data.
+I lost the session data randomly, without any pattern. I didn't even use the
+header(location:... ) function.
+
+Tried:
+set "session.use_cookies" to 1 in php.ini
+session-write-close()
+ob_start() / ob_end_flush()
+
+No matter what I did, it didn't worked.
+
+Finally, when I set the "session.use_only_cookies" to 1, problem is solved. I
+am no longer losing any sessions.
+===============================================================================
+
+I was having the same problem as many here regarding setting session data just
+before a header location redirect and having the session data just not be
+there.  I tried everything people here said, and none of their combinations
+worked.  What did finally work for me was to fire off a session_regenerate_id
+(true) call just prior to the header() and die() calls.
+
+session_regenerate_id(true);
+header('location: blah blah');
+die();
+
+Without the regenerate id call, the write close did not seem to do anything. 
+session_write_close() doesn't seem to matter at all.  It certainly didn't fix
+anything on its own for me.
+
+This is a rather annoying issue with php sessions that I've never run into
+before.  I store my sessions to /dev/shm (which is RAM) so file IO blocking
+can't be the problem.  Now I'm nervous that some other session data might not
+be getting updated prior to a header() location change, which is extremely
+important and common in any web app.

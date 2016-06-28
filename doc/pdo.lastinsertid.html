@@ -1,0 +1,444 @@
+
+PDO::lastInsertId
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.1.0)
+
+PDO::lastInsertId — 返回最后插入行的ID或序列值
+
+说明
+
+string PDO::lastInsertId ([ string $name = NULL ] )
+
+返回最后插入行的ID，或者是一个序列对象最后的值，取决于底层的驱动。比如，
+PDO_PGSQL() 要求为 name 参数指定序列对象的名称。
+
+    Note:
+
+    在不同的 PDO 驱动之间，此方法可能不会返回一个有意义或一致的结果，因为底层数
+    据库可能不支持自增字段或序列的概念。
+
+参数
+
+name
+
+    应该返回ID的那个序列对象的名称。
+
+返回值
+
+如果没有为参数 name 指定序列名称，PDO::lastInsertId() 则返回一个表示最后插入数
+据库那一行的行ID的字符串。
+
+如果为参数 name 指定了序列名称，PDO::lastInsertId() 则返回一个表示从指定序列对
+象取回最后的值的字符串。
+
+如果当前 PDO 驱动不支持此功能，则 PDO::lastInsertId() 触发一个 IM001 SQLSTATE
+。
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+Remember, if you use a transaction you should use lastInsertId BEFORE you
+commit
+otherwise it will return 0
+===============================================================================
+
+If you're accessing MSSQL/SQL Server 2008 R2 (or higher) from Linux via FreeTDS
+there's a slightly neater way of getting the last insert ID than the solution
+(s) outlined below.
+
+The specific SQL involved is outlined here:
+
+http://msdn.microsoft.com/en-us/library/ms177564.aspx
+
+So for example, with a table containing the two columns (product_id,
+product_name) where product_id is a uniqueidentifier or something similar you
+could do the following.
+
+<?php
+
+// Assume $dbh connection handle is already established
+
+$sql = "INSERT INTO product (product_name) OUTPUT INSERTED.product_id VALUES
+(?)";
+
+$sth = $dbh->prepare($sql);
+
+$sth->execute(array('widgets'));
+
+$temp = $sth->fetch(PDO::FETCH_ASSOC);
+
+?>
+
+Then $temp will contain an array like:
+
+Array
+(
+    [product_id] => E1DA1CB0-676A-4CD9-A22C-90C9D4E81914
+)
+
+Just be warned that there are some issues relating to how uniqueidentifier
+columns are handled by PDO_DBLIB/FreeTDS depending on the TDS version you
+choose that have only been fixed as of PHP 5.3.7.
+
+Information regarding this and the patch can be found here:
+
+https://bugs.php.net/bug.php?id=54167
+===============================================================================
+
+in case anyone was wondering
+something like
+
+$val = 5;
+$sql = "REPLACE table (column) VALUES (:val)";
+$stmt = $dbh->prepare($sql);
+$stmt->bindParam(':val', $val, PDO::PARAM_INT);
+$stmt->execute();
+$lastId = $dbh->lastInsertId();
+
+will return the last inserted id, whether the record was replaced or simply
+inserted
+
+the REPLACE syntax, simply inserts, or deletes > inserts
+so lastInsertId() still works
+
+refer to http://mysql.com/doc/refman/5.0/en/replace.html
+for REPLACE usage
+===============================================================================
+
+Beware of lastInsertId() when working with transactions in mysql. The following
+code returns 0 instead of the insert id.
+
+<?php
+try {
+    $dbh = new PDO('mysql:host=localhost;dbname=test', 'username', 'password');
+
+    $stmt = $dbh->prepare("INSERT INTO test (name, email) VALUES(?,?)");
+
+    try {
+        $dbh->beginTransaction();
+        $tmt->execute( array('user', 'user@example.com'));
+        $dbh->commit();
+        print $dbh->lastInsertId();
+    } catch(PDOExecption $e) {
+        $dbh->rollback();
+        print "Error!: " . $e->getMessage() . "</br>";
+    }
+} catch( PDOExecption $e ) {
+    print "Error!: " . $e->getMessage() . "</br>";
+}
+?>
+
+When no exception is thrown, lastInsertId returns 0. However, if lastInsertId
+is called before calling commit, the right id is returned.
+===============================================================================
+
+It should be mentioned that this function DOES NOT retrieve the ID (Primary
+key) of the row but it's OID instead.
+
+So if you use one of the latest PostgreSQL versions this function won't help
+you unless you add OID to the table specifically when you create it.
+===============================================================================
+
+This function is now compatible with the newer MS SQL driver. http://
+msdn.microsoft.com/en-us/library/ff628155(v=sql.105)
+===============================================================================
+
+I think I get a nice solution in Postgres to get the ID using the RETURNING
+that comes with Postgress since version 8.2. In the example below, I add to my
+insert clause the "returning" along with the primary key of my table, then
+after the execute, I do a fetch getting an array with the value of the last
+inserted id.
+
+<?php
+    public function insert($employee){
+
+        $sqlQuery = "INSERT INTO employee(user_id,name,address,city) VALUES
+(:user_id,:name,:address,:city) RETURNING employee_id";
+
+        $statement = $this->prepare($sqlQuery);
+
+        $a ="2002-03-11 12:01AM" ;
+
+        $statement->bindParam(":user_id", $employee->getUserId(), PDO::
+PARAM_INT);
+        $statement->bindParam(":name", $employee->getName(), PDO::PARAM_STR);
+        $statement->bindParam(":address", $employee->getAddress(), PDO::
+PARAM_STR);
+        $statement->bindParam(":city", $employee->getCity(), PDO::PARAM_STR);
+        $statement->execute();
+       
+        $result = $statement->fetch(PDO::FETCH_ASSOC);
+        return $result["employee_id"];
+
+    }
+?>
+===============================================================================
+
+Easiest solution I've found for MSSQL to obtain the last inserted ID is
+
+<?php
+$STH = $DBH->query("SELECT CAST(COALESCE(SCOPE_IDENTITY(), @@IDENTITY) AS int)"
+);
+$STH->execute();
+$result = $STH->fetch();
+print $result[0];
+?>
+===============================================================================
+
+beware when mixing auto-incremented and explicit IDs!
+Given a fresh table "tbl", executing
+
+insert into tbl values (0, 'kaeptn blaubaer'); --auto increment (-> 1)
+insert into tbl values (16, 'pipi langstrumpf'); --explicit id (-> 16)
+select LAST_INSERT_ID();
+
+will return 1, which is not the value of the last insert. its the value from
+the last auto-increment insert!
+
+(using mysql)
+===============================================================================
+
+Sorry to contradict Jonathon Hibbard's comment (http://php.net/manual/en/
+pdo.lastinsertid.php#82838), but my experiencie with INSERT INTO ... ON
+DUPLICATE KEY UPDATE is totally different; maybe it's due to PHP version (I'm
+on Windows, 5.4.7; I realize his post is 6 years old) or to the database engine
+(MySQL in my case).
+
+Nevertheless, if I do an INSERT INTO ... ON DUPLICATE KEY UPDATE (something
+like id=id or equivalent, where the updated value is equal to the original
+one), this is what I'm getting:
+
+- If the key didn't exist, the value is inserted, and lastInsertId() returns
+the expected id for the new row.
+
+- If the row exists AND a value is updated, with lastInsertId() I get the ID of
+the updated row.
+
+- If the row exists but NO value is updated, lastInsertId() returns 0.
+
+That contradicts his example, where he assures that
+"INSERT INTO city (`city`) VALUES ('Paris') ON DUPLICATE KEY UPDATE `city` =
+'Paris'"
+returns 2 (??) on lastInsertId() and that he expected to return 1 "since no
+records were inserted" (??).
+
+Hope this helps someone.
+===============================================================================
+
+As said by Dennis Du Kroger, in this situation the function will return 0.
+
+But you can retrieve the last inserted Id executing a query asking for the
+function LAST_INSERT_ID() (at least in MySQL)
+
+Try this:
+
+($o_db is the declared adapter)
+
+$last_id = $o_db->fetchAll('SELECT LAST_INSERT_ID() as last_id');
+       
+$last_id = intval($last_id[0]['last_id']);
+===============================================================================
+
+Simple example:
+<?php
+try {
+   $dbh = new PDO('mysql:host=localhost;dbname=test', 'root', 'passowd');
+
+   $smf = $dbh->prepare("INSERT INTO test (`numer`) VALUES (?)");
+ 
+   $a = mt_rand(1, 100);
+   $smf->bindParam(1, $a, PDO::PARAM_INT);
+   $smf->execute();
+   print $dbh->lastInsertId().'<br />';
+
+   $a = mt_rand(1, 100);
+   $smf->bindParam(1, $a, PDO::PARAM_INT);
+   $smf->execute();
+   print $dbh->lastInsertId();
+
+   $dbh = null;
+} catch (PDOException $e) {
+   print "Error!: " . $e->getMessage() . "<br/>";
+   die();
+}
+?>
+===============================================================================
+
+Workaround for the fact that MSSQL does not provide lastInsertId().  This is
+locale-independent by design.
+
+<?php
+$mixRc = false;
+try {
+    // Issue a compound command, 2nd part outputs the inserted Id
+    $strQuery =
+    'INSERT INTO t1 (f1,f2) VALUES(v1,v2); SELECT @@IDENTITY AS mixLastId';
+    // Yup, your eyes are ok, NOT exec but query!!!
+    $objSth = $objDb->query($strQuery);
+    $mixRc = (is_object($objSth) and $objSth->errorCode() == '00000');
+}
+catch (PDOException $objException) {
+    $pdoMsg = $objException->getMessage();
+    $pdoMsg = iconv("ISO-8859-1", "UTF-8", $pdoMsg);
+    $strMessage = 'insertRecord: Failed ' .
+                  $strQuery . ', Error Message: ' . $pdoMsg;
+    doLog(__FILE__, __LINE__, $strMessage);
+    throw new core_exception_database($strMessage);
+}
+if ($mixRc === false) return false;
+
+// The compound command delivers a multi-rowset statement handle
+// Move past the first (invalid) rowset from the INSERT command
+$objSth->nextRowset();
+// Pick up the first row of the rowset from "SELECT @@IDENTITY"
+$rowTd = $objSth->fetch(PDO::FETCH_NUM);
+if (!is_array($rowTd)) {
+    doLog(__FILE__, __LINE__,
+        'insertRecord: $objSth->fetch() returns %s', gettype($rowTd));
+    return false;
+}
+$objSth->closeCursor();
+$strLastRowId = trim($rowTd[0]); // trim() for trailing Nullbyte
+// Integers are returned stringified, format depends on locale
+// Generally ends with ",00" or ".00" - trim that off
+$strLastRowId = preg_replace('/[,.]0+$/', '', $strLastRowId);
+// Remove any remaining "." or "," for thousands
+$strLastRowId = preg_replace('/[,.]/', '', $strLastRowId);
+// A GUID, which contains no "," or ".", will be left unchanged
+return $strLastRowId;
+?>
+===============================================================================
+
+It should be noted here at this function will not display the correct ID if
+issuing ON DUPLICATE KEY UPDATE.
+
+Example on a new Row:
+<?php
+$sql = "INSERT INTO city (`city`) VALUES ('Paris') ON DUPLICATE KEY UPDATE
+`city` = 'Paris";
+$dbh->query($sql);
+echo $dbh->lastInsertId();
+?>
+
+Above displays: 1
+Expected display: 1
+
+Example on an existing row that gets updated:
+<?php
+$sql = "INSERT INTO city (`city`) VALUES ('Paris') ON DUPLICATE KEY UPDATE
+`city` = 'Paris";
+$dbh->query($sql);
+echo $dbh->lastInsertId();
+?>
+
+Above displays: 2
+Expected display: 1 (since no new records were inserted)
+
+You'll have to work around this.
+===============================================================================
+
+In response to Yonatan Ben-Nes, it does appear that using the latest versions
+of PHP 5.x and PostgreSQL 8.x, the driver will return a "meaningful" ID (rather
+than an OID), provided you pass the name of the corresponding sequence.
+
+So, if you created a table as follows:
+
+CREATE TABLE "user" (
+"id" SERIAL PRIMARY KEY NOT NULL,
+"username" character varying(32)
+);
+
+PostgreSQL will (by default) create a sequence called 'user_id_seq'.
+
+You can then do something like:
+
+$strTable = "user":
+$last_insert_id = $objPDO->lastInsertId("$strTable_id_seq);
+
+This does appear to function as expected. What is a little unclear to me is
+whether this simply returns the current value of the sequence; if it does, this
+isn't a particularly reliable indicator as to the id of the record your code
+just inserted, especially if your site or application is especially high
+traffic.
+===============================================================================
+
+It should be noted that, at least for MySQL using InnoDB tables, with
+transactions PDO will report the last insert id as 0 after the commit, the real
+ids are only reported before committing.
+
+(As a side note, MySQL keeps the ID number incremented after a rollback).
+===============================================================================
+
+@nour
+
+You need to call lastInsertId before you commit
+===============================================================================
+
+This function is not available for MSSQL either.
+===============================================================================
+
+For PostgreSQL you can still use the old solution to return the last Id of an
+INSERT, selecting the currval of a table's id_sequence.
+
+The code below shows a working function (which is easy adaptale into another
+class, etc).
+
+<?php
+// -------------------------
+// Last Insert ID for PDO with PostgreSQL
+// -------------------------
+function pgsqlLastInsertId($sqlQuery, $pdoObject)
+{
+    // Checks if query is an insert and gets table name
+    if( preg_match("/^INSERT[\t\n ]+INTO[\t\n ]+([a-z0-9\_\-]+)/is", $sqlQuery,
+$tablename) )
+    {
+        // Gets this table's last sequence value
+        $query = "SELECT currval('" . $tablename[1] . "_id_seq') AS last_value"
+;
+
+        $temp_q_id = $pdoObject->prepare($query);
+        $temp_q_id->execute();
+
+        if($temp_q_id)
+        {
+            $temp_result = $temp_q_id->fetch(PDO::FETCH_ASSOC);
+            return ( $temp_result ) ? $temp_result['last_value'] : false;
+        }
+    }
+
+    return false;
+}
+
+?>
+
+Example of use:
+
+<?php
+// ... connects to a PostgreSQL DB
+$pdoObject = new PDO('pgsql:host=localhost;dbname=mydb', 'user', 'pass');
+
+$sql = 'INSERT INTO table (column) VALUES (\'some_value\');';
+$result = $pdoObject->prepare($sql);
+$result->execute();
+
+echo 'Last Insert ID: ' . pgsqlLastInsertId($sql, $pdoObject);
+
+?>
+===============================================================================
+
+In the Return Values part:
+
+If the PDO driver does not support this capability, PDO::lastInsertId()
+triggers an IM001 SQLSTATE.
+--------------------------------------------------------------------------------
+
+So what's the solution for this....?
+And I got this error:
+-------------------------------------------------------------------------------
+PHP Warning:  PDO::lastInsertId(): SQLSTATE[IM001]: Driver does not support
+this function: driver does not support lastInsertId() in xxxx
+-------------------------------------------------------------------------------
+I'm using IBM db2 odbc driver...

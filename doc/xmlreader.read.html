@@ -1,0 +1,195 @@
+
+XMLReader::read
+
+(PHP 5 >= 5.1.0, PHP 7)
+
+XMLReader::read — Move to next node in document
+
+说明
+
+public bool XMLReader::read ( void )
+
+Moves cursor to the next node in the document.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+参见
+
+  • XMLReader::moveToElement() - Position cursor on the parent Element of
+    current Attribute
+  • XMLReader::moveToAttribute() - Move cursor to a named attribute
+  • XMLReader::next() - Move cursor to next node skipping all subtrees
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+libxml2 contains much more useful method readString() that will read and return
+whole text content of element. You can call it after receiving start tag
+(XMLReader::ELEMENT). You can use this PHP code to emulate this method until
+PHP will directly call underlying libxml2 implementation.
+
+<?php
+class XMLReader2 extends XMLReader
+{
+  function readString()
+  {
+        $depth = 1;
+        $text = "";
+
+        while ($this->read() && $depth != 0)
+        {
+            if (in_array($this->nodeType, array(XMLReader::TEXT, XMLReader::
+CDATA, XMLReader::WHITESPACE, XMLReader::SIGNIFICANT_WHITESPACE)))
+                $text .= $this->value;
+            if ($this->nodeType == XMLReader::ELEMENT) $depth++;
+            if ($this->nodeType == XMLReader::END_ELEMENT) $depth--;
+        }
+        return $text;
+    }
+}
+?>
+
+Just use XMLReader2 instead of XMLReader.
+===============================================================================
+
+It is interesting to note that this function will stop on closing tags as
+well.  I have an XML document similar to the following:
+
+<root>
+  <columns>
+    <column>columnX</column>
+    <column>columnY</column>
+  </columns>
+  <table>
+    <row>
+      <columnX>38</columnX>
+      <columnY>50</columnY>
+    </row>
+    <row>
+      <columnX>82</columnY>
+      <columnY>28</columnY>
+    </row>
+    ...
+  </table>
+</root>
+
+I need to parse the <columns> object to know what attributes to check for from
+each <row> node.  Therefore I was doing the following:
+
+<?php
+while ($xml->read()) {
+  if ($xml->name === 'column') {
+   //parse column node to into $columns array
+  }
+  elseif ($xml->name === 'row') {
+    //parse row node, using constructed $columns array
+  }
+}
+?>
+
+This kind of worked in that I ended up with an array of all the data I wanted,
+but the array I constructed was twice as large as I expected and every other
+entry was empty.  Took me a while to debug, but finally figured out that
+checking <?php $xml->name === 'row' ?> matches both <row> and </row>, so the
+check should really be something more like:
+
+<?php
+
+if ($xml->name === 'row' && $xml->nodeType == XMLReader::ELEMENT) {
+  // parse row node
+}
+
+?>
+
+I would have liked to use the next() function instead, but as I needed to parse
+2 different subtrees, I couldn't figure out how to find all the columns, reset
+the pointer, and then find all the rows.
+===============================================================================
+
+If like myself you have been turning the interwebz upside down looking for a
+solution for this issue:
+PHP Warning:  XMLReader::read(): /tmp/xml_feed.xml:4183934: parser error :
+Input is not proper UTF-8, indicate encoding !
+
+For some reason, this warning breaks the execution - is it a fatal error in
+disguise?
+
+After days of frustration I found it!!!!
+tidy -xml -o output.xml -utf8 -f error.log input.xml
+
+You can invoque tidy using exec, It takes several seconds to convert a 250Mb
+feed, but it worthy the time.
+
+In my case the issue was with latin1 charset, and for some reason I had to pass
+the xml through tidy 2 times - first time around creates new errors, second
+time it fixes everything.
+
+I know invalid xml should be fixed by xml creators, but it works differently in
+the real world.
+===============================================================================
+
+> I would have liked to use the next() function instead, but as I needed to
+parse 2 different subtrees, I couldn't figure out how to find all the columns,
+reset the pointer, and then find all the rows.
+
+I just use:
+
+$reader->close();
+$reader->open($url);
+
+to reset the pointer.
+===============================================================================
+
+If you have trouble parsing xml documents with text tags bigger than 10MB, this
+might help you:
+
+<?php
+$xmlreader = new XMLReader();
+$xmlreader->open($uri, null, 1<<19);
+?>
+
+Since in libxml there is a constant
+XML_PARSE_HUGE = 1<<19
+which enables parsing xml documents with huge texts.
+
+Please note that this option is not accessible using the setParserProperty
+method and that there is currently no constant to do the work, which will
+hopefully change soon:
+
+http://bugs.php.net/bug.php?id=49660
+===============================================================================
+
+A very simple way to avoid typing $reader->read() multiple times when you want
+to skip some nodes:
+
+<?php
+class smartXMLReader extends XMLReader {
+    public function readTimes($count) {
+        $i = 0;
+        while($i < $count){
+            $this->read();
+            $i++;
+        }
+    }
+}
+?>
+
+Using this smartXMLReader,
+
+<?php
+$reader->readTimes(3);
+?>
+
+is equivalent to
+
+<?php
+$reader->read();
+$reader->read();
+$reader->read();
+?>
+
+Makes getting around in your XML document a bit easier :)

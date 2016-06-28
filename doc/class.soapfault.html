@@ -1,0 +1,158 @@
+
+The SoapFault class
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+简介
+
+Represents a SOAP fault.
+
+类摘要
+
+SoapFault extends Exception {
+/* 继承的属性 */
+protected string $message ;
+protected int $code ;
+protected string $file ;
+protected int $line ;
+/* 方法 */
+__construct ( string $faultcode , string $faultstring [, string $faultactor [, 
+string $detail [, string $faultname [, string $headerfault ]]]] )
+SoapFault ( string $faultcode , string $faultstring [, string $faultactor [, 
+string $detail [, string $faultname [, string $headerfault ]]]] )
+public string __toString ( void )
+/* 继承的方法 */
+final public string Exception::getMessage ( void )
+final public Exception Exception::getPrevious ( void )
+final public int Exception::getCode ( void )
+final public string Exception::getFile ( void )
+final public int Exception::getLine ( void )
+final public array Exception::getTrace ( void )
+final public string Exception::getTraceAsString ( void )
+public string Exception::__toString ( void )
+final private void Exception::__clone ( void )
+}
+
+Table of Contents
+
+  • SoapFault::__construct — SoapFault constructor
+  • SoapFault::SoapFault — SoapFault constructor
+  • SoapFault::__toString — Obtain a string representation of a SoapFault
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+You may use undocumented and invisible property $e->faultcode to access string
+version of $code. Because standard $e->getCode() does not work:
+
+<?php
+$e = new SoapFault("test", "msg");
+var_dump($e->getCode()); // prints "0"
+var_dump($e->faultcode); // prints "test"
+?>
+
+Also you may use namespaced fault codes:
+
+<?php
+$e = new SoapFault(array("namespace", "test"), "msg");
+?>
+
+- see ext/soap/soap.php, PHP_METHOD(SoapFault, SoapFault). To access the
+namespace, use $e->faultcodens
+===============================================================================
+
+A bit more digging in ext/soap/soap.c and the set_soap_fault function reveals
+the other undocumented properties from the constructor:
+
+<?php
+try {
+    throw new SoapFault('code', 'string', 'actor', 'detail', 'name', 'header');
+} catch (Exception $ex) {
+    var_dump($ex->faultcode, $ex->faultstring, $ex->faultactor, $ex->detail, 
+$ex->_name, $ex->headerfault);
+}
+?>
+===============================================================================
+
+Hi all,
+
+I've decided to post this since it may be helpful, I've spend a couple of days
+trying to do this.
+
+In order to use wsdl's specified faults with complex types, i.e:
+
+WSDL definitions:
+
+(xsd:schema namespace, ns1 = target namespace)
+
+<xsd:element name="doubleFault">
+  <xsd:complexType>
+    <xsd:sequence>
+      <xsd:element name="detail1" type="xsd:string"/>
+      <xsd:element name="detail2" type="xsd:string"/>
+    </xsd:sequence>
+  </xsd:complexType>
+</xsd:element>
+
+WSDL messages:
+
+<message name="fault_specified">
+    <part name="relevant_name" element="ns1:doubleFault"/>
+</message>
+
+WSDL port type:
+
+<portType name="test">
+  <operation name="operationTest">
+  <input message="ns1:not_relevant_request"/>
+  <output message="ns1:not_relevant_response"/>
+  <fault name="FaultSpecified" message="ns1:fault_specified"/>
+  ....
+</portType>
+
+You have to specify the response in the detail parameter as an array
+corresponding the tag names.
+
+PHP Code:
+
+<?php
+
+function operationTest($request_param ...) {
+
+    // ...
+    $array_details = array("detail1" => "Explanation 1", "detail2" => 
+"Explanation 2");
+   
+    return new SoapFault("Server", "example fault string", null, $array_details
+, "FaultSpecified");
+
+}
+
+$server = new SOAPServer("handmade.wsdl");
+$server->addFunction("operationTest");
+$server->handle();
+
+?>
+
+that should respond something like this:
+
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+xmlns:ns1="http://mynamespace">
+   <SOAP-ENV:Body>
+      <SOAP-ENV:Fault>
+         <faultcode>SOAP-ENV:Server</faultcode>
+         <faultstring>example fault string</faultstring>
+         <detail>
+            <ns1:doubleFault>
+               <detail1>Explanation 1</detail1>
+               <detail2>Explanation 2</detail2>
+            </ns1:doubleFault>
+         </detail>
+      </SOAP-ENV:Fault>
+   </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+
+I Hope it helps,
+Federico.

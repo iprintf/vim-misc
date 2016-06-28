@@ -1,0 +1,378 @@
+
+wddx_deserialize
+
+(PHP 4, PHP 5, PHP 7)
+
+wddx_deserialize — Unserializes a WDDX packet
+
+说明
+
+mixed wddx_deserialize ( string $packet )
+
+Unserializes a WDDX packet.
+
+参数
+
+packet
+
+    A WDDX packet, as a string or stream.
+
+返回值
+
+Returns the deserialized value which can be a string, a number or an array.
+Note that structures are deserialized into associative arrays.
+
+注释
+
+Warning
+
+Do not pass untrusted user input to wddx_deserialize(). Unserialization can
+result in code being loaded and executed due to object instantiation and
+autoloading, and a malicious user may be able to exploit this.
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+When writing your wddx file manually with an UTF-8 aware editor and saving it
+in utf-8, if your data gets its special characters mysteriously scrambled, try
+to add an xml header that marks the output as iso-8859-1, like this one:
+
+<?xml version="1.1" encoding="iso-8859-1" ?>
+
+This makes the wddx decode function treat the input as iso-8859-1, so it will
+not try to treat it as utf-8 and do an implicit decode to iso-8859-1. You will
+then have read all string data in the wddx packet in their original utf-8
+encoding, so that 'echo' and other output functions will produce the intended
+result if you have set the output encoding to utf-8.
+
+(Bugs reports on this behaviour seem to be treated as bogus, so it would seem
+in order to point out this incorrect and highly confusing side-effect.)
+===============================================================================
+
+When deserializing objects make sure you have the class definition loaded.
+wddx_deserialize() doesn't call the class itself, so you will receive a fatal
+error.
+Nevertheless you can look for the class manually and delegate it to __autoload
+().
+
+<?php
+// $wddx_string needs to be valid XML to be loaded by SimpleXML.
+// class_exists() will call the __autoload() function. if you don't 
+// want to use __autoloload(), use require_once()
+
+function loadClassesFromWDDX($wddx_string)
+{
+    $xml = new SimpleXMLElement($wddx_string);
+
+    foreach ($xml->xpath('//var') as $var)
+    {
+        if ($var['name'] == 'php_class_name')
+        {
+            if (!class_exists($var->string))
+            {
+                throw new Exception('Class '" . $var->string . "'not
+available.');
+                // trigger_error('Class '" . $var->string . "'not available.',
+E_USER_ERROR);
+            }
+        }
+    }
+}
+?>
+===============================================================================
+
+Here's a handy wddx_deserialize clone I wrote a while back. It uses PHP5
+SimpleXML and recursion to do pretty much the same task as wddx_deserialize.
+Hope it comes in handy for someone.
+
+<?php
+
+if (!function_exists('wddx_deserialize'))
+{
+    /**
+     * Clone implementation of wddx_deserialize
+     */
+    function wddx_deserialize($xmlpacket)
+    {
+        if ($xmlpacket instanceof SimpleXMLElement)
+        {
+            if (!empty($xmlpacket->struct))
+            {
+                $struct = array();
+                foreach ($xmlpacket->xpath("struct/var") as $var)
+                {
+                    if (!empty($var["name"]))
+                    {
+                        $key = (string) $var["name"];
+                        $struct[$key] = wddx_deserialize($var);
+                    }
+                }
+                return $struct;
+            }
+            else if (!empty($xmlpacket->array))
+            {
+                $array = array();
+                foreach ($xmlpacket->xpath("array/*") as $var)
+                {
+                    array_push($array, wddx_deserialize($var));
+                }
+                return $array;
+            }
+            else if (!empty($xmlpacket->string))
+            {
+                return (string) $xmlpacket->string;
+            }
+            else if (!empty($xmlpacket->number))
+            {
+                return (int) $xmlpacket->number;
+            }
+            else
+            {
+                if (is_numeric((string) $xmlpacket))
+                {
+                    return (int) $xmlpacket;
+                }
+                else
+                {
+                    return (string) $xmlpacket;
+                }
+            }
+        }
+        else
+        {
+            $sxe = simplexml_load_string($xmlpacket);
+            $datanode = $sxe->xpath("/wddxPacket[@version='1.0']/data");
+            return wddx_deserialize($datanode[0]);
+        }
+    }
+}
+
+?>
+===============================================================================
+
+On migrating wddx_deserialize() from PHP 4.x to PHP 5.1 (5.1.0RC6):
+
+While
+
+  $buffer = wddx_serialize_vars($some_array);
+  $some_array = wddx_deserialize($buffer);
+
+worked fine with PHP 4.x, the deserialization failed with PHP 5.1. In the above
+example $some_array will just be an empty string under 5.1
+
+While wddx_serialize_vars() seems to behave identical in 4.x and 5.1,
+wddx_deserialize() does NOT.
+
+Prepending XML encoding information to the buffer turned out to be at least a
+workaround. So, the following works with PHP 5.1:
+
+  $buffer = wddx_serialize_vars($some_array);
+  $buffer = '<?xml version="1.0"
+          encoding="ISO-8859-1"?>'.
+          $buffer;
+  $some_array = wddx_deserialize($buffer);
+
+NB: It may well be, that the behavioural difference between 4.x and 5.1
+described above can only be observed if the array contains certain characters,
+i.e. german Umlaute (      ). So this workaround may not be necessary in each
+and every case.
+===============================================================================
+
+To properly deserialize a wddx file it was to be utf8_encoded.
+
+The following code will NOT work (PHP5.0.2 FreeBSD):
+
+<?php
+   $data = wddx_serialize_value(array("xyz   ","abcd"));
+   print $data;
+   print_r(wddx_deserialize($data));
+
+?>
+
+Even thought the serialization is done right, the deserialization will not work
+unless you encode the text using utf8.
+
+This code WILL work:
+
+<?php
+   $data = wddx_serialize_value(array(utf8_encode("xyz   "),"abcd"));
+   print $data;
+   print_r(wddx_deserialize($data));
+
+?>
+===============================================================================
+
+JavaScript/PHP interroperability:
+
+If you want to exchange wddx packets between a JavaScript application using the
+JS wddx library from openwddx (http://www.openwddx.org/downloads/), and a PHP
+script using wddx functions, be aware that the encoding of the classes of
+objects serialized in the wddx packet is not made the same way in both
+implementations.
+
+The JS lib uses a 'type' attribute in the 'struct' tab and gives it the name of
+the class of the object serialized in the 'struct' element, while PHP uses a
+'php_class_name' tag within the 'struct'.
+NB : to get the type attribute with JS serialisation, you need to set the
+'wddxSerializationType' member in your classes
+
+Example with an object of class 'exemple' containing 2 members _attr1 and
+_attr2.
+(NB : in french, 'example' is spelled 'exemple', okay ? :-)
+
+JS serialization :
+<wddxPacket version='1.0'>
+<header/>
+<data>
+  <struct type="exemple">
+   <var name='_attr1'>
+    <string>foo</string>
+   </var>
+   <var name='_attr2'>
+    <string>bar</string>
+   </var>
+  </struct>
+</data>
+</wddxPacket>
+
+php serialization:
+<wddxPacket version='1.0'>
+<header/>
+<data>
+  <struct>
+   <var name='php_class_name'>
+    <string>exemple</string>
+   </var>
+   <var name='_attr1'>
+    <string>foo</string>
+   </var>
+   <var name='_attr2'>
+    <string>bar</string>
+   </var>
+  </struct>
+</data>
+</wddxPacket>
+
+I like the JS approach better.
+So if you need the compatibility, the workaround is quite simple:
+- add a 'php_class_name' member in your JS objects, giving it the name of the
+class for value, and the JS generated packet will be correctly deserialized
+with PHP in classed objects.
+
+- use a regexp on a PHP generated packet to add the 'type' attribute so that
+the JS deserialization instanciates objects of the right class:
+      $pat = "/<struct><var name='php_class_name'><string>(\w+)<\/string>/" ;
+      $rep = "<struct type='\$1'><var name='php_class_name'><string>\$1</
+string>" ;
+      $serialised = preg_replace($pat, $rep, $serialised );
+NB : this only works because the 'php_class_name' tag is just next to the
+'struct' tag.
+Who knows if this is going to be true in future releases... ?
+
+This way, you can exchange JS and PHP objects (provided you define your JS and
+PHP classes the same way) smoothly...
+
+It's worth saying that both implementations, as well as my interroperability
+workaround, handle correctly objects with members that are also objects.
+
+NB : NB means Nota Bene.
+===============================================================================
+
+Beware, although the deserialized objects are instanciated class objects (if
+the php_class_name tag is amongst the children of the struct tag and its text
+content is the name of a loaded class), the constructor of the class has not
+been called at all.
+You can use the members and call the methods of the object all right, but any
+initialisation action that the constructor might be in charge of is missing.
+===============================================================================
+
+if you have WDDX data coming from a third party source and it isnt being parsed
+correctly in your php, try translating their WDDX. we have a third party
+sending us WDDX from cold fusion, and it uses a <recordset> element, which PHP
+seems to ignore (looking around the web we found some other people having
+trouble) so the (hopefully temporary) solution we found was to translate the
+WDDX midstream and then we were able to parse it:
+
+$url = "http://somedomain.com/blah.wddx";
+$fp = fopen($url,"r");
+$page = fread($fp,10000);
+fclose($fp);
+$page = str_replace("<recordset","<struct",$page);
+$page = str_replace("</recordset","</struct",$page);
+$page = str_replace("<field","<var",$page);
+$page = str_replace("</field","</var",$page);
+$values = wddx_deserialize($page);
+while(list($key,$val) = each($values)) {
+        print "$key => $val<BR>";
+}
+
+this works for us. it's a hack, and hopefully php will support this in the
+future or something.
+===============================================================================
+
+You can also serialize instantiated class objects with the wddx functions. 
+ie.
+
+<?php
+$packet_id = wddx_packet_start("PHP");
+wddx_add_vars($packet_id, "objvar");
+$packet = wddx_packet_end($packet_id);
+
+$a =  wddx_deserialize($packet);
+$obj = $a[objvar];
+?>
+
+now $obj is a useable object, that looks like the original.
+
+Note that with this method, you need to know what the variable name of the
+original object was.  You can use one of the array functions to get the object
+in the event that the original object's variable name was unknown.
+
+
+*** only verified on linux with 4.0.2
+===============================================================================
+
+The packet string you pass to this function doesn't have to be sanitized first;
+it searches for a WDDX packet within the string.  So the string can contain
+HTML markup and random text outside of the packet, and that is all ignored.
+This means you can get a packet from another web page like this:
+<?php
+$fhandle = fopen("http://myserver.com/packet.php", "r");
+if ($fhandle) {
+        $page = fread($fhandle,10000);
+        fclose($fhandle);
+        $value = wddx_deserialize($page);
+        print "pi is:<br>" . $value["pi"] . "<p>\n";
+} else {
+        print "could not get packet.php<p>";
+}
+?>
+===============================================================================
+
+In PHP 5.2.9, we noticed that wddx serialize and deserialize seems to use UTF-8
+encoding for XML input and the output data. There are some posts below that
+talk about fixing the input XML data so deserialize would work fine on special
+chars in ISO-8859-1 encoding, but none of the posts talks about the output
+encoding.
+
+Consider this test:
+$text = "Jür";
+$packet = wddx_serialize_value($text);
+$header = '<?xml version="1.0" encoding="iso-8859-1"?>';
+$newText = wddx_deserialize($header . $packet);
+echo "WDDX Packet: $packet\n";
+echo "Deserialized Object: $newText\n";
+
+The output is:
+
+WDDX Packet: <wddxPacket version='1.0'><header/><data><string>Jür</string></
+data></wddxPacket>
+Deserialized Object: JÃ¼r
+
+The deserialized string is not in ISO-8859-1 encoding. It is in UTF-8 encoding.
+So we need to run utf8_decode() on the deserialized data to convert it back to
+ISO-8859-1 encoding which is what our application expects.
+
+Hope this helps.

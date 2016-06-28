@@ -1,0 +1,163 @@
+
+curl_multi_init
+
+(PHP 5, PHP 7)
+
+curl_multi_init — 返回一个新cURL批处理句柄
+
+说明
+
+resource curl_multi_init ( void )
+
+允许并行地处理批处理cURL句柄。
+
+参数
+
+此函数没有参数。
+
+返回值
+
+成功时返回一个cURL批处理句柄，失败时返回FALSE。
+
+范例
+
+Example #1 curl_multi_init() example
+
+这个范例将会创建2个cURL句柄，把它们加到批处理句柄，然后并行地运行它们。
+
+<?php
+// 创建一对cURL资源
+$ch1 = curl_init();
+$ch2 = curl_init();
+
+// 设置URL和相应的选项
+curl_setopt($ch1, CURLOPT_URL, "http://www.example.com/");
+curl_setopt($ch1, CURLOPT_HEADER, 0);
+curl_setopt($ch2, CURLOPT_URL, "http://www.php.net/");
+curl_setopt($ch2, CURLOPT_HEADER, 0);
+
+// 创建批处理cURL句柄
+$mh = curl_multi_init();
+
+// 增加2个句柄
+curl_multi_add_handle($mh,$ch1);
+curl_multi_add_handle($mh,$ch2);
+
+$running=null;
+// 执行批处理句柄
+do {
+    usleep(10000);
+    curl_multi_exec($mh,$running);
+} while ($running > 0);
+
+// 关闭全部句柄
+curl_multi_remove_handle($mh, $ch1);
+curl_multi_remove_handle($mh, $ch2);
+curl_multi_close($mh);
+
+?>
+
+参见
+
+  • curl_init() - 初始化一个cURL会话
+  • curl_multi_close() - 关闭一组cURL句柄
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+Here's an easier to follow example, From : http://arguments.callee.info/2010/02
+/21/multiple-curl-requests-with-php/
+
+// build the individual requests, but do not execute them
+$ch_1 = curl_init('http://webservice.one.com/');
+$ch_2 = curl_init('http://webservice.two.com/');
+curl_setopt($ch_1, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch_2, CURLOPT_RETURNTRANSFER, true);
+ 
+// build the multi-curl handle, adding both $ch
+$mh = curl_multi_init();
+curl_multi_add_handle($mh, $ch_1);
+curl_multi_add_handle($mh, $ch_2);
+ 
+// execute all queries simultaneously, and continue when all are complete
+  $running = null;
+  do {
+    curl_multi_exec($mh, $running);
+  } while ($running);
+
+//close the handles
+curl_multi_remove_handle($mh, $ch1);
+curl_multi_remove_handle($mh, $ch2);
+curl_multi_close($mh);
+ 
+// all of our requests are done, we can now access the results
+$response_1 = curl_multi_getcontent($ch_1);
+$response_2 = curl_multi_getcontent($ch_2);
+echo "$response_1 $response_2"; // output results
+===============================================================================
+
+According to https://bugs.php.net/bug.php?id=61141:
+
+On Windows setups using libcurl version 7.24 or later (which seems to
+correspond to PHP 5.3.10 or later), you may find that curl_multi_select()
+always returns -1, causing the example code in the documentation to timeout.
+This is, apparently, not strictly a bug: according to the libcurl
+documentation, you should add your own sleep if curl_multi_select returns -1.
+
+Therefore, in order to work correctly on Windows for PHP 5.3.10+, the second
+loop in the example code should look something like the following:
+
+<?php
+while ($active && $mrc == CURLM_OK) {
+    if (curl_multi_select($mh) == -1) {
+        usleep(100);
+    }
+    do {
+        $mrc = curl_multi_exec($mh, $active);
+    } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+}
+?>
+===============================================================================
+
+Simulate multiple threads request:
+<?php
+function multiple_threads_request($nodes){
+        $mh = curl_multi_init();
+        $curl_array = array();
+        foreach($nodes as $i => $url)
+        {
+            $curl_array[$i] = curl_init($url);
+            curl_setopt($curl_array[$i], CURLOPT_RETURNTRANSFER, true);
+            curl_multi_add_handle($mh, $curl_array[$i]);
+        }
+        $running = NULL;
+        do {
+            usleep(10000);
+            curl_multi_exec($mh,$running);
+        } while($running > 0);
+       
+        $res = array();
+        foreach($nodes as $i => $url)
+        {
+            $res[$url] = curl_multi_getcontent($curl_array[$i]);
+        }
+       
+        foreach($nodes as $i => $url){
+            curl_multi_remove_handle($mh, $curl_array[$i]);
+        }
+        curl_multi_close($mh);       
+        return $res;
+}
+print_r(muti_thread_request(array(
+    'http://www.example.com',
+    'http://www.example.net',
+)));
+?>
+===============================================================================
+
+http://github.com/jmathai/epicode/tree/master/php/EpiCurl.php
+
+If you fire off 10 curl requests in parallel you don't have to wait for all of
+them to be finished before accessing one which is already finished.

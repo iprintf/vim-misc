@@ -1,0 +1,202 @@
+
+dba_replace
+
+(PHP 4, PHP 5, PHP 7)
+
+dba_replace — Replace or insert entry
+
+说明
+
+bool dba_replace ( string $key , string $value , resource $handle )
+
+dba_replace() replaces or inserts the entry described with key and value into
+the database specified by handle.
+
+参数
+
+key
+
+    The key of the entry to be replaced.
+
+value
+
+    The value to be replaced.
+
+handle
+
+    The database handler, returned by dba_open() or dba_popen().
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+参见
+
+  • dba_exists() - Check whether key exists
+  • dba_delete() - Delete DBA entry specified by key
+  • dba_fetch() - Fetch data specified by key
+  • dba_insert() - Insert entry
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+Sorry for my very bad english. The dba_replace function not working (example:
+http://prog.hu/tudastar/189455/dba-replace-problema & http://
+dev.developer-works.com/article/9019279/
+%5BPHP5%5D+DBA+function+error+when+writing+ini+file+with+groups). This code
+works (but only on inifiles):
+
+function dba_update($key, $value, $dbfileurl) {
+
+    if(file_exists($dbfileurl)) {
+
+        $key = trim($key);
+        $value = trim($value);
+
+        $index = explode("]", $key);
+        $index[0] = str_replace("[", "", $index[0]);
+
+        $dbarray = parse_ini_file($dbfileurl, true);
+
+        if(count($index) > 1) {
+
+            if(in_array($value, $dbarray)) { return FALSE; } elseif(isset
+($dbarray[$index[0]][$index[1]])) {
+
+                $dbarray[$index[0]][$index[1]] = $value;
+
+                $result = "";
+
+                foreach ($dbarray as $row_name => $row_value) {
+
+                    $result .= "\n[$row_name]\n\n";
+
+                    foreach ($row_value as $column_name => $column_value) {
+
+                        if(is_numeric($column_value)) { $result .=
+"$column_name = $column_value\n\n"; }
+
+                            else { $result .= "$column_name =
+'".$column_value."'\n\n"; }
+
+                    }
+
+                }
+
+            }
+
+        } else {
+
+            if(in_array($value, $dbarray)) { return FALSE; } elseif(isset
+($key)) {
+
+                $dbarray[$key] = $value;
+
+                $result = "";
+
+                foreach ($dbarray as $key_name => $key_value) {
+
+                    if(is_numeric($key_value)) { $result .= "$key_name =
+$key_value\n\n"; }
+
+                        else { $result .= "$key_name = '".$key_value."'\n\n"; }
+
+                }
+
+            }
+
+        }
+
+        file_put_contents($dbfileurl, $result);
+
+    } else { return FALSE; }
+
+return TRUE;
+
+}
+
+Calling the function:
+
+dba_update("[$section]$key", $value, "example/dir/content.ini");
+
+or (one dimension array):
+
+dba_update($key, $value, "example/dir/content.ini");
+===============================================================================
+
+berkeley db : fetch array & display example
+
+<?php
+# DB4 FETCH
+$DB4_DATABASE = "/data/TEST_DATA.DB";
+
+$db = dba_open($DB4_DATABASE,"r","db4");
+$k  = dba_firstkey($db);
+
+while($k != NULL)
+{
+      $AAA = explode("\xFE",dba_fetch($k, $db));
+      echo "[key] $k => [value] $AAA[0] / $AAA[1] / $AAA[2] / $AAA[3] / $AAA[4]
+/ $AAA[5]<br>\r\n";
+
+    $k = dba_nextkey($db);
+}
+dba_close($db);
+?>
+===============================================================================
+
+QDBM and GDBM appear to be the only DBA handlers that will allow dba_replace to
+work correctly.  The DBA Handlers must be compiled or built into the version
+you are using.  See dba_handlers (http://www.php.net/manual/en/
+function.dba-handlers.php) for more specific information:
+
+Also when you search online you will see mention of “security” related issue,
+supposedly, related to the dba_replace() function.  In every instance of the
+“security” issue documented online, the dba_open function specified the DBA
+handler option of “inifile”.  DBA handler “inifile” is intended for the
+management of ini files specifically.  Here are the dba_open and dba_replace
+code snippets related to this “security” issue:  
+
+<?php
+$source=dba_open("/www/about.ini", "wlt", "inifile");
+dba_replace("HOME","/www/",$source);
+?>
+
+I have also seen errors listed online with DB4 and use of the dba_replace
+function.  Though I am skeptical of those reports.  Unfortunately I do not have
+a database with the DB4 handlers compiled in to check if there is an issue with
+dba_replace and the DB4 DBA handler or not.  At least you are aware that there
+may be an issue and can check if need be.
+
+Assuming the correct DBA handlers are “built” or compiled into your database
+when built for the packages you are using, there is probably not an issue with
+dba_replace() and actual database files.  If you experience a problem with
+dba_replace() make sure you build in DBA handlers QDBM or GDBM.
+
+You can not build in both QDBM and GDBM together in the same build, however you
+probably can build in both INIFILE and FLATFILE with either QDBM or GDBM.  It
+is unclear if you can build in either db3 or db4 with QDBM or GDBM.  It appears
+that DB4, CDB, INIFILE and FLATFILE are often built together.
+
+see User contributed notes for dba_handlers() and dba_open() related to CDB.
+===============================================================================
+
+Not only will dba_replace add extra entries when trying to replace an existing
+smaller one, it will always add a new entry if the size of the value differs
+from the existing entry. This is probably due to the nature of the datum struct
+in DBM-type databases (I work with gdbm), which consist of a void pointer and a
+integer containing the size of the memory pointed to. Padding the value should
+solve this.
+===============================================================================
+
+Note that if you replace an existing entry with a larger one, it will actually
+create a new entry and the old one is simply lost. This is a memory leak in
+other words.
+
+You might want to try padding your values to a certain size before putting them
+in the db file; for example, if you are storing web pages in the db, pad them
+out to the next 500 byte size with spaces, and strip the spaces when you read
+it out. This will go a long way in saving disk space. I've seen db files grow
+to several megabytes with only a couple hundred text files in them.

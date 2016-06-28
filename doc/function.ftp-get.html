@@ -1,0 +1,381 @@
+
+ftp_get
+
+(PHP 4, PHP 5, PHP 7)
+
+ftp_get — 从 FTP 服务器上下载一个文件
+
+说明
+
+bool ftp_get ( resource $ftp_stream , string $local_file , string $remote_file
+, int $mode [, int $resumepos = 0 ] )
+
+ftp_get() 函数用来下载 FTP 服务器上指定的文件并保存为本地文件。
+
+参数
+
+ftp_stream
+
+    FTP 连接的链接标识符。
+
+local_file
+
+    文件本地的路径（如果文件已经存在，则会被覆盖）。
+
+remote_file
+
+    文件的远程路径。
+
+mode
+
+    传送模式。只能为 (文本模式) FTP_ASCII 或 (二进制模式) FTP_BINARY 中的其中一
+    个。
+
+resumepos
+
+    从远程文件的这个位置继续下载。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 ftp_get() 例子
+
+<?php
+
+// define some variables
+$local_file = 'local.zip';
+$server_file = 'server.zip';
+
+// set up basic connection
+$conn_id = ftp_connect($ftp_server);
+
+// login with username and password
+$login_result = ftp_login($conn_id, $ftp_user_name, $ftp_user_pass);
+
+// try to download $server_file and save to $local_file
+if (ftp_get($conn_id, $local_file, $server_file, FTP_BINARY)) {
+    echo "Successfully written to $local_file\n";
+} else {
+    echo "There was a problem\n";
+}
+
+// close the connection
+ftp_close($conn_id);
+
+?>
+
+更新日志
+
+版本         说明
+4.3.0 增加了 resumepos。
+
+参见
+
+  • ftp_pasv() - 返回当前 FTP 被动模式是否打开
+  • ftp_fget() - 从 FTP 服务器上下载一个文件并保存到本地一个已经打开的文件中
+  • ftp_nb_get() - 从 FTP 服务器上获取文件并写入本地文件（non-blocking）
+  • ftp_nb_fget() - 从 FTP 服务器获取文件并写入到一个打开的文件（非阻塞）
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+Keep in mind that ftp_get will overwrite the file on your local machine if it
+has the same name.
+===============================================================================
+
+Don't want to use an intermediate file?  Use 'php://output' as the filename and
+then capture the output using output buffering.
+
+ob_start();
+$result = ftp_get($ftp, "php://output", $file, FTP_BINARY);
+$data = ob_get_contents();
+ob_end_clean();
+
+Don't forget to check $result to make sure there wasn't an error.  After that,
+manipulate the $data variable however you want.
+===============================================================================
+
+I tried to ftp a 7mb file today off my webserver.
+
+I copied this example directly and it told me.
+
+Port command successful
+"there was a problem"
+
+I thought it was because of the size.
+But I guessed it might be cause of my firewall.
+
+So I made the ftp connection passive:
+
+<?PHP
+ 
+  ...
+  $login_result = ftp_login($conn_id, $ftp_user_name, $ftp_user_pass);
+  ftp_pasv($conn_id, true);
+
+?>
+
+Ran the script again & it worked fine.
+
+Hope this helps someone
+===============================================================================
+
+Why there isn't an "ftp_get_contents" function, I don't know. It takes a little
+work to emulate one, but it's doable.
+<?php
+function ftp_get_contents($ftp_stream, $remote_file, $mode, $resume_pos=null){
+    $pipes=stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 
+STREAM_IPPROTO_IP);
+    if($pipes===false) return false;
+    if(!stream_set_blocking($pipes[1], 0)){
+        fclose($pipes[0]); fclose($pipes[1]);
+        return false;
+    }
+    $fail=false;
+    $data='';
+    if(is_null($resume_pos)){
+        $ret=ftp_nb_fget($ftp_stream, $pipes[0], $remote_file, $mode);
+    } else {
+        $ret=ftp_nb_fget($ftp_stream, $pipes[0], $remote_file, $mode, 
+$resume_pos);
+    }
+    while($ret==FTP_MOREDATA){
+        while(!$fail && !feof($pipes[1])){
+            $r=fread($pipes[1], 8192);
+            if($r==='') break;
+            if($r===false){ $fail=true; break; }
+            $data.=$r;
+        }
+        $ret=ftp_nb_continue($ftp_stream);
+    }
+    while(!$fail && !feof($pipes[1])){
+        $r=fread($pipes[1], 8192);
+        if($r==='') break;
+        if($r===false){ $fail=true; break; }
+        $data.=$r;
+    }
+    fclose($pipes[0]); fclose($pipes[1]);
+    if($fail || $ret!=FTP_FINISHED) return false;
+    return $data;
+}
+?>
+
+Something similar would work to write a ftp_put_contents function, too.
+===============================================================================
+
+Here's a quick function that figures out the correct mode to use based on a
+file's extension.
+
+<?php
+function get_ftp_mode($file)
+{   
+    $path_parts = pathinfo($file);
+   
+    if (!isset($path_parts['extension'])) return FTP_BINARY;
+    switch (strtolower($path_parts['extension'])) {
+        case 'am':case 'asp':case 'bat':case 'c':case 'cfm':case 'cgi':case 
+'conf':
+        case 'cpp':case 'css':case 'dhtml':case 'diz':case 'h':case 'hpp':case 
+'htm':
+        case 'html':case 'in':case 'inc':case 'js':case 'm4':case 'mak':case 
+'nfs':
+        case 'nsi':case 'pas':case 'patch':case 'php':case 'php3':case 'php4'
+:case 'php5':
+        case 'phtml':case 'pl':case 'po':case 'py':case 'qmail':case 'sh':case 
+'shtml':
+        case 'sql':case 'tcl':case 'tpl':case 'txt':case 'vbs':case 'xml':case 
+'xrc':
+            return FTP_ASCII;
+    }
+    return FTP_BINARY;
+}
+
+// sample usage
+ftp_get($conn_id, $local_file, $server_file, get_ftp_mode($server_file));
+?>
+===============================================================================
+
+<?php
+                // define some variables
+        $folder_path = "YOUR FOLDER PATH";
+        $local_file = "LOCAL FILE PATH";
+        $server_file = "SERVER FILE PATH";
+       
+        //-- Connection Settings
+        $ftp_server = "IP ADDRESS"; // Address of FTP server.
+        $ftp_user_name = "USERNAME"; // Username
+        $ftp_user_pass = "PASSWORD"; // Password
+        #$destination_file = "FILEPATH";
+       
+        // set up basic connection
+        $conn_id = ftp_connect($ftp_server);
+       
+        // login with username and password
+        $login_result = ftp_login($conn_id, $ftp_user_name, $ftp_user_pass);
+       
+        // try to download $server_file and save to $local_file
+        if (ftp_get($conn_id, $local_file, $server_file, FTP_BINARY)) {
+            echo "Successfully written to $local_file\n";
+        } else {
+            echo "There was a problem\n";
+        }
+       
+        // close the connection
+        ftp_close($conn_id);
+?>
+===============================================================================
+
+ftp_sync is a way to walk the directory structure on the server and copy every
+directory and file to the same location locally.
+
+<?php
+$ftp_server = "ftp.example.com";
+$conn_id = ftp_connect ($ftp_server)
+    or die("Couldn't connect to $ftp_server");
+   
+$login_result = ftp_login($conn_id, "user", "pass");
+if ((!$conn_id) || (!$login_result))
+    die("FTP Connection Failed");
+
+ftp_sync ("DirectoryToCopy");    // Use "." if you are in the current directory
+
+ftp_close($conn_id); 
+
+// ftp_sync - Copy directory and file structure
+function ftp_sync ($dir) {
+
+    global $conn_id;
+
+    if ($dir != ".") {
+        if (ftp_chdir($conn_id, $dir) == false) {
+            echo ("Change Dir Failed: $dir<BR>\r\n");
+            return;
+        }
+        if (!(is_dir($dir)))
+            mkdir($dir);
+        chdir ($dir);
+    }
+
+    $contents = ftp_nlist($conn_id, ".");
+    foreach ($contents as $file) {
+   
+        if ($file == '.' || $file == '..')
+            continue;
+       
+        if (@ftp_chdir($conn_id, $file)) {
+            ftp_chdir ($conn_id, "..");
+            ftp_sync ($file);
+        }
+        else
+            ftp_get($conn_id, $file, $file, FTP_BINARY);
+    }
+       
+    ftp_chdir ($conn_id, "..");
+    chdir ("..");
+
+}
+?>
+===============================================================================
+
+If you ran the example and see that it fail after 90sec (timeout).
+
+Then try adding:
+<?php
+ftp_pasv($ftp_conn, true);
+?>
+===============================================================================
+
+If you previously downloaded a file before (like a huge web log), and just want
+to get the remaining portion, do this:
+
+$local_file_size = filesize($local_file_path);
+$get_result = ftp_get($conn_id, $local_file_path, $remote_file_path,
+FTP_BINARY, $local_file_size);
+
+This same code works regardless of wether the local file exists already or
+not.  You should first test to make sure the local file is not bigger than the
+remote file.
+===============================================================================
+
+Crud. The _nb_ only refers to reading from the ftp server, and the buffer in
+the socket pair is only about 364 bytes. So it doesn't work for files larger
+than that size.
+===============================================================================
+
+Hello everybody,
+
+If someone will try to download files to the same local file (some temporary
+file), like shown here:
+
+<?php
+foreach ($files as $key=>$path) {
+...
+  $result = ftp_get($ftpConnId, 'temp.tmp', $path, FTP_BINARY);
+...
+}
+?>
+
+please take in consideration the fact that you will have big problems with
+downloading (getting) hole files. In other words ‘temp.tmp’ file always will
+have the same size equal to first downloaded file despite the real size of
+downloading file. I have not idea what is the reason!
+
+If someone will think that problem is just in getting proper file size (which
+you will get using filssize() function) he will be mistaken. The download
+file’s size is not equal to source file’s size materially, that means fflush()
+function will not solve the problem (I have tried this as well).
+
+Finally the solution was founded: before downloading a file you will need to
+delete local file if such exist (‘temp.tmp’). So working code will look like:
+
+<?php
+foreach ($files as $key=>$path) {
+...
+  if (file_exists('temp.tmp')) {
+    unlink('temp.tmp');
+  }
+  $result = ftp_get($ftpConnId, 'temp.tmp', $path, FTP_BINARY);
+...
+}
+?>
+
+Good luck in scripting :-)
+
+Vitali Simsive
+===============================================================================
+
+On Windows (and possibly *NIX) you will get "[function.ftp-get]: failed to open
+stream: No such file or directory in..." errors if the local_file path contains
+directory paths that do not already exist.
+
+Even with write permissions ftp_get can create the file but it will NOT
+automatically create the parent directories as you might expect.
+===============================================================================
+
+The zero size file is not a side effect.  When the ftp_get starts the first
+thing it does is to create the inode/file which it will stream the data too and
+that is a zero size file with the nname you specified for the local file.  When
+the download fails it leaves the file in place.
+===============================================================================
+
+Remember to use the full server paths to the directories you are working on.
+Server paths are not the same as "ftp paths".
+
+I was using the path displayed on my FTP client to download and upload files
+and I kept getting "Not found" or "Permission Denied" errors.
+===============================================================================
+
+A subtle issue with the ftp_get() function. The second param, string
+$local_file, is a file name on the SERVER running the php script. It is NOT a
+file on the client machine running the browser. I erroneously tried to use this
+ftp to download a file from my site to my local system. I entered the full path
+starting with the drive letter ("h:/...") on a system running WIN XP and kept
+getting a failure of unable to open (destination) file. Only after just putting
+in a file name with no pathing did I see where the file was written. It was in
+the directory on my site where the php script is located (hosting is managed
+shared LAMP server which supports multiple url's, GoDaddy hosting).

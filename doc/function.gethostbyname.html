@@ -1,0 +1,502 @@
+
+gethostbyname
+
+(PHP 4, PHP 5, PHP 7)
+
+gethostbyname — Get the IPv4 address corresponding to a given Internet host
+name
+
+说明
+
+string gethostbyname ( string $hostname )
+
+Returns the IPv4 address of the Internet host specified by hostname.
+
+参数
+
+hostname
+
+    The host name.
+
+返回值
+
+Returns the IPv4 address or a string containing the unmodified hostname on
+failure.
+
+范例
+
+Example #1 A simple gethostbyname() example
+
+<?php
+$ip = gethostbyname('www.example.com');
+
+echo $ip;
+?>
+
+参见
+
+  • gethostbyaddr() - 获取指定的IP地址对应的主机名
+  • gethostbynamel() - Get a list of IPv4 addresses corresponding to a given
+    Internet host name
+  • inet_pton() - Converts a human readable IP address to its packed in_addr
+    representation
+  • inet_ntop() - Converts a packed internet address to a human readable
+    representation
+
+
+User Contributed Notes 28 notes
+
+===============================================================================
+
+If you do a gethostbyname() and there is no trailing dot after a domainname
+that does not resolve, this domainname will ultimately be appended to the
+server-FQDN by nslookup.
+
+So if you do a lookup for nonexistentdomainname.be your server may return the
+ip for nonexistentdomainname.be.yourhostname.com, which is the server-ip.
+
+To avoid this behaviour, just add a trailing dot to the domainname; i.e.
+gethostbyname('nonexistentdomainname.be.')
+===============================================================================
+
+Options for the underlying resolver functions can be supplied by using the
+RES_OPTIONS environmental variable. (at least under Linux, see man resolv.conf)
+
+Set timeout and retries to 1 to have a maximum execution time of 1 second for
+the DNS lookup:
+<?php
+  putenv('RES_OPTIONS=retrans:1 retry:1 timeout:1 attempts:1');
+  gethostbyname($something);
+?>
+
+You should also use fully qualified domain names ending in a dot. This prevents
+the resolver from walking though all search domains and retrying the domain
+with the search domain appended.
+===============================================================================
+
+This function says "Returns the IPv4 address or a string containing the
+unmodified hostname on failure.
+
+This isn't entirely true, any hostname with a null byte in it will only return
+the characters BEFORE the null byte.
+
+<?php
+$hostname = "foo\0bar";
+var_dump($hostname );
+var_dump(gethostbyname($hostname ));
+?>
+
+Results:
+string 'foo�bar' (length=7)
+string 'foo' (length=3)
+===============================================================================
+
+Important note: You should avoid its use in production.
+
+DNS Resolution may take from 0.5 to 4 seconds, and during this time your script
+is NOT being executed.
+
+Your customers may think that the server is slow, but actually it is just
+waiting for the DNS resolution response.
+
+You can use it, but if you want performance, you should avoid it, or schedule
+it to some CRON script...
+===============================================================================
+
+For doing basic RBL (Real Time Blacklist) lookups with this function do:
+
+<?php
+$host = '64.53.200.156';
+$rbl  = 'sbl-xbl.spamhaus.org';
+// valid query format is: 156.200.53.64.sbl-xbl.spamhaus.org
+$rev = array_reverse(explode('.', $host));
+$lookup = implode('.', $rev) . '.' . $rbl;
+if ($lookup != gethostbyname($lookup)) {
+    echo "ip: $host is listed in $rbl\n";
+} else {
+    echo "ip: $host NOT listed in $rbl\n";
+}
+?>
+
+Tomas V.V.Cox
+===============================================================================
+
+Better yet:
+<?php
+$ip = rtrim(`/usr/bin/dig $host A +short`);
+?>
+===============================================================================
+
+gethostbyname and gethostbynamel does not ask for AAAA records. I have written
+two functions to implement this. gethostbyname6 and gethostbynamel6. I don't
+believe this issue has been addressed yet.
+
+They are made to replace gethostbyname[l], in a way that if $try_a is true, if
+it fails to get AAAA records it will fall back on trying to get A records.
+
+Feel free to correct any errors, I realise that it is asking for *both* A and
+AAAA records, so this means two DNS calls.. probably would be more efficient if
+it checked $try_a before making the query, but this works for me so I'll leave
+that up to someone else to implement in their own work.. the tip is out there
+now anyway..
+
+Here is the code:
+
+    function gethostbyname6($host, $try_a = false) {
+        // get AAAA record for $host
+        // if $try_a is true, if AAAA fails, it tries for A
+        // the first match found is returned
+        // otherwise returns false
+
+        $dns = gethostbynamel6($host, $try_a);
+        if ($dns == false) { return false; }
+        else { return $dns[0]; }
+    }
+
+    function gethostbynamel6($host, $try_a = false) {
+        // get AAAA records for $host,
+        // if $try_a is true, if AAAA fails, it tries for A
+        // results are returned in an array of ips found matching type
+        // otherwise returns false
+
+        $dns6 = dns_get_record($host, DNS_AAAA);
+        if ($try_a == true) {
+            $dns4 = dns_get_record($host, DNS_A);
+            $dns = array_merge($dns4, $dns6);
+        }
+        else { $dns = $dns6; }
+        $ip6 = array();
+        $ip4 = array();
+        foreach ($dns as $record) {
+            if ($record["type"] == "A") {
+                $ip4[] = $record["ip"];
+            }
+            if ($record["type"] == "AAAA") {
+                $ip6[] = $record["ipv6"];
+            }
+        }
+        if (count($ip6) < 1) {
+            if ($try_a == true) {
+                if (count($ip4) < 1) {
+                    return false;
+                }
+                else {
+                    return $ip4;
+                }
+            }
+            else {
+                return false;
+            }
+        }
+        else {
+            return $ip6;
+        }
+    }
+===============================================================================
+
+<?php
+//script to time DNS propagation
+//(Above script modified slightly to show micro time)
+//seems pretty damn quick to me.. I'm getting .0055 sec worstcase badhost
+times.
+
+//A known good dns name (my own)
+    $nametotest = "fuzzygroup.com";
+   
+//Call address test function
+    $time_start = getmicrotime();
+    testipaddress($nametotest);
+    $time_end = getmicrotime();
+    $time = $time_end - $time_start;
+    echo "Good Host Search took $time seconds<br><br>";
+
+//A known bad name (trust me)
+    $nametotest = "providence.mascot.com";
+    $time_start = getmicrotime();
+    testipaddress($nametotest);
+    $time_end = getmicrotime();
+    $time = $time_end - $time_start;
+    echo "Bad Host Search took $time seconds<br>";
+   
+   
+function getmicrotime(){
+    list($usec, $sec) = explode(" ",microtime());
+    return ((float)$usec + (float)$sec);
+    }
+
+//ip address checking function
+//for real use should have a return value but example code
+function testipaddress ($nametotest) {
+    $ipaddress = $nametotest;
+    $ipaddress = gethostbyname($nametotest);
+    if ($ipaddress == $nametotest) {
+        echo "No ip address for host<br>";
+    }
+    else {
+        echo "good hostname, $nametotest ipaddress = $ipaddress<br>";
+    }
+}
+
+//Recommended fix for sql applications:
+// store url to temporary table
+// run second process periodically to
+// check urls and update main table
+?>
+===============================================================================
+
+This logic solution to problem checking dns reverse name resolution:
+
+<?php
+$ip = gethostbyname($host);
+if(ip2long($ip) == -1 || ($ip == gethostbyaddr($ip) && preg_match("/.*\.
+[a-zA-Z]{2,3}$/",$host) == 0) ) {
+    echo 'Error, incorrect host or ip';
+    }
+else {
+    echo 'Ok';
+}
+?>
+===============================================================================
+
+Always add the root . at the end or your server can add it's own suffix.
+example: abc.com could become abc.com.yourcompany.com if you don't use abc.com.
+
+I also find this function a litle bit limited because it doesn't tell you if
+the resolve failed.
+
+TO adress all those issues I use :
+
+function host2ip($host)
+{
+    $host=trim($host.'.'); // clean and add root .
+    $ip= gethostbyname($host);
+    if($ip==$host) $ip='';// empty IP if there is no ip
+    return $ip;
+}
+===============================================================================
+
+referring to ralphbolton at mail2sexy dot com comment:
+
+(at least in 5.2.0 + djbdns-dnscache) gethostbyname does not really seem to
+cache entries. If somebody notices a speed-up after the second lookup of the
+same domain - that's most likely your dns-cache itself, not some php-internal
+dns-cache.
+
+It does cache the entries in your /etc/resolv.conf (e.g. what dns to use) so I
+agree with him, that stopping and starting apache, will reload the resolv.conf.
+===============================================================================
+
+mmucklo raises a valid point, however the function to use would be getmxrr() in
+the simplest case, or alternatively checkdnsrr() if you so wish; getdnsrr()
+does not exist.
+
+On another note, it can be a pain (when iterating with while loops for example)
+that on failure gethostbyname() returns the hostname, rather than FALSE. You
+could wrap it in a simple user function, to "correct" this:
+
+<?php
+
+function fixed_gethostbyname ($host) {
+    // Try the lookup as normal...
+    $ip = gethostbyname($host);
+    // ...but if it fails, FALSE is returned instead of the unresolved host
+    if ($ip != $host) { return $ip; } else return false;
+}
+
+?>
+===============================================================================
+
+Just a heads up. I was using this function on my site to verify email host
+addresses. I thought all was good, until a potential client contacted me and
+said they couldn't sign up correctly. They have a valid email address and
+domain, but this function failed.
+
+Good luck.
+===============================================================================
+
+On a side-note, PHP (5.0.4, but probably other versions too) can cache
+gethostbyname information.
+
+In short, once PHP looks up an address, it may not actually perform another
+lookup as you may expect. In my particular case (I think) the problem was a
+change to resolv.conf didn't take effect inside PHP (although nslookup/ping etc
+worked fine). Stop/Starting Apache fixed it (although a simple 'restart' (kill
+-HUP) didn't).
+
+In short, if you change resolv.conf, stop and restart Apache.
+===============================================================================
+
+Function returns boolean:
+<?php
+function isDomainResolves($domain)
+{
+     return gethostbyname($domain) != $domain;
+}
+?>
+===============================================================================
+
+I was using file_get_contents on a set of URLs. Some of them URLs were invalid
+(the structure of it was ok but the DNS hosts couldn't resolve them) and I kept
+getting an annoying warning. I wanted to check the DNS somehow but existing
+check dns function in php doesn't have one for windows and the one a person
+supplied there does not work 100% of the time.
+
+Instead use this function to try to resolve a host. This won't throw any
+warnings, you just need to check the output. You'll get the same warnings with
+fopen and fsockopen.
+===============================================================================
+
+The dns entries get cached, whether they exist or not.  Expect really good
+response times after the first one.
+===============================================================================
+
+I had difficulty getting gethostbyname to work under OpenBSD 3.2 and Apache,
+until I discovered that the default Apache chroot caused the problem.
+
+To get PHP's gethostbyname to work, you need resolv.conf (and possibly hosts)
+in /var/www/etc (assuming default install dirs).
+===============================================================================
+
+<?php
+
+//script to see if host exists on Internet
+
+//following up on the above point about host name
+//checking and SQL timeouts, run this test script
+//and see how long it takes for 2nd call to
+//hostname check to fail
+//NOTE -- not PHP's fault -- nature of DNS
+
+//A known good dns name (my own)
+    $nametotest = "fuzzygroup.com";
+   
+//Call address test function
+    testipaddress($nametotest);
+
+//A known bad name (trust me)
+    $nametotest = "providence.mascot.com";
+//Call address test function
+    testipaddress($nametotest);
+   
+//ip address checking function
+//for real use should have a return value but example code
+function testipaddress ($nametotest) {
+    $ipaddress = $nametotest;
+    $ipaddress = gethostbyname($nametotest);
+    if ($ipaddress == $nametotest) {
+        echo "No ip address for host, so host "
+             . "not currently available in DNS and "
+             . "probably offline for some time<BR>";
+    }
+    else {
+        echo "good hostname, ipaddress = $ipaddress<BR>";
+    }
+}
+
+//Recommended fix for sql applications:
+// store url to temporary table
+// run second process periodically to
+// check urls and update main table
+?>
+===============================================================================
+
+Note that if you pass an IP address to gethostbyname() it will return that IP
+address.
+===============================================================================
+
+If name resolution fails with apache2, mod_chroot and php5, add
+LoadFile /lib/libnss_dns.so.2
+to the mod_chroot config.
+===============================================================================
+
+When using PHP and Apache in a chroot environment on RedHat Linux, I have found
+that I need to bind-mount /var/run/nscd to get this to work. Apparently, the
+socket in that directory is needed for all the DNS things.
+===============================================================================
+
+One note about using gethostbyname() for checking email address domains:
+
+If the name doesn't resolve, follow up with getdnsrr() and make sure they don't
+have an MX entry before returning an error.
+
+It is possible for a domain name not to have an A record, but still have an MX
+entry.
+===============================================================================
+
+In PHP4 you can use gethostbyname() but I have found this unreliable when doing
+lookups on entries that return A records on the private network. PHP5 has a
+much better routine -- dns_get_record(). If you are stuck with PHP4 or don't
+want to upgrade you can use dig:
+
+<?php
+$ip = `/usr/bin/dig $host A +short`;
+?>
+===============================================================================
+
+Grabbing IPs for multiple hosts:
+
+<?php
+function getAddrByHost($hosts, $timeout = 3) {
+  $returnString = '';
+  foreach ($hosts as $host) {
+    $query = `nslookup -timeout=$timeout -retry=1 $host`;
+    if (preg_match('/\nAddress: (.*)\n/', $query, $matches))
+      $returnString .= trim($matches[1]) . '<br>';
+    $returnString .= $host . '<br>';
+  }
+  return $returnString;
+
+}
+
+$hostArray[] = 'www.domain1.com';
+$hostArray[] = 'www.domain2.com';
+//$hostArray[] = 'www.domain3.com';
+//$hostArray[] = 'www.domain4.com';
+
+$returnString = getAddrByHost($hostArray);
+echo $returnString;
+?>
+===============================================================================
+
+One way to discover your IP address automatically:
+
+<?php
+
+// need to trim() because whitespace will confuse the name lookup
+$myIP = gethostbyname(trim(`hostname`));
+echo $myIP;
+
+?>
+===============================================================================
+
+This is the best method I've come up with to resolve any host-name to
+ip-address, it's quick and reliable and has support for timeout! An invalid
+address, a unicode string for exmaple, returns after 4~ seconds, instead of 8~
+with gethostbyname! It works only with unix though.
+
+<?php
+function getAddrByHost($host, $timeout = 3) {
+   $query = `nslookup -timeout=$timeout -retry=1 $host`;
+   if(preg_match('/\nAddress: (.*)\n/', $query, $matches))
+      return trim($matches[1]);
+   return $host;
+}
+?>
+===============================================================================
+
+I put this in a prepend script for all my websites to cut down the amount of
+abuse by automated scripts.
+<?PHP
+        $blacklists = array('web.sorbs.net');
+        $parts  = explode('.', $_SERVER['REMOTE_ADDR']);
+        $ip     = implode('.', array_reverse($parts)) . '.';
+        foreach($blacklists as $bl) {
+                $check = $ip . $bl;
+                if ($check != gethostbyname($check)) {
+                                error_log('PHP Security: [DNSBL] - ' . $_SERVER
+['REMOTE_ADDR'] . ' - ' . $bl);
+                                die('Put a detailed error here so the client
+knows why they have been blocked');
+                }
+        }
+?>

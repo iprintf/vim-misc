@@ -1,0 +1,217 @@
+
+CURLFile::__construct
+
+curl_file_create
+
+(PHP 5 >= 5.5.0, PHP 7)
+
+CURLFile::__construct -- curl_file_create — 创建 CURLFile 对象
+
+说明
+
+面向对象风格
+
+public CURLFile::__construct ( string $filename [, string $mimetype [, string
+$postname ]] )
+
+过程化风格
+
+CURLFile curl_file_create ( string $filename [, string $mimetype [, string
+$postname ]] )
+
+创建一个 CURLFile 对象, 使用 CURLOPT_POSTFIELDS 选项上传文件。
+
+参数
+
+filename
+
+    被上传文件的路径。
+
+mimetype
+
+    被上传文件的 MIME 类型。
+
+postname
+
+    被上传文件的文件名。
+
+返回值
+
+返回一个 CURLFile 对象。
+
+范例
+
+Example #1 CURLFile::__construct() 示例
+
+面向对象风格
+
+<?php
+/* http://example.com/upload.php:
+<?php var_dump($_FILES); ?>
+*/
+
+// Create a cURL handle
+$ch = curl_init('http://example.com/upload.php');
+
+// Create a CURLFile object
+$cfile = new CURLFile('cats.jpg','image/jpeg','test_name');
+
+// Assign POST data
+$data = array('test_file' => $cfile);
+curl_setopt($ch, CURLOPT_POST,1);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+
+// Execute the handle
+curl_exec($ch);
+?>
+
+过程化风格
+
+<?php
+/* http://example.com/upload.php:
+<?php var_dump($_FILES); ?>
+*/
+
+// Create a cURL handle
+$ch = curl_init('http://example.com/upload.php');
+
+// Create a CURLFile object
+$cfile = curl_file_create('cats.jpg','image/jpeg','test_name');
+
+// Assign POST data
+$data = array('test_file' => $cfile);
+curl_setopt($ch, CURLOPT_POST,1);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+
+// Execute the handle
+curl_exec($ch);
+?>
+
+以上例程会输出：
+
+array(1) {
+  ["test_file"]=>
+  array(5) {
+    ["name"]=>
+    string(9) "test_name"
+    ["type"]=>
+    string(10) "image/jpeg"
+    ["tmp_name"]=>
+    string(14) "/tmp/phpPC9Kbx"
+    ["error"]=>
+    int(0)
+    ["size"]=>
+    int(46334)
+  }
+}
+
+参见
+
+  • curl_setopt() - 设置一个cURL传输选项
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+There are "@" issue on multipart POST requests.
+
+Solution for PHP 5.5 or later:
+- Enable CURLOPT_SAFE_UPLOAD.
+- Use CURLFile instead of "@".
+
+Solution for PHP 5.4 or earlier:
+- Build up multipart content body by youself.
+- Change "Content-Type" header by yourself.
+
+The following snippet will help you :D
+
+<?php
+
+/**
+* For safe multipart POST request for PHP5.3 ~ PHP 5.4.
+*
+* @param resource $ch cURL resource
+* @param array $assoc "name => value"
+* @param array $files "name => path"
+* @return bool
+*/
+function curl_custom_postfields($ch, array $assoc = array(), array $files =
+array()) {
+   
+    // invalid characters for "name" and "filename"
+    static $disallow = array("\0", "\"", "\r", "\n");
+   
+    // build normal parameters
+    foreach ($assoc as $k => $v) {
+        $k = str_replace($disallow, "_", $k);
+        $body[] = implode("\r\n", array(
+            "Content-Disposition: form-data; name=\"{$k}\"",
+            "",
+            filter_var($v),
+        ));
+    }
+   
+    // build file parameters
+    foreach ($files as $k => $v) {
+        switch (true) {
+            case false === $v = realpath(filter_var($v)):
+            case !is_file($v):
+            case !is_readable($v):
+                continue; // or return false, throw new
+InvalidArgumentException
+        }
+        $data = file_get_contents($v);
+        $v = call_user_func("end", explode(DIRECTORY_SEPARATOR, $v));
+        $k = str_replace($disallow, "_", $k);
+        $v = str_replace($disallow, "_", $v);
+        $body[] = implode("\r\n", array(
+            "Content-Disposition: form-data; name=\"{$k}\"; filename=\"{$v}\"",
+            "Content-Type: application/octet-stream",
+            "",
+            $data,
+        ));
+    }
+   
+    // generate safe boundary
+    do {
+        $boundary = "---------------------" . md5(mt_rand() . microtime());
+    } while (preg_grep("/{$boundary}/", $body));
+   
+    // add boundary for each parameters
+    array_walk($body, function (&$part) use ($boundary) {
+        $part = "--{$boundary}\r\n{$part}";
+    });
+   
+    // add final boundary
+    $body[] = "--{$boundary}--";
+    $body[] = "";
+   
+    // set options
+    return @curl_setopt_array($ch, array(
+        CURLOPT_POST       => true,
+        CURLOPT_POSTFIELDS => implode("\r\n", $body),
+        CURLOPT_HTTPHEADER => array(
+            "Expect: 100-continue",
+            "Content-Type: multipart/form-data; boundary={$boundary}", //
+change Content-Type
+        ),
+    ));
+}
+
+?>
+===============================================================================
+
+For PHP < 5.5:
+
+<?php
+
+if (!function_exists('curl_file_create')) {
+    function curl_file_create($filename, $mimetype = '', $postname = '') {
+        return "@$filename;filename="
+            . ($postname ?: basename($filename))
+            . ($mimetype ? ";type=$mimetype" : '');
+    }
+}
+
+?>

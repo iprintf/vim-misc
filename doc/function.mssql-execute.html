@@ -1,0 +1,641 @@
+
+mssql_execute
+
+(PHP 4 >= 4.0.7, PHP 5, PECL odbtp >= 1.1.1)
+
+mssql_execute — Executes a stored procedure on a MS SQL server database
+
+Warning
+
+This function was REMOVED in PHP 7.0.0.
+
+Alternatives to this function include:
+
+  • Using an EXEC query issued through PDO_SQLSRV, PDO_ODBC, SQLSRV, or the
+    unified ODBC driver.
+
+说明
+
+mixed mssql_execute ( resource $stmt [, bool $skip_results = false ] )
+
+Executes a stored procedure on a MS SQL server database
+
+参数
+
+stmt
+
+    Statement handle obtained with mssql_init().
+
+skip_results
+
+    Whenever to skip the results or not.
+
+范例
+
+Example #1 mssql_execute() example
+
+<?php
+// Create a new statement
+$stmt = mssql_init('NewBlogEntry');
+
+// Some data strings
+$title = 'Test of blogging system';
+$content = 'If you can read this, then the new system is compatible with MSSQL'
+;
+
+// Bind values
+mssql_bind($stmt, '@author',    'Felipe Pena',  SQLVARCHAR,     false,  false
+,   60);
+mssql_bind($stmt, '@date',      '08/10/2008',   SQLVARCHAR,     false,  false
+,   20);
+mssql_bind($stmt, '@title',     $title,         SQLVARCHAR,     false,  false
+,   60);
+mssql_bind($stmt, '@content',   $content,       SQLTEXT);
+
+// Execute the statement
+mssql_execute($stmt);
+
+// And we can free it like so:
+mssql_free_statement($stmt);
+?>
+
+注释
+
+    Note:
+
+    If the stored procedure returns parameters or a return value these will be
+    available after the call to mssql_execute() unless the stored procedure
+    returns more than one result set. In that case use mssql_next_result() to
+    shift through the results. When the last result has been processed the
+    output parameters and return values will be available.
+
+参见
+
+  • mssql_bind() - Adds a parameter to a stored procedure or a remote stored
+    procedure
+  • mssql_free_statement() - Free statement memory
+  • mssql_init() - Initializes a stored procedure or a remote stored procedure
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+Regarding Output Parameters and RETVAL: A change that appears to have begun
+around 4.3.
+
+According to the documentation and previously posted comments, if a stored
+procedure returns only one Recordset, you could retrieve the RETVAL and Output
+Params right away.  THIS IS NO LONGER THE CASE.  Beginning around 4.3, you must
+always use the mssql_next_result() function if any recordset is returned at
+all.
+
+If you consider the example posted below by fjortizATcomunetDOTes on
+26-Dec-2001...
+
+[...]
+
+// Execute the Stored Proc
+$result=mssql_execute($stmt);
+
+// Get the recordset
+$arr=mssql_fetch_row($result);
+print ("Answer: " . $arr[0] . "
+" );
+
+// NEW for 4.3: Switch to the next Recordset
+// Since there was only one recordset, it will return false...
+mssql_next_result($result);
+
+// And now RETVAL and Output Params are accessible...
+print ("RETVAL = $val ; intval = $ival ; floatval = $fval ; string = $sval");
+
+[...]
+
+There is also another way, and that is to use a new optional skip parameter on
+the execute.
+
+mssql_execute($stmt, true);
+
+This appears to ignore any recordsets, allowing you to get at the retval and
+output parameters immediately.
+
+For more information, please see Bug #21089.
+===============================================================================
+
+In reply to: mark dot vanrossum at bris dot ac dot uk
+
+A much simpler solution that allows you to keep the config in the PHP script is
+to force the TDS version by using putenv before you connect.
+
+<?PHP
+  putenv('TDSVER', '8.0');
+  $dbc = mssql_connect('123.123.123.123:1433', 'user', 'pass');
+?>
+===============================================================================
+
+Interesting little quirk I noticed:
+
+You can't initialize, execute, and free stored procedures in a nested fashion.
+e.g this pattern:
+
+<?php
+    $statement1 = mssql_init('statement1');
+    //some binds and stuff
+    $statement2 = mssql_init('statement2');
+    //some binds and stuff
+    mssql_execute($statement2);
+    mssql_free_statement($statement2);
+    mssql_execute($statement1);
+
+?>
+
+will fail when you execute statement 2.  Not only will it fail, but you won't
+get any results back from mssql_get_last_message(), so it's super-frustrating.
+The way around this is to rearrange the structure of your script so that stored
+procedures are executed sequentially.
+===============================================================================
+
+Output parameters are cryptic to get out. Here's two examples, one if you have
+no results returned from your stored procedure, one if you do have results
+returned:
+<?php
+/**
+* using OUTPUT param with no results returned from stored procedure
+*/
+$outParamValue = 0;
+mssql_bind($stmt, '@'.$outParamName, $outParamValue, $outParamType, $is_output 
+= true);
+mssql_execute($stmt, $skip_results = true);
+/* N.B. If you don't use $skip_results = true you must use mssql_next_result as
+below **even if there are no results returned from the stored procedure** */
+echo($outParamValue);
+
+/**
+* using OUTPUT param with one result set returned from stored procedure
+*/
+$outParamValue = 0;
+mssql_bind($stmt, '@'.$outParamName, $outParamValue, $outParamType, $is_output 
+= true);
+$result = mssql_execute($stmt);
+echo($outParamValue); /* will still be 0 */
+mssql_next_result($result); /* N.B. see the Note above about this */
+echo($outParamValue); /* correct output */
+?>
+===============================================================================
+
+I was pulling my hair out getting the error:
+  "stored procedure execution failed"
+when trying to run mssql_execute but you could run:
+  $results = mssql_query('sp_test');
+fine.
+
+I was connecting using the string:
+  $dbserver="xxx.xxx.xxx.xxx:1433";
+  $cn = mssql_connect($dbserver, $dbuser, $dbpass);
+
+where xxx is the IP address.
+
+It seems that this doesn't work, you need to do the following:
+edit your freetds.conf file and add the connection in here, eg:
+[YourServer]
+        host =xxx.xxx.xxx.xxx
+        port = 1433
+        tds version = 8.0
+
+Then try and connect as:
+$cn = mssql_connect('YourServer', $dbuser, $dbpass);
+
+And it should work.  No idea why it doesn't work before, took me hours to find
+this out!
+===============================================================================
+
+While using stored procedures on SQL EXPRESS (and perhaps on SQL Server), you
+have to specify the column names in SELECT, instead of asterisk (*). Or else
+you will get some big Unicode error.
+
+That is, instead of "select * from table",
+use "select col1, col2 from table".
+
+One more important thing, Before using mssql_execute, you MUST AND SHOULD use
+mssql_init. mssql_init will generate the MS Sql statement resource, which will
+be taken as input by mssql_execute. Here is an example,
+
+<?php
+if($conn = mssql_connect('localhost\SQLEXPRESS', 'krishna', 'srikanth')) echo 
+'Connected to SQLEXPRESS';
+
+if(mssql_select_db("Northwind",$conn)) echo 'Selected DB: Northwind<BR>';
+
+$sql_statement =  mssql_init("[Ten Most Expensive Products]", $conn);
+$result=mssql_execute($sql_statement);
+
+while ($row = mssql_fetch_assoc($result))
+    print_r($row);
+?>
+===============================================================================
+
+When calling a stored procedure which is using OUTPUT parameters, be sure not
+to pass them as NULL in mssql_bind. If you do this, the data received in output
+gets truncated to one character.
+===============================================================================
+
+SUBJECT: No OUTPUT parameter recieved on store procedure call.
+
+If you call a store procedure who binds data to an OUTPUT parameter on a SQL
+Server 7 or later no response will be produced, or an error perhaps.
+
+From the Free TDS documentation:
+
+Output Parameters
+
+I'm not getting my output parameters returned, but I seem to be doing
+everything right!
+
+That's not a question!
+
+Microsoft SQL Server 7 with SP3, and later versions, quietly changed (which is
+to say, broke) how they respond to queries that execute stored procedures with
+output parameters. Earlier servers let you send a query like EXECUTE A @P
+OUTPUT and fetch the output parameter as a special result row (technique
+varying by library). Newer servers simply don't send back that data. To elicit
+output parameters from them, you have to use the RPC protocols such as the
+DB-Library dbrpcparam.
+===============================================================================
+
+To get info about table structure you can use such a query:
+
+SELECT
+  column_name,
+  data_type,
+  character_maximum_length,
+  numeric_precision,
+  column_default,
+  is_nullable
+FROM
+  information_schema.tables t
+  INNER JOIN
+  information_schema.columns c
+  ON
+    t.table_catalog = c.table_catalog AND
+    t.table_schema = c.table_schema AND
+    t.table_name = c.table_name
+WHERE    
+  (c.table_name = 'TABLE_NAME')
+===============================================================================
+
+If you need to get Output params from your stored procedure, make sure to use
+FreeTDS > 0.6.4... it has a bug that prevents some Output params from being
+set.
+===============================================================================
+
+The constant SQLINT4 is not working with datetime. Try using SQLVARCHAR.
+===============================================================================
+
+To receive output parameter from the procedure which returns one or several
+recordsets, try this code:
+
+...
+mssql_bind($my_procedure, "@OutputParameter", SQLVARCHAR, true);
+$result = mssql_execute($my_procedure);
+while(mssql_next_recordset($result)) {
+## do something
+}
+
+after listing last recordset output parameter will be available (strange...).
+
+If you do not need output recordsets, just parameters, try this:
+
+mssql_bind($my_procedure, "@OutputParameter", SQLVARCHAR, true);
+$result = mssql_execute($my_procedure, true);
+
+P.S. Tested on PHP 4.3.5.
+===============================================================================
+
+php version 4.3.2
+
+Take care when using stored procedures returning multiple results, seems that
+if the first result is empty, the pointer will be automatically moved to the
+next result. As in this example:
+
+CREATE PROCEDURE test
+AS
+SELECT 0 as zero WHERE 0 = 1
+SELECT 1 as one
+GO
+
+After executing the stored procedure, mssql_num_rows will report one, ignoring
+the first result.
+===============================================================================
+
+want to share with you that I had a hard time with mssql_execute on a platform
+that was running php using FastCGI. Well, I guess the problem was that
+mssql_init always returned null. So after investigating this, and plus the fact
+that I don't have total control over the platform, I gave up and used
+mssql_query instead.
+
+Using the function below, it is possible to generate most stored procedure
+calls, with the added benefits that one doesn't have to worry to much about
+datatype mappings, and that the funtion return exception codes and error
+message. So here goes:
+
+<?php
+function _mssql_exec_sp($storedproc,$params) {
+    $varlist = "";
+    $setlist = "";
+    $parmlist = "";
+    $outs = "";
+    foreach ($params as $key => $value) {
+        $quote = strpos($value['type'],'char')!==false;
+        $varlist .= "@$key ".$value['type'].",\\n";
+        if (isset($value['value'])) {
+            $setlist .= "set @".$key."=".($quote?"'":'').$value['value'].(
+$quote?"'\\n":"\\n");
+        }
+        $paramlist .= " @".$key.(isset($value['out'])?' output,':',');
+        if (isset($value['out'])) {
+            $outs .= "@$key as $key,";
+        }
+    }
+    if (strlen($paramlist)) {
+        $paramlist = substr($paramlist,0,strlen($paramlist)-1);
+    }
+   
+    $stmt = "begin try\\n";
+    $stmt .= "declare\\n";
+    $stmt .= "@ret int";
+    if (strlen($varlist)) {
+        $stmt .= ",\\n";
+        $stmt .= $varlist;
+        $stmt = substr($stmt,0,strlen($stmt)-2);
+    }
+    else {
+        $stmt .= "\\n";
+    }
+    $outs = "@ret as ret,".$outs;
+    $outs = substr($outs,0,strlen($outs)-1);
+
+    $stmt .= "\\n".$setlist;
+    $stmt .= "exec @ret = ".$storedproc.$paramlist."\\n";
+    $stmt .= "select ".$outs."\\n";
+    $stmt .= "end try\\n";
+    $stmt .= "begin catch\\n";
+    $stmt .= "select error_number() as ret,error_message() as errorMsg\\n";
+    $stmt .= "end catch\\n";
+    return mssql_query($stmt);
+}
+?>
+
+example call:
+
+<?php
+      $params = array(
+        'socialid' => array(
+            'type' => 'char(10)',
+            'value' => $sid
+        ),
+        'cust_name' => array(
+            'type' => 'varchar(20)',
+            'value' => 'our name'
+        ),
+        'id' => array(
+            'type' => 'int',
+            'out' => true
+        ),
+
+    );
+    $result = _mssql_exec_sp('sp_register_cust', $params);
+    $row = mssql_fetch_array($result);
+?>
+===============================================================================
+
+Regarding the "stored procedure execution failed" errors mentioned in previous
+posts -- in addition to using the data source name as defined in freetds.conf
+under Linux, you may encounter this error when attempting to call a stored
+procedure  after running a standard query with mssql_query()
+
+Call mssql_free_result() before executing the stored procedure with
+mssql_execute() to clear this up.
+
+<?php
+$conn = mssql_connect($host, $user, $pass);
+mssql_select_db('somedb', $conn);
+
+// Call a simple query
+$result = mssql_query('SELECT * FROM sometable', $conn);
+
+// Release the result resource
+mssql_free_result($result);
+
+// Then execute the procedure
+$proc = mssql_init('some_proc', $conn);
+$proc_result = mssql_execute($proc);
+
+// Etc...
+mssql_free_statement($proc);
+?>
+===============================================================================
+
+The easiest way to use a stored procedure is:
+
+$Result = mssql_query("StoredProcedureName Var1, Var2, Var3...");
+
+$Result is then just like any other result set. You can get the output
+parameters by:
+
+$arr = mssql_fetch_row($Result);
+
+$OutputParam1 = $arr[0];
+$OutputParam2 = $arr[1];
+===============================================================================
+
+<?PHP
+
+/*This functions will help you to get SQLTYPES direct from systypes and you can
+associate them with PHPSQLTYPES. */
+
+/* <font color="#007f00">Associete PHP types with systypes..xtypes,
+   see <b>mssql_get_types()</b> </font>*/
+
+if(!defined('dbMSSQL_Types'))
+{
+    define('dbMSSqlTypes',1);
+    $MSSQL_types[127] = SQLINT4;    /* bigint*/
+    $MSSQL_types[104] = SQLBIT;     /* bit*/
+    $MSSQL_types[175] = SQLCHAR;    /* char*/
+    $MSSQL_types[56]  = SQLINT2;    /* int*/
+    $MSSQL_types[52]  = SQLINT2;    /* smallint*/
+    $MSSQL_types[35]  = SQLTEXT;    /* text*/
+    $MSSQL_types[48]  = SQLINT1;    /* tinyint*/
+    $MSSQL_types[167] = SQLVARCHAR; /* varchar*/
+    $MSSQL_types[62]  = SQLFLT8;    /* float*/
+    $MSSQL_types[173] = SQLVARCHAR; /* binary*/         // Adaptation
+    $MSSQL_types[61]  = SQLINT4;    /* datetime*/       // Adaptation
+    $MSSQL_types[106] = SQLFLT8;    /* decimal*/        // Adaptation
+    $MSSQL_types[34]  = SQLVARCHAR; /* image*/          // Adaptation
+    $MSSQL_types[60]  = SQLFLT8;    /* money*/          // Adaptation
+    $MSSQL_types[239] = SQLCHAR;    /* nchar*/          // Adaptation
+    $MSSQL_types[99]  = SQLTEXT;    /* ntext*/          // Adaptation
+    $MSSQL_types[108] = SQLFLT8;    /* numeric*/        // Adaptation
+    $MSSQL_types[231] = SQLVARCHAR; /* nvarchar*/       // Adaptation
+    $MSSQL_types[59]  = SQLFLT8;    /* real*/           // Adaptation
+    $MSSQL_types[58]  = SQLINT4;    /* smalldatetime*/  // Adaptation
+    $MSSQL_types[122] = SQLFLT8;    /* smallmoney*/     // Adaptation
+    $MSSQL_types[98]  = SQLVARCHAR; /* sql_variant*/    // Adaptation
+    $MSSQL_types[189] = SQLINT4;    /* timestamp*/      // Adaptation
+    $MSSQL_types[165] = SQLVARCHAR; /* varbinary*/      // Adaptation
+}
+
+/* <font color="#007f00">Gets current connection systypes and shows this:
+
+$MSSQL_types[systypes..xtype] = PutPHPSqlTypeHere  // Name_in_systypes //
+
+</font>*/
+function mssql_get_types(){
+   $res = mssql_query('select name,xtype from systypes');
+   echo('<pre><CODE>');
+   while(($val = mssql_fetch_assoc($res))){
+      echo('$MSSQL_types['.$val['xtype']."]\t= ;\t/* ".$val['name']." */\n");
+   }
+   print_r(phpinfo(INFO_VARIABLES));
+   echo('</CODE></pre>');
+}
+
+?>
+===============================================================================
+
+After many attempt I resolved the return output of a store procedure on Win2003
+box, MSSQL7 and PHP 4.3.
+I have problem to process the result from store procedure strCheckUser, and I
+must to set a R variable, that must be returned from the last select operation
+(Select @R as R) see below.
+
+----------------------------
+/*
+Store procedure to CheckUser Exist
+*/
+CREATE PROC strCheckUser 
+(
+@AccountLO varchar(20) ,
+@PasswordLO varchar(20)
+)
+AS
+BEGIN
+DECLARE @R INT
+IF (SELECT count(*) as count FROM tbl_users WHERE AccountLO = @AccountLO and
+PasswordLO=@PasswordLO
+) = 0
+SET @R = '0'
+END
+
+BEGIN
+IF (SELECT count(*) as count FROM tbl_users WHERE AccountLO = @AccountLO  and
+PasswordLO=@PasswordLO
+) = 1
+SET @R = '1'
+
+END
+
+Select @R as R
+
+GO
+-------------------------
+
+This is the php page
+<?
+
+.....
+.....
+$AccountLO="myuser";
+$PassowrdLO="mypass";
+
+$result=mssql_query("strCheckUser ".$AccountLO.", ".$PasswordLO."");
+//echo gettype($result);
+$arr = mssql_fetch_assoc($result);       
+echo $arr["R"];
+
+......
+......
+?>
+
+No $arr["R"] print 1 if the user exist and 0 if no exist
+
+Thanks to duarte at uma dot pt for the suggestion
+Bye eliseo@olografix.org
+===============================================================================
+
+After initializing a stored procedure
+with mssql_init, and binding all the
+parameters (and return value if needed)
+with mssql_bind, you can execute the
+statement with mssql_execute.
+
+Parameters:
+- stmt: statement resource obtained with
+mssql_init.
+
+From here, you can use any of the other
+mssql_* functions to retrieve the
+recordsets as if you had called
+mssql_query. Any T-SQL error will also
+be reported in the same way. The
+variables passed by reference for OUTPUT
+and RETVAL parameters will be filled
+with the right values.
+
+Now, an example:
+
+if we have this procedure:
+
+CREATE PROCEDURE [procedure]
+(
+   @sval varchar(50) OUTPUT,
+   @intval int OUTPUT,
+   @floatval decimal(6,4) OUTPUT
+) AS
+
+if @intval is null
+    select '@intval is null' as answer
+else    
+    select '@intval is NOT null' as answer
+
+set @sval='Hello ' + @sval
+set @intval=@intval+1
+set @floatval=@floatval+1
+
+return 10
+
+We can use this PHP code:
+
+<?php
+
+$conn=mssql_connect("myhost","user","pwd");
+
+if ($conn) {
+    mssql_select_db("mydb",$conn);
+   
+    $stmt=mssql_init("procedure",$conn);
+    mssql_bind($stmt,"RETVAL",&$val,SQLINT4);
+
+    $ival=11;
+    $fval=2.1416;
+    $sval="Frank";
+   
+    mssql_bind($stmt,"@sval",&$sval,SQLVARCHAR,TRUE);   
+    mssql_bind($stmt,"@intval",&$ival,SQLINT4,TRUE);
+    mssql_bind($stmt,"@floatval",&$fval,SQLFLT8,TRUE);
+   
+    $result=mssql_execute($stmt);
+
+    $arr=mssql_fetch_row($result);
+    print ("Answer: " . $arr[0] . "<br>" );
+    print ("RETVAL = $val ; intval = $ival ; floatval = $fval ; string = $sval"
+);
+   
+    mssql_close($conn);
+}
+else print("ooops!");
+?>
+
+
+Hope it helps. Good luck!

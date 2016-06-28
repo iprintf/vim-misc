@@ -1,0 +1,217 @@
+
+Runkit_Sandbox
+
+(PECL runkit >= 0.7.0)
+
+Runkit_Sandbox — Runkit Sandbox Class -- PHP Virtual Machine
+
+说明
+
+Instantiating the Runkit_Sandbox class creates a new thread with its own scope
+and program stack. Using a set of options passed to the constructor, this
+environment may be restricted to a subset of what the primary interpreter can
+do and provide a safer environment for executing user supplied code.
+
+    Note: 沙箱支持（是 runkit_lint()，runkit_lint_file() 函数，与
+    Runkit_Sandbox 类所必需）仅可用于 PHP 5.1.0 或 PHP 5.0 的特别修补版本，并需
+    启用线程安全。更多信息可参见 runkit 包中的 README 文件。
+
+Constructor
+
+void Runkit_Sandbox::__construct ([ array $options ] )
+
+options is an associative array containing any combination of the special ini
+options listed below.
+
+safe_mode
+
+    If the outer script which is instantiating the Runkit_Sandbox class is
+    configured with safe_mode = off, then safe_mode may be turned on for the
+    sandbox environment. This setting can not be used to disable safe_mode when
+    it's already enabled in the outer script.
+
+safe_mode_gid
+
+    If the outer script which is instantiating the Runkit_Sandbox class is
+    configured with safe_mode_gid = on, then safe_mode_gid may be turned off
+    for the sandbox environment. This setting can not be used to enable
+    safe_mode_gid when it's already disabled in the outer script.
+
+safe_mode_include_dir
+
+    If the outer script which is instantiating the Runkit_Sandbox class is
+    configured with a safe_mode_include_dir, then a new safe_mode_include_dir
+    may be set for sandbox environments below the currently defined value.
+    safe_mode_include_dir may also be cleared to indicate that the bypass
+    feature is disabled. If safe_mode_include_dir was blank in the outer
+    script, but safe_mode was not enabled, then any arbitrary
+    safe_mode_include_dir may be set while turning safe_mode on.
+
+open_basedir
+
+    open_basedir may be set to any path below the current setting of
+    open_basedir. If open_basedir is not set within the global scope, then it
+    is assumed to be the root directory and may be set to any location.
+
+allow_url_fopen
+
+    Like safe_mode, this setting can only be made more restrictive, in this
+    case by setting it to FALSE when it is previously set to TRUE
+
+disable_functions
+
+    Comma separated list of functions to disable within the sandbox
+    sub-interpreter. This list need not contain the names of the currently
+    disabled functions, they will remain disabled whether listed here or not.
+
+disable_classes
+
+    Comma separated list of classes to disable within the sandbox
+    sub-interpreter. This list need not contain the names of the currently
+    disabled classes, they will remain disabled whether listed here or not.
+
+runkit.superglobal
+
+    Comma separated list of variables to be treated as superglobals within the
+    sandbox sub-interpreter. These variables will be used in addition to any
+    variables defined internally or through the global runkit.superglobal
+    setting.
+
+runkit.internal_override
+
+    Ini option runkit.internal_override may be disabled (but not re-enabled)
+    within sandboxes.
+
+Example #1 Instantiating a restricted sandbox
+
+<?php
+$options = array(
+  'safe_mode'=>true,
+  'open_basedir'=>'/var/www/users/jdoe/',
+  'allow_url_fopen'=>'false',
+  'disable_functions'=>'exec,shell_exec,passthru,system',
+  'disable_classes'=>'myAppClass');
+$sandbox = new Runkit_Sandbox($options);
+/* Non-protected ini settings may set normally */
+$sandbox->ini_set('html_errors',true);
+?>
+
+Accessing Variables
+
+All variables in the global scope of the sandbox environment are accessible as
+properties of the sandbox object. The first thing to note is that because of
+the way memory between these two threads is managed, object and resource
+variables can not currently be exchanged between interpreters. Additionally,
+all arrays are deep copied and any references will be lost. This also means
+that references between interpreters are not possible.
+
+Example #2 Working with variables in a sandbox
+
+<?php
+$sandbox = new Runkit_Sandbox();
+
+$sandbox->foo = 'bar';
+$sandbox->eval('echo "$foo\n"; $bar = $foo . "baz";');
+echo "{$sandbox->bar}\n";
+if (isset($sandbox->foo)) unset($sandbox->foo);
+$sandbox->eval('var_dump(isset($foo));');
+?>
+
+以上例程会输出：
+
+bar
+barbaz
+bool(false)
+
+Calling PHP Functions
+
+Any function defined within the sandbox may be called as a method on the
+sandbox object. This also includes a few pseudo-function language constructs: 
+eval(), include, include_once, require, require_once, echo, print, die(), and 
+exit().
+
+Example #3 Calling sandbox functions
+
+<?php
+$sandbox = new Runkit_Sandbox();
+
+echo $sandbox->str_replace('a','f','abc');
+?>
+
+以上例程会输出：
+
+fbc
+
+When passing arguments to a sandbox function, the arguments are taken from the
+outer instance of PHP. If you wish to pass arguments from the sandbox's scope,
+be sure to access them as properties of the sandbox object as illustrated
+above.
+
+Example #4 Passing arguments to sandbox functions
+
+<?php
+$sandbox = new Runkit_Sandbox();
+
+$foo = 'bar';
+$sandbox->foo = 'baz';
+echo $sandbox->str_replace('a',$foo,'a');
+echo $sandbox->str_replace('a',$sandbox->foo,'a');
+?>
+
+以上例程会输出：
+
+bar
+baz
+
+Changing Sandbox Settings
+
+As of runkit version 0.5, certain Sandbox settings may be modified on the fly
+using ArrayAccess syntax. Some settings, such as active are read-only and meant
+to provide status information. Other settings, such as output_handler may be
+set and read much like a normal array offset. Future settings may be
+write-only, however no such settings currently exist.
+
+                     Sandbox Settings / Status Indicators
+   Setting       Type                      Purpose                     Default
+               Boolean  TRUE if the Sandbox is still in a usable
+active         (Read    state, FALSE if the request is in bailout due TRUE
+               Only)    to a call to die(), exit(), or because of a   (Initial)
+                        fatal error condition.
+                        When set to a valid callback, all output
+                        generated by the Sandbox instance will be
+output_handler Callback processed through the named function. Sandbox None
+                        output handlers follow the same calling
+                        conventions as the system-wide output
+                        handler.
+                        May the sandbox use instances of the
+parent_access  Boolean  Runkit_Sandbox_Parent class? Must be enabled  FALSE
+                        for other Runkit_Sandbox_Parent related
+                        settings to work.
+parent_read    Boolean  May the sandbox read variables in its         FALSE
+                        parent's context?
+parent_write   Boolean  May the sandbox modify variables in its       FALSE
+                        parent's context?
+parent_eval    Boolean  May the sandbox evaluate arbitrary code in    FALSE
+                        its parent's context? DANGEROUS
+parent_include Boolean  May the sandbox include php code files in its FALSE
+                        parent's context? DANGEROUS
+                        May the sandbox echo data in its parent's
+parent_echo    Boolean  context effectively bypassing its own         FALSE
+                        output_handler?
+parent_call    Boolean  May the sandbox call functions in its         FALSE
+                        parent's context?
+parent_die     Boolean  May the sandbox kill its own parent? (And     FALSE
+                        thus itself)
+                        What scope will parental property access look
+parent_scope   Integer  at? 0 == Global scope, 1 == Calling scope, 2  0
+                        == Scope preceding calling scope, 3 == The    (Global)
+                        scope before that, etc..., etc...
+                        When parent_scope is set to a string value,
+                        it refers to a named array variable in the
+                        global scope. If the named variable does not
+parent_scope   String   exist at the time of access it will be         
+                        created as an empty array. If the variable
+                        exists but it not an array, a dummy array
+                        will be created containing a reference to the
+                        named global variable.
+

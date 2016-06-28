@@ -1,0 +1,482 @@
+
+get_magic_quotes_gpc
+
+(PHP 4, PHP 5, PHP 7)
+
+get_magic_quotes_gpc — 获取当前 magic_quotes_gpc 的配置选项设置
+
+说明
+
+bool get_magic_quotes_gpc ( void )
+
+返回当前 magic_quotes_gpc 配置选项的设置
+
+记住，尝试在运行时设置 magic_quotes_gpc 将不会生效。
+
+更多关于 magic_quotes 的信息参见安全一章。
+
+返回值
+
+如果 magic_quotes_gpc 为关闭时返回 0，否则返回 1。在 PHP 5.4.O 起将始终返回
+FALSE。
+
+更新日志
+
+版本                            说明
+5.4.0 始终返回 FALSE，因为这个魔术引号功能已经从 PHP 中移除了。
+
+范例
+
+Example #1 get_magic_quotes_gpc() 例子
+
+<?php
+// 如果启用了魔术引号
+echo $_POST['lastname'];             // O\'reilly
+echo addslashes($_POST['lastname']); // O\\\'reilly
+
+// 适用各个 PHP 版本的用法
+if (get_magic_quotes_gpc()) {
+    $lastname = stripslashes($_POST['lastname']);
+}
+else {
+    $lastname = $_POST['lastname'];
+}
+
+// 如果使用 MySQL
+$lastname = mysql_real_escape_string($lastname);
+
+echo $lastname; // O\'reilly
+$sql = "INSERT INTO lastnames (lastname) VALUES ('$lastname')";
+?>
+
+注释
+
+    Note:
+
+    如果指令 magic_quotes_sybase 为 ON，它会完全覆盖 magic_quotes_gpc。所以即使
+    get_magic_quotes_gpc() 返回 TRUE，双引号、反斜杠或 NUL 都不会被转义。只有单
+    引号会被转义。这种情况下它们看上去像：''
+
+参见
+
+  • addslashes() - 使用反斜线引用字符串
+  • stripslashes() - 反引用一个引用字符串
+  • get_magic_quotes_runtime() - 获取当前 magic_quotes_runtime 配置选项的激活状
+    态
+  • ini_get() - 获取一个配置选项的值
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+Please note, that when magic_quotes_gpc is set not only $_POST, $_GET,
+$_REQUEST, $_COOKIE arrays values are slashed. Actually every string value in
+$GLOBALS array is slashed, ie. $GLOBALS['_SERVER']['PATH_INFO'] (or $_SERVER
+['PATH_INFO']).
+===============================================================================
+
+@ dot dot dot dot dot alexander at gmail dot com
+
+I suggest replacing foreach by "stripslashes_deep":
+
+Example #2 Using stripslashes() on an array on
+<http://www.php.net/manual/en/function.stripslashes.php>:
+
+<?php
+function stripslashes_deep($value)
+{
+    $value = is_array($value) ?
+                array_map('stripslashes_deep', $value) :
+                stripslashes($value);
+
+    return $value;
+}
+?>
+
+This gives:
+
+<?php
+if((function_exists("get_magic_quotes_gpc") && get_magic_quotes_gpc())    || (
+ini_get('magic_quotes_sybase') && (strtolower(ini_get('magic_quotes_sybase'))!=
+"off")) ){
+    stripslashes_deep($_GET);
+    stripslashes_deep($_POST);
+    stripslashes_deep($_COOKIE);
+}
+?>
+===============================================================================
+
+Here's what I came up with to remove magic quotes from request data.
+
+Replaces two single-quotes with one if magic_quotes_sybase are on, otherwise it
+just strips slashes.
+
+Note that the `foreach` style makes this work only with PHP 5 and above.
+
+<?php
+
+// Strip magic quotes from request data.
+if (function_exists('get_magic_quotes_gpc') && get_magic_quotes_gpc()) {
+    // Create lamba style unescaping function (for portability)
+    $quotes_sybase = strtolower(ini_get('magic_quotes_sybase'));
+    $unescape_function = (empty($quotes_sybase) || $quotes_sybase === 'off') ? 
+'stripslashes($value)' : 'str_replace("\'\'","\'",$value)';
+    $stripslashes_deep = create_function('&$value, $fn', '
+        if (is_string($value)) {
+            $value = ' . $unescape_function . ';
+        } else if (is_array($value)) {
+            foreach ($value as &$v) $fn($v, $fn);
+        }
+    ');
+   
+    // Unescape data
+    $stripslashes_deep($_POST, $stripslashes_deep);
+    $stripslashes_deep($_GET, $stripslashes_deep);
+    $stripslashes_deep($_COOKIE, $stripslashes_deep);
+    $stripslashes_deep($_REQUEST, $stripslashes_deep);
+}
+
+?>
+===============================================================================
+
+<?php
+function stripper($stringvar){
+    if (1 == get_magic_quotes_gpc()){
+        $stringvar = stripslashes($stringvar);
+    }
+    return $stringvar;
+}
+?>
+
+Usage:
+
+<?php
+$Body = stripper($rs->fields('Body'));
+echo($Body);
+?>
+
+This checks if get_magic_quotes_gpc() is on and strips a string variable for
+output if its on. Useful if the dev server and live server are set up
+different.
+===============================================================================
+
+Re: php at kaiundina dot de (03-Feb-2005 02:18)
+
+1. magic_quotes_gpc=on/off and magic_quotes_sybase=on/off
+
+I made test and your function worked right.
+These were the <input ... /> names I used:
+name="a"
+name="b.b b\b"
+name="c[c.1]"
+name="c[c 2]"
+name="c[c\3]"
+name="c.c c[c.' 4]"
+name="c ' c[c&quot;4]"
+name="d&quot;[d&quot;1]"
+
+(I used &quot; because I don't know other way to put " into the name)
+
+and the user-input value:
+a ' " \ \' \" \\ a
+
+2. > 17) The chars '.', ' ' are always replaced by '_' when used in keys.
+
+This is true only for the top-level keys, such as "b.b b\b", "c.c c" and "c '
+c" above. The second-level key "[c.' 4]" was not changed to [c_'_4] but was
+escaped acording to how magic_quites_XXX are set.
+
+Tested on PHP 4.4.0.
+
+These magic_quotes are really black magic :(
+
+It'll be good to make test against $_SESSION, but I can't do it today.
+===============================================================================
+
+> "If the directive magic_quotes_sybase is ON it will completely override
+magic_quotes_gpc."
+
+This "note" is a bit misleading. magic_quotes_sybase will only override the
+escaping method used on Get/Post/Cookie data if magic_quotes_gpc is already
+enabled. If magic_quotes_gpc is not enabled then magic_quotes_sybase will have
+no effect here.
+
+A few of the other comments are therefore incorrect in determining when to
+"stripslashes" from the input, by "stripping slashes" when either
+magic_quotes_gpc OR magic_quotes_sybase is enabled. You should only
+stripslashes() when magic_quotes_gpc is enabled since that is the only time
+when slashes are automatically added.
+
+stripslashes() is also magic_quotes_sybase aware, so you don't need to do
+anything special (ie. write a custom function to handle this situation as
+another comment suggests) when magic_quotes_sybase is enabled. When
+magic_quotes_sybase is enabled, stripslashes() does not actually strip any
+slashes, but instead unescapes single-quotes that are escaped with
+single-quotes only.
+
+magic_quotes_sybase does however influence the escaping (and unescaping) method
+used by addslashes() and stripslashes() respectively, regardless of whether
+magic_quotes_gpc (or magic_quotes_runtime) is enabled.
+===============================================================================
+
+Just a little correction:
+( Because of the ini_get function that may return a string value of "off" that
+evaluates to TRUE )
+<?php
+        if(  
+            (  function_exists("get_magic_quotes_gpc") && get_magic_quotes_gpc
+()  )
+             || (  ini_get('magic_quotes_sybase') && ( strtolower(ini_get(
+'magic_quotes_sybase')) != "off" )  )
+           ){
+            foreach($_GET as $k => $v) $_GET[$k] = stripslashes($v);
+            foreach($_POST as $k => $v) $_POST[$k] = stripslashes($v);
+            foreach($_COOKIE as $k => $v) $_COOKIE[$k] = stripslashes($v);
+        }
+?>
+===============================================================================
+
+When you work with forms and databases you should use this concept:
+
+1.When inserting the user input in DB escape $_POST/$_GET with add_slashes() or
+similar (to match the speciffic database escape rules)
+
+$query='INSERT INTO users SET fullname="'.add_slashes($_POST['fullname']).'"';
+insert_into_db($query);
+
+2.When reading a previously submitted input from DB use html_special_chars to
+display an escaped result!
+
+read_db_row('SELECT fullname FROM users');
+echo '<input type="text" name="fullname" value="'.html_special_chars($db_row
+['fullname']).'" />
+
+this way you safely store and work with the original(unescaped) data.
+===============================================================================
+
+Escaping of key-strings in GPC-arrays behave different to the escaping of their
+values.
+
+First I expected that keys in submitted gpc-arrays are never escaped.
+Anyway. After I saw escaped keys, I assumed they're escaped according to the
+settings of magic quotes.
+... it's even worse...
+
+It took me over 2 days of testing to figure out the exact behavior and creating
+two functions (one for each php-version) that strips slashes reliably from any
+array submitted to a script. Hope this saves someones time and nerves.
+
+The following is true for $_GET- and $_POST-arrays. I hope other arrays
+affected by magic quotes behave equally.
+I did not test the behavior for cases where magic_quotes_sybase is set.
+
+== legend for possible case combinations ==
+Px = php version we're using
+    P4 = php 4.3.9
+    P5 = php 5.0.2
+
+MQ = MagicQuotes GPC
+    +MQ = magic quotes enabled
+    -MQ = magic quotes disabled
+
+TL = TopLevel key
+    +TL = key is on top level (i.e. $_GET['myKey'])
+    -TL = key is nested within another array (i.e. $_GET['myList']['myKey'])
+
+AK = ArrayKey
+    +AK = the value of the key is another array (i.e. is_array($_GET['myKey'])
+== true)
+    -AK = the value is a normal string (i.e. is_string($_GET['myKey']) == true)
+
+== legend for possible results ==
+KE = KeyEscaping
+    +KE = control chars are prefixed with a backslash
+    -KE = key is returned as submitted and needn't to be stripped
+
+VE = ValueEscaping (doesn't apply for array as value)
+    +VE = control chars are prefixed with a backslash
+    -VE = value is returned as submitted and needn't to be stripped
+
+== here we go - the following rules apply ==
+1) P4 +MQ +AK +TL --> -KE
+2) P4 +MQ +AK -TL --> +KE
+3) P4 +MQ -AK +TL --> -KE +VE
+4) P4 +MQ -AK -TL --> +KE +VE
+5) P4 -MQ +AK +TL --> -KE
+6) P4 -MQ +AK -TL --> -KE
+7) P4 -MQ -AK +TL --> -KE -VE
+8) P4 -MQ -AK -TL --> -KE -VE
+9) P5 +MQ +AK +TL --> -KE
+10) P5 +MQ +AK -TL --> +KE
+11) P5 +MQ -AK +TL --> +KE +VE
+12) P5 +MQ -AK -TL --> +KE +VE
+13) P5 -MQ +AK +TL --> -KE
+14) P5 -MQ +AK -TL --> -KE
+15) P5 -MQ -AK +TL --> +KE -VE
+16) P5 -MQ -AK -TL --> +KE -VE
+17) The chars '.', ' ' are always replaced by '_' when used in keys.
+
+Example (rule 15):
+When running under php 5.0.2 having magic quotes disabled, gpc-keys on top
+level containing strings are escaped while their associated values are not.
+
+== The following function will strip GPC-arrays for php 4.3.9 ==
+
+<?php
+function transcribe($aList, $aIsTopLevel = true) {
+    $gpcList = array();
+    $isMagic = get_magic_quotes_gpc();
+   
+    foreach ($aList as $key => $value) {
+        $decodedKey = ($isMagic && !$aIsTopLevel)?stripslashes($key):$key;
+        if (is_array($value)) {
+            $decodedValue = transcribe($value, false);
+        } else {
+            $decodedValue = ($isMagic)?stripslashes($value):$value;
+        }
+        $gpcList[$decodedKey] = $decodedValue;
+    }
+    return $gpcList;
+}
+?>
+
+
+== The following function will strip GPC-arrays for php 5.0.2 ==
+<?php
+function transcribe($aList, $aIsTopLevel = true) {
+    $gpcList = array();
+    $isMagic = get_magic_quotes_gpc();
+   
+    foreach ($aList as $key => $value) {
+        if (is_array($value)) {
+            $decodedKey = ($isMagic && !$aIsTopLevel)?stripslashes($key):$key;
+            $decodedValue = transcribe($value, false);
+        } else {
+            $decodedKey = stripslashes($key);
+            $decodedValue = ($isMagic)?stripslashes($value):$value;
+        }
+        $gpcList[$decodedKey] = $decodedValue;
+    }
+    return $gpcList;
+}
+?>
+
+Usage:
+
+<?php
+$unstrippedGET = transcribe($_GET);
+$unstrippedPOST = transcribe($_POST);
+?>
+
+Maybe someone is willing to test those combinations for other php-versions and
+with magic_quotes_sybase set to 'on' - let me know.
+Sorry for this huge amount of text, but it's complete. I was unable to compress
+the decision table more than this.
+===============================================================================
+
+Regarding the three main strip methods as found below (two using foreach, 1
+using the json method), I've done a little benchmarking using 'true' profiling
+(using a registered tickhandler where declare(ticks=1)).
+I wondered whether or not json would not be terribly slow.
+I won't discuss the profiler, but will suffice with the following statement,
+followed by the used code to benchmark:
+
+The json method was by FAR the quickest (contrary to what I'd thought), so if
+you need a speedy process, use that!
+
+<?php
+declare(ticks=1);
+function g()
+{
+    return array(
+        'a'=>'i\\\\\\'m',
+        array('a1' => 'x', 'b1' => 'x'),
+        array( 'a2' => array('a3' => '\\\\\\'x', 'b3' => 'random' )
+        )
+    );
+}
+
+function strip_json($d)
+{
+    $rs = json_decode(stripslashes(json_encode($d, JSON_HEX_APOS)), true);
+    return $rs;
+}
+
+function strip_deep1($d)
+{
+    foreach ($d as $k=>$v)
+    {
+        if (is_array($v)) { $d[$k] = strip_deep1($v); }
+        else { $d[$k] = stripslashes($v); }
+    }
+    return $d;
+}
+
+function strip_deep2(&$d)
+{
+    $d = is_array($d) ? array_map('strip_deep2', $d) : stripslashes($d);
+    return $d;
+}
+
+// now profile it
+require_once './TickProfiler.php';
+$N = 1000;
+$d = g();
+TickProfiler::Register();
+for ($i = 0; $i < $N; $i++){ strip_json($d); }
+for ($i = 0; $i < $N; $i++){ strip_deep1($d); }
+for ($i = 0; $i < $N; $i++){ strip_deep2($d); }
+TickProfiler::Unregister();
+TickProfiler::Display();
+
+?>
+
+My output (PHP 5.3.1, win32):
+    [TickProfiler::tick] => Array
+        (
+            [time] => 0.76188707351685
+            [calls] => 46001
+        )
+
+    [TickProfiler::Register] => Array
+        (
+            [time] => 3.0994415283203E-5
+            [calls] => 1
+        )
+
+    [strip_json] => Array
+        (
+            [time] => 0.025638580322266
+            [calls] => 1000
+        )
+
+    [strip_deep1] => Array
+        (
+            [time] => 0.40303444862366
+            [calls] => 36000
+        )
+
+    [strip_deep2] => Array
+        (
+            [time] => 0.14928555488586
+            [calls] => 9000
+        )
+
+)
+
+As can be seen above, using json speeds output by at least a factor of 5
+(nearly 6).
+Just wanted to share this :D
+
+Do note the strip_json function has two LOC instead of a plain return
+statement, otherwise it wouldn't get picked up by the tickprofiler (it would
+return from the code immediately, never reaching the profiler)!
+
+Usage of the return statement in strip_deep2 is not needed, as the argument is
+passed by reference.
+A new test showed that the time penalty for this is about 0.09 seconds.
+
+This actually means that the factor between strip_deep2 vs strip_json is only
+about 2.
+Still, strip_json would be about twice as fast as strip_deep2

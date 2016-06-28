@@ -1,0 +1,322 @@
+
+DOMNode::removeChild
+
+(PHP 5, PHP 7)
+
+DOMNode::removeChild — Removes child from list of children
+
+说明
+
+public DOMNode DOMNode::removeChild ( DOMNode $oldnode )
+
+This functions removes a child from a list of children.
+
+参数
+
+oldnode
+
+    The removed child.
+
+返回值
+
+If the child could be removed the function returns the old child.
+
+错误／异常
+
+DOM_NO_MODIFICATION_ALLOWED_ERR
+
+    Raised if this node is readonly.
+
+DOM_NOT_FOUND
+
+    Raised if oldnode is not a child of this node.
+
+范例
+
+The following example will delete the chapter element of our XML document.
+
+Example #1 Removing a child
+
+<?php
+
+$doc = new DOMDocument;
+$doc->load('book.xml');
+
+$book = $doc->documentElement;
+
+// we retrieve the chapter and remove it from the book
+$chapter = $book->getElementsByTagName('chapter')->item(0);
+$oldchapter = $book->removeChild($chapter);
+
+echo $doc->saveXML();
+?>
+
+以上例程会输出：
+
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"
+          "http://www.oasis-open.org/docbook/xml/4.1.2/docbookx.dtd">
+<book id="listing">
+ <title>My lists</title>
+
+</book>
+
+参见
+
+  • DOMNode::appendChild() - Adds new child at the end of the children
+  • DOMNode::replaceChild() - Replaces a child
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+You can't remove DOMNodes from a DOMNodeList as you're iterating over them in a
+foreach loop. For example...
+
+<?php
+$domNodeList = $domDocument->getElementsByTagname('p');
+foreach ( $domNodeList as $domElement ) {
+  //  ...do stuff with $domElement...
+  $domElement->parentNode->removeChild($domElement);
+}
+?>
+
+... will seemingly leave the internal iterator on the foreach out of wack and
+results will be quite strange. Though, making a queue of items to remove seems
+to work. For example...
+
+<?php
+$domNodeList = $domDocument->getElementsByTagname('p');
+$domElemsToRemove = array();
+foreach ( $domNodeList as $domElement ) {
+  // ...do stuff with $domElement...
+  $domElemsToRemove[] = $domElement;
+}
+foreach( $domElemsToRemove as $domElement ){
+  $domElement->parentNode->removeChild($domElement);
+}
+?>
+===============================================================================
+
+Just a note, if you remove a node the whitespace it occupied will remain if you
+save the file.
+
+To avoid this, use $document->preserveWhiteSpace = false;
+
+For Example:
+
+<?php
+$document = new DomDocument();
+$document->preserveWhiteSpace = false;
+?>
+===============================================================================
+
+These two functions might be helpful to anyone trying to delete a node and all
+of its children:
+
+<?php
+function deleteNode($node) {
+    deleteChildren($node);
+    $parent = $node->parentNode;
+    $oldnode = $parent->removeChild($node);
+}
+
+function deleteChildren($node) {
+    while (isset($node->firstChild)) {
+        deleteChildren($node->firstChild);
+        $node->removeChild($node->firstChild);
+    }
+}
+?>
+===============================================================================
+
+This method will remove all child nodes but leave the attributes (and namespace
+declarations) intact.
+
+<?php
+function removeChildren( &$node )
+{
+  $node->parentNode->replaceChild(
+    $n = $node->cloneNode( false ),
+    $node );
+
+  $node = $n;
+}
+?>
+===============================================================================
+
+I used the following to delete an entire node using the child element:
+
+<?php
+$childElement->parentNode->parentNode-> removeChild($childElement->parentNode);
+?>
+
+I could not have thought of it without the help of everyone who contributed to
+this thread.
+
+Thanks!
+
+(I had to introduce the extra space between parentNode->removeChild to get rid
+of the wordwrap() warning while posting this note)
+===============================================================================
+
+If you try to remove children of a nested node (e.g. a <ul> list that contains
+another <ul>) and only remove the first level of child nodes, you'll get a
+messed-up node object.
+
+Upon re-use of the messed-up node you'll get an error message that says: "Fatal
+error: Call to a member function blahblah() on a non-object".
+
+To remove ALL child nodes, use this recursive function instead:
+<?php
+/**
+* Helper function that removes all child nodes of $node recursively
+* (i.e. including child nodes of the child nodes and so forth).
+*/
+function remove_children(&$node) {
+  while ($node->firstChild) {
+    while ($node->firstChild->firstChild) {
+      remove_children($node->firstChild);
+    }
+    $node->removeChild($node->firstChild);
+  }
+}
+?>
+===============================================================================
+
+Or something like:
+
+<?php
+
+while ($node->childNodes->length)
+     $node->removeChild($node->firstChild);
+
+?>
+===============================================================================
+
+Note that iterating through the childNodes array and removing those children
+will stop the iteration.
+
+For example:
+<?php
+foreach($node->childNodes as $child)
+{
+  if(iWantToDeleteThisNode($child))
+     $child->parentNode->removeChild($child);
+}
+?>
+
+Will not work.  Note that in removing the node, the childNodes array gets
+rebuilt (it seems) and so only the first item will be removed.  In order to
+properly remove all the children you want to remove, you will need to do
+something like the following:
+
+<?php
+$nodesToDelete = array();
+foreach($node->childNodes as $child)
+{
+  if(iWantToDeleteThisNode($child))
+    $nodesToDelete[] = $child;
+}
+foreach($nodesToDelete as $node)
+{
+  $node->parentNode->removeChild($node);
+}
+?>
+
+I believe this is actually more efficient than the first snippet would be (if
+it worked) but obviously I cannot benchmark it.
+===============================================================================
+
+You may also use the hasChild function:
+<?php
+
+while($node->hasChildNodes()) {
+  $node->removeChild($node->childNodes->item(0));
+}
+
+?>
+
+When you remove a childNode, the next node becomes the first one!
+===============================================================================
+
+For those who don't understand >sbeam at onsetcorps dot net on 02-Feb-2005
+12:07< 'hack', here's a little discussion:
+
+First but *wrong* try would be:
+<?php
+foreach ($parent->childNodes as $child) {
+   $parent->removeChild($child);
+?>
+This doesn't work because DOM tree id modified on-the-fly and this confuses
+foreach loop.
+
+The idea behind sbeam's trick is that after removing the first item in the
+first iteration, the second item in childNodes nodelist immediately becomes the
+first item. That's why we must _always_ remove the first child. Here's another
+implementation:
+
+<?php
+$count = $parent->childNodes->length;
+for ($i = 0; $i < $count; $i++) {
+   $oldNode = $parent->removeChild($parent->childNodes->item(0)); // !!! not
+item($i) !!!
+}
+?>
+===============================================================================
+
+Back again on removing childs and iterators robustness.
+
+Things get a bit more complicated when you only want to remove 'some' nodes
+according to a certain condition. Then you can't just remove the first one
+repeatedly.
+
+The trick is to copy the content of the node list into a more robust collection
+than DOMNodeList, I name array!
+
+The following piece of code will, for instance, remove all empty child nodes:
+
+<?php
+// Copy childNodes array
+$childNodes = array();
+foreach($node->childNodes as $childNode) {
+  $childNodes[] = $childNode;
+}
+
+// Browse with the copy    
+foreach ($childNodes as $childNode) {
+  if (!$childNode->hasChildNodes()); {
+    $childNode->parentNode->removeChild($childNode);
+  }
+}
+?>
+===============================================================================
+
+This might be obvious, but might help someone as well...
+
+If you simply have a node that you need to remove (perhaps from an xpath) and
+don't know the parent node offhand (the examples seem to assume you have the
+parent in a variable), then you can do something easy like this...
+
+$node->parentNode->removeChild($node);
+
+parentNode is a scalar property of the Element.
+
+Hope that helps.
+
+--
+Blaine Garrett
+===============================================================================
+
+At the time of writing, I suppose rightfully, removeChild() removes only the
+selected node, but when you remove an element, it's child elements are not
+removed. If you want to achieve that, replaceChild() is the solution.
+
+The following should remove all descendants of the $node DOMNode, regardless of
+it's name:
+<?php
+$node->replaceChild(new DOMElement($node->nodeName), $node);
+?>
+If you're replacing the root element, you must explicitly state that with
+$node->documentElement as the second argument.

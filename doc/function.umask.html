@@ -1,0 +1,307 @@
+
+umask
+
+(PHP 4, PHP 5, PHP 7)
+
+umask — 改变当前的 umask
+
+说明
+
+int umask ([ int $mask ] )
+
+umask() 将 PHP 的 umask 设定为 mask & 0777 并返回原来的 umask。当 PHP 被作为服
+务器模块使用时，在每个请求结束后 umask 会被恢复。
+
+参数
+
+mask
+
+    The new umask.
+
+返回值
+
+无参数调用 umask() 会返回当前的 umask，有参数则返回原来的 umask。
+
+范例
+
+Example #1 umask() 例子
+
+<?php
+$old = umask(0);
+chmod("/path/some_dir/some_file.txt", 0755);
+umask($old);
+
+// Checking
+if ($old != umask()) {
+    die('An error occured while changing back the umask');
+}
+?>
+
+注释
+
+    Note:
+
+    在多线程的服务器上尽量避免使用这个函数。创建文件后要改变其权限最好还是使用 
+    chmod()。使用 umask() 会导致并发程序和服务器发生不可预知的情况，因为它们是
+    使用相同的 umask 的。
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+I think that the best way to understand umask is to say that umask is used to
+revoke permissions, not to set permissions.
+
+umask sets which permissions must be removed from the system default when you
+create a file or a directory.
+
+For example, a mask 0022 means that you don't want group and others modify the
+file.
+
+default 0666 rw-.rw-.rw-
+umask   0022 ---.-w-.-w-
+Final   0644 rw-.r--.r--
+
+That means that any file from now on will have 0644 permissions.
+
+It is important to understand that umask revokes, deletes permissions from
+system default, so it can´t grant permissions the system default hasn't. In the
+example above, with the 666 system default, there is no way you can use umask
+to create a file with execute permission. If you want to grant more
+permissions, use chmod.
+
+Be aware that system default permissions are not related to PHP (they depends
+upon server configuration). PHP has a default umask that is applied after
+system default base permissions. And there are different system default base
+permissions for files and directories.
+
+Usually, system default permissions for files are 666 and for directories 0777.
+And usually, default PHP umask is 0022
+===============================================================================
+
+"It is better to change the file permissions with chmod() after creating the
+file."
+
+The usual lacking of security knowledge within the PHP team rears its head once
+again.  You *always* want to have the file created with the proper permission. 
+Let me illustrate why:
+
+(a) you create new file with read permissions
+(b) an attacking script opens the file
+(c) you chmod the file to remove read permissions
+(d) you write sensitive data to the file
+
+Now, you might think that the changes of an attacking script getting to open
+the file before you chmod them are low.  And you're right.  But low changes are
+never low enough - you want zero chance.
+
+When creating a file that needs increased permissions, you always need to
+create the file with the proper permissions, and also create it with O_EXCL
+set.  If you don't do an exclusive create, you end up with this scenario:
+
+(a) attacker creates the file, makes it writable to everyone
+(b) you open the file with restricted permissions, but since it already exists,
+the file is merely opened and the permissions left alone
+(c) you write sensitive data into the insecure file
+
+Detecting the latter scenario is possible, but it requires a bit of work.  You
+have to check that the file's owner and group match the script's (that is,
+posix_geteuid(), not myuid()) and check the permissions - if any of those are
+incorrect, then the file is insecure - you can attempt to unlink() it and try
+again while logging a warning, of course.
+
+The only time when it is reasonable or safe to chmod() a file after creating it
+is when you want to grant extra permissions instead of removing them.  For
+example, it is completely safe to set the umask to 0077 and then chmoding the
+files you create afterward.
+
+Doing truly secure programming in PHP is difficult as is, and advice like this
+in the documentation just makes things worse.  Remember, kids, anything that
+applies to security in the C or UNIX worlds is 100% applicable to PHP.  The
+best thing you can possibly do for yourself as a PHP programmer is to learn and
+understand secure C and UNIX programming techniques.
+===============================================================================
+
+In case you don't understand why you need to "Avoid using this function in
+multithreaded webservers":
+
+It's because this function changes the umask at the process level, rather than
+only for PHP or for the current script.  If there are multiple simultaneous
+threads running in the process in which your PHP script is running, the change
+will apply to all of those threads at the same time hence why this is not safe
+for multithreaded use.
+
+I understand that if you are using the PHP module and Apache's prefork MPM,
+which is not multi-threaded, then you at least won't get race-condition
+problems such as this.  However, it is still worth noting that the umask
+setting, if not re-set, will persist for the life of that process even if the
+process is re-used to serve future PHP or non-PHP requests.
+===============================================================================
+
+umask takes away the given values from the standard mask 777.
+A graphical view shows this better:
+
+standard:
+rwxrwxrwx = 777
+will get with umask 002:
+rwxrwxr-x  = 775
+or will get with umask 077:
+rwx------ = 700
+
+and so on.
+===============================================================================
+
+"It is better to change the file permissions with chmod() after creating the
+file."
+
+If you take that advice seriously, consider setting your umask so that files
+are created private to your user, then use chmod to open them up.
+
+<?php
+// files will create as -rw-------
+umask(0077);
+
+// create a file, eg fopen()
+
+// give access: -rw-r--r--
+chmod('/path/to/file', 0644);
+?>
+
+Whenever reasonable, default to shut and open as needed (like above) instead of
+default to open and shut as needed.  The above still has a race condition, but
+the race condition will deny appropriate access instead of granting
+inappropriate access.
+===============================================================================
+
+The first comment perhaps didn't quite make clear what's on with your umask and
+the permissions.
+
+The permission passed to a command is first bitwise ANDed with the _INVERSE_ of
+the current umask, then applied to the file.
+
+For example, umask = 0011 and permission = 0775
+The inverse of 0011 = 0766
+
+0775 AND 0766
+= 111.111.101 AND 111.110.110
+= 111.110.100
+= 0764
+===============================================================================
+
+Clarification Of "mask & 0777":
+
+The manual's comment "umask() sets PHP's umask to mask & 0777 [...]" is merely
+implying that the method only affects file permissions, but not special modes
+such as the setuid, setgid or sticky bits. Curiously, PHP does not actually
+perform the bitwise operation itself, but instead assumes it will be done by a
+system call of the same name. On some systems such as OS X, umask effectively
+sets the umask as mask & 07777, but the extraneous bits are not applicable to
+subsequent PHP calls like mkdir(). Linux's umask does use 0777. Its manual
+entry has a comment similar to the PHP one, but with a parenthetical statement
+that helps explain what it means:
+
+"umask() sets the calling process's file mode creation mask (umask) to mask &
+0777 (i.e., only the file permission bits of mask are used) [...]"
+
+The fact that permissions can be determined by inverting a mask using the
+operation $mask & ~0777 is irrelevant, despite its similar appearance to $mask
+& 0777. The latter operation instead truncates $mask to the first nine
+low-order bits (i.e., the three rightmost octal digits [and note that the
+leading zero for octal notation is not itself a digit]). It does not change the
+remaining bits.
+
+For example, all of the following calls have the same effect: umask(0022),
+umask(07022), umask(261650) (decimal value of 0777022), and umask
+(0b111000010010) (binary notation for 07022).
+===============================================================================
+
+It is important to note that the mask parameter will accept values other than
+octal and that this can cause unexpected results.
+
+Setting umask(22) could be expected to reduce a file with default 0666
+permission to 0644 by applying a mask of 0022 but as the parameter is being
+supplied as a decimal it will be converted to octal silently and actually apply
+a mask of 0026 resulting in a final file permission of 0642.
+
+Similarly the value returned by umask is in decimal format. If you correctly
+apply a mask using umask(0022) and then query the new setting with umask() it
+will return a value of 18 (0022 octal is 18 decimal).
+
+In short, when applying permissions it is best to pad the supplied value with
+zeros to create an octal value (22 becomes 0022) and if you want to analyze the
+returned value remember to convert it to octal for ease of interpretation.
+===============================================================================
+
+You can use umask to solve the PHP session bug that appears in several PHP
+versions.
+
+<?php
+umask(0022);
+session_start();
+?>
+
+This will prevent sessions being created with inadequate permissions.
+===============================================================================
+
+On most UNIX environments the recommended default umask for files, defined in /
+home/user/.profile or /etc/profile, is 022 (chmod: 644). On trusted systems it
+is 002. Exercise caution when applying more liberal settings.
+===============================================================================
+
+Using (cmask - umask) is a wrong way to calculate the new mask:
+
+0022 - 0700 = 0656 WRONG
+0700 & ~0022 = 0700 CORRECT
+
+Correct php code:
+<?php
+$rmask = ($cmask & ~$umask);
+?>
+===============================================================================
+
+To play around with umasks and permissions use this little fragment:
+
+<?
+$umask = 0012;
+$perm  = 0777;
+printf("umask: %04o perm: %04o result: %04o\n",
+       $umask,$perm,$perm & (0777 - $umask));
+?>
+===============================================================================
+
+Notice that directory(s) and file(s) sometimes have different results.
+
+<?php
+umask(0670);                    //- set umask
+$handle = fopen('file', 'w');   //- 0006
+mkdir("/path/dir");             //- 0107
+?>
+
+calculate the result:
+<?php
+$umask = 0670;
+umask($umask);
+//- if you are creating a new directory, $permission = 0777;
+//- if you are creating a new file, $permission = 0666.
+printf( "result: %04o", $permission & ( 0777 - $umask) );
+?>
+
+BTW, as the manual said, the form of umask() is "int umask ( [int mask] )", so
+if you want to print/echo any umask, don't forget to convert it from DEC
+(because it returns a "int") to OCT.
+
+<?php
+$umask = umask();          //- returns the current umask, which is a "int"
+$umask = decoct($umask);   //- Now, $umask is a "string"
+echo $umask;
+?>
+
+Don't forget that the argument(parameter) is a "int", too.
+
+<?php
+umask(777);    //- WRONG! Even though you maybe use "umask 777" in some OS.
+umask(0777);   //- OK
+?>
+
+If there was any mistake, please correct my statement.

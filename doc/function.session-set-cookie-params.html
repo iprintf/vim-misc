@@ -1,0 +1,385 @@
+
+session_set_cookie_params
+
+(PHP 4, PHP 5, PHP 7)
+
+session_set_cookie_params — 设置会话 cookie 参数
+
+说明
+
+void session_set_cookie_params ( int $lifetime [, string $path [, string
+$domain [, bool $secure = false [, bool $httponly = false ]]]] )
+
+Cookie 参数可以在 php.ini 文件中定义，本函数仅在当前脚本执行过程中有效。因此，
+如果要通过函数修改 cookie 参数，需要对每个请求都要在调用 session_start() 函数之
+前调用 session_set_cookie_params() 函数。
+
+本函数会修改运行期 ini 设置值，可以通过 ini_get() 函数获取这些值。
+
+参数
+
+lifetime
+
+    Cookie 的生命周期，以秒为单位。
+
+path
+
+    此 cookie 的有效路径。 on the domain where 设置为“/”表示对于本域上所有的路
+    径此 cookie 都可用。
+
+domain
+
+    Cookie 的作用域。例如：“www.php.net”。如果要让 cookie 在所有的子域中都可用
+    ，此参数必须以点（.）开头，例如：“.php.net”。
+
+secure
+
+    设置为 TRUE 表示 cookie 仅在使用安全链接时可用。
+
+httponly
+
+    设置为 TRUE 表示 PHP 发送 cookie 的时候会使用 httponly 标记。
+
+返回值
+
+没有返回值。
+
+更新日志
+
+版本          说明
+5.2.0 加入 httponly 参数。
+
+参见
+
+  • session.cookie_lifetime
+  • session.cookie_path
+  • session.cookie_domain
+  • session.cookie_secure
+  • session.cookie_httponly
+  • session_get_cookie_params() - 获取会话 cookie 参数
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+As PHP's Session Control does not handle session lifetimes correctly when using
+session_set_cookie_params(), we need to do something in order to change the
+session expiry time every time the user visits our site. So, here's the
+problem.
+
+<?php
+  $lifetime=600;
+  session_set_cookie_params($lifetime);
+  session_start();
+?>
+
+This code doesn't change the lifetime of the session when the user gets back at
+our site or refreshes the page. The session WILL expire after $lifetime
+seconds, no matter how many times the user requests the page. So we just
+overwrite the session cookie as follows:
+
+<?php
+  $lifetime=600;
+  session_start();
+  setcookie(session_name(),session_id(),time()+$lifetime);
+?>
+
+And now we have the same session cookie with the lifetime set to the proper
+value.
+===============================================================================
+
+In Response to RC
+>23-Apr-2008 04:45
+>For anyone looking for which browsers support the HTTPOnly >flag, per my
+research:
+>
+>IE 6 SP 1 and higher.
+>Firefox 3 and higher.
+>Opera 9.50 and higher.
+
+Firefox 2.0 also supports them, but only since version 2.0.0.5.
+
+http://bugzilla.mozilla.org/show_bug.cgi?id=178993
+===============================================================================
+
+Setting the domain for cookies in session_set_cookie_params() only affects the
+domain used for the session cookie which is set by PHP.
+
+All other cookies set by calling the function setcookie() either:
+i) Use the domain set explicitly in the call to setcookie()
+or
+ii) Don't set the domain at all on the cookie and so the browser assumes it's
+for the current domain.
+
+So to make all your cookies be available across all sub-domains of your site
+you need to do this:
+
+<?php
+$currentCookieParams = session_get_cookie_params();
+
+$rootDomain = '.example.com';
+
+session_set_cookie_params(
+    $currentCookieParams["lifetime"],
+    $currentCookieParams["path"],
+    $rootDomain,
+    $currentCookieParams["secure"],
+    $currentCookieParams["httponly"]
+);
+
+session_name('mysessionname');
+session_start();
+
+setcookie($cookieName, $cookieValue, time() + 3600, '/', $rootDomain);
+?>
+===============================================================================
+
+Please take note of the garbage collection "feature" on systems like Ubuntu and
+Debian.
+
+apt-get installs a cron script at /etc/cron.d/php5 that checks the
+session.gc_maxlifetime variable and then deletes all old sessions every 9 and
+39 minutes.
+
+The problem is: If you set the maxlifetime for a specific virtual host, those
+settings will be ignored. Lets say you want your server to store sessions for
+only 30 minutes, but for one special website you want all sessions to be 24
+hours. If you set the session.gc_maxlifetime in .htaccess, your apache conf or
+use ini_set in your code, it won't work and sessions will still be destroyed
+after 30 minutes. That's because /usr/lib/php5/maxlifetime (found in that cron
+file) will always return the value in your php.ini, not the values you set in
+.htaccess.
+
+A workaround is to set the maxlifetime to the maximum your sites require, and
+then configure a shorter maxlifetime in your .htaccess for those sites that
+don't need it.
+
+Another solution is to give the php5 file in /etc/cron.d sane values, ie, only
+let it run at 3am in the morning, but you'll have to remember to block the
+replacement of this file it every time you update php.
+===============================================================================
+
+REMEMBER, that if you have a multi-subdomain site, you must put the following
+to enable a session id on the whole website:
+
+<?php
+session_set_cookie_params(0, '/', '.example.com');
+session_start();
+?>
+
+Otherwise, you'll have 2 diffrent sessions on e.g. news.example.com and
+download.example.com
+===============================================================================
+
+The information above about this function that it can only be used BEFORE
+session_start depends on how you use it. Because its also useful AFTER a
+session has started as follows:
+
+Example you wand to change an already set value of the session cookie expire
+time:
+
+<?php
+
+// Here we start as usual
+session_set_cookie_params('3600'); // 1 hour
+session_start();
+
+// More code...
+
+// Now we found in some database that the user whishes
+// the cookie to expire after for example 10 minutes
+// we can change it instantly !
+
+session_set_cookie_params('600'); // 10 minutes.
+session_regenerate_id(true);
+
+// This will delete old cookie and adopt new expire settings and the
+// old cookie variables in a new cookie
+
+?>
+
+Please note i only explained the browser (client) side changes of session
+cookie's expire time.
+===============================================================================
+
+when setting the path that the cookie is valid for, always remember to have
+that trailing '/'.
+
+CORRECT:
+session_set_cookie_params (0, '/yourpath/');
+
+INCORRECT:
+session_set_cookie_params (0, '/yourpath');
+
+no comment on how long it took me to realize that this was the cause of my
+authentication/session problems...
+===============================================================================
+
+Something that has taken me some time to debug: session_set_cookie_params()
+does not work when the domain param is just a one level domain, like it was a
+TLD.
+
+I have a site in an intranet and our internal domain is .local, so trying to
+set the cookie session to the .local domain does not work:
+
+session_set_cookie_params(0, '/', '.local'); // Does not work
+
+In all test I've done, setting the domain only works for SLDs and above:
+
+session_set_cookie_params(0 , '/', '.sld.local'); Does work
+
+This is nothing to do with PHP but the http protocol, witch does not permit
+setting cookies for TLDs for obvious security reasons.
+===============================================================================
+
+The below note is an excellent example of how to 'reset' the session expiration
+time upon a page refresh.
+
+However, take care to compensate for when the session expires and doesn't renew
+itself (a bug I believe). If the below example is run every time a script is
+executed, it will give an 'Undefined index <session name> error' after the
+session fails to renew. Precede it with and if isset() condition.
+
+<?php
+private function startSession($time = 3600, $ses = 'MYSES') {
+    session_set_cookie_params($time);
+    session_name($ses);
+    session_start();
+
+    // Reset the expiration time upon page load
+    if (isset($_COOKIE[$ses]))
+      setcookie($ses, $_COOKIE[$ses], time() + $time, "/");
+}
+?>
+
+The above example states that a session will last an hour without a page
+refresh until it is scrapped. Upon a page refresh, the expiration time is reset
+back to one hour again. If you wish to give users the option of 'staying logged
+in forever', just feed startSession a value of '99999999', which should last
+about 3 years.
+===============================================================================
+
+One might want to be noted that the browsers are case-sensitive to the $path
+parameter.
+
+For example, if you do this:
+<?php
+session_set_cookie_params(0,"/webapp/");
+session_start();
+?>
+
+and you visit your site in this way:
+example.com/WebApp/
+
+You would get a new session on every request.
+
+I'm not sure if this is the standard, but I see this happens on IE 6, Firefox
+12 (Palemoon, actually), Chrome 19 (Portable version), and on both IIS and
+Apache.
+===============================================================================
+
+Further to "info at xyzsite dot ru" and William Leslie, Safari on OS X also
+doesn't honour cookies with an underscore in the subdomain.
+
+The workaround I've found is to specify the parent domain as the cookie domain
+-- instead of "bad_name.example.com", set the path to ".example.com"; it's
+suboptimal, but gets the job done.
+===============================================================================
+
+i found it somewhat difficult to work with sessions due to the documentation
+not really denoting the necessity for the session name to be set via
+session_name() in order for session_set_cookie_params() to be of any use.  i
+found no reference to session_name() in this article, and my session functions
+would have been a disastrous mess were it not for a friend familiar with
+session.
+
+so, in essence, for anybody wondering about where to start: declare a session
+name before using session_set_cookie_params(), otherwise you might agitate php
+to the point of committing some atrocity against your webserver.
+===============================================================================
+
+For anyone looking for which browsers support the HTTPOnly flag, per my
+research:
+
+IE 6 SP 1 and higher.
+Firefox 3 and higher.
+Opera 9.50 and higher.
+
+As of Safari 3.1.1 (April 2008), Safari did not yet support this flag.
+
+This cookie flag was developed by Microsoft and is slowly making its way into
+other browsers: http://msdn2.microsoft.com/en-us/library/ms533046.aspx
+===============================================================================
+
+"Info at xyzsite dot ru" writes that Internet Explorer does not correctly
+handle cookies whose domain contains an underscore character.
+
+However, There's a good reason for this apparently faulty behavior: the
+underscore character is forbidden in DNS names.  RFC 3696 says:
+
+"The labels ... that make up a domain name must consist of only the ASCII
+alphabetic and numeric characters, plus the hyphen.  No other symbols or
+punctuation characters are permitted, nor is blank space."
+
+If the underscore works in Mozilla or other browsers, it's only because they
+are being lenient in the validation of domain names.
+===============================================================================
+
+The first argument to session_set_cookie_params is the number of seconds in the
+future (based on the server's current time) that the session will expire.  So
+if you want your sessions to last 100 days:
+
+$expireTime = 60*60*24*100; // 100 days
+session_set_cookie_params($expireTime);
+
+I was using time()+$expireTime, which is WRONG (a lot of the
+session_set_cookie_params() examples I found get this wrong, but probably don't
+care because they are just doing "infinite" sessions).
+===============================================================================
+
+Cross-domain Cookies do work in all browsers (path '/' server '.example.com'),
+except the case you try it in IE6/7 and the server name is retreived from :etc/
+hosts: file, in that case the cookie won't be even saved.
+===============================================================================
+
+[Editor's Note:
+
+Rasmus' Solution from the PHP-General list:
+
+Just use a session cookie (by not providing an expiry time) and add the
+server's expiry timestamp to the value of the cookie.  Then when you get
+that cookie sent to you, check it against your server's time and make the
+decision on whether to accept the cookie or not based on that.
+
+That way you are immune from people not having their system clocks set
+right.
+
+-Rasmus
+
+--zak@php.net]
+
+A couple things I noticed when using this. I think it only works if you set the
+session_set_cookie_params() function BEFORE the session_start() function.
+
+Also, when you set the "lifetime" on the cookie, it takes the seconds offset
+from the SERVER. it sends the cookie encoded to timeout at the SERVER time. So
+if your server is +2 minutes ahead of the client, and you set the cookie to
+timeout after 30 seconds, the client actually has 2 minutes and 30 seconds
+before the cookie times out. I don't know if there's any way that this can be
+patched in future versions, and the only alternative I think is setting cookies
+in javascript, which is hardly the point when using all these specific session
+functions.
+===============================================================================
+
+It appears that if you are setting a session cookie on https://
+subdomain123.example.com for .example.com that the default of the secure cookie
+is not false but true.
+
+So your cookie won't work on http://subdomainxyz.example.com unless you set the
+secure option to false.
+===============================================================================
+
+Just one more bad situation - cookies in Internet Explorer do not work with '_'
+in domain name. FF and Opera are O.K. So if your hostname is like
+test_host.example.com, IE cookies will not function correctly/

@@ -1,0 +1,510 @@
+
+imagecreatefromgif
+
+(PHP 4, PHP 5, PHP 7)
+
+imagecreatefromgif — 由文件或 URL 创建一个新图象。
+
+说明
+
+resource imagecreatefromgif ( string $filename )
+
+imagecreatefromgif() 返回一图像标识符，代表了从给定的文件名取得的图像。
+
+Tip
+
+如已启用fopen 包装器，在此函数中， URL 可作为文件名。关于如何指定文件名详见 
+fopen()。各种 wapper 的不同功能请参见支持的协议和封装协议，注意其用法及其可提供
+的预定义变量。
+
+参数
+
+filename
+
+    GIF 图像的路径。
+
+返回值
+
+成功后返回图象资源,失败后返回 FALSE 。
+
+范例
+
+Example #1 处理创建过程中的错误
+
+<?php
+function LoadGif($imgname)
+{
+    /* Attempt to open */
+    $im = @imagecreatefromgif($imgname);
+
+    /* See if it failed */
+    if(!$im)
+    {
+        /* Create a blank image */
+        $im = imagecreatetruecolor (150, 30);
+        $bgc = imagecolorallocate ($im, 255, 255, 255);
+        $tc = imagecolorallocate ($im, 0, 0, 0);
+
+        imagefilledrectangle ($im, 0, 0, 150, 30, $bgc);
+
+        /* Output an error message */
+        imagestring ($im, 1, 5, 5, 'Error loading ' . $imgname, $tc);
+    }
+
+    return $im;
+}
+
+header('Content-Type: image/gif');
+
+$img = LoadGif('bogus.image');
+
+imagegif($img);
+imagedestroy($img);
+?>
+
+以上例程的输出类似于：
+
+例子的输出：处理创建 GIF 过程中的错误
+
+注释
+
+    Note:
+
+    自 GD 库 1.6 版起所有的 GIF 支持都移除了，又在 GD 库 2.0.28 版起又加了回来
+    。如果使用二者之间版本的 GD 库时本函数不可用。
+
+Warning
+
+Windows 版本的 PHP 在 4.3.0 版之前不支持通过此函数访问远程文件，即使已经启用
+allow_url_fopen.
+
+
+User Contributed Notes 18 notes
+
+===============================================================================
+
+The version of is_ani that reads the file in 100Kb chunks is flawed as the end
+of frame marker might be split in between 2 chunks - so be careful.
+===============================================================================
+
+I have written this code to detect if a gif file is animated or not.  I thought
+I would share it :-)
+
+<?php
+
+function is_ani($filename)
+{
+        $filecontents=file_get_contents($filename);
+
+        $str_loc=0;
+        $count=0;
+        while ($count < 2) # There is no point in continuing after we find a
+2nd frame
+        {
+
+                $where1=strpos($filecontents,"\x00\x21\xF9\x04",$str_loc);
+                if ($where1 === FALSE)
+                {
+                        break;
+                }
+                else
+                {
+                        $str_loc=$where1+1;
+                        $where2=strpos($filecontents,"\x00\x2C",$str_loc);
+                        if ($where2 === FALSE)
+                        {
+                                break;
+                        }
+                        else
+                        {
+                                if ($where1+8 == $where2)
+                                {
+                                        $count++;
+                                }
+                                $str_loc=$where2+1;
+                        }
+                }
+        }
+
+        if ($count > 1)
+        {
+                return(true);
+
+        }
+        else
+        {
+                return(false);
+        }
+}
+
+exec("ls *gif" ,$allfiles);
+foreach ($allfiles as $thisfile)
+{
+        if (is_ani($thisfile))
+        {
+                echo "$thisfile is animated<BR>\n";
+        }
+        else
+        {
+                echo "$thisfile is NOT animated<BR>\n";
+        }
+}
+?>
+
+It could quite easily be modified to count the number of frames if you
+required.
+===============================================================================
+
+An updated is_ani based on issues reported here and elsewhere
+
+<?php
+function is_ani($filename) {
+    if(!($fh = @fopen($filename, 'rb')))
+        return false;
+    $count = 0;
+    //an animated gif contains multiple "frames", with each frame having a
+    //header made up of:
+    // * a static 4-byte sequence (\x00\x21\xF9\x04)
+    // * 4 variable bytes
+    // * a static 2-byte sequence (\x00\x2C) (some variants may use \x00\x21 ?)
+   
+    // We read through the file til we reach the end of the file, or we've
+found
+    // at least 2 frame headers
+    while(!feof($fh) && $count < 2) {
+        $chunk = fread($fh, 1024 * 100); //read 100kb at a time
+        $count += preg_match_all('#\x00\x21\xF9\x04.{4}\x00(\x2C|\x21)#s', 
+$chunk, $matches);
+   }
+   
+    fclose($fh);
+    return $count > 1;
+}
+?>
+===============================================================================
+
+Using the following script to generate(keep) animated GIF, it fixs GD lib
+animation problem.
+http://www.gdenhancer.com/
+===============================================================================
+
+Hopefully this might save someone a headache when using functions to check for
+animated GIFs.
+
+I have come across some some GIFs use the a different frame separator sequence,
+\x00\x21, instead of the official standard \x00\x2C. This seems to be happening
+with animated GIFs saved in Photoshop CS5, although I'm not quite sure if
+that's where the issue is originating from.
+
+Anyway, I've been using the pattern:
+"#\x00\x21\xF9\x04.{4}\x00(\x2C|\x21)#s"
+which seems to cover all GIFs, hopefully without misinterpreting.
+
+Cheers.
+===============================================================================
+
+I wanted to find out if a GIF is Black & White or Color, but I didn't want to
+wait around for imagecreatefromgif() to parse a 200k file (about 1 second) to
+get the color map, so I wrote this function to get a list of all the colors in
+the GIF. Hope it is useful for you.
+
+<?php
+function getGIFColorMap($file)
+{
+   $fp = fopen($file, 'r');
+   $buf = fread($fp, 1024);
+   fclose($fp);
+     
+   // Calculate number of colors
+   // buf[10] is the color info byte
+   $color_byte = ord($buf[10]);
+   $has_color_map = ($color_byte >> 7) & 1;
+   $color_res = (($color_byte >> 4) & 7) + 1;
+   $bits_per_pixel = ($color_byte & 7) + 1;
+   $color_count = 1 << $bits_per_pixel;
+     
+   if (!$has_color_map) return null;
+     
+   // buf[13] is the beginning of the color map
+   $color_map_index = 13;
+   $map = array();
+   for ($i=0; $i < $color_count; $i++) {
+       $index = $color_map_index + $i*3;
+       $r = ord($buf[$index]);
+       $g = ord($buf[$index + 1]);
+       $b = ord($buf[$index + 2]);
+       $map[$i] = array($r, $g, $b);
+   }
+   return $map;
+}
+?>
+===============================================================================
+
+If anyone is looking for the Yamasoft gif conversion utility :
+
+Although Yamasoft's website is long gone, the code can be found on the
+following websites :
+http://www.fpdf.org/phorum/read.php?f=1&i=9418&t=7568#9418
+
+http://www.fpdf.org/download/php-gif.zip
+
+http://phpthumb.sourceforge.net/index.php?source=phpthumb.gif.php
+===============================================================================
+
+thanks yamasoft for the gif to png lib.  it works!  but, there is one bug.  i
+changed line 1003 to this:
+
+if(isset($this->m_img->m_bTrans) && $this->m_img->m_bTrans && ($nColors > 0)) {
+
+because i was getting an error that m_bTrans is undefined.  i think this is
+because my gif has no transparency.  after i updated this line, there were no
+problems.
+
+thanks!
+
+-j
+===============================================================================
+
+I just installed gif2png on my server, and it took a little research on my part
+to figure out that this...
+
+passthru("$path/gif2png -O $image_path/image.gif")
+
+will not work if safe mode is on. If you're on a shared server, it probably is.
+You don't need to turn safe mode off, however, just set the safe_mode_exec_dir
+variable in your php.ini file to the directory where you installed gif2png.
+Then you'll be able to execute the program from your PHP script.
+===============================================================================
+
+function LoadGif ($imgname) {
+    $im = @ImageCreateFromGIF ($imgname); /* Attempt to open */
+    if (!$im) { /* See if it failed */
+        $im = ImageCreate (150, 30); /* Create a blank image */
+        $bgc = ImageColorAllocate ($im, 255, 255, 255);
+        $tc  = ImageColorAllocate ($im, 0, 0, 0);
+        ImageFilledRectangle ($im, 0, 0, 150, 30, $bgc);
+        /* Output an errmsg */
+        ImageString($im, 1, 5, 5, "Error loading $imgname", $tc);
+    }
+    return $im;
+}
+===============================================================================
+
+re: 09-May-2002 11:31
+
+Seems gif2png is no longer at http://www.tuxedo.org/~esr/gif2png/
+I found a Win32 version at http://www.r1ch.net/stuff/gif2png/
+(for the Unix and source, see http://catb.org/~esr/gif2png/ )
+
+In Win32,
+  passthru("gif2png $filename");
+works fine if gif2png.exe is in the path.
+It will overwrite the file with .png extension, so be careful,or use temp files
+as in the post referenced above (without the  -O; type "gif2png" at the command
+line for the options).
+
+I had a problem with exceeding the default 30 second execution time limit in
+PHP, so I added this line
+  set_time_limit(0); // some odd gifs take a long time (example, a 25K gif,
+700x700, mostly blank)
+===============================================================================
+
+After hours of search, I've finally found a program which can convert JPG to
+GIF.
+IJG - The Independent JPEG Group's JPEG software
+Version 6 which support GIF (read and write with LZW)
+and the version 6b which support GIF (write only without LZW)
+
+The name of the file is: jpegsrc.v6.tar.gz
+===============================================================================
+
+For users who just want GIF read (not write) support but:
+1) Don't want to patch GD libs
+2) Don't want to recompile something
+3) Don't have permissions to install conversion packages
+4) Any other reason...
+
+I created a small php script (around 25KB) which lets you load a GIF from a
+file (you even can specify the image index on animated GIFs) and then convert
+it to a PNG or BMP file.
+
+If I take one example:
+
+<?
+include("gif.php");
+
+$gif = gif_loadFile("./test.gif");
+
+if($gif) {
+    // GIF file successfully opened
+    if(gif_outputAsPNG($gif, "./test.png")) {
+        // Now, just use ImageCreateFromPng...
+        $img = ImageCreateFromPng("./test.png");
+
+        if($img) {
+            header("Content-Type: image/jpeg");
+            ImageJPEG($img);
+            ImageDestroy($img);
+        }
+        else {
+            // Could NOT open PNG
+        }
+    }
+    else {
+        // Could NOT convert GIF to PNG...
+    }
+}
+else {
+    // GIF not loaded...
+}
+?>
+
+Of course, it's slower than using appropriate software and/or libraries but
+it's quite useful for reading occasionaly some GIF files.
+
+You'll find the gif.php source code at: http://www.yamasoft.com/php-gif.zip
+
+Fabien
+===============================================================================
+
+FreeBSD users are lucky to have the option of compiling GIF support in GD2.x
+through the ports system.
+All you need to do is to export the "WITH_LZW=yes" global variable when
+compiling the graphics/gd2 port, e.g.:
+
+# cd /usr/ports/graphics/gd2
+# export WITH_LZW=yes
+# make && make install
+
+Then recompile and (re)install the www/mod_php4 port and you are in business...
+:)
+
+Good luck!
+===============================================================================
+
+If GD doesn't support GIFs & gif2png is not available & you are not an
+administrator, you can install it in your account like this:
+
+create do.php:
+<?
+  global $do;
+  passthru($do);
+?>
+
+then upload gif2png-2.4.6.tar.gz, unpack and install it:
+do.php?do=tar+-xvzf+gif2png-2.4.6.tar.gz
+do.php?do=gif2png-2.4.5/configure
+do.php?do=make
+
+Then remove all files except gif2png. Don't forget to remove do.php as it is a
+serious security hole in your system.
+
+Njoy!
+
+Anze
+===============================================================================
+
+Since gif support is removed from the more recent GD libraries, you can still
+use it via an external program.
+I've read somewhere about using ImageMagick and I tried myself but it's a quite
+big package and needs the X11 libs which are not available in some servers.
+The other option I found is to use a little prog "gif2png" http://
+www.tuxedo.org/~esr/gif2png/
+to convert gif files to png ones. It works under Unix and dos/win32/winnt and
+is very straightforward.
+If you need to modify an user uploaded gif file to save it into your site just
+use this:
+
+$path=$_FILES["photo"]["tmp_name"];
+passthru("/usr/bin/gif2png -d -O ".$path);
+$src_img=imagecreatefrompng( dirname($path)."/".basename($path,
+".gif").".png");
+
+This will convert the gif to a png and delete the gif file, then it will open
+the png with the GDlib so you can perform any operation on it.
+===============================================================================
+
+I just thought I'd let you guys know of a workaround for the lack of Gif
+support in the latest GD...aside from adding the patch.  It works just as good,
+from what I can tell, and is quite nice ;)
+
+Here goes:
+<?
+//Just grab some general image info
+$img = "path/to/image.gif";
+$imageInfo = GetImagesize($img);
+
+if ( $imageInfo[2] == 1 ) {
+   //it's a gif
+   $file = fread(fopen($path, "r"), filesize($path));
+
+   $fileHeader = "image/gif";
+   Header("Content-Type: ".$fileHeader);
+   echo $file;
+   fclose($file);
+}
+?>
+
+basically what that does is reads the file..through the "GetImageSize", which
+still returns if it's a GIF or not, (thank god), then if it's a gif, opens the
+file through normal filestream, sets the header to image type "gif" then prints
+it out.  Same as doing "ImageCreateFromGif($img)" and "ImageGif($img)", except
+that it doesn't require GD Gif support.  If you have any questions just ask me
+via email (chuckg@infinite9.com)
+===============================================================================
+
+<?php
+
+function myImageCreateFromGif($file_or_url) {
+
+        $dummy_file = "/tmp/dummy.gif";
+
+        # if this is a url, use fopen to get the file data, then
+        # save it to a dummy file
+        if (preg_match("/(http|ftp):\/\//i", $file_or_url)) {
+                # open the file using fopen, which supports remote URLs
+                $input = fopen($file_or_url, "rb");
+
+                # read the contents of the file
+                # will accept files up to 10Mb, but will probably get
+                # and EOF before that, we have to do it this way because
+                # filesize isn't designed to work with URLs.  sigh.
+                $image_data = fread($input, 10000000);
+
+                fclose($input);
+
+                # write the contents to a dummy file
+                $output = fopen("$dummy_file", "wb");
+                fwrite($output, $image_data);
+                fclose($output);
+
+                # create the gif from the dummy file
+                $image = ImageCreateFromGif($dummy_file);
+
+                # get rid of the dummy file
+                unlink($dummy_file);
+
+        }
+
+        # if it's not a URL, we can simply open the image directly
+        else {
+                $image = ImageCreateFromGif($file_or_url);
+        }
+
+        if ($image) { return $image; }
+        else { return 0; }
+}
+
+
+if (!$url) { $url = "http://scholar.lib.vt.edu/images/cornholio.gif";}
+$image = myImageCreateFromGif($url);
+
+if ($image == "" || $image == 0) {
+        print "<p>No Image data was returned...</p>\n";
+}
+else {
+        header("Content-Type: image/gif\n\n");
+        ImageGif($image);
+}
+
+?>

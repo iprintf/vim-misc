@@ -1,0 +1,399 @@
+
+PDO::beginTransaction
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.1.0)
+
+PDO::beginTransaction — 启动一个事务
+
+说明
+
+bool PDO::beginTransaction ( void )
+
+关闭自动提交模式。自动提交模式被关闭的同时，通过 PDO 对象实例对数据库做出的更改
+直到调用 PDO::commit() 结束事务才被提交。调用 PDO::rollBack() 将回滚对数据库做
+出的更改并将数据库连接返回到自动提交模式。
+
+包括 MySQL 在内的一些数据库，当发出一条类似 DROP TABLE 或 CREATE TABLE 这样的
+DDL 语句时，会自动进行一个隐式地事务提交。隐式地提交将阻止你在此事务范围内回滚
+任何其他更改。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 回滚一个事务
+
+下面例子在回滚此更改前开始一个事务并发出两条修改数据库的语句。但在 MySQL 中，
+DROP TABLE 语句自动提交事务，使得在此事务中的任何更改都不会被回滚。
+
+<?php
+/* 开始一个事务，关闭自动提交 */
+$dbh->beginTransaction();
+
+/*  更改数据库架构及数据 */
+$sth = $dbh->exec("DROP TABLE fruit");
+$sth = $dbh->exec("UPDATE dessert
+    SET name = 'hamburger'");
+
+/*  识别出错误并回滚更改 */
+$dbh->rollBack();
+
+/* 数据库连接现在返回到自动提交模式 */
+?>
+
+参见
+
+  • PDO::commit() - 提交一个事务
+  • PDO::rollBack() - 回滚一个事务
+  • 事务与自动提交
+
+
+User Contributed Notes 13 notes
+
+===============================================================================
+
+You can generate problems with nested beginTransaction and commit calls.
+example:
+
+beginTransaction()
+do imprortant stuff
+call method
+    beginTransaction()
+    basic stuff 1
+    basic stuff 2
+    commit()
+do most important stuff
+commit()
+
+Won't work and is dangerous since you could close your transaction too early
+with the nested commit().
+
+There is no need to mess you code and pass like a bool which indicate if
+transaction is already running. You could just overload the beginTransaction()
+and commit() in your PDO wrapper like this:
+
+<?php
+class Database extends \\PDO
+{
+    protected $transactionCounter = 0;
+    function beginTransaction()
+    {
+        if(!$this->transactionCounter++)
+            return parent::beginTransaction();
+       return $this->transactionCounter >= 0;
+    }
+
+    function commit()
+    {
+       if(!--$this->transactionCounter)
+           return parent::commit();
+       return $this->transactionCounter >= 0;
+    }
+
+    function rollback()
+    {
+        if($this->transactionCounter >= 0)
+        {
+            $this->transactionCounter = 0;
+            return parent::rollback();
+        }
+        $this->transactionCounter = 0;
+        return false;
+    }
+//...
+}
+?>
+===============================================================================
+
+The nested transaction example here is great, but it's missing a key piece of
+the puzzle.  Commits will commit everything, I only wanted commits to actually
+commit when the outermost commit has been completed.  This can be done in
+InnoDB with savepoints.
+
+<?php
+
+class Database extends PDO
+{
+
+    protected $transactionCount = 0;
+
+    public function beginTransaction()
+    {
+        if (!$this->transactionCounter++) {
+            return parent::beginTransaction();
+        }
+        $this->exec('SAVEPOINT trans'.$this->transactionCounter);
+        return $this->transactionCounter >= 0;
+    }
+
+    public function commit()
+    {
+        if (!--$this->transactionCounter) {
+            return parent::commit();
+        }
+        return $this->transactionCounter >= 0;
+    }
+
+    public function rollback()
+    {
+        if (--$this->transactionCounter) {
+            $this->exec('ROLLBACK TO trans'.$this->transactionCounter + 1);
+            return true;
+        }
+        return parent::rollback();
+    }
+   
+}
+===============================================================================
+
+If you are using PDO::SQLITE and need to support a high level of concurrency
+with locking, try preparing your statements prior to calling beginTransaction()
+and you may also need to call closeCursor() on SELECT statements to prevent the
+driver from thinking that there are open transactions.
+
+Here's an example (Windows, PHP version 5.2.8).  We test this by opening 2
+browser tabs to this script and running them at the same time.  If we put the
+beginTransaction before the prepare, the second browser tab would hit the catch
+block and the commit would throw another PDOException indicating that
+transactions were still open.
+
+<?php
+$conn = new PDO('sqlite:C:\path\to\file.sqlite');
+$stmt = $conn->prepare('INSERT INTO my_table(my_id, my_value) VALUES(?, ?)');
+$waiting = true; // Set a loop condition to test for
+while($waiting) {
+    try {
+        $conn->beginTransaction();
+        for($i=0; $i < 10; $i++) {
+            $stmt->bindValue(1, $i, PDO::PARAM_INT);
+            $stmt->bindValue(2, 'TEST', PDO::PARAM_STR);
+            $stmt->execute();
+            sleep(1);
+        }
+        $conn->commit();
+        $waiting = false;
+    } catch(PDOException $e) {
+        if(stripos($e->getMessage(), 'DATABASE IS LOCKED') !== false) {
+            // This should be specific to SQLite, sleep for 0.25 seconds
+            // and try again.  We do have to commit the open transaction first
+though
+            $conn->commit();
+            usleep(250000);
+        } else {
+            $conn->rollBack();
+            throw $e;
+        }
+    }
+}
+
+?>
+===============================================================================
+
+after TRUNCATE TABLE `table`  just as DELETE FROM `table`, so if whole table
+was deleted, aborts the transaction. And the rollback will not be passible.
+===============================================================================
+
+With Oracle, any structure statement will do an implicit commit.
+
+So : ALTER TABLE "my_table" DROP COLUMN "my_column";
+Can't be rolled back !
+
+Hope this will save time for others
+===============================================================================
+
+In response to "Anonymous / 20-Dec-2007 03:04"
+
+You could also extend the PDO class and hold a private flag to check if a
+transaction is already started.
+
+class MyPDO extends PDO {
+   protected $hasActiveTransaction = false;
+
+   function beginTransaction () {
+      if ( $this->hasActiveTransaction ) {
+         return false;
+      } else {
+         $this->hasActiveTransaction = parent::beginTransaction ();
+         return $this->hasActiveTransaction;
+      }
+   }
+
+   function commit () {
+      parent::commit ();
+      $this->hasActiveTransaction = false;
+   }
+
+   function rollback () {
+      parent::rollback ();
+      $this->hasActiveTransaction = false;
+   }
+
+}
+===============================================================================
+
+be aware that you also can not use TRUNCATE TABLE as this statement will
+trigger a commit just like CREATE TABLE or DROP TABLE
+
+it is best to only use SELECT, UPDATE and DELETE within a transaction, all
+other statements may cause commits thus breaking the atomicity of your
+transactions and their ability to rollback
+
+obviously you can use DELETE FROM <table> instead of TRUNCATE TABLE but be
+aware that there are differences between both statements, for example TRUNCATE
+resets the auto_increment value while DELETE does not.
+===============================================================================
+
+beginTransaction will through a PDOException if you execute it while a PDO
+transaction is already active.  Additionally the PDO engine doesn't seem to
+provide any way of determining if there is a transaction "in flight" so if you
+might be calling a function from within another function that starts a
+transaction you'll have to wrap the beginTransaction () call in a try .. catch
+block.
+===============================================================================
+
+please fix in answer #116669:
+
+    $this->exec('ROLLBACK TO trans'.$this->transactionCounter + 1);
+
+with
+
+    $this->exec('ROLLBACK TO trans'.($this->transactionCounter + 1));
+===============================================================================
+
+Strange behavior with pdo_firebird driver:
+
+<?php
+$dbh = new PDO ('','','',array( PDO :: ATTR_PERSISTENT=>true));
+$dbh->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION );
+$dbh -> exec ( "select 1;" ); //should be autocommitted
+try
+{
+   //$dbh->commit/rollback here fixes the issue;
+   $dbh -> beginTransaction (); // <- fails "with there is already an active
+transaction"
+   $dbh -> exec ( "select 1;" );
+   $dbh -> commit ();
+}
+catch ( Exception $e )
+{
+  $dbh -> rollBack ();
+}
+?>
+===============================================================================
+
+// If you need to set an ISOLATION level or LOCK MODE it needs to be done
+BEFORE you make the BeginTransaction() call...
+//
+//  **note** you should always check result codes on operations and do error
+handling.  This sample code
+//  assumes all the calls work so that the order of operations is accurate and
+easy to see
+//
+//  THIS IS using the PECL PDO::INFORMIX module, running on fedora core 6, php
+5.2.4
+//
+//    This is the correct way to address an informix -243 error (could not
+position within table) when there
+//    is no ISAM error indicating a table corruption.  A -243 can happen (if
+the table/indexes, etc., are ok)
+//    if a row is locked.  The code below sets the LOCK MODE to wait 2 minutes
+(120 seconds) before
+//    giving up.  In this example you get READ COMMITTED rows, if you don't
+need read committed
+//    but just need to get whatever data is there (ignoring locked rows, etc.)
+instead of
+//    "SET LOCK MODE TO WAIT 120" you could "SET ISOLATION TO DIRTY READ".
+//
+//    In informix you *must* manage how you do reads because it is very easy to
+trigger a
+//    lock table overflow (which downs the instance) if you have lots of rows,
+are using joins
+//    and have many updates happening. 
+//
+
+// e.g.,
+
+$sql= "SELECT FIRST 50 * FROM mytable WHERE mystuff=1 ORDER BY myid";         
+          /* define SQL query */
+
+try                                                                           
+    /* create an exception handler */
+    {
+    $dbh = new PDO("informix:host=......");
+        
+    if ($dbh)    /* did we connect? */
+        {
+        $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $dbh->query("SET LOCK MODE TO WAIT 120")
+       
+        # ----------------
+        # open transaction cursor
+        # ----------------
+        if    ( $dbh->beginTransaction() )                                     
+   # explicitly open cursor
+            {
+            try    /* open exception handler */
+                {
+                $stmt = $dbh->prepare($sql, array(PDO::ATTR_CURSOR =>
+PDO::CURSOR_SCROLL));
+
+                $stmt->execute();
+               
+                while ($row = $stmt->fetch(PDO::FETCH_NUM,
+PDO::FETCH_ORI_NEXT))
+                    {
+                    $data = $row[0] . "\t" . $row[1] . "\t" . $row[2] . "\t" .
+$row[3] . "\t" . $row[4] . "\t" . $row[5] . "\t" . $row[6] . "\t" . $row[7] . "
+\n" . $row[8] ;
+                    //print $data;
+                    print_r($row);
+                    };
+               
+                $stmt = null;
+                }
+            catch (PDOException $e)
+                {
+                print "Query Failed!\n\n";
+               
+                print "DBA FAIL:" . $e->getMessage();
+                };
+           
+            $dbh->rollback();                                                 
+     # abort any changes (ie. $dbh->commit()
+            $dbh = null;                                                       
+    # close connection
+            }
+        else
+            {
+            # we should never get here, it should go to the exception handler
+            print "Unable to establish connection...\n\n";
+            };
+        };
+    }
+catch (Exception $e)
+    {
+    $dbh->rollback();
+    echo "Failed: " . $e->getMessage();
+    };
+===============================================================================
+
+The example is misleading, Typically data definition language clauses (DDL)
+will trigger the database engine to automatically commit. It means that if you
+drop a table, that query will be executed regardless of the transaction.
+Ref-Mysql:
+    http://dev.mysql.com/doc/refman/5.0/en/implicit-commit.html
+===============================================================================
+
+For the PDO driver for the  Firebird server, you have to explicitly disable
+autocommit to initiate the  transaction as well as explicitly enable autocommit
+to commit it.
+
+$dbh->setAttribute( PDO::ATTR_AUTOCOMMIT, 0 );
+$dbh->beginTransaction();
+
+/** Query block */
+
+$dbh->commit();
+$dbh->setAttribute( PDO::ATTR_AUTOCOMMIT, 1 );

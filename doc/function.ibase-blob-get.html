@@ -1,0 +1,130 @@
+
+ibase_blob_get
+
+(PHP 5, PHP 7)
+
+ibase_blob_get — Get len bytes data from open blob
+
+说明
+
+string ibase_blob_get ( resource $blob_handle , int $len )
+
+This function returns at most len bytes from a BLOB that has been opened for
+reading by ibase_blob_open().
+
+    Note:
+
+    It is not possible to read from a BLOB that has been opened for writing by 
+    ibase_blob_create().
+
+参数
+
+blob_handle
+
+    A BLOB handle opened with ibase_blob_open().
+
+len
+
+    Size of returned data.
+
+返回值
+
+Returns at most len bytes from the BLOB, or FALSE on failure.
+
+范例
+
+Example #1 ibase_blob_get() example
+
+<?php
+$result    = ibase_query("SELECT blob_value FROM table");
+$data      = ibase_fetch_object($result);
+$blob_data = ibase_blob_info($data->BLOB_VALUE);
+$blob_hndl = ibase_blob_open($data->BLOB_VALUE);
+echo         ibase_blob_get($blob_hndl, $blob_data[0]);
+?>
+Whilst this example doesn't do much more than a 'ibase_blob_echo($data->
+BLOB_VALUE)' would do, it does show you how to get information into a $variable
+to manipulate as you please.
+
+参见
+
+  • ibase_blob_open() - Open blob for retrieving data parts
+  • ibase_blob_close() - Close blob
+  • ibase_blob_echo() - Output blob contents to browser
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+The first example is wrong, is missing ibase_blob_close() function.
+The correct example is :
+<?php
+   $sql      = "SELECT blob_value FROM table";
+   $result    = ibase_query($sql);
+   $data      = ibase_fetch_object($result);
+   $blob_data = ibase_blob_info($data->BLOB_VALUE);
+   $blob_hndl = ibase_blob_open($data->BLOB_VALUE);
+   print        ibase_blob_get($blob_hndl, $blob_data[0]);
+   // without close blob conection, php and ibase_blob_get() do not run.
+  ibase_blob_close($blob_hndl); 
+?>
+===============================================================================
+
+I found examples like these:
+
+$sql = "SELECT ID, CONTENTTYPE, BLOBSIZE, DATA,NAME ";
+$sql.= " FROM OM_BLOB WHERE ID = 42";
+$result = ibase_query($sql);
+while ($row=ibase_fetch_object($result))
+{
+    $blob_data = ibase_blob_info( $row->DATA);
+    $blob_hndl = ibase_blob_open($row->DATA);
+    $image = ibase_blob_get( $blob_hndl, $blob_data[0]);
+}
+but this won't work for large blobs.
+
+One solution for big blobs is to retrieve them by chunks:
+
+$sql = "SELECT ID, CONTENTTYPE, BLOBSIZE, DATA,NAME ";
+$sql.= " FROM OM_BLOB WHERE ID = 42";
+$result = ibase_query($sql);
+while ($row=ibase_fetch_object($result))
+{
+    $image = ibase_blob_get($blob_hndl,8192);
+    while($data = ibase_blob_get($blob_hndl, 8192)){
+        $image .= $data;
+    }
+}
+===============================================================================
+
+The ways mentioned above won't work with segmented blobs. To fix this, I use
+the following:
+(btw, $result->MFOTO is an image in the database)
+
+<?php
+    $result = ibase_fetch_object($result);
+   
+    /*
+     ibase_blob_info array:
+     [0] bloblength(total)
+     [1] number of segments
+     [2] size of largest segment
+     [3] stream or segmented blob
+     [4] ??
+    */
+    $blobinfo = ibase_blob_info($result->MFOTO);
+   
+    $blobhandle = ibase_blob_open($result->MFOTO);
+    for($i = 0; $i < $blobinfo[1]; $i++){
+        $readsize = $blobinfo[2];
+        if($i == ($blobinfo[1] - 1)){
+            $readsize = $blobinfo[0] - (($blobinfo[1] - 1) * $blobinfo[2]);
+        }
+        $totalimage .= ibase_blob_get($blobhandle, $readsize);
+    }
+    ibase_blob_close($blobhandle);
+    echo $totalimage;
+?>
+
+This should do the trick ;)

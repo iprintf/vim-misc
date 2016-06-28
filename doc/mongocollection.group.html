@@ -1,0 +1,240 @@
+
+MongoCollection::group
+
+(PECL mongo >=0.9.2)
+
+MongoCollection::group — Performs an operation similar to SQL's GROUP BY
+command
+
+说明
+
+public array MongoCollection::group ( mixed $keys , array $initial , MongoCode
+$reduce [, array $options = array() ] )
+
+参数
+
+keys
+
+    Fields to group by. If an array or non-code object is passed, it will be
+    the key used to group results.
+
+    1.0.4+: If keys is an instance of MongoCode, keys will be treated as a
+    function that returns the key to group by (see the "Passing a keys
+    function" example below).
+
+initial
+
+    Initial value of the aggregation counter object.
+
+reduce
+
+    A function that takes two arguments (the current document and the
+    aggregation to this point) and does the aggregation.
+
+options
+
+    Optional parameters to the group command. Valid options include:
+
+      □ "condition"
+
+        Criteria for including a document in the aggregation.
+
+      □ "finalize"
+
+        Function called once per unique key that takes the final output of the
+        reduce function.
+
+      □ "maxTimeMS"
+
+        Specifies a cumulative time limit in milliseconds for processing the
+        operation on the server (does not include idle time). If the operation
+        is not completed by the server within the timeout period, a
+        MongoExecutionTimeoutException will be thrown.
+
+返回值
+
+Returns an array containing the result.
+
+更新日志
+
+ 版本                     说明
+1.5.0  Added "maxTimeMS" option.
+1.2.11 Emits E_DEPRECATED when options is scalar.
+
+范例
+
+Example #1 MongoCollection::group() example
+
+This groups documents by category and creates a list of names within that
+category.
+
+<?php
+
+$collection->insert(array("category" => "fruit", "name" => "apple"));
+$collection->insert(array("category" => "fruit", "name" => "peach"));
+$collection->insert(array("category" => "fruit", "name" => "banana"));
+$collection->insert(array("category" => "veggie", "name" => "corn"));
+$collection->insert(array("category" => "veggie", "name" => "broccoli"));
+
+$keys = array("category" => 1);
+
+$initial = array("items" => array());
+
+$reduce = "function (obj, prev) { prev.items.push(obj.name); }";
+
+$g = $collection->group($keys, $initial, $reduce);
+
+echo json_encode($g['retval']);
+
+?>
+
+以上例程的输出类似于：
+
+[{"category":"fruit","items":["apple","peach","banana"]},{"category":"veggie","items":["corn","broccoli"]}]
+
+Example #2 MongoCollection::group() example
+
+This example doesn't use any key, so every document will be its own group. It
+also uses a condition: only documents that match this condition will be
+processed by the grouping function.
+
+<?php
+
+$collection->save(array("a" => 2));
+$collection->save(array("b" => 5));
+$collection->save(array("a" => 1));
+
+// use all fields
+$keys = array();
+
+// set intial values
+$initial = array("count" => 0);
+
+// JavaScript function to perform
+$reduce = "function (obj, prev) { prev.count++; }";
+
+// only use documents where the "a" field is greater than 1
+$condition = array('condition' => array("a" => array( '$gt' => 1)));
+
+$g = $collection->group($keys, $initial, $reduce, $condition);
+
+var_dump($g);
+
+?>
+
+以上例程的输出类似于：
+
+array(4) {
+  ["retval"]=>
+  array(1) {
+    [0]=>
+    array(1) {
+      ["count"]=>
+      float(1)
+    }
+  }
+  ["count"]=>
+  float(1)
+  ["keys"]=>
+  int(1)
+  ["ok"]=>
+  float(1)
+}
+
+Example #3 Passing a keys function
+
+If you want to group by something other than a field name, you can pass a
+function as the first parameter of MongoCollection::group() and it will be run
+against each document. The return value of the function will be used as its
+grouping value.
+
+This example demonstrates grouping by the num field modulo 4.
+
+<?php
+
+$c->group(new MongoCode('function(doc) { return {mod : doc.num % 4}; }'),
+     array("count" => 0),
+     new MongoCode('function(current, total) { total.count++; }'));
+
+?>
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+quoting Evgeniy Abduzhapparov example for correction, since is not working on
+newest php mongo driver version
+
+instead of use:
+<?php
+$initial = array('tags'=>array(), 'count'=>0);
+?>
+for var tags,
+you have to cast the empty array to an object or use new stdClass()
+<?php
+$initial = array('tags'=> (object) array(), 'count'=>0);
+
+$initial = array('tags'=> new stdClass(), 'count'=>0);
+?>
+===============================================================================
+
+Since the $options argument is no longer a scalar (deprecated since the 1.2.11
+version of the Mongo's PHP driver), you now must compose your $options as an
+associative array, otherwise you'll rise a "Implicitly passing condition as
+$options will be removed in the future" alert.
+
+Example:
+
+<?php
+
+$m = new Mongo();
+$db = $m->selectDB('test');
+$collection = new MongoCollection($db, 'FooBar');
+
+// grouping results by categories, where foo is 'bar'
+$keys = array('categorie'=>true, 'foo'=>true); // the fields list we want to
+return
+$initial = array('count' => 0); // gets a subtotal for each categorie
+$reduce = "function(obj,prev) { prev.count += 1; }"; // yes, this is js code
+$conditions = array('foo'=> 'bar');
+$grouped = $myColl::group($keys, $initial, $reduce, array('condition'=>
+$conditions));
+$result = $grouped['retval'];
+
+?>
+===============================================================================
+
+Here's my code to do an equivalent of a GROUP BY and a SUM
+
+<?php
+$contributionCol = $db->customers->contribution;
+$group = $contributionCol->group(array('date' => true), array('sum' => 0), 
+"function (obj, prev) { prev['sum'] += obj.amount; }");
+?>
+
+This groups by the 'date' column and sums over the 'amount' column. In my
+testing this was much slower than querying all rows and doing the Group by code
+with PHP. It could just be my particular setup and data set.
+
+Also at first my amount column was a string, which caused the results to be
+concatenated rather than arithmetic addition, something else to watch out for.
+
+[red.: Instead of this, please use the new aggregation framework. See the
+documentation for MongoCollection::aggregate]
+===============================================================================
+
+Here I am posting how I get tags from my documents. Documents should have
+'tags' field which is array of strings:
+{'tags':['php', 'mongo']}
+<?php
+$keys = array();
+$initial = array('tags'=>array(), 'count'=>0);
+$reduce = 'function (doc, total) { if (doc.tags.length) {doc.tags.forEach
+(function (e) {total.tags[e]=total.tags[e]||0; total.tags[e]++;
+total.count++;});} }';
+$criteria = array(
+    'condition' => array(
+        'tags' => array('$exists'=>true)
+    ),
+);
+?>

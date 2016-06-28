@@ -1,0 +1,354 @@
+
+get_called_class
+
+(PHP 5 >= 5.3.0, PHP 7)
+
+get_called_class — 后期静态绑定（"Late Static Binding"）类的名称
+
+说明
+
+string get_called_class ( void )
+
+获取静态方法调用的类名。
+
+返回值
+
+返回类的名称，如果不是在类中调用则返回 FALSE。
+
+范例
+
+Example #1 get_called_class() 的使用
+
+<?php
+
+class foo {
+    static public function test() {
+        var_dump(get_called_class());
+    }
+}
+
+class bar extends foo {
+}
+
+foo::test();
+bar::test();
+
+?>
+
+以上例程会输出：
+
+string(3) "foo"
+string(3) "bar"
+
+参见
+
+  • get_parent_class() - 返回对象或类的父类名
+  • get_class() - 返回对象的类名
+  • is_subclass_of() - 如果此对象是该类的子类，则返回 TRUE
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+As of PHP 5.5 you can also use "static::class" to get the name of the called
+class.
+
+<?php
+class Bar {
+    public static function test() {
+        var_dump(static::class);
+    }
+}
+
+class Foo extends Bar {
+
+}
+
+Foo::test();
+Bar::test();
+?>
+
+Output:
+
+string(3) "Foo"
+string(3) "Bar"
+===============================================================================
+
+get_called_class() in closure-scopes:
+
+<?PHP
+    ABSTRACT CLASS Base
+    {
+        protected static $stub = ['baz'];
+       
+        //final public function boot()
+        static public function boot()
+        {
+            print __METHOD__.'-> '.get_called_class().PHP_EOL;
+           
+            array_walk(static::$stub, function()
+            {
+                print __METHOD__.'-> '.get_called_class().PHP_EOL;
+            });
+        }
+       
+        public function __construct()
+        {
+            self::boot();
+            print __METHOD__.'-> '.get_called_class().PHP_EOL;
+           
+            array_walk(static::$stub, function()
+            {
+                print __METHOD__.'-> '.get_called_class().PHP_EOL;
+            });
+        }
+    }
+   
+    CLASS Sub EXTENDS Base
+    {
+    }
+   
+    // static boot
+        Base::boot(); print PHP_EOL;
+            // Base::boot        -> Base
+            // Base::{closure}    -> Base
+           
+        Sub::boot(); print PHP_EOL;
+            // Base::boot        -> Sub
+            // Base::{closure}    -> Base
+           
+        new sub;
+            // Base::boot        -> Sub
+            // Base::{closure}    -> Base
+            // Base->__construct    -> Sub
+            // Base->{closure}    -> Sub
+   
+    // instance boot
+        new sub;
+            // Base->boot        -> Sub
+            // Base->{closure}    -> Sub
+            // Base->__construct    -> Sub
+            // Base->{closure}    -> Sub
+?>
+===============================================================================
+
+SEE: http://php.net/manual/en/language.oop5.late-static-bindings.php
+
+I think it is worth mentioning on this page, that many uses of the value
+returned by get_called_function() could be handled with the new use of the old
+keyword static, as in
+<?php
+static::$foo;
+?>
+
+versus
+<?php
+$that=get_called_class();
+$that::$foo;
+?>
+
+I had been using $that:: as my conventional replacement for self:: until my
+googling landed me the url above.  I have replaced all uses of $that with
+static with success both as
+<?php
+static::$foo; //and...
+new static();
+?>
+
+Since static:: is listed with the limitation: "Another difference is that
+static:: can only refer to static properties." one may still need to use a
+$that:: to call static functions; though I have not yet needed this semantic.
+===============================================================================
+
+It is possible to write a completely self-contained Singleton base class in PHP
+5.3 using get_called_class.
+
+<?php
+
+abstract class Singleton {
+
+    protected function __construct() {
+    }
+
+    final public static function getInstance() {
+        static $aoInstance = array();
+
+        $calledClassName = get_called_class();
+
+        if (! isset ($aoInstance[$calledClassName])) {
+            $aoInstance[$calledClassName] = new $calledClassName();
+        }
+
+        return $aoInstance[$calledClassName];
+    }
+
+    final private function __clone() {
+    }
+}
+
+class DatabaseConnection extends Singleton {
+
+    protected $connection;
+
+    protected function __construct() {
+        // @todo Connect to the database
+    }
+
+    public function __destruct() {
+        // @todo Drop the connection to the database
+    }
+}
+
+$oDbConn = new DatabaseConnection();  // Fatal error
+
+$oDbConn = DatabaseConnection::getInstance();  // Returns single instance
+?>
+===============================================================================
+
+If you call a static getInstance() function to create a instance of a class
+from another class, this function have to be static, if it is not static the
+original name of the caller class and not of the current class get returned.
+
+example:
+
+<?php
+
+class a {
+  function getXName() {
+     return x::getClassName();
+  }
+  function getXStaticName() {
+     return x::getStaticClassName();
+  }
+
+}
+
+class b extends a {
+}
+
+class x {
+  public function getClassName() {
+    return get_called_class();
+  }
+  public static function getStaticClassName() {
+    return get_called_class();
+  }
+}
+
+$a = new a();
+
+$b = new b();
+
+echo $a->getXName(); // will return "a"
+echo $b->getXName(); // will return "b"
+
+echo $a->getXStaticName(); // will return "x"
+echo $b->getXStaticName(); // will return "x"
+
+?>
+===============================================================================
+
+Here's a simple way of getting the inheritance tree of a class, no matter which
+class the function was actually defined in. Will work as a static function
+method too.
+
+<?php
+class A {
+    public function get_class_tree(){
+        $cur_class = get_called_class();
+        do {
+            echo $cur_class;           
+        }
+        while($cur_class = get_parent_class($cur_class));
+    }
+}
+
+class B {
+
+}
+
+class C {
+
+}
+
+$foo = new C();
+$foo->get_class_tree();
+
+?>
+
+CBA
+===============================================================================
+
+Beware that this does not behave as expected if your method is not declared as
+static! For example:
+
+<?php
+
+class foo {
+  static public function test() {
+    var_dump(get_called_class());
+  }
+ 
+  public function testTwo() {
+    var_dump(get_called_class());
+  }
+}
+
+class bar extends foo {
+}
+
+class abc {
+  function test() {
+    foo::test();
+    bar::test();
+  }
+ 
+  function testTwo() {
+    foo::testTwo();
+    bar::testTwo();
+  }
+}
+
+echo "basic\n";
+foo::test();
+bar::test();
+
+echo "basic without static declaration\n";
+foo::testTwo();
+bar::testTwo();
+
+echo "in a class\n";
+$abc = new abc();
+$abc->test();
+
+echo "in a class without static declaration\n";
+$abc->testTwo();
+
+?>
+
+The result is:
+
+basic
+string 'foo'
+string 'bar'
+
+basic without static declaration
+string 'foo'
+string 'bar'
+
+in a class
+string 'foo'
+string 'bar'
+
+in a class without static declaration
+string 'abc'
+string 'abc'
+===============================================================================
+
+if you cannot avoid that carriage return characters will be used as windows
+linebreaks, you should set
+
+<?php ini_set("auto_detect_line_endings", 1); ?>
+
+otherwise the solutions posted here will fail.

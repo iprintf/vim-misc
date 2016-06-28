@@ -1,0 +1,457 @@
+
+The SWFAction class
+
+(PHP 5 <= 5.3.0, PECL ming SVN)
+
+简介
+
+SWFAction.
+
+类摘要
+
+SWFAction {
+/* 方法 */
+__construct ( string $script )
+}
+
+说明
+
+The script syntax is based on the C language, but with a lot taken out- the SWF
+bytecode machine is just too simpleminded to do a lot of things we might like.
+For instance, we can't implement function calls without a tremendous amount of
+hackery because the jump bytecode has a hardcoded offset value. No pushing your
+calling address to the stack and returning- every function would have to know
+exactly where to return to.
+
+So what's left? The compiler recognises the following tokens:
+
+  • break
+  • for
+  • continue
+  • if
+  • else
+  • do
+  • while
+
+There is no typed data; all values in the SWF action machine are stored as
+strings. The following functions can be used in expressions:
+
+time()
+    Returns the number of milliseconds (?) elapsed since the movie started.
+random(seed)
+    Returns a pseudo-random number in the range 0-seed.
+length(expr)
+    Returns the length of the given expression.
+int(number)
+    Returns the given number rounded down to the nearest integer.
+concat(expr, expr)
+    Returns the concatenation of the given expressions.
+ord(expr)
+    Returns the ASCII code for the given character
+chr(num)
+    Returns the character for the given ASCII code
+substr(string, location, length)
+    Returns the substring of length length at location location of the given
+    string string.
+
+Additionally, the following commands may be used:
+
+duplicateClip(clip, name, depth)
+    Duplicate the named movie clip (aka sprite). The new movie clip has name
+    name and is at depth depth.
+removeClip(expr)
+    Removes the named movie clip.
+trace(expr)
+    Write the given expression to the trace log. Doubtful that the browser
+    plugin does anything with this.
+startDrag(target, lock, [left, top, right, bottom])
+    Start dragging the movie clip target. The lock argument indicates whether
+    to lock the mouse (?)- use 0 (FALSE) or 1 (TRUE). Optional parameters
+    define a bounding area for the dragging.
+stopDrag()
+    Stop dragging my heart around. And this movie clip, too.
+callFrame(expr)
+    Call the named frame as a function.
+getURL(url, target, [method])
+    Load the given URL into the named target. The target argument corresponds
+    to HTML document targets (such as "_top" or "_blank"). The optional method
+    argument can be POST or GET if you want to submit variables back to the
+    server.
+loadMovie(url, target)
+    Load the given URL into the named target. The target argument can be a
+    frame name (I think), or one of the magical values "_level0" (replaces
+    current movie) or "_level1" (loads new movie on top of current movie).
+nextFrame()
+    Go to the next frame.
+prevFrame()
+    Go to the last (or, rather, previous) frame.
+play()
+    Start playing the movie.
+stop()
+    Stop playing the movie.
+toggleQuality()
+    Toggle between high and low quality.
+stopSounds()
+    Stop playing all sounds.
+gotoFrame(num)
+    Go to frame number num. Frame numbers start at 0.
+gotoFrame(name)
+    Go to the frame named name. Which does a lot of good, since I haven't added
+    frame labels yet.
+setTarget(expr)
+    Sets the context for action. Or so they say- I really have no idea what
+    this does.
+
+And there's one weird extra thing. The expression frameLoaded(num) can be used
+in if statements and while loops to check if the given frame number has been
+loaded yet. Well, it's supposed to, anyway, but I've never tested it and I
+seriously doubt it actually works. You can just use /:framesLoaded instead.
+
+Movie clips (all together now- aka sprites) have properties. You can read all
+of them (or can you?), you can set some of them, and here they are:
+
+  • x
+  • y
+  • xScale
+  • yScale
+  • currentFrame - (read-only)
+  • totalFrames - (read-only)
+  • alpha - transparency level
+  • visible - 1=on, 0=off (?)
+  • width - (read-only)
+  • height - (read-only)
+  • rotation
+  • target - (read-only) (???)
+  • framesLoaded - (read-only)
+  • name
+  • dropTarget - (read-only) (???)
+  • url - (read-only) (???)
+  • highQuality - 1=high, 0=low (?)
+  • focusRect - (???)
+  • soundBufTime - (???)
+
+So, setting a sprite's x position is as simple as /box.x = 100;. Why the slash
+in front of the box, though? That's how flash keeps track of the sprites in the
+movie, just like a Unix filesystem- here it shows that box is at the top level.
+If the sprite named box had another sprite named biff inside of it, you'd set
+its x position with /box/biff.x = 100;. At least, I think so; correct me if I'm
+wrong here.
+
+Table of Contents
+
+  • SWFAction::__construct — Creates a new SWFAction
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+A little story that may help some others - part 2
+
+and this didn't work... why not.. the trace gave me a clue:
+
+Warning: createEmptyMovieClip is not a function
+
+After a bit of digging around I found that this was because the flash movie was
+not running in the right version. There is a ming option that is mentioned in
+other posts but does not seem to be well documented and that is:
+
+ming_useswfversion(setversion)
+
+This makes the world of a difference as it sets what version of flash ming
+outputs its movies as.
+
+So the monent I added:
+
+ming_useswfversion(6)
+
+To the top of my php I not only did the createEmptyMovieClip function work but
+so did the loading and the variable was accessible. Huruh!
+
+So my final code now looks like this:
+
+<?php
+    ming_useswfversion(6);
+   
+    $m = new SWFMovie();
+    $m->setRate(30.000000);
+    $m->setDimension(480, 400);
+    $m->setBackground(0xff, 0xff, 0xff);
+
+    $m->add(new SWFAction('
+        myvar = "variable to pass to flash";
+        this.createEmptyMovieClip("mc", 99999);
+        mc.loadMovie ("/flash_file_created_by_hand.swf");
+    ');
+   
+    header('Content-type: application/x-shockwave-flash');
+    $m->output();
+?>
+
+instead of this:
+
+<?php
+    $m = new SWFMovie();
+    $m->setRate(30.000000);
+    $m->setDimension(480, 400);
+    $m->setBackground(0xff, 0xff, 0xff);
+
+    $m->add(new SWFAction('
+        myvar = "variable to pass to flash";
+        LoadMovie("/flash_file_created_by_hand.swf", "mc");
+    ');
+
+    /* -- make movie clip 'mc' that we will load flash_file_created_by_hand.swf
+into -- */
+    $s1 = new SWFSprite();  /* (1 frames) */
+    $s1->nextFrame();  /* (end of sprite frame 0) */
+    $i1 = $m->add($s1);
+    $i1->setName('mc');
+    $m->nextFrame();  /* (end of frame 0) */
+
+    header('Content-type: application/x-shockwave-flash');
+    $m->output();
+?>
+
+I dont pretend to be a flash guru.. but i know it took me a while to figure
+this all out.. so I thought that this post might one day be of help to someone.
+===============================================================================
+
+Sorry Guys ....
+the /box.x syntax is for fash version 4 ... and _root.box._x is used for flash
+version 5 ....
+Ming >= 0.2 assumes version 5 by default .... to use version 4 syntax, you must
+use ming_useswfversion before ...
+===============================================================================
+
+<?php
+// tip: if you want to STOP an animation using SWFAction(),
+// add a nextFrame() method immediately after, like this:
+
+$p = new SWFSprite();
+// ...
+$i->rotate(15);
+$p->nextFrame();
+// ...
+$p->add(new SWFAction("stop();"));
+$p->nextFrame();  // stops right here
+//(eop)
+
+// this also seems to work, stopping a movie *exactly* where you want
+// but only if not using SWFSprite() movie clips... then try the above.
+$m->add(new SWFAction("stop();"));
+$m->nextFrame();
+//(eop)
+
+// also: setFrames(n) doesn't seem to stop animation immediately...
+// by design, or perhaps a current version/older release bug(?)
+// the above was only tested with Ming 0.3beta1.  hope this helps.
+?>
+===============================================================================
+
+A little story that may help some others - part 1
+
+Upgrading from:
+
+I have used ming for several years now for injecting variables into flash,
+usually for menus. In a recent move to a new server all the ming/php stopped
+working. Ming was working and properly installed but the variables just weren't
+apparent within the flash movie.
+
+The old server is running:
+ming-0.2a_1         LGPL'ed Flash 4/5 movie output library with many languages
+php4-ming-4.4.1_1   The ming shared extension for php
+
+The new one is running:
+ming-0.3.0_3        LGPL'ed Flash 4/5 movie output library with many languages
+php5-ming-5.2.6_1   The ming shared extension for php
+
+So the way I have always done this is to put all my data together in php, and
+then put it into an array/variable in Flash. I then create a movie clip and
+load my movie.swf (made by hand in flash) into the movieclip.
+
+I know there are now cleaner ways of getting data loaded into Flash (even
+directly from Flash without ming) but as I have many many movies out there
+using ming it is far easier to change a few lines of php to get them working
+again than change every flash movie.
+
+So anyhow, here is the code:
+
+<?php
+    $m = new SWFMovie();
+    $m->setRate(30.000000);
+    $m->setDimension(480, 400);
+    $m->setBackground(0xff, 0xff, 0xff);
+
+    $m->add(new SWFAction('
+        myvar = "variable to pass to flash";
+        LoadMovie("/flash_file_created_by_hand.swf", "mc");
+    ');
+
+    /* -- make movie clip 'mc' that we will load flash_file_created_by_hand.swf
+into -- */
+    $s1 = new SWFSprite();  /* (1 frames) */
+    $s1->nextFrame();  /* (end of sprite frame 0) */
+    $i1 = $m->add($s1);
+    $i1->setName('mc');
+    $m->nextFrame();  /* (end of frame 0) */
+
+    header('Content-type: application/x-shockwave-flash');
+    $m->output();
+?>
+
+So what stopped working. Well this took me a while to work out, and even know I
+am not 100% sure but I can tell you what does work and how I got there.
+
+Firstly I needed some more debugging, and so installing the flash debug player
+http://www.adobe.com/support/flashplayer/downloads.html and 'Flash Tracer'
+https://addons.mozilla.org/en-US/firefox/addon/3469 enabled me to see trace
+output of the ming movie and my loaded movie (flash_file_created_by_hand.swf). 
+If you don't already know then this is worth knowing about. I had to play
+around a bit to get the debug player to write its log file, but it is worth it.
+Make sure you have the write settings when you publish your movie otherwise you
+will not be able to see the trace output.
+
+So now I can see trace... well I used to this run a few checks to see for
+instance if the movie clip was there :
+
+$s1->add(new SWFAction('
+    trace ("location of movie clip is: " + this._target);
+');   
+
+and so I played around.. and I could see that the movie clip 'mc' was being
+created and that the movie flash_file_created_by_hand.swf was being loaded
+into  it but well not much else. So I still coudn't see what was happening to
+the data. I currently suspect that the loadMovie was loading the movie into
+level0 or _root rather than into /mc (_root.mc) as thus wiping out the ming
+vabiables.. but I can't be sure. Given that the trace of the target etc happens
+before the loadmovie function I think this is entirely possible.
+
+Anyhow, I thought I may aswell try to do this a differt way.. that is create
+the movieclip from actionsript rather than with php/ming.. ie:
+
+$m->add(new SWFAction('
+    this.createEmptyMovieClip("mc", 999);
+');
+
+instead of:
+
+/* -- make movie clip 'mc' that we will load flash_file_created_by_hand.swf
+into -- */
+$s1 = new SWFSprite();  /* (1 frames) */
+$s1->nextFrame();  /* (end of sprite frame 0) */
+$i1 = $m->add($s1);
+$i1->setName('mc');
+$m->nextFrame();  /* (end of frame 0) */
+===============================================================================
+
+Typo in first example above:
+
+  $m->add(new SWFAction("/box.x += 3;"));
+
+Should be:
+
+  $m->add(new SWFAction("box.x += 3;"));
+===============================================================================
+
+There is some difficulty adressing objects in the swfmovie using swfaction, at
+least when using Windows and Flash Player 9. I debugged the .swf file generated
+with php ming in
+Adobe Flash CS3 and saw that my references on swfdisplayitems was not set
+correctly. I tried labelling a submovie (swfsprite object) "showmovie", but the
+actionscript did not seem to be able to reference the object. The debugging in
+Adobe Flash 9 showed the "showmovie" object to instead have the labelling
+"_level0.instance1", I adjusted the code and then was able to manipulate the
+objects in my swfmovie. The naming scheme seems to follow this
+"_level0.instanceX" labelling, check by debugging your .swf movies generated
+from php ming at least in Windows+Flash player 9 to check if swfdisplayitem's
+method setname also does not work here.
+
+Tore Aurstad, Norway
+===============================================================================
+
+for creating a play/pause button I used this script:
+<?php
+//pause button
+  $b = new SWFButton();
+  $b->addShape(rect(0, 0xff, 0), SWFBUTTON_HIT | SWFBUTTON_UP | SWFBUTTON_DOWN 
+| SWFBUTTON_OVER);
+  $b->addAction(new SWFAction("stop();"),SWFBUTTON_MOUSEDOWN);
+  $i = $movie->add($b);
+
+//play button
+  $b = new SWFButton();
+  $b->addShape(rect_two(0, 0xff, 0), SWFBUTTON_HIT | SWFBUTTON_UP | 
+SWFBUTTON_DOWN | SWFBUTTON_OVER);
+  $b->addAction(new SWFAction("play();"),SWFBUTTON_MOUSEDOWN);
+  $i = $movie->add($b);
+?>
+it has to be run during every frame for the buttons to be in every frame...
+hope that helps somebody....
+===============================================================================
+
+fscommand, the proper way to call a javascript function from a flash animation
+seems not to work in Ming at the moment, here is a commented example on how to
+do that :
+
+http://blog.theoconcept.com/flashlink.php
+===============================================================================
+
+If you want to open an URL in a new window, define a shape ($ashape) and use
+this code:
+
+<?php
+$b = new SWFButton();
+$b->addShape($ashape, SWFBUTTON_HIT | SWFBUTTON_UP | SWFBUTTON_DOWN | 
+SWFBUTTON_OVER);
+$b->addAction(
+    new SWFAction(
+    'getURL("http://www.php.net","_blank");' // _blank is the target like in
+html
+    ), SWFBUTTON_MOUSEDOWN
+);
+?>
+
+But if you want it in the same window use this addAction():
+
+<?php
+$b->addAction(
+    new SWFAction(
+    'this.getURL("http://www.php.net");'
+    ), SWFBUTTON_MOUSEDOWN
+);
+?>
+===============================================================================
+
+Printing Flash Movies
+
+When a browser tries to print flash, the autoscaling can make it look ugly.
+users have to right click on the flash and select "print" to get it to print
+properly. (so that thier flash player is handling the printing, not the
+browser) If you dont want to require this of your users, you can create a print
+button with the following action:
+
+getURL('print:', '/');
+
+by default, this prints ALL frames. to avoid this, just put:
+
+$m->labelFrame("#p");
+before:
+$m->nextFrame();
+
+where $m is your SWFMovie. the #p label denotes a printable frame. (this also
+allows you to build your movie, then throw the print button into the next frame
+and not have it show up when you print. )
+===============================================================================
+
+Ming 0.3 (current cvs) can use most MX actionscript, just set the swf version
+to 6
+
+ming_useswfversion(6);
+===============================================================================
+
+fscommand() doesn't work (at least in Ming 0.2a), but there is a workaround.
+Instead of:
+fscommand("do","something");
+use:
+getURL("fscommand:do","something");

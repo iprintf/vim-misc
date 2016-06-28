@@ -1,0 +1,181 @@
+
+openssl_pkey_get_public
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+openssl_pkey_get_public — Extract public key from certificate and prepare it
+for use
+
+说明
+
+resource openssl_pkey_get_public ( mixed $certificate )
+
+openssl_get_publickey() extracts the public key from certificate and prepares
+it for use by other functions.
+
+参数
+
+certificate
+
+    certificate can be one of the following:
+     1. an X.509 certificate resource
+     2. a string having the format file://path/to/file.pem. The named file must
+        contain a PEM encoded certificate/public key (it may contain both).
+     3. A PEM formatted public key.
+
+返回值
+
+Returns a positive key resource identifier on success, or FALSE on error.
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+You must also use the string representation of the certificate to get the
+public key resource:
+
+$dn = array();  // use defaults
+$res_privkey = openssl_pkey_new();
+$res_csr = openssl_csr_new($dn, $res_privkey);
+$res_cert = openssl_csr_sign($res_csr, null, $res_privkey, $ndays);
+
+openssl_x509_export($res_cert, $str_cert);
+
+$res_pubkey = openssl_pkey_get_public($str_cert);
+===============================================================================
+
+you can get (and save to file) public key using openssl_pkey_get_details
+(resource $key ) function:
+
+<?php
+$pub_key = openssl_pkey_get_public(file_get_contents('./cert.crt'));
+$keyData = openssl_pkey_get_details($pub_key);
+file_put_contents('./key.pub', $keyData['key']);
+?>
+===============================================================================
+
+If you are trying to read a PKCS#1 RSA public key you run into trouble, because
+openssl wants the public key in X.509 style.
+
+The PKCS#1 RSA public key
+
+-----BEGIN RSA PUBLIC KEY-----
+MIIBCgKCAQEAgYxTW5Yj+5QiQtlPMnS9kqQ/HVp+T2KtmvShe68cm8luR7Dampmb
+[...]
+cbn6n2FsV91BlEnrAKq65PGJxcwcH5+aJwIDAQAB
+-----END RSA PUBLIC KEY-----
+
+.. is  not readable while the X.509 style public key
+
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAgYxTW5Yj+5QiQtlPMnS9
+[..]
+JwIDAQAB
+-----END PUBLIC KEY-----
+
+is. You can use an easy (and dirty) work around to read the PKCS#1 RSA anyway.
+The first few bytes of the X.509 style public key contain header information
+and can shamelessly be copied.
+
+In other words: Delete everything after the first 32 bytes from the above X.509
+key (starting behind Q8A) and attach your PKCS#1 data, reformat to 64 bytes
+length and use it with openssl.
+
+Please note: The above example only works for 2048 bit length.
+
+Like I said - it's kind of dirty - but hey - if you're as desperate as I was.
+
+Michaela
+===============================================================================
+
+This documentation notes it can take a PEM-formatted private key, but as per
+bug #25614, this is not possible in any form. The function simply returns a
+FALSE.
+
+The only thing you can get public keys out of are X.509 certificates.
+
+Furthermore, there is NO way to export a public key into a PEM-encoded form.
+===============================================================================
+
+found the cert/public key for 2048 bits is this format:
+
+-----BEGIN PUBLIC KEY-----
+X509 signature + PEM sig + modulus + 'ID' + exponent
+-----END PUBLIC KEY-----
+
+so the variables are:
+-----BEGIN PUBLIC KEY-----
+'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A' . 'MIIBCgKCAQEA' . $modulus . 'ID' .
+$exponent
+-----END PUBLIC KEY-----
+
+<?php wordwrap($cert, 64, "\r\n", true); ?>
+===============================================================================
+
+Found it difficult to get my head around this due to lack of documentation.
+
+But the process I followed for all this was:
+Generate private key:
+openssl genrsa -des3 -out private.pem 1024
+
+Generate public key:
+openssl rsa -in private.pem -out public.pem -outform PEM -pubout
+
+Then in PHP:
+$passphrase = 'somestring';
+$key_private = openssl_get_privatekey(file_get_contents('private.pem'),
+$passphrase);
+$key_public = openssl_get_publickey(file_get_contents('public.pem'));
+
+Probably not the best way of doing it, but a lot simpler than the other
+examples on the site. I was having trouble getting the pubkey, it wasn't
+exactly specified very well, and I had made a mistake in generating it so it
+wasn't working for that reason as well.
+===============================================================================
+
+Small error in this code:
+
+$pub_key = openssl_pkey_get_public(file_get_contents('./cert.crt'));
+$keyData = openssl_pkey_get_details($pub_key);
+file_put_contents('./key.pub', $keyData['key']);
+===============================================================================
+
+Note this will read public keys from PEM formatted public keys as well:
+
+<?php
+$key = <<<EOF
+-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDXX/MsKEBLcLeKA1d/i7ufG1qs
+qS97xFkIRSeX3TwmHic843AfVrzoh2pZUeOvK9ZLZQpHSM7DoHMYDGD1273+FvZX
+Ypf5LiFtecfxko/Cku16zy6WAeCYVFjjlveBhwPmPCIk+qDRYeiIW05QE2XK+CuD
+nJ7sxxXIJSSgD3Jo5wIDAQAB
+-----END PUBLIC KEY-----
+EOF;
+
+print $key;
+$res = openssl_pkey_get_public($key);
+print_r(openssl_pkey_get_details($res));
+?>
+
+Note that contrary to the documentation, openssl_pkey_get_details() will *not*
+read PEM directly, and you have to go through this step.
+===============================================================================
+
+If you have a 4096 bit key pair and are trying to use a public key that begins
+with:
+
+-----BEGIN RSA PUBLIC KEY-----
+
+and you need to convert it for this function to use, you can convert it by
+prepending the static header information:
+
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8A
+
+Such as:
+
+$start_key = str_replace('-----BEGIN RSA PUBLIC KEY-----', '', $start_key);
+$start_key = trim(str_replace('-----END RSA PUBLIC KEY-----', '', $start_key));
+$key = 'MIICIjANBgkqhkiG9w0BAQEFAAOCAg8A' . str_replace("\n", '', $start_key);
+$key = "-----BEGIN PUBLIC KEY-----\n" . wordwrap($key, 64, "\n", true) . "\
+n-----END PUBLIC KEY-----";

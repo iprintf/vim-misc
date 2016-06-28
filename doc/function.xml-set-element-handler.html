@@ -1,0 +1,665 @@
+
+xml_set_element_handler
+
+(PHP 4, PHP 5, PHP 7)
+
+xml_set_element_handler — 建立起始和终止元素处理器
+
+说明
+
+bool xml_set_element_handler ( resource $parser , callable
+$start_element_handler , callable $end_element_handler )
+
+为 parser 参数指定的 XML 解析器建立元素处理器函数。参数 start_element_handler
+和 end_element_handler 为表示函数名称的字符串，这些函数必须在为 parser 指定的解
+析器调用 xml_parse() 函数时已存在。
+
+参数
+
+parser
+
+    XML 解析器的引用，用于建立起始和终止元素处理器。
+
+start_element_handler
+
+    由 start_element_handler 参数命名的函数名必须接受三个参数：
+    start_element_handler ( resource $parser , string $name , array $attribs )
+
+    parser
+        第一个参数 parser 为指向要调用处理器的 XML 解析器的指针。
+    name
+        第二个参数 name 为该处理器为之被调用的元素名。如果大小写折叠（
+        case-folding）对该解析器有效，元素名将用大写字母表示。
+    attribs
+        第三个参数 attribs 为一个包含有对应元素的属性的数组（如果该元素有属性）
+        。数组元素的下标为属性名，元素的值即为属性的值。属性名将以和元素名同样
+        的标准进行大小写折叠（case-folded），其值不进行大小写折叠。属性的原始顺
+        序将会被参数保留，用 each() 函数遍历 attribs 时，该数组下表的顺序和属性
+        的顺序相同。
+
+        Note: 除了函数名，含有对象引用的数组和方法名也可以作为参数。
+
+end_element_handler
+
+    由 end_element_handler 参数命名的函数名必须接受两个参数：
+    end_element_handler ( resource $parser , string $name )
+
+    parser
+        第一个参数 parser 为指向要调用处理器的 XML 解析器的指针。
+    name
+        第二个参数 name 为该处理器为之被调用的元素名。如果大小写折叠（
+        case-folding）对该解析器有效，元素名将用大写字母表示。
+
+    如果处理器函数名被设置为空字符串或者 FALSE，则该有问题的处理器将被屏蔽。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+In response to landb at mail dot net...
+
+As the notes mention, you can pass an array that contains the reference to an
+object and a method name when you need... so you can call methods in your own
+class as handlers like this:
+
+xml_set_element_handler($parser, array($this,"_startElement"), array
+($this,"_endElement"));
+
+Hope it helps...
+===============================================================================
+
+Here is another example of detecting empty elements. I works with libxml2. Note
+that it handles buffer boundaries.
+
+<?php
+
+$depth = 0; //current depth, used for pretty printing
+$empty = false; //whether the tag is empty
+$offset = 0; //the index of the start of the current buffer within the stream
+
+function tagStart($parser, $name, array $attribs) {
+    global $depth, $empty, $data, $offset, $lastchar;
+    $idx = xml_get_current_byte_index($parser);
+    /* xml_get_current_byte_index returns index within the streams and not
+       within the buffer.*/
+   
+    /* Check if the index is within the buffer. */
+    if (isset($data[$idx - $offset])) {
+        $c = $data[$idx - $offset];
+    } else {
+        /* If it isn't simple use the last character of the buffer. */
+        $c = $lastchar;
+    }
+    $empty = $c == '/';
+    echo str_repeat("\t", $depth), "<$name", ($empty ? '/>' : '>'), "\n";
+    if (!$empty) ++$depth;
+}
+
+function tagEnd($parser, $name) {
+    global $depth, $empty;
+    if (!$empty) {
+        --$depth;
+        echo str_repeat("\t", $depth), "</$name>\n";
+    } else {
+        $empty = false;
+    }
+}
+
+$parser = xml_parser_create();
+xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, false);
+xml_set_element_handler($parser, 'tagStart', 'tagEnd');
+
+$data1 = '
+<test>
+    <empty att="3" />
+    <nocontent></nocontent>
+    <content>
+        <empty/>
+        <empty/>
+    </content>
+    <empty/';
+
+$data2 = '>
+    <empty att="5" />
+</test>
+';
+
+$data = &$data1;
+$length = strlen($data1);
+$lastchar = $data[$length-1];
+xml_parse($parser, $data1);
+$offset .= $length;
+$data = &$data2;
+xml_parse($parser, $data2);
+===============================================================================
+
+This documentation is somewhat awry. I know it's been said many times before,
+but it bears repeating...
+
+If using PHP4, you may be required to use xml_set_object() instead of calling
+any of the xml_set_*_handler() functions with a two-item array. It will work
+fine on PHP5, but move the same code to PHP4 and it will create one copie of
+$this (even if you use &$this) for each handler you set!
+
+<?php
+// This code will fail mysteriously on PHP4.
+$this->parser = xml_parser_create();
+xml_set_element_handler(
+            $this->parser,
+            array(&$this,"start_tag"),
+            array(&$this,"end_tag")
+        );
+        xml_set_character_data_handler(
+            $this->parser,
+            array(&$this,"tag_data")
+        );
+?>
+
+<?php
+// This code will work on PHP4.
+$this->parser = xml_parser_create();
+xml_set_object($this->parser,&$this);
+xml_set_element_handler(
+            $this->parser,
+            "start_tag",
+            "end_tag"
+        );
+        xml_set_character_data_handler(
+            $this->parser,
+            "tag_data"
+        );
+?>
+===============================================================================
+
+I modified the previous script, so that it is associative. I find it more
+useful that way. BTW I prefer strtolower() things, but that's not mandatory at
+all.
+
+<?php
+
+$file = "data.xml";
+$depth = 0;
+$tree = array();
+$tree['name'] = "root";
+$stack[] = &$tree;
+
+function startElement($parser, $name, $attrs) {
+   global $depth;
+   global $stack;
+   global $tree;
+ 
+   $element = array();
+   foreach ($attrs as $key => $value) {
+       $element[strtolower($key)]=$value;
+   }
+
+   end($stack);
+   $stack[key($stack)][strtolower($name)] = &$element;
+   $stack[strtolower($name)] = &$element;
+  
+   $depth++;
+}
+
+function endElement($parser, $name) {
+   global $depth;
+   global $stack;
+
+   array_pop($stack);
+   $depth--;
+}
+
+$xml_parser = xml_parser_create();
+xml_set_element_handler($xml_parser, "startElement", "endElement");
+if (!($fp = fopen($file, "r"))) {
+   die("could not open XML input");
+}
+
+while ($data = fread($fp, 4096)) {
+   if (!xml_parse($xml_parser, $data, feof($fp))) {
+       die(sprintf("XML error: %s at line %d",
+                   xml_error_string(xml_get_error_code($xml_parser)),
+                   xml_get_current_line_number($xml_parser)));
+   }
+}
+xml_parser_free($xml_parser);
+$tree = end(end($stack));
+echo "<pre>";
+print_r($tree);
+echo "</pre>";
+
+?>
+===============================================================================
+
+My 25 cents. This example show how to parse a XML in a associative array tree.
+
+<?php
+
+$file = "flow/flow.xml";
+$depth = 0;
+$tree = array();
+$tree['name'] = "root";
+$stack[count($stack)] = &$tree;
+
+function startElement($parser, $name, $attrs) {
+   global $depth;
+   global $stack;
+   global $tree;
+  
+   $element = array();
+   $element['name'] = $name;
+   foreach ($attrs as $key => $value) {
+        //echo $key."=".$value;
+        $element[$key]=$value;
+    }
+
+   $last = &$stack[count($stack)-1];
+   $last[count($last)-1] = &$element;
+   $stack[count($stack)] = &$element;
+
+   $depth++;
+}
+
+function endElement($parser, $name) {
+   global $depth;
+   global $stack;
+
+   array_pop($stack);
+   $depth--;
+}
+
+$xml_parser = xml_parser_create();
+xml_set_element_handler($xml_parser, "startElement", "endElement");
+if (!($fp = fopen($file, "r"))) {
+   die("could not open XML input");
+}
+
+while ($data = fread($fp, 4096)) {
+   if (!xml_parse($xml_parser, $data, feof($fp))) {
+       die(sprintf("XML error: %s at line %d",
+                   xml_error_string(xml_get_error_code($xml_parser)),
+                   xml_get_current_line_number($xml_parser)));
+   }
+}
+xml_parser_free($xml_parser);
+$tree = $stack[0][0];
+echo "<pre>";
+print_r($tree);
+echo "</pre>";
+===============================================================================
+
+I ran into the same problem with 'ibjoel at hotmail dot com' in regards to
+self-closing tags, and found that the script that he/she wrote did not work as
+I expected.
+I played around with some of php's functions and examples and compiled
+something, which may not be the neatest solution, but it works for the data
+that 'ibjoel at hotmail dot com' provided.
+The data needs to be read from a file though, so the fp can be utilised. It
+still uses the xml_get_current_byte_index(resource parser) trick, but this
+time, I check for the last 2 character before the index and test if it's "/>".
+
+<?php
+/* myxmltest.xml:
+<normal_tag>
+  <self_close_tag />
+     data
+  <normal_tag>data
+     <self_close_tag attr="value" />
+  </normal_tag>
+     data
+  <normal_tag></normal_tag>
+</normal_tag>
+*/
+
+//## Global Variables ##//
+$file = "myxmltest.xml";
+$character_data_on = false;
+$tag_complete = true;
+
+function startElement($parser, $name, $attrs)
+{
+    global $character_data_on;
+    global $tag_complete;
+   
+    echo "&lt;<font color=\"#0000cc\">$name</font>";
+    //## Print the attributes ##//
+    if (sizeof($attrs)) {
+        while (list($k, $v) = each($attrs)) {
+            echo " <font color=\"#009900\">$k</font>=\"<font
+                   color=\"#990000\">$v</font>\"";
+        }
+    }
+    //## Tag is still still incomplete,
+    //## will be completed at either endElement or characterData ##//
+    $tag_complete = false;
+    $character_data_on = false;
+}
+
+function endElement($parser, $name)
+{
+    global $fp;
+    global $character_data_on;
+    global $tag_complete;
+   
+    //#### Test for self-closing tag ####//
+    //## xml_get_current_byte_index(resource parser) when run in this
+    //## function, gives the index at (indicated by *):
+    //##   for self closing tag: <br />*
+    //##   for individual closing tag: <div>character data*</div>
+    //## So to test for self-closing tag, we can just test for the last 2
+    //## characters from the index
+    //###################################//
+   
+    if (!$character_data_on) {
+        //## Record current fp position ##//
+        $temp_fp = ftell($fp);
+       
+        //## Point fp to 2 bytes before the end element byte index ##//
+        $end_element_byte_index = xml_get_current_byte_index($parser);
+        fseek($fp,$end_element_byte_index-2);
+       
+        //## Gets the last 2 characters before the end element byte index ##//
+        $validator = fgets($fp, 3);
+       
+        //## Restore fp position ##//
+        fseek($fp,$temp_fp);
+       
+        //## If the last 2 character is "/>" ##//
+        if ($validator=="/>") {
+            //// Complete the self-closing tag ////
+            echo " /&gt";
+            //// Otherwise it is an individual closing tag ////
+        } else echo "&gt&lt/<font color=\"#0000cc\">$name</font>&gt";
+        $tag_complete = true;
+    } else echo "&lt/<font color=\"#0000cc\">$name</font>&gt";
+   
+    $character_data_on = false;
+}
+
+function characterData($parser, $data)
+{
+    global $character_data_on;
+    global $tag_complete;
+   
+    if ((!$character_data_on)&&(!$tag_complete)) {
+        echo "&gt";
+        $tag_complete = true;
+    }
+    echo "<b>$data</b>";
+    $character_data_on = true;
+}
+
+$xml_parser = xml_parser_create();
+xml_parser_set_option($xml_parser, XML_OPTION_CASE_FOLDING, false);
+xml_set_element_handler($xml_parser, "startElement", "endElement");
+xml_set_character_data_handler($xml_parser, "characterData");
+if (!($fp = fopen($file, "r"))) {
+    die("could not open XML input");
+}
+
+echo "<pre>";
+while ($file_content = fread($fp, 4096)) {
+    if (!xml_parse($xml_parser, $file_content, feof($fp))) {
+        die(sprintf("XML error: %s at line %d",
+                    xml_error_string(xml_get_error_code($xml_parser)),
+                    xml_get_current_line_number($xml_parser)));
+    }
+}
+echo "</pre>";
+xml_parser_free($xml_parser);
+?>
+===============================================================================
+
+The method that 'ibjoel at hotmail dot com' have described requires libxml2 as
+the xml parser, it does not work with expat. For a brief explanation, see
+xml_get_current_byte_index.
+===============================================================================
+
+<html>
+  <head>
+    <title>SAX Demonstration</title>
+   <META HTTP-EQUIV='Content-type' CONTENT='text/html; charset=euc-kr'>
+  </head>
+  <body>
+    <h1>RSS       </h1>
+   
+      <?php
+
+     $file = "data.xml";
+     
+      $currentTag = "";
+      $currentAttribs = "";
+
+      function startElement($parser, $name, $attribs)
+      {
+          global $currentTag, $currentAttribs;
+          $currentTag = $name;
+   
+          $currentAttribs = $attribs;
+          switch ($name) {
+         
+          default:
+              echo("<b>&lt$name&gt</b><br>");
+              break;
+          }
+      }
+
+      function endElement($parser, $name)
+      {
+          global $currentTag;
+          switch ($name) {
+          default:
+              echo("<br><b>&lt/$name&gt</b><br><br>");
+              break;
+          }
+          $currentTag = "";
+          $currentAttribs = "";
+      }
+
+      function characterData($parser, $data)
+      {
+          global $currentTag;
+          switch ($currentTag) {
+          case "link":
+              echo("<a href=\"$data\">$data</a>\n");
+              break;
+          case "title":
+              echo("title : $data");
+              break;
+          default:
+              echo($data);
+              break;
+          }
+      }
+
+     $xmlParser = xml_parser_create();
+   
+      $caseFold = xml_parser_get_option($xmlParser,
+                                        XML_OPTION_CASE_FOLDING);
+   
+      $targetEncoding = xml_parser_get_option($xmlParser,
+                                              XML_OPTION_TARGET_ENCODING);
+
+      if ($caseFold == 1) {
+          xml_parser_set_option($xmlParser, XML_OPTION_CASE_FOLDING, false);
+      }
+
+      xml_set_element_handler($xmlParser, "startElement", "endElement");
+      xml_set_character_data_handler($xmlParser, "characterData");
+
+      if (!($fp = fopen($file, "r"))) {
+          die("Cannot open XML data file: $file");
+      }
+
+     while ($data = fread($fp, 4096)) {
+          if (!xml_parse($xmlParser, $data, feof($fp))) {
+              die(sprintf("XML error: %s at line %d",
+                          xml_error_string(xml_get_error_code($xmlParser)),
+                          xml_get_current_line_number($xmlParser)));
+              xml_parser_free($xmlParser);
+          }
+      }
+      xml_parser_free($xmlParser);
+      ?>
+    </table>
+  </body>
+</html>
+===============================================================================
+
+If you are using a class for xml parsing, and want to check the return value of
+xml_set_element_handler in case it  fails, you must do this outside of the
+class's constructor. Inside the constructor, PHP-4.0.5 will die.
+
+Basically, put all your xml initialisation code in another function of the
+class, and keep it out of the constructor.
+===============================================================================
+
+Example below (BadParser) works fine with some changes.
+
+xml_set_element_handler ( $parser, array ( &$this, 'tagStart' ), array ( &
+$this, 'tagEnd' ) );
+xml_set_character_data_handler ( $parser, array ( &$this, 'tagContent' ) );
+===============================================================================
+
+I noticed that in the example below, and all the examples I've seen on this
+site for viewing xml in html, the look of self closing tags such as <br /> are
+not preserved. The parser cannot distinguish between <tag /> and <tag></tag>,
+and if your start and end element functions are like these examples, both
+instances will be output with both an indvidual start and end tag.  I needed to
+preserve self-closing tags and it took me a while to figure out this work
+around. Hope this helps someone...
+ 
+The start tag is left open, and then completed by it's first child, the next
+start tag or its end tag.  The end tag will complete with " />", or </tag>
+depending on the number of bytes between the start and end tags in the parsed
+data.
+<?php
+//$data=filepath or string
+$data=<<<DATA
+<normal_tag>
+  <self_close_tag />
+      data
+  <normal_tag>data
+     <self_close_tag attr="value" />
+  </normal_tag>
+      data
+  <normal_tag></normal_tag>
+</normal_tag>
+DATA;
+
+function startElement($parser, $name, $attrs)
+{
+        xml_set_character_data_handler($parser, "characterData");
+        global $first_child, $start_byte;
+        if($first_child)          //close start tag if neccessary
+                echo "><br />";
+        $first_child=true;
+        $start_byte=xml_get_current_byte_index ($parser);
+        if(count($attrs)>=1){
+                foreach($attrs as $x=>$y){
+                        $attr_string .= " $x=\"$y\"";
+                }
+        }
+        echo htmlentities("<{$name}{$attr_string}"); //unclosed starttag
+}
+
+function endElement($parser, $name)
+{
+        global $first_child, $start_byte;
+        $byte=xml_get_current_byte_index ($parser);
+        if($byte-$start_byte>2){           //if end tag is more than 2 bytes
+from start tag
+                if($first_child)          //close start tag if neccessary
+                        echo "><br />";
+                echo htmlentities("</{$name}>")."<br />";  //individual end tag
+        }else
+                echo " /><br />";  // self closing tag
+        $first_child=false;
+
+}
+
+function characterData($parser, $data)
+{
+        global $first_child;
+        if($first_child)  //if $data is first child, close start tag
+                echo "><br />";
+        if($data=trim($data))
+                echo "<font color='blue'>$data</font><br />";
+        $first_child=false;
+}
+
+function ParseData($data)
+{
+        $xml_parser = xml_parser_create();
+        xml_set_element_handler($xml_parser, "startElement", "endElement");
+        xml_parser_set_option($xml_parser,XML_OPTION_CASE_FOLDING,0);
+        if(is_file($data))
+        {
+                if (!($fp = fopen($file, "r"))) {
+                        die("could not open XML input");
+                }
+
+                while ($data = fread($fp, 4096)) {
+                        if (!xml_parse($xml_parser, $data, feof($fp))) {
+                                $error=xml_error_string(xml_get_error_code(
+$xml_parser));
+                               $line=xml_get_current_line_number($xml_parser);
+                                die(sprintf("XML error: %s at line %d",$error,
+$line));
+                        }
+                }
+        }else{
+                if (!xml_parse($xml_parser, $data, 1)) {
+                                $error=xml_error_string(xml_get_error_code(
+$xml_parser));
+                                $line=xml_get_current_line_number($xml_parser);
+                                die(sprintf("XML error: %s at line %d",$error,
+$line));
+                }
+        }
+       
+        xml_parser_free($xml_parser);
+}
+
+ParseData($data);
+?>
+===============================================================================
+
+It seems that the tag handlers don't block on one another (the end handler is
+called whether or not the begin handler has finished). this can put you in a
+tight spot if you don't realize it while planning your app.
+===============================================================================
+
+You CAN use classes to parse XML. Just take a look at the following function:
+
+xml_set_object
+===============================================================================
+
+It seems that characterData() gets characters in chuncks of 1024; therefore if
+you have string of characters between you tags that is longer than 1024 then
+characterData() will be called more that once for single pair of tags. I don't
+know if this feature(bug?) is documented anywhere, I just wanted to warn
+everyone about this; it had tripped me. I use php 4.3.10 on Linux.
+===============================================================================
+
+In response to aw at avatartechnology dot com...
+In response to landb at mail dot net...
+
+When your functions are in an object:
+Careful ! Don't forget to add: & (reference) to your parameters.
+
+xml_set_element_handler($parser, array(&$this,"_startElement"), array(&
+$this,"_endElement"));
+--> xmlparse will work on your object (good).
+
+instead of:
+xml_set_element_handler($parser, array($this,"_startElement"), array
+($this,"_endElement"));
+---> xmlparse will work on a COPY of your object (often bad)
+
+Vin-s
+(sorry for my english)

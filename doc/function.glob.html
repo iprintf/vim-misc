@@ -1,0 +1,1882 @@
+
+glob
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+glob — 寻找与模式匹配的文件路径
+
+说明
+
+array glob ( string $pattern [, int $flags = 0 ] )
+
+glob() 函数依照 libc glob() 函数使用的规则寻找所有与 pattern 匹配的文件路径，类
+似于一般 shells 所用的规则一样。不进行缩写扩展或参数替代。
+
+参数
+
+pattern
+
+    The pattern. No tilde expansion or parameter substitution is done.
+
+flags
+
+    有效标记有：
+      □ GLOB_MARK - 在每个返回的项目中加一个斜线
+      □ GLOB_NOSORT - 按照文件在目录中出现的原始顺序返回（不排序）
+      □ GLOB_NOCHECK - 如果没有文件匹配则返回用于搜索的模式
+      □ GLOB_NOESCAPE - 反斜线不转义元字符
+      □ GLOB_BRACE - 扩充 {a,b,c} 来匹配 'a'，'b' 或 'c'
+      □ GLOB_ONLYDIR - 仅返回与模式匹配的目录项
+      □ GLOB_ERR - 停止并读取错误信息（比如说不可读的目录），默认的情况下忽略所
+        有错误
+
+返回值
+
+返回一个包含有匹配文件／目录的数组。如果出错返回 FALSE。
+
+    Note:
+
+    On some systems it is impossible to distinguish between empty match and an
+    error.
+
+更新日志
+
+版本                                说明
+5.1.0 GLOB_ERR was added
+4.3.3 GLOB_ONLYDIR 在 Windows 或者其它不使用 GNU C 库的系统上开始可用。
+
+范例
+
+Example #1 怎样用 glob() 方便地替代 opendir() 和相关函数
+
+<?php
+foreach (glob("*.txt") as $filename) {
+    echo "$filename size " . filesize($filename) . "\n";
+}
+?>
+
+以上例程的输出类似于：
+
+funclist.txt size 44686
+funcsummary.txt size 267625
+quickref.txt size 137820
+
+注释
+
+    Note: 此函数不能作用于远程文件，被检查的文件必须是可通过服务器的文件系统访
+    问的。
+
+    Note: 此函数在一些系统上还不能工作（例如一些旧的 Sun OS）。
+
+    Note: GLOB_BRACE 在一些非 GNU 系统上无效，比如 Solaris。
+
+参见
+
+  • opendir() - 打开目录句柄
+  • readdir() - 从目录句柄中读取条目
+  • closedir() - 关闭目录句柄
+  • fnmatch() - 用模式匹配文件名
+
+
+User Contributed Notes 74 notes
+
+===============================================================================
+
+Since I feel this is rather vague and non-helpful, I thought I'd make a post
+detailing the mechanics of the glob regex.
+
+glob uses two special symbols that act like sort of a blend between a
+meta-character and a quantifier.  These two characters are the * and ?
+
+The ? matches 1 of any character except a /
+The * matches 0 or more of any character except a /
+
+If it helps, think of the * as the pcre equivalent of .* and ? as the pcre
+equivalent of the dot (.)
+
+Note: * and ? function independently from the previous character. For instance,
+if you do glob("a*.php") on the following list of files, all of the files
+starting with an 'a' will be returned, but * itself would match:
+
+a.php // * matches nothing
+aa.php // * matches the second 'a'
+ab.php // * matches 'b'
+abc.php // * matches 'bc'
+b.php // * matches nothing, because the starting 'a' fails
+bc.php // * matches nothing, because the starting 'a' fails
+bcd.php // * matches nothing, because the starting 'a' fails
+
+It does not match just a.php and aa.php as a 'normal' regex would, because it
+matches 0 or more of any character, not the character/class/group before it.
+
+Executing glob("a?.php") on the same list of files will only return aa.php and
+ab.php because as mentioned, the ? is the equivalent of pcre's dot, and is NOT
+the same as pcre's ?, which would match 0 or 1 of the previous character.
+
+glob's regex also supports character classes and negative character classes,
+using the syntax [] and [^]. It will match any one character inside [] or match
+any one character that is not in [^].
+
+With the same list above, executing
+
+glob("[ab]*.php) will return (all of them):
+a.php  // [ab] matches 'a', * matches nothing
+aa.php // [ab] matches 'a', * matches 2nd 'a'
+ab.php // [ab] matches 'a', * matches 'b'
+abc.php // [ab] matches 'a', * matches 'bc'
+b.php // [ab] matches 'b', * matches nothing
+bc.php // [ab] matches 'b', * matches 'c'
+bcd.php // [ab] matches 'b', * matches 'cd'
+
+glob("[ab].php") will return a.php and b.php
+
+glob("[^a]*.php") will return:
+b.php // [^a] matches 'b', * matches nothing
+bc.php // [^a] matches 'b', * matches 'c'
+bcd.php // [^a] matches 'b', * matches 'cd'
+
+glob("[^ab]*.php") will return nothing because the character class will fail to
+match on the first character.
+
+You can also use ranges of characters inside the character class by having a
+starting and ending character with a hyphen in between.  For example, [a-z]
+will match any letter between a and z, [0-9] will match any (one) number, etc..
+
+glob also supports limited alternation with {n1, n2, etc..}.  You have to
+specify GLOB_BRACE as the 2nd argument for glob in order for it to work.  So
+for example, if you executed glob("{a,b,c}.php", GLOB_BRACE) on the following
+list of files:
+
+a.php
+b.php
+c.php
+
+all 3 of them would return.  Note: using alternation with single characters
+like that is the same thing as just doing glob("[abc].php").  A more
+interesting example would be glob("te{xt,nse}.php", GLOB_BRACE) on:
+
+tent.php
+text.php
+test.php
+tense.php
+
+text.php and tense.php would be returned from that glob.
+
+glob's regex does not offer any kind of quantification of a specified character
+or character class or alternation.  For instance, if you have the following
+files:
+
+a.php
+aa.php
+aaa.php
+ab.php
+abc.php
+b.php
+bc.php
+
+with pcre regex you can do ~^a+\.php$~ to return
+
+a.php
+aa.php
+aaa.php
+
+This is not possible with glob.  If you are trying to do something like this,
+you can first narrow it down with glob, and then get exact matches with a full
+flavored regex engine.  For example, if you wanted all of the php files in the
+previous list that only have one or more 'a' in it, you can do this:
+
+<?php
+   $list = glob("a*.php");
+   foreach ($list as $l) {
+      if (preg_match("~^a+\.php$~",$file))
+         $files[] = $l;
+   }
+?>
+
+glob also does not support lookbehinds, lookaheads, atomic groupings,
+capturing, or any of the 'higher level' regex functions.
+
+glob does not support 'shortkey' meta-characters like \w or \d.
+===============================================================================
+
+The answer for the difference in the dirsize function of "management at
+twilightus dot net":
+
+glob('*') ignores all 'hidden' files by default. This means it does not return
+files that start with a dot (e.g. ".file").
+If you want to match those files too, you can use "{,.}*" as the pattern with
+the GLOB_BRACE flag.
+
+<?php
+// Search for all files that match .* or *
+$files = glob('{,.}*', GLOB_BRACE);
+?>
+
+Note: This also returns the directory special entries . and ..
+===============================================================================
+
+Those of you with PHP 5 don't have to come up with these wild functions to scan
+a directory recursively: the SPL can do it.
+
+<?php
+
+$dir_iterator = new RecursiveDirectoryIterator("/path");
+$iterator = new RecursiveIteratorIterator($dir_iterator, 
+RecursiveIteratorIterator::SELF_FIRST);
+// could use CHILD_FIRST if you so wish
+
+foreach ($iterator as $file) {
+    echo $file, "\n";
+}
+
+?>
+
+Not to mention the fact that $file will be an SplFileInfo class, so you can do
+powerful stuff really easily:
+
+<?php
+
+$size = 0;
+foreach ($iterator as $file) {
+    if ($file->isFile()) {
+        echo substr($file->getPathname(), 27) . ": " . $file->getSize() . " B;
+modified " . date("Y-m-d", $file->getMTime()) . "\n";
+        $size += $file->getSize();
+    }
+}
+
+echo "\nTotal file size: ", $size, " bytes\n";
+
+?>
+
+\Luna\luna.msstyles: 4190352 B; modified 2008-04-13
+\Luna\Shell\Homestead\shellstyle.dll: 362496 B; modified 2006-02-28
+\Luna\Shell\Metallic\shellstyle.dll: 362496 B; modified 2006-02-28
+\Luna\Shell\NormalColor\shellstyle.dll: 361472 B; modified 2006-02-28
+\Luna.theme: 1222 B; modified 2006-02-28
+\Windows Classic.theme: 3025 B; modified 2006-02-28
+
+Total file size: 5281063 bytes
+===============================================================================
+
+Glob function doesn't return the hidden files (including ".*" files). PHP5
+RecursiveIterator can be used for iterating through directories recursively.
+===============================================================================
+
+<?php
+
+if ( ! function_exists('glob_recursive'))
+{
+    // Does not support flag GLOB_BRACE
+   
+    function glob_recursive($pattern, $flags = 0)
+    {
+        $files = glob($pattern, $flags);
+       
+        foreach (glob(dirname($pattern).'/*', GLOB_ONLYDIR|GLOB_NOSORT) as $dir
+)
+        {
+            $files = array_merge($files, glob_recursive($dir.'/'.basename(
+$pattern), $flags));
+        }
+       
+        return $files;
+    }
+}
+
+?>
+===============================================================================
+
+I lost hours looking for the solution for this problem.
+glob() wasn't eating up my directory names (stuff like "foobar[]"), and I
+searched online for some hours, I tried preg_quote to no avail.
+
+I finally found the proper way to escape stuff in glob() in an obscure Python
+mailing list:
+
+<?php
+preg_replace('/(\*|\?|\[)/', '[$1]', $dir_path);
+?>
+
+If you want to add a directory path before your pattern, you should do it like
+this:
+
+<?php
+glob(preg_replace('/(\*|\?|\[)/', '[$1]', $dir_path).'*.txt');
+?>
+preg_quote WILL NOT work in all cases (if any).
+===============================================================================
+
+Note that in case you are using braces with glob you might retrieve duplicated
+entries for files that matche more than one item :
+
+<?php
+
+$a = glob('/path/*{foo,bar}.dat',GLOB_BRACE);
+print_r($a);
+
+?>
+
+Result :
+Array
+(
+    [0] => /path/file_foo.dat
+    [1] => /path/file_foobar.dat
+    [2] => /path/file_foobar.dat
+)
+===============================================================================
+
+Use this to exclude hidden files on MS Windows.
+
+<?php
+exec("dir \"{$path}\" /A:-H /B", $result);
+?>
+===============================================================================
+
+Here is a function that returns specific files in an array, with all of the
+details. Includes some basic garbage checking.
+
+Variables
+
+$source_folder // the location of your files
+$ext // file extension you want to limit to (i.e.: *.txt)
+$sec // if you only want files that are at least so old.
+
+The function
+
+function glob_files($source_folder, $ext, $sec, $limit){
+    if( !is_dir( $source_folder ) ) {
+        die ( "Invalid directory.\n\n" );
+    }
+   
+    $FILES = glob($source_folder."\*.".$ext);
+    $set_limit    = 0;
+   
+    foreach($FILES as $key => $file) {
+   
+        if( $set_limit == $limit )    break;
+       
+        if( filemtime( $file ) > $sec ){
+       
+            $FILE_LIST[$key]['path']    = substr( $file, 0, ( strrpos( $file, "
+\\" ) +1 ) );
+            $FILE_LIST[$key]['name']    = substr( $file, ( strrpos( $file, "\\"
+) +1 ) );   
+            $FILE_LIST[$key]['size']    = filesize( $file );
+            $FILE_LIST[$key]['date']    = date('Y-m-d G:i:s', filemtime( $file
+) );
+            $set_limit++;
+       
+        }
+       
+    }
+    if(!empty($FILE_LIST)){
+        return $FILE_LIST;
+    } else {
+        die( "No files found!\n\n" );
+    }
+}
+
+So....
+
+$source_folder = "c:\temp\my_videos";
+$ext = "flv"; // flash video files
+$sec = "7200"; // files older than 2 hours
+$limit = 2;
+
+print_r(glob_files($source_folder, $ext, $sec, $limit));
+
+Would return:
+
+Array
+(
+    [0] => Array
+        (
+            [path] => c:\temp\my_videos\
+            [name] => fluffy_bunnies.flv
+            [size] => 21160480
+            [date] => 2007-10-30 16:48:05
+        )
+
+    [1] => Array
+        (
+            [path] => c:\temp\my_videos\
+            [name] => synergymx.com.flv
+            [size] => 14522744
+            [date] => 2007-10-25 15:34:45
+        )
+===============================================================================
+
+in the example below, i found i got an error if the directory was empty.
+
+<?php
+foreach (glob("*.txt") as $filename) {
+   echo "$filename size " . filesize($filename) . "\n";
+}
+?>
+
+I think its because glob()'ing an empty directory returns false, and so calling
+foreach (false as $value) will obviously break.
+
+to fix this, i did the following:
+<?php
+$files = glob("*.txt) or array(); // give it an empty array if the directory is
+empty or glob fails otherwise
+   echo "$filename size " . filesize($filename) . "\n";
+}
+?>
+
+Hope this helps someone
+===============================================================================
+
+Don't use glob() if you try to list files in a directory where very much files
+are stored (>100.000). You get an "Allowed memory size of XYZ bytes exhausted
+..." error.
+You may try to increase the memory_limit variable in php.ini. Mine has 128MB
+set and the script will still reach this limit while glob()ing over 500.000
+files.
+
+The more stable way is to use readdir() on very large numbers of files:
+<?php
+// code snippet
+if ($handle = opendir($path)) {
+    while (false !== ($file = readdir($handle))) {
+        // do something with the file
+        // note that '.' and '..' is returned even
+    }
+    closedir($handle);
+}
+?>
+===============================================================================
+
+Non-recursive search files, proceeding down directory tree.
+
+<?php
+function scandir_through($dir)
+{
+    $items = glob($dir . '/*');
+
+    for ($i = 0; $i < count($items); $i++) {
+        if (is_dir($items[$i])) {
+            $add = glob($items[$i] . '/*');
+            $items = array_merge($items, $add);
+        }
+    }
+
+    return $items;
+}
+?>
+===============================================================================
+
+glob() isn't limited to one directory:
+
+<?php
+$results=glob("{includes/*.php,core/*.php}",GLOB_BRACE);
+echo '<pre>',print_r($results,true),'</pre>';
+?>
+
+Just be careful when using GLOB_BRACE regarding spaces around the comma:
+{includes/*.php,core/*.php} works as expected, but
+{includes/*.php, core/*.php} with a leading space, will only match the former
+as expected but not the latter
+unless you have a directory named " core" on your machine with a leading space.
+PHP can create such directories quite easily like so:
+mkdir(" core");
+===============================================================================
+
+As a response to a post by viajy at yoyo dot org on 10-Feb-2007 04:50, he
+posted the following code:
+<?php
+function listdirs($dir) {
+    static $alldirs = array();
+    $dirs = glob($dir . '/*', GLOB_ONLYDIR);
+    if (count($dirs) > 0) {
+        foreach ($dirs as $d) $alldirs[] = $d;
+    }
+    foreach ($dirs as $dir) listdirs($dir);
+    return $alldirs;
+}
+?>
+
+It is not best practice to use recursive functions like that, so I wrote a safe
+(non-recursive) function below:
+
+<?php
+function listdirs_safe($start)
+{
+    $dir  = $start;
+    $dirs = array();
+    $next = 0;
+
+    while (true)
+    {
+        $_dirs = glob($dir.'/*', GLOB_ONLYDIR);
+
+        if (count($_dirs) > 0)
+        {
+            foreach ($_dirs as $key => $_dir)
+                $dirs[] = $_dir;
+        }
+        else
+            break;
+           
+        $dir = $dirs[$next++];
+    }
+   
+    return $dirs;
+}
+?>
+
+Example:
+
+print_r(listdirs_safe('*'));
+
+Output:
+Array
+(
+    [0] => Dummy folder/Dummy folder 2
+    [1] => Dummy folder/Dummy folder 2/Dummy Folder 3
+    [2] => Dummy folder/Dummy folder 2/Dummy Folder 3/4
+    [3] => Dummy folder/Dummy folder 2/Dummy Folder 3/Dummy folder 4
+    [4] => Dummy folder/Dummy folder 2/Dummy Folder 3/4/5
+)
+===============================================================================
+
+glob is case sensitive, even on Windows systems.
+
+It does support character classes though, so a case insensitive version of
+<?php glob('my/dir/*.csv') ?>
+
+could be written as
+<?php glob('my/dir/*.[cC][sS][vV]') ?>
+===============================================================================
+
+A simple function that find all files by extension an return it by an array.
+<?php
+function findFiles($directory, $extensions = array()) {
+    function glob_recursive($directory, &$directories = array()) {
+        foreach(glob($directory, GLOB_ONLYDIR | GLOB_NOSORT) as $folder) {
+            $directories[] = $folder;
+            glob_recursive("{$folder}/*", $directories);
+        }
+    }
+    glob_recursive($directory, $directories);
+    $files = array ();
+    foreach($directories as $directory) {
+        foreach($extensions as $extension) {
+            foreach(glob("{$directory}/*.{$extension}") as $file) {
+                $files[$extension][] = $file;
+            }
+        }
+    }
+    return $files;
+}
+var_dump(findFiles("C:", array (
+
+    "jpg",
+    "pdf",
+    "png",
+    "html"
+)));
+?>
+===============================================================================
+
+Recursive glob for PHP>=5.5
+
+function globRecursive($path, $find) {
+    $dh = opendir($path);
+    while (($file = readdir($dh)) !== false) {
+        if (substr($file, 0, 1) == '.') continue;
+        $rfile = "{$path}/{$file}";
+        if (is_dir($rfile)) {
+            foreach (globRecursive($rfile, $find) as $ret) {
+                yield $ret;
+            }
+        } else {
+            if (fnmatch($find, $file)) yield $rfile;
+        }
+    }
+    closedir($dh);
+}
+===============================================================================
+
+Pomle.com wrote:
+> Here's a function that behaves as a recursive glob(). It does
+> rely on shell command find, but works like a charm.
+> function glob_rec($pattern, $path) {
+>    return explode("\n", shell_exec("find $path -name $pattern"));
+> }
+
+Do note that this command has a security hole.
+If the $path or $pattern given includes special characters, for example a
+command substitution such as "`rm index.php`", the shell will process it and
+execute that command.
+
+You can fix the problem by either escaping the characters properly (use
+shell_escape) or by writing a function that actually calls glob(), or opendir()
+/readdir()/closedir(), recursively.
+===============================================================================
+
+A couple of notes:
+glob() handles symbolic filesystem links and resolves references to './', '../
+'  nicely and handles an extra '/' character , at least on X-systems. e.g.,
+glob("../*") will do next higher dir.
+
+This is good to use so warnings or errors show as "../foo" and not your
+system's full path. 
+
+Several of the examples use a notation "*.*" when just plain "*" does the same
+thing.  The "*.*" notation is misleading as it implies foo.ext will not be
+found with "*" because the "." is not present.
+
+Watch the flags must not be strings. They are defined constants. Thus,
+glob("../*", GLOB_ONLYDIR)  works;
+glob("../*", "GLOB_ONLYDIR")  does not.
+===============================================================================
+
+For those who need to recursively search a directory tree and cannot or wish
+not to call a function within itself here is another suggestion.
+
+I tried the previously suggested listdirs_safe() and it didn't seem to find all
+subfolders in a directory tree.
+
+There are two variations on the same theme.
+
+Single Array.
+<?php
+$dir ='/dir';
+while($dirs = glob($dir . '/*', GLOB_ONLYDIR)) {
+  $dir .= '/*';
+  if(!$d) {
+     $d=$dirs;
+   } else {
+      $d=array_merge($d,$dirs);
+   }
+}
+?>
+
+Multiple arrays.
+<?php
+$n=0;
+$dir ='/dir';
+while($dirs = glob($dir . '/*', GLOB_ONLYDIR)) {
+  $dir .= '/*';
+  if(!$d) {
+     $d=$dirs;
+   } else {
+     $d[$n]=$dirs;
+   }
+  $n++;
+}
+?>
+
+This will result in the glob looping via "dir/*/*/*/*.." until it is no longer
+finding a directory structure.
+===============================================================================
+
+<?php
+
+function glob_recursive($pattern, $flags = 0){
+// forked from https://github.com/rodurma/PHP-Functions/
+    // blob/master/glob_recursive.php
+  $files = glob($pattern, $flags);
+      
+  foreach (glob(dirname($pattern).'/*',
+      GLOB_ONLYDIR|GLOB_NOSORT) as $dir){
+    $files = array_merge($files, glob_recursive
+        ($dir.'/'.basename($pattern), $flags));
+  }
+  return $files;
+}
+// $a=glob_recursive('c:/test_directory/'."*.*");
+// print_r($a);
+
+function dirInfoReGet($s){
+    $a=glob_recursive($s."*.*");
+    $ar=glob_recursive($s."**/**");
+    $arr=array_unique(array_merge($a, $ar));
+
+    foreach ($arr as $v) {
+        if (is_dir($v)) {
+            $arra[0][]=$v.'/';
+        } else {
+            $arra[1][]=$v;
+        }
+    }
+    sort($arra);
+    return $arra;
+}
+$a=dirInfoReGet('c:/test_directory/');
+print_r($a);
+
+?>
+
+http://i.stack.imgur.com/H7UF3.jpg
+
+Best regards.
+===============================================================================
+
+glob() doesn't work on php 5.4.14 with curl extension.
+
+error:
+Call to undefined function glob()
+
+function_exists('glob') — false
+
+without curl - ok.
+===============================================================================
+
+You can do a recursive file search with yield.
+
+<?php
+function findAllDirs($start) {
+    $dirStack=[$start];
+    while($dir=array_shift($dirStack)) {
+        $ar=glob($dir.'/*',GLOB_ONLYDIR|GLOB_NOSORT);
+        if(!$ar) continue;
+
+        $dirStack=array_merge($dirStack,$ar);
+        foreach($ar as $DIR)
+            yield $DIR;
+    }
+}
+
+$fname='*.php';
+$result=[];
+foreach(findAllDirs('/var/www/localhost') as $dir) {
+    $match=glob($dir.'/'.$fname,GLOB_NOSORT);
+    if(!$match) continue;
+    $result=array_merge($result,$match);
+}
+
+print_r($result);
+?>
+===============================================================================
+
+alan at ridersite dot org 18-Mar-2007 03:26 -- Stated '*.*' is the same as '*'
+-- This is not true as * alone will return directories too and *.* will only
+return files with an extension such as .pdf or .doc or .php.
+===============================================================================
+
+First off, it's nice to see all of the different takes on this. Thanks for all
+of the great examples.
+
+Fascinated by the foreach usage I was curious how it might work with a for
+loop. I found that glob was well suited for this, especially compared to
+opendir.  The for loop is always efficient when you want to protect against a
+potential endless loop.
+
+$dir=$_SERVER['DOCUMENT_ROOT']."/test/directory_listing/test";
+    echo $dir;
+    $filesArray=glob($dir."/*.*");   
+   
+    $line.="<pre>";
+    $line.=print_r($filesArray, true);
+    $line.="</pre>";
+    $line.="<hr>";
+   
+    for($i=0;$i<count($filesArray);$i++) {
+        $line.=key($filesArray)." - ";   
+        $line.=$filesArray[$i]."<br/>";
+         next($filesArray);
+    }
+
+    echo $line;
+
+Note that I pulled the glob array keys if you should need them.
+
+Also you can tweak it for searches with something like this... (case sensitive)
+
+$search_names="Somedocname";
+$filesArray=glob($dir."/".$search_names."*.*");   
+   
+Enjoy!
+===============================================================================
+
+You can use multiple asterisks with the glob() - function.
+
+Example:
+
+<?php
+  $paths = glob('my/*/dir/*.php');
+?>
+
+$paths will contains paths as following examples:
+
+- my/1/dir/xyz.php
+- my/bar/dir/bar.php
+- my/bar/dir/foo.php
+===============================================================================
+
+The example on this page will generate a warning if the glob function does not
+find any filenames that match the pattern.
+
+The glob function result will only be an array if it finds some files and the
+foreach statement requires its argument to be an array.
+
+By checking for the possibility that the result of the glob function may not be
+an array you can eliminate the warning.
+
+Here's a better example:
+
+<?php
+$matches = glob("*.txt");
+if ( is_array ( $matches ) ) {
+   foreach ( $matches as $filename) {
+      echo "$filename size " . filesize($filename) . "\n";
+   }
+}
+?>
+===============================================================================
+
+glob() (array_sum() and array_map() in fact too) can be very useful if you want
+to calculate the sum of all the files' sizes located in a directory:
+
+<?php
+$bytes = array_sum(array_map('filesize',glob('*')));
+?>
+
+Unfortunately there's no way to do this recursively, using glob() (as far as I
+know).
+===============================================================================
+
+A function to quickly remove a directory (works in seconds for a hundred
+thousand files)
+
+<?php
+/**
+* Remove the directory and its content (all files and subdirectories).
+* @param string $dir the directory name
+*/
+function rmrf($dir) {
+    foreach (glob($dir) as $file) {
+        if (is_dir($file)) {
+            rmrf("$file/*");
+            rmdir($file);
+        } else {
+            unlink($file);
+        }
+    }
+}
+?>
+===============================================================================
+
+glob() does not work if the path contains brackets "[" and "]".
+
+For example, this will make it fail:
+
+$files = glob("[myfolder]/*.txt");
+
+No error is returned, just an empty array!
+===============================================================================
+
+Maybe all of you still know this, but it seems that if the directory contains
+some unresolved symlink, glob() simply ignore those files.
+===============================================================================
+
+To pick one of the file randomly from your directory with full physical path,
+you can write something like this:
+
+<?php
+function one_random_image_file()
+{
+    $files = glob('../images/*.jpg');
+    shuffle($files);
+    return realpath($files[0]);
+}
+$image_to_read = one_random_image_file();
+?>
+===============================================================================
+
+If you have open_basedir set in php.ini to limit which files php can execute,
+glob(...) will return false when there are no matching files.  If open_basedir
+is not set, the very same code will return an empty array in the same
+situation.
+
+This is unfortunate as a seemingly innocuous change causes different
+functionality that breaks code like:
+
+foreach(glob("*.ext") as $file)
+...
+
+See this link if you have any questions as to why this is so:
+http://bugs.php.net/bug.php?id=47358
+===============================================================================
+
+To:  martinlarsen at bigfoot dot com (14-Jun-2007 01:13)
+
+[quote]
+glob() does not work if the path contains brackets "[" and "]".
+
+For example, this will make it fail:
+
+$files = glob("[myfolder]/*.txt");
+
+No error is returned, just an empty array!
+[/quote]
+
+Hi there,
+if you backslash the brackets, it should work. Try:
+$files = glob("\[myfolder\]/*.txt");
+Hope this helps.
+===============================================================================
+
+Note that this function does not list broken symbolic links.
+===============================================================================
+
+Reply to ny_obaATgmxDOTnet:
+
+You could also use sql_regcase() to build a pattern for case insensitive
+matches.
+You may also want to set the locale before, so it is used when building the
+pattern.
+
+<?php
+
+$pattern = sql_case("*.pdf");
+
+var_dump(glob($pattern));
+
+?>
+
+should therefore match file.pdf AND OtherFile.PDF
+
+See http://www.php.net/sql_regcase for more information.
+===============================================================================
+
+Here is the function array_prepend() used by my latest post of safe_glob().
+
+<?php
+/**
+* Prepends $string to each element of $array
+* If $deep is true, will indeed also apply to sub-arrays
+* @author BigueNique AT yahoo DOT ca
+* @since 080324
+*/
+function array_prepend($array, $string, $deep=false) {
+    if(empty($array)||empty($string)) return $array;
+    foreach($array as $key => $element)
+        if(is_array($element))
+            if($deep)
+                $array[$key] = array_prepend($element,$string,$deep);
+            else
+                trigger_error('array_prepend: array element',E_USER_WARNING);
+        else
+            $array[$key] = $string.$element;
+    return $array;
+   
+}
+?>
+===============================================================================
+
+just a quick one:
+
+get all dirs, without files:
+<?php
+$dirs = array_filter(glob($path.'*'), 'is_dir');
+?>
+===============================================================================
+
+Be aware that on UNIX, * as the pattern will *not* match dot-files and
+dot-directories.  Knowing this will save you some headache.  :-)  May He bless
+you.
+===============================================================================
+
+I created a rglob function to support a '/**/' wildcard. You can even set the
+order to post-order or pre-order traversal.
+
+<?php
+
+function rglob ($pattern, $flags = 0, $traversePostOrder = false) {
+    // Keep away the hassles of the rest if we don't use the wildcard anyway
+    if (strpos($pattern, '/**/') === false) {
+        return glob($pattern, $flags);
+    }
+
+    $patternParts = explode('/**/', $pattern);
+
+    // Get sub dirs
+    $dirs = glob(array_shift($patternParts) . '/*', GLOB_ONLYDIR | GLOB_NOSORT
+);
+
+    // Get files for current dir
+    $files = glob($pattern, $flags);
+
+    foreach ($dirs as $dir) {
+        $subDirContent = rglob($dir . '/**/' . implode('/**/', $patternParts), 
+$flags, $traversePostOrder);
+
+        if (!$traversePostOrder) {
+            $files = array_merge($files, $subDirContent);
+        } else {
+            $files = array_merge($subDirContent, $files);
+        }
+    }
+
+    return $files;
+};
+
+?>
+===============================================================================
+
+This is a simple and versatile function that returns an array tree of files,
+matching wildcards:
+
+<?php
+// List files in tree, matching wildcards * and ?
+function tree($path){
+  static $match;
+
+  // Find the real directory part of the path, and set the match parameter
+  $last=strrpos($path,"/");
+  if(!is_dir($path)){
+    $match=substr($path,$last);
+    while(!is_dir($path=substr($path,0,$last)) && $last!==false)
+      $last=strrpos($path,"/",-1);
+  }
+  if(empty($match)) $match="/*";
+  if(!$path=realpath($path)) return;
+
+  // List files
+  foreach(glob($path.$match) as $file){
+    $list[]=substr($file,strrpos($file,"/")+1);
+  } 
+
+  // Process sub directories
+  foreach(glob("$path/*", GLOB_ONLYDIR) as $dir){
+    $list[substr($dir,strrpos($dir,"/",-1)+1)]=tree($dir);
+  }
+ 
+  return @$list;
+}
+?>
+===============================================================================
+
+FIX to use GLOB_BRACE pattern in glob_recursive function submitted by Mike
+
+if (! function_exists('glob_recursive')){
+    function glob_recursive($pattern, $flags = 0, $startdir = ''){
+        $files = glob($startdir.$pattern, $flags);
+        foreach (glob($startdir.'*', GLOB_ONLYDIR|GLOB_NOSORT|GLOB_MARK) as
+$dir){
+            $files = array_merge($files, glob_recursive($pattern, $flags,
+$dir));
+        }
+        return $files;
+    }
+}
+===============================================================================
+
+After fiddling with GLOB_BRACE a bunch, I have found the most items that can be
+included in the braces is about 10 before glob no longer returns any matches.
+
+I have a scenario where there can be a thousand or more files to check for
+where I can't pattern match and need to check specific names. I was hoping to
+batch them in large groups to see if it would help performance. However, if I
+include more than 10 in a GLOB_BRACE the function will return FALSE.
+===============================================================================
+
+recursive file search
+
+<?php
+$path[] = 'starting_place/*';
+
+while(count($path) != 0)
+{
+    $v = array_shift($path);
+    foreach(glob($v) as $item)
+    {
+        if (is_dir($item))
+            $path[] = $item . '/*';
+        elseif (is_file($item))
+        {
+             //do something
+        }
+    }
+}
+?>
+===============================================================================
+
+If you want to use wildcard expressions (like they are used by glob() ) to
+search on strings, you can use this function:
+
+<?php   
+function match_wildcard( $wildcard_pattern, $haystack ) {
+   $regex = str_replace(
+     array("\*", "\?"), // wildcard chars
+     array('.*','.'),   // regexp chars
+     preg_quote($wildcard_pattern)
+   );
+
+   return preg_match('/^'.$regex.'$/is', $haystack);
+}
+
+$test = "foobar and blob\netc.";
+var_dump(
+    match_wildcard('foo*', $test),      // TRUE
+    match_wildcard('bar*', $test),      // FALSE
+    match_wildcard('*bar*', $test),     // TRUE
+    match_wildcard('**blob**', $test),  // TRUE
+    match_wildcard('*a?d*', $test),     // TRUE
+    match_wildcard('*etc**', $test)     // TRUE
+);
+?>
+===============================================================================
+
+As a follow up to recursively determining all paths (by viajy at yoyo dot org)
+and opendir being faster than glob (by Sam Yong - hellclanner at live [dot]
+com).
+
+The list all dirs code didn't seem to work, at least on my server (provided by
+parazuce [at] gmail [dot] com).
+
+I needed a function to create an unlimited multidimensional array, with the
+names of the folders/files intact (no realpath's, although that is easily
+possible). This is so I can simply loop through the array, create an expandable
+link on the folder name, with all the files inside it.
+
+This is the correct way to recurse I believe (no static, return small arrays to
+build up the multidimensional array), and includes a check for files/folders
+beginning with dots.
+
+// may need modifications
+
+function list_files($path)
+{
+    $files = array();
+   
+    if(is_dir($path))
+    {
+        if($handle = opendir($path))
+        {
+            while(($name = readdir($handle)) !== false)
+            {
+                if(!preg_match("#^\.#", $name))
+                if(is_dir($path . "/" . $name))
+                {
+                    $files[$name] = list_files($path . "/" . $name);
+                }
+                else
+                {
+                    $files[] = $name;
+                }
+            }
+           
+            closedir($handle);
+        }
+    }
+
+    return $files;
+}
+
+print_r(list_files("/path/to/folder"));
+
+// example usage
+
+function list_html($list)
+{
+    $html = "";
+   
+    foreach($list as $folder => $file)
+    {
+        if(is_array($list[$folder]))
+        {
+            $html .= "> (folder) " . $folder . "<br>";
+            $html .= list_html($list[$folder]);
+        }
+        else
+        {
+            $html .= " (file) " . $file . "<br>";
+        }
+    }
+   
+    return $html;
+}
+
+echo list_html(list_files("/path/to/folder"));
+===============================================================================
+
+In some systems (AIX for example) GLOB_BRACE isn't defined and you get the
+error:
+glob() expects parameter 2 to be long, string given in /XX/XX.php
+
+<?
+
+foreach (glob("{*.pdf,*.PDF}",GLOB_BRACE ) as $filename) {
+      echo "$filename \n";
+}
+
+?>
+
+The method may help you in this case.
+
+<?
+
+foreach (array_merge(glob("*.pdf"),glob("*.PDF")) as $filename) {
+      echo "$filename \n";
+}
+
+?>
+===============================================================================
+
+Run your directory + "file pattern" through preg_quote to get around [ ] / etc
+issues...glob uses pattern matching.
+===============================================================================
+
+An alternative to this glob function. Like what edogs [at] dogsempire.com said,
+opendir should be faster than glob. I have not tested timing for this function
+but it works perfectly for me on my PHP v5.2.2 server.
+
+<?php
+
+$_foo ='/server/public_html/path/';
+
+function s_glob($dir){
+$files = array();
+if(is_dir($dir)){
+    if($dh=opendir($dir)){
+    while(($file = readdir($dh)) !== false){
+        $files[]=$dir.$file;
+    }}
+}
+return $files;
+}
+
+print_r(s_glob($_foo));
+
+?>
+
+This function returns an empty array if no files are found in the directory or
+the path specified is not a directory.
+===============================================================================
+
+4.3.8 and 4.4.2 has incompatible behavior.
+If there is no glob result, 4.4.2 return empty array but 4.3.8 returns FALSE.
+
+code:
+<?php
+$a = glob('hoge');
+var_dump($a);
+?>
+
+result at 4.3.8:
+bool(false)
+
+result at 4.4.2:
+array(0) {
+}
+===============================================================================
+
+Something I used to sort dir & subdir into array (multidimensional) reflecting
+dir structure.
+
+    function getRecursiveFolderList($curDir,$currentA=false)
+      {                   
+        $dirs = glob($curDir . '/*', GLOB_ONLYDIR);    
+       
+        $cur = 0;
+        foreach($dirs as $dir)
+          {
+            $currentA[$cur]['path'] = $dir;
+            $currentA[$cur] = $this->getRecursiveFolderList($dir,$currentA
+[$cur]);
+               
+            ++$cur;
+          }
+
+        return $currentA;
+      }
+===============================================================================
+
+this is a recursive function i wrote to return an array of all subdirectories
+of a dir
+
+function listdirs($dir) {
+    static $alldirs = array();
+    $dirs = glob($dir . '/*', GLOB_ONLYDIR);
+    if (count($dirs) > 0) {
+        foreach ($dirs as $d) $alldirs[] = $d;
+    }
+    foreach ($dirs as $dir) listdirs($dir);
+    return $alldirs;
+}
+
+example:
+print_r(listdirs('/some/path'));
+===============================================================================
+
+Here is simple function that will find and remove all files (except "." ones)
+that match the expression ($match, "*" as wildcard) under starting directory
+($path) and all other directories under it.
+
+function rfr($path,$match){
+   static $deld = 0, $dsize = 0;
+   $dirs = glob($path."*");
+   $files = glob($path.$match);
+   foreach($files as $file){
+      if(is_file($file)){
+         $dsize += filesize($file);
+         unlink($file);
+         $deld++;
+      }
+   }
+   foreach($dirs as $dir){
+      if(is_dir($dir)){
+         $dir = basename($dir) . "/";
+         rfr($path.$dir,$match);
+      }
+   }
+   return "$deld files deleted with a total size of $dsize bytes";
+}
+===============================================================================
+
+<?php
+$html_array = glob("*.html");
+
+function sort_by_mtime($file1,$file2) {
+    $time1 = filemtime($file1);
+    $time2 = filemtime($file2);
+    if ($time1 == $time2) {
+        return 0;
+    }
+    return ($time1 < $time2) ? 1 : -1;
+    }
+
+usort($html_array,"sort_by_mtime");
+//$html_array is now ordered by the time it was last modified
+?>
+===============================================================================
+
+I have been working towards a CMS-type design that is both modular and quite
+flat. For example, included files are all one level below the installation
+folder.
+
+glob() just help me get rid of a lot of opendir() hassle. I wasn't sure if the
+double asterix would work - but it's fine:
+
+foreach (glob(SERVER_PATH."/*/includes/*.php") as $inc) {
+   require($inc);
+}
+===============================================================================
+
+I was making a directory filesize function but found there's a slight
+difference between glob and readdir in terms of getting sizes.
+
+<?php
+function dirsize_glob($dir)
+{
+    $size = 0;
+    $dir .= (!ereg('/$', $dir)) ? '/' : '';
+
+    foreach (glob($dir . '*') as $file)
+    {
+        $size += (is_dir($file)) ? dirsize_glob($file) : filesize($file);
+    }
+
+    return $size;
+}
+
+function dirsize_readdir($dir)
+{
+    $size = 0;
+    $dir .= (!ereg('/$', $dir)) ? '/' : '';
+
+    $handle = opendir($dir);
+    while (($file = readdir($handle)) !== FALSE)
+    {
+        if (!ereg('^\.{1,2}$', $file))
+        {
+            $size += (is_dir($dir . $file)) ? dirsize_readdir($dir . $file) : 
+filesize($dir . $file);
+        }
+    }
+    closedir($handle);
+
+    return $size;
+}
+?>
+
+For a directory that's 529216 bytes, readdir correctly gives 529216 while glob
+gives 528996, a difference of 220 bytes. Anyone know why there's such a
+difference?
+===============================================================================
+
+Be aware...
+
+On Windows you need to add "/" mark:
+<?php
+$files = glob("/dir/*.txt"); // Works properly.
+$files = glob("dir/*.txt"); // Failure!, first letter is missing on every
+filename!
+?>
+
+On Unix you cant add the "/" mark:
+<?php
+$files = glob("dir/*.txt"); // Works properly.
+$files = glob("/dir/*.txt"); // No files found!
+?>
+
+Hope this will save your time :)
+===============================================================================
+
+I've written a function that I've been using quite a lot over the past year or
+so. I've built whole websites and their file based CMSs based on this one
+function, mostly because (I think) databases are not as portable as groups of
+files and folders. In previous versions, I used opendir and readdir to get
+contents, but now I can do in one line what used to take several. How? Most of
+the work in the whole script is done by calling
+
+glob("$dir/*")
+
+Giving me an array containing the names of the items in the folder, minus the
+ones beginning with '.', as well as the ones I specify.
+
+<?php
+
+/* alpharead version 3: This function returns an array containing the names of
+the files inside any given folder, excluding files that start with a '.', as
+well as the filenames listed in the '$killit' array. This array is sorted using
+the 'natural alphabetical' sorting manner. If no input is given to the
+function, it lists items in the script's interpreted folder. Version 3 fixes a
+MAJOR bug in version 2 which corrupted certain arrays with greater than 5 keys
+and one of the supposedly removed filenames.
+written by Admiral at NuclearPixel.com */
+
+function alpharead3($dir){
+if(!$dir){$dir = '.';}
+foreach(glob("$dir/*") as $item){$sort[]= end(explode('/',$item));}
+
+$killit = array('index.html', 'index.php', 'thumbs.db', 'styles.css');
+$killcounter = 0;
+foreach($sort as $sorteditem){
+foreach($killit as $killcheck){
+if(strtolower($sorteditem) == strtolower($killcheck))
+{unset($sort[$killcounter]);}
+}$killcounter++;}
+if($sort){natsort($sort);}
+foreach($sort as $item){$return[]= $item;}
+
+if(!$return){return array();}
+return $return;
+}
+
+//some basic usage
+
+$folder = 'images';
+foreach(alpharead3($folder) as $item)
+{
+echo '<img src="'.$folder.'/'.$item.'"><br>'.$item."\n";
+}
+
+?>
+
+Commens on this function are welcome!
+===============================================================================
+
+Note that on Windows, glob distinguishes between uppercase and lowercase
+extensions, so if the directory contains a file "test.txt" and you glob for
+"*.TXT" then the file will not be found!
+That bug only happens when you use patterns containing "*", like the example
+above. If you for example search for the full filename "test.TXT" then
+everything works correctly.
+===============================================================================
+
+Whilst on Windows, a path starting with a slash resolves OK for most file
+functions - but NOT glob.
+If the server is LAUNCHED (or chdir()ed) to W:, then
+file_exists("/temp/test.txt")
+returns true for the file "W:/temp/test.txt".
+But glob("/temp/*.txt") FAILS to find it!
+
+A solution (if you want to avoid getting drive letters into your code) is to
+chdir() first, then just look for the file.
+<?php
+$glob="/temp/*.txt";
+chdir(dirname($glob));
+// getcwd() is now actually "W:\temp" or whatever
+
+foreach (glob(basename($glob)) as $filename) {
+   $filepath = dirname($glob)."/".$filename; // must re-attach full path
+   echo "$filepath size " . filesize($filepath) . "\n";
+}
+?>
+
+Note also, glob() IS case sensitive although most other file funcs on Windows
+are not.
+===============================================================================
+
+This is a replacement for glob on servers that are running a php version < 4.3
+
+It supports * and ? jokers, and stacking of parameters with ; 
+
+So you can do
+
+<? $results=glob('/home/user/*.txt;*.doc') ?>
+
+And it will return an array of matched files. 
+
+As is the behaviour of the built-in glob function, this one will also return
+boolean false if no matches are found, and will use the current working
+directory if none is specified.
+
+<?php
+if(!(function_exists('glob')))
+{function glob($pattern)
+{#get pathname (everything up until the last / or \)
+  $path=$output=null;
+  if(PHP_OS=='WIN32')
+   $slash='\\';
+  else
+   $slash='/';
+  $lastpos=strrpos($pattern,$slash);
+  if(!($lastpos===false))
+  {$path=substr($pattern,0,-$lastpos-1); #negative length means take from the
+right
+   $pattern=substr($pattern,$lastpos);
+  }
+  else
+  {#no dir info, use current dir
+   $path=getcwd();
+  }
+  $handle=@ opendir($path);
+  if($handle===false)
+   return false;
+  while($dir=readdir($handle))
+  {if(pattern_match($pattern,$dir))
+    $output[]=$dir;
+  }
+  closedir($handle);
+  if(is_array($output))
+   return $output;
+  return false;
+}
+
+function pattern_match($pattern,$string)
+{#basically prepare a regular expression
+  $out=null;
+  $chunks=explode(';',$pattern);
+  foreach($chunks as $pattern)
+  {$escape=array('$','^','.','{','}',
+                 '(',')','[',']','|');
+   while(strpos($pattern,'**')!==false)
+    $pattern=str_replace('**','*',$pattern);
+   foreach($escape as $probe)
+    $pattern=str_replace($probe,"\\$probe",$pattern);
+   $pattern=str_replace('?*','*',
+             str_replace('*?','*',
+              str_replace('*',".*",
+               str_replace('?','.{1,1}',$pattern))));
+   $out[]=$pattern;
+  }
+  if(count($out)==1)
+   return(eregi("^$out[0]$",$string));
+  else
+   foreach($out as $tester)
+    if(eregi("^$tester$",$string))
+     return true;
+   return false;
+}
+}
+?>
+
+This function is case insensitive, but if needed, you can do this to make it
+behave depending on os:
+
+* replace eregi in the example with my_regexp
+
+add this function
+<?php
+function my_regexp($pattern,$probe)
+{$sensitive=(PHP_OS!='WIN32');
+  $sensitive=false;
+return ($sensitive?
+     ereg($pattern,$probe):
+     eregi($pattern,$probe));
+}
+?>
+===============================================================================
+
+If this function is not available in your version of PHP, think looking at the
+'Directory Functions' which can be used instead.
+http://www.php.net/manual/en/ref.dir.php
+===============================================================================
+
+A slight edit on the globr() function stated by sthomas. This does exactly the
+same just works on windows systems for < PHP 4.3.3. :
+
+<?php
+
+function globr($sDir, $sPattern, $nFlags = NULL) {
+    $aFiles = glob("$sDir/$sPattern", $nFlags);
+    $files = getDir($sDir);
+    if (is_array($files)) {
+        foreach( $files as $file ) {
+            $aSubFiles = globr($file, $sPattern, $nFlags);
+            $aFiles = array_merge($aFiles,$aSubFiles);
+        }
+    }
+    return $aFiles;
+}
+
+function getDir($sDir) {
+    $i=0;
+    if(is_dir($sDir)) {
+        if($rContents = opendir($sDir)) {
+            while($sNode = readdir($rContents)) {
+                if(is_dir($sDir.'/'.$sNode )) {
+                    if($sNode !="." && $sNode !="..") {
+                        $aDirs[$i] = $sDir.'/'.$sNode ;
+                        $i++;
+                    }
+                }
+            }
+        }
+    }
+    return $aDirs;
+}
+
+?>
+===============================================================================
+
+glob caused me some real pain in the buttom on windows, because of the DOS
+thing with paths (backslashes instead of slashes)...
+
+This was my own fault because I "forgot" that the backslash, when used in
+strings, needs to be escaped, but well, it can cause a lot of confusion, even
+for people who are not exactly newbies anymore...
+
+For some reason, I didn't have this problem with other file operations (chdir,
+opendir, etc...), which was the most confusing of all...
+
+So, for people running scripts on Windows machines (Dos95, 98 or WinNT or
+DosXP), just remember this:
+
+glob('c:\temp\*.*'); // works correctly, returns an array with files.
+glob("c:\temp\*.*"); // does NOT work... the backslashes need to be escaped...
+glob("c:\\temp\\*.*"); // that works again...
+
+This is especially confusing when temporary writable directories are returned
+as an unescaped string.
+
+$tempdir = getenv('TEMP');
+// this returns "C:\DOCUME~1\user\LOCALS~1\Temp"
+so in order to scan that directoy I need to do:
+
+glob($tempdir . "\\*.*");
+
+Or perhaps it's easier to replace all backslashes with slashes in order to
+avoid these kinds of confusions...
+
+glob("c:/temp/*.*"); // works fine too...
+
+I know I'm not contributing anything new here, but I just hope this post may
+avoid some unnecessary headaches...
+===============================================================================
+
+I have written my own function for searching files, but it only supports ? and
+*
+However it should be easily expandable.
+
+<?php
+// e.g. $matches=GetMachingFiles(GetContents("."),"*.txt");
+function GetMatchingFiles($files, $search) {
+
+    // Split to name and filetype
+    if(strpos($search,".")) {
+      $baseexp=substr($search,0,strpos($search,"."));
+      $typeexp=substr($search,strpos($search,".")+1,strlen($search));
+    } else {
+      $baseexp=$search;
+      $typeexp="";
+    }
+    
+    // Escape all regexp Characters
+    $baseexp=preg_quote($baseexp);
+    $typeexp=preg_quote($typeexp);
+    
+    // Allow ? and *
+    $baseexp=str_replace(array("\*","\?"), array(".*","."), $baseexp);
+    $typeexp=str_replace(array("\*","\?"), array(".*","."), $typeexp);
+       
+    // Search for Matches
+    $i=0;
+    foreach($files as $file) {
+      $filename=basename($file);
+       
+      if(strpos($filename,".")) {
+        $base=substr($filename,0,strpos($filename,"."));
+        $type=substr($filename,strpos($filename,".")+1,strlen($filename));
+      } else {
+        $base=$filename;
+        $type="";
+      }
+
+      if(preg_match("/^".$baseexp."$/i",$base) && preg_match("/^".$typeexp."$/
+i",$type))  {
+        $matches[$i]=$file;
+        $i++;
+      }
+    }
+    return $matches;
+}
+
+And if someone's searching for a function which gets all files from a directory
+including the subdirectories:
+
+// Returns all Files contained in given dir, including subdirs
+function GetContents($dir,$files=array()) {
+  if(!($res=opendir($dir))) exit("$dir doesn't exist!");
+  while(($file=readdir($res))==TRUE)
+    if($file!="." && $file!="..")
+      if(is_dir("$dir/$file")) $files=GetContents("$dir/$file",$files);
+        else array_push($files,"$dir/$file");
+     
+  closedir($res);
+  return $files;
+}
+
+?>
+===============================================================================
+
+<?php
+/**
+* Recursive version of glob
+*
+* @return array containing all pattern-matched files.
+*
+* @param string $sDir      Directory to start with.
+* @param string $sPattern  Pattern to glob for.
+* @param int $nFlags       Flags sent to glob.
+*/
+function globr($sDir, $sPattern, $nFlags = NULL)
+{
+  $sDir = escapeshellcmd($sDir);
+
+  // Get the list of all matching files currently in the
+  // directory.
+
+  $aFiles = glob("$sDir/$sPattern", $nFlags);
+
+  // Then get a list of all directories in this directory, and
+  // run ourselves on the resulting array.  This is the
+  // recursion step, which will not execute if there are no
+  // directories.
+
+  foreach (glob("$sDir/*", GLOB_ONLYDIR) as $sSubDir)
+  {
+    $aSubFiles = rglob($sSubDir, $sPattern, $nFlags);
+   $aFiles = array_merge($aFiles, $aSubFiles);
+  }
+
+  // The array we return contains the files we found, and the
+  // files all of our children found.
+
+  return $aFiles;
+}
+
+?>
+===============================================================================
+
+Note that, in some configurations, the search is case-sensitive! You'll need to
+have something like:
+
+<?php
+$images = glob("/path/to/images/{*.jpg,*.JPG}", GLOB_BRACE);
+?>
+
+Also on some servers, I have seen such scripts 'crash' with an CGI Error
+("...not returning a complete set of HTTP headers...") when glob could not find
+any match!
+===============================================================================
+
+Take all file names in the directory and put them in a link.
+<?php
+foreach (glob("*.*") as $filename)
+{
+   echo "<a href=\"".$filename."\">".$filename."</a><br/>";
+}
+?>
+===============================================================================
+
+Here is a way I used glob() to browse a directory, pull the file name out,
+resort according to the most recent date and format it using date(). I called
+the function inside a <select> and had it go directly to the PDF file:
+
+function browsepdf(){
+    $pdffile=glob("printable/*.pdf");
+    rsort($pdffile);
+    foreach($pdffile as $filename){
+        $filename=ltrim($filename, "printable/");
+        $filename=rtrim($filename, ".pdf");
+        $file=$filename;
+        $datetime=strtotime($filename);
+        $newdate=strtotime("+3 days",$datetime);
+        $filenamedate=date("F d", $datetime);
+        $filenamedate.=" - ".date("F d, Y", $newdate);
+        echo "<option value='$file'>$filenamedate</option>";
+    }
+}
+===============================================================================
+
+funny enough, but our testing opendir VS glob
+
+show advantage of opendir by speed
+
+0.00115704536438
+and
+0.0068039894104
+
+or if to pass 200 times
+0.210277080536
+vs
+1.2976038456
+===============================================================================
+
+Here is the *correct* way to do a reverse-alphabetical search:
+<?
+$Results = glob( 'blah.*' );
+rsort( $Results );
+?>
+There now, wasn't that easy? :)
+===============================================================================
+
+My version of recursive glob
+<?php
+function all_files($dir)
+{
+    $files = Array();
+    $file_tmp= glob($dir.'*',GLOB_MARK | GLOB_NOSORT);
+
+    foreach($file_tmp as $item){
+        if(substr($item,-1)!=DIRECTORY_SEPARATOR)
+            $files[] = $item;
+        else
+            $files = array_merge($files,all_files($item));
+    }
+
+    return $files;
+}
+?>
+===============================================================================
+
+If you don't have PHP >= 4.3 available and don't want to hassle with PHP (:-)
+do something like this on GNU/Linux:
+
+<?php
+foreach (explode("\n",`find -type d -maxdepth 1 ! -name ".*" -printf "%f\n" `)
+as $dirname) {
+    print $dirname;
+}
+?>
+
+With the "find" you can "glob" whatever you like.
+===============================================================================
+
+Here's an example of how to use the GLOB_BRACE flag:
+
+<?php
+$images = glob("/path/to/images/{*.gif,*.jpg,*.png}", GLOB_BRACE);
+?>
+
+It's also worth noting that when using the GLOB_BRACE flag in any version of
+PHP prior to 4.3.4, PHP will crash if no matches are found.

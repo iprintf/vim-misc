@@ -1,0 +1,171 @@
+
+mb_strlen
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+mb_strlen — 获取字符串的长度
+
+说明
+
+mixed mb_strlen ( string $str [, string $encoding = mb_internal_encoding() ] )
+
+获取一个 string 的长度。
+
+参数
+
+str
+
+    要检查长度的字符串。
+
+encoding
+
+    encoding 参数为字符编码。如果省略，则使用内部字符编码。
+
+返回值
+
+返回具有 encoding 编码的字符串 str 包含的字符数。多字节的字符被计为 1。
+
+如果给定的 encoding 无效则返回 FALSE。
+
+参见
+
+  • mb_internal_encoding() - 设置/获取内部字符编码
+  • grapheme_strlen() - Get string length in grapheme units
+  • iconv_strlen() - 返回字符串的字符数统计
+  • strlen() - 获取字符串长度
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+If you are unsure about what $encoding can be set to, here's a full list of all
+the encodings supported by this extension:
+
+http://www.php.net/manual/en/mbstring.supported-encodings.php
+===============================================================================
+
+Speed of mb_strlen varies a lot according to specified character set.
+
+If you need length of string in bytes (strlen cannot be trusted anymore because
+of mbstring.func_overload) you should use <?php mb_strlen($string, '8bit'); ?>.
+It's the fastest way (still a way slower than strlen, though) to determine byte
+length of string. Other single byte character sets (ASCII, ISO-8859-1, ...) are
+several times slower than 8bit.
+===============================================================================
+
+Just did a little benchmarking (1.000.000 times with lorem ipsum text) on the
+mbs functions
+
+especially mb_strtolower and mb_strtoupper are really slow (up to 100 times
+slower compared to normal functions). Other functions are alike-ish, but
+sometimes up to 5 times slower.
+
+just be cautious when using mb_ functions in high frequented scripts.
+
+# test runs: 1000000
+# benchmarking strlen vs. mb_strlen
+# normal strlen: 3.6795361042023 ms, average: 3.6795361042023E-6 ms
+# mb_strlen: 5.5934538841248 ms, average: 5.5934538841248E-6 ms
+ok 1 - mb_strlen is slower than strlen
+# mb_strlen is 1.52 slower than strlen
+#
+#
+# benchmarking strpos vs. mb_strpos
+# normal strpos: 5.5523281097412 ms, average: 5.5523281097412E-6 ms
+# mb_strlen: 31.180974960327 ms, average: 3.1180974960327E-5 ms
+ok 2 - mb_strlen is slower than strlen
+# mb_strpos is 5.62 slower than strpos
+#
+#
+# benchmarking substr vs. mb_substr
+# normal substr: 3.4437320232391 ms, average: 3.4437320232391E-6 ms
+# mb_strlen: 3.5374181270599 ms, average: 3.5374181270599E-6 ms
+ok 3 - mb_strlen is slower than strlen
+# mb_substr is 1.03 slower than substr
+#
+#
+# benchmarking strtolower vs. mb_strtolower
+# normal strtolower: 4.446839094162 ms, average: 4.446839094162E-6 ms
+# mb_strlen: 193.44901108742 ms, average: 0.00019344901108742 ms
+ok 4 - mb_strlen is slower than strlen
+# mb_strtolower is 43.5 slower than strtolower
+#
+#
+# benchmarking strtoupper vs. mb_strtoupper
+# normal strtoupper: 3.0210740566254 ms, average: 3.0210740566254E-6 ms
+# mb_strlen: 340.71775603294 ms, average: 0.00034071775603294 ms
+ok 5 - mb_strlen is slower than strlen
+# mb_strtoupper is 112.78 slower than strtoupper
+===============================================================================
+
+If you find yourself without the mb string functions and can't easily change
+it, a quick hack replacement for mb_strlen for utf8 characters is to use a a
+PCRE regex with utf8 turned on.
+
+$strlen = preg_match_all("/.{1}/us",$utf8string,$dummy);
+
+This is basically an ugly hack which counts all single character matches, and
+I'd expect it to be painfully slow on large strings.
+===============================================================================
+
+If you wish to find the byte length of a multi-byte string when you are using
+mbstring.func_overload 2 and UTF-8 strings, then you can use the following:
+
+mb_strlen($utf8_string, 'latin1');
+===============================================================================
+
+Thank you Peter Albertsson for presenting that!
+
+After spending more than eight hours tracking down two specific bugs in my
+mbstring-func_overloaded environment I have learned a very important lesson:
+
+Many developers rely on strlen to give the amount of bytes in a string. While
+mb-overloading has very many advantages, the most hard-spotted pitfall must be
+this issue.
+
+Two examples (from the two bugs found earlier):
+
+1. Writing a string to a file:
+
+<?php
+$str = "string with utf-8 chars åèä - doo-bee doo-bee dooh";
+$fp = fopen($this->_file, "wb");
+if ($fp) {
+  $len = strlen($str);
+  fwrite($fp, $str, $len);
+}
+?>
+
+PS This is found i the PEAR::Cache_Lite package (Lite.php) - Reported
+
+2. Iterating through a string's characters:
+
+<?php
+$str = "string with utf-8 chars åèö - doo-bee doo-bee dooh";
+$newStr = "";
+for ($i = 0; $i < strlen($str); $i++) {
+  $newStr .= $str[$i];
+}
+?>
+
+Both of these situations will fail to save / store the last characters in $str.
+This can be very hard to spot and can be especially fatal for say serialized
+strings, xml etc.
+
+So, try to avoid these situations to support overloaded environments, and
+remeber Peter Albertssons remark if you find problems under such an
+environment.
+===============================================================================
+
+I have been working with some funny html characters lately and due to the
+nightmare in manipulating them between mysql and php, I got the database column
+set to utf8, then store characters with html enity "&#7885;" as ọ in the
+database and set the encoding on php as "utf8".
+
+This is where mb_strlen became more useful than strlen.  While strlen('ọ')
+gives result as 3, mb_strlen('ọ','UTF-8') gives 1 as expected.
+
+But left(column1,1) in mysql still gives wrong char for a multibyte string.  In
+the example above, I had to do left(column1,3) to get the correct string from
+mysql.  I am now about to investigate multibyte manipulation in mysql.

@@ -1,0 +1,120 @@
+
+posix_get_last_error
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+posix_get_last_error — Retrieve the error number set by the last posix function
+that failed
+
+说明
+
+int posix_get_last_error ( void )
+
+Retrieve the error number set by the last posix function that failed. The
+system error message associated with the errno may be checked with 
+posix_strerror().
+
+返回值
+
+Returns the errno (error number) set by the last posix function that failed. If
+no errors exist, 0 is returned.
+
+范例
+
+Example #1 posix_get_last_error() example
+
+This example attempt to kill a bogus process id, which will set the last error.
+We will then print out the last errno.
+
+<?php
+posix_kill(999459,SIGKILL);
+echo 'Your error returned was '.posix_get_last_error(); //Your error was ___
+?>
+
+参见
+
+  • posix_strerror() - Retrieve the system error message associated with the
+    given errno
+
+
+User Contributed Notes 1 note
+
+===============================================================================
+
+Many posix functions give very useful information in the errno code when an
+error occurs.  For instance, stream_select(), when it generates an error,
+according to the man page (man 2 select) may return one of four different
+errors which are listed as:  EBADF, EINTR, EINVAL, ENOMEM.  See the man page
+for more specific information about these.  In this example, when the
+stream_select() function returns false, posix_get_last_error() will return a
+non-zero value that will be set to one of these constants.  For instance, if
+stream_select() == false, and posix_get_last_error() == EBADF,  then one of the
+file descriptors given to the select() function has probably closed somehow.
+If, on the other hand, posix_get_last_error() returns EINTR then stream_select
+() returned FALSE not because of any true error condition, but only because the
+process handled a signal. When the signal arrives while stream_select() is
+blocking it will always stop blocking and return false immediately. This
+behavior makes sense, though it can seem inconvenient.  You just have to handle
+it correctly. (not many do, in php.)
+
+From this example it should probably be clear that one should at least consider
+handling different error types in different ways.  EINTER should probably be
+ignored for instance, unless your program uses signalling to open or close file
+handles or sockets.
+
+These error constants listed in the related POSIX man pages are not part of the
+PHP interface. When you call posix_get_last_error() it will return an integer.
+The problem  with getting an unnamed integer return code is that these integers
+may mean different things on different systems.  You can (and probably should)
+pass the resulting integer to the posix_strerror() function, which will return
+an accurate human-readable description of what the error is. This is useful of
+course, but mainly for logging. (String descriptions of errors are far more
+prone to change than are the actual integer value codes.)  Truly, when using
+the result of posix_errno() it is best to check the value against a set of
+possible constants.  The constants you compare them to are system specific, as
+stated earlier, so you need to look them up on that system.  Here is an easy
+and reliable way to do that.
+
+Look at the errno man page ($ man errno) and copy all of the constant names
+into a very basic C file.  like this.
+
+===================================
+#include <errno.h>
+#include <stdio.h>
+int main(){
+  printf("define('E2BIG', %d);\n", E2BIG);
+  printf("define('EACCES', %d);\n", EACCES);
+  printf("define('EADDRINUSE', %d);\n", EADDRINUSE);      
+  printf("define('EADDRNOTAVAIL', %d);\n", EADDRNOTAVAIL);
+//  ...  etc. etc.
+}
+===================================
+
+Now, if you just run this code through the C pre-processor (i.e. 'gcc -E
+cfile.c'), then those constant names will be replaced by the numbers which are
+used on your system.  (warning:  running the C compiler/pre-processor needs to
+take place on the system where the PHP code will be running. keep track of
+whether nfs is in use or something else along those lines which may separate
+your coding environment from the runtime environment.)  In addition to running
+the C pre-processor you also simply compile and run the above program (i.e.
+'gcc cfile.c && ./a.out'). Running it will generate a PHP compatible list of
+define() calls that will correctly define these constants in your PHP program
+on the target system, so will be usable. Simply copy the definitions into a php
+file.
+
+To finish the example, you might use these constants like this:
+
+$selret = stream_select( $r, $w, $e, $to );
+if( $selret === false )
+{
+    switch( posix_get_last_error() )
+    {
+        case EBADF:    /* one of the handles is bad. fix it. */ break;
+        case EINVAL:    /* $to is negative? woops. */ break;
+        case ENOMEM:
+            throw new exception("probable memory leak. restart.");
+            break;
+       case EINTR:
+           break; // usually ignore EINTR after select() is fine.
+    }
+}

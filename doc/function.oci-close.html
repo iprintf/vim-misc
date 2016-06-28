@@ -1,0 +1,216 @@
+
+oci_close
+
+(PHP 5, PHP 7, PECL OCI8 >= 1.1.0)
+
+oci_close — 关闭 Oracle 连接
+
+说明
+
+bool oci_close ( resource $connection )
+
+oci_close() 将 Oracle 连接 connection 关闭。
+
+    Note:
+
+    自版本 1.1 起 oci_close() 正确关闭 Oracle 连接。使用
+    oci8.old_oci_close_semantics 选项来恢复本函数的旧行为。
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+    Note:
+
+    在 PHP 5.0.0 之前的版本必须使用 ocilogoff() 替代本函数。该函数名仍然可用，
+    为向下兼容作为 oci_close() 的别名。不过其已被废弃，不推荐使用。
+
+参数
+
+connection
+
+    An Oracle connection identifier returned by oci_connect(), oci_pconnect(),
+    or oci_new_connect().
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Closing a connection
+
+Resources associated with a connection should be closed to ensure the
+underlying database connection is properly terminated and the database
+resources are released.
+
+<?php
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message'], ENT_QUOTES), E_USER_ERROR);
+}
+
+$stid = oci_parse($conn, 'SELECT * FROM departments');
+$r = oci_execute($stid);
+oci_fetch_all($stid, $res);
+var_dump($res);
+
+// Free the statement identifier when closing the connection
+oci_free_statement($stid);
+oci_close($conn);
+
+?>
+
+Example #2 Database connections are not closed until all references are closed
+
+The internal refcount of a connection identifier must be zero before the
+underlying connection to the database is closed.
+
+<?php
+
+$conn = oci_connect('hr', 'welcome', 'localhost/XE');
+if (!$conn) {
+    $e = oci_error();
+    trigger_error(htmlentities($e['message'], ENT_QUOTES), E_USER_ERROR);
+}
+
+$stid = oci_parse($conn, 'SELECT * FROM departments');  //
+ this increases the refcount on $conn
+oci_execute($stid);
+oci_fetch_all($stid, $res);
+var_dump($res);
+
+oci_close($conn);
+
+// $conn is no long usable in the script but the underlying database
+// connection is still held open until $stid is freed.
+var_dump($conn);  // prints NULL  
+
+// While PHP sleeps, querying the Oracle V$SESSION view in a
+// terminal window will show that the database user is still connected.
+sleep(10);
+
+// When $stid is freed, the database connection is physically closed
+oci_free_statement($stid);  
+
+// While PHP sleeps, querying the Oracle V$SESSION view in a
+// terminal window will show that the database user has disconnected.
+sleep(10);
+
+?>
+
+Example #3 Closing a connection opened more than once
+
+When database credentials are reused, both connections must be closed before
+the underlying database connection is closed.
+
+<?php
+
+$conn1 = oci_connect('hr', 'welcome', 'localhost/XE');
+
+// Using the same credentials reuses the same underlying database connection
+// Any uncommitted changes done on $conn1 will be visible in $conn2
+$conn2 = oci_connect('hr', 'welcome', 'localhost/XE');
+
+// While PHP sleeps, querying the Oracle V$SESSION view in a
+// terminal window will show that only one database user is connected.
+sleep(10);
+
+oci_close($conn1); // doesn't close the underlying database connection
+var_dump($conn1);  //
+ prints NULL because the variable $conn1 is no longer usable
+var_dump($conn2);  // displays that $conn2 is still a valid connection resource
+
+?>
+
+Example #4 Connections are closed when variables go out of scope
+
+When all variables referencing a connection go out of scope and are freed by
+PHP, a rollback occurs (if necessary) and the underlying connection to the
+database is closed.
+
+<?php
+
+function myfunc() {
+    $conn = oci_connect('hr', 'hrpwd', 'localhost/XE');
+    if (!$conn) {
+        $e = oci_error();
+        trigger_error(htmlentities($e['message'], ENT_QUOTES), E_USER_ERROR);
+    }
+
+    $stid = oci_parse($conn, 'UPDATE mytab SET id = 100');
+    oci_execute($stid, OCI_NO_AUTO_COMMIT);
+    return "Finished";
+}
+
+$r = myfunc();
+//
+ At this point a rollback occurred and the underlying database connection was released.
+
+print $r;  // displays the function return value "Finished"
+
+?>
+
+注释
+
+    Note:
+
+    Variables that have a dependency on the connection identifier, such as
+    statement identifiers returned by oci_parse(), must also be freed before
+    the underlying database connection is closed.
+
+    Note:
+
+    Prior to version PHP 5.1.2 (PECL OCI8 1.1) oci_close() was a no-op. In more
+    recent versions it correctly closes the Oracle connection. Use
+    oci8.old_oci_close_semantics option to restore old behavior of this
+    function.
+
+    Note:
+
+    The oci_close() function does not close the underlying database connections
+    created with oci_pconnect().
+
+    Note:
+
+    In PHP versions before 5.0.0 you must use ocilogoff() instead. 在当前版本中
+    ，旧的函数名还可以被使用，但已经被废弃并不建议使用。
+
+参见
+
+  • oci_connect() - 建立一个到 Oracle 服务器的连接
+  • oci_free_statement() - 释放关联于语句或游标的所有资源
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+please note, you can use oci_close() to close persistent connections opened
+with oci_pconnect() in PHP ver 5.3 or above.
+as stated in here:
+http://www.php.net/manual/en/oci8.configuration.php#ini.oci8.persistent-timeout
+===============================================================================
+
+For using persistent connections && being able to sleep, I use:
+
+function close_db_locks_on_abort( ) {
+    global $conn;
+    if( connection_aborted() ) {
+        $fp = fopen( "/tmp/shutdown-func.txt", "a" );
+        fwrite( $fp, sprintf( "connection aborted on %s\n", date( "d-m-Y H:i:s"
+) ) );
+        if( $conn ) {
+            OCIRollBack( $conn );
+            fwrite( $fp, sprintf( "-- DURING CONNECTION! ip=%s, user=%s, page=
+%s\n", $_SERVER["REMOTE_ADDR"], $_SERVER["PHP_AUTH_USER"], $_SERVER
+["SCRIPT_FILENAME"] ) );
+        }
+        fclose( $fp );
+    }
+}
+
+register_shutdown_function ( "close_db_locks_on_abort" );
+
+This makes sure a rollback is done on a connection when a user hits 'stop', so
+there will be no locks on table rows.

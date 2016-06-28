@@ -1,0 +1,147 @@
+
+odbc_longreadlen
+
+(PHP 4, PHP 5, PHP 7)
+
+odbc_longreadlen — Handling of LONG columns
+
+说明
+
+bool odbc_longreadlen ( resource $result_id , int $length )
+
+Enables handling of LONG and LONGVARBINARY columns.
+
+参数
+
+result_id
+
+    The result identifier.
+
+length
+
+    The number of bytes returned to PHP is controlled by the parameter length.
+    If it is set to 0, Long column data is passed through to the client.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+注释
+
+    Note:
+
+    Handling of LONGVARBINARY columns is also affected by odbc_binmode().
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Hi
+
+If you are experiencing troubles with truncated and/or strangely encoded data
+when using PHP with MS SQL via ODBC try setting odbc.defaultlrl ( in php.ini or
+via ini_set() ) to a largish number, say 65536, as stated in the other notes
+here.
+The trick is to know how long your data is going to be, so you may want to
+provide some overhead. Unfortunately you have to know how long your piece of
+string is before you cut it.
+
+Doing this will allow your app to read up to this amount in one go. I'm sure
+there is a reason for this behaviour but I hadn't experienced anything like it
+in 5 years of MySQL and Postgres development.
+
+If you still experience problems AND are using unicode data in the long column
+of your table, make sure it is set to type "ntext", if it is "text". MSDN has
+some info on data types for Unicode data.
+This caused about 3 days of headaches for me, "binary" data crashing browsers
+and cyclical result sets (i.e repeating data after odbc.defaultlrl bytes).
+
+This fix was only found by poking things with sticks.
+
+HTH
+===============================================================================
+
+It's not mentioned in the notes here, but odbc_longreadlen($result, 0); only
+affects the output from odbc_result().  Setting the read length to 0 (or less
+than zero) will just output a blank string in the odbc_fetch_object(),
+odbc_fetch_array() and odbc_result_all() functions
+===============================================================================
+
+I've tried to use a suggestion in the first comment but that didn't actually
+worked as I would expect... I wanted to get all data no matter how big it is,
+but strange things happened and I finally found this solution (works fine at
+least for MS SQL 2000 for at least few MB of binary data):
+
+<?php
+// connection
+$link = odbc_connect($odbc_source_name, $user, $pass);
+
+// query (note - one row in this example)
+$sql = 'SELECT image_data_column FROM some_table WHERE record_id=1';
+
+// run
+$result = odbc_exec ($link, $sql)
+if (!$result)
+{
+    trigger_error ('[sql] exec: '.$sql, E_USER_ERROR);
+}
+
+// fetch settings
+odbc_binmode ($result, ODBC_BINMODE_PASSTHRU);
+odbc_longreadlen ($result, 0);
+
+// get contents
+ob_start(); // you would probably need to move this inside if you expect more
+rows
+while (odbc_fetch_row($result))
+{
+    odbc_result($result, 1); // this actually echos all of the contents of the
+image_data_column
+}
+odbc_free_result($result);
+$contents = ob_get_clean();
+?>
+===============================================================================
+
+I was reading from a MEMO field (long varchar) in MSAccess, but the data was
+consistently truncated at 255 characters. I tried all the combinations of
+odbc_longreadlen() and odbc_binmode()  (and odbc.defaultlrl) that I could think
+of but none of them resolved the problem.
+
+The only fix that worked was to modify my query from "SELECT Field1, Field2
+FROM TableName" to "SELECT * FROM TableName".
+
+I suspect that you could cast the field to force the appropriate data type, but
+when it finally worked after three days of struggle I didn't even try.
+===============================================================================
+
+An alternative is to adjust your php.ini file and set:
+odbc.defaultlrl=65536
+Or something else sufficiently large.
+lrl = long read length
+===============================================================================
+
+Aaargh!
+I was wondering about truncated data when reading from a TEXT (LONG VARCHAR)
+column.
+With this I was able to increase the buffer size...
+===============================================================================
+
+I had a heck of a time figuring out what to do with this function.  Here's a
+little piece of code from Jason Lee which I found that might help someone
+else...
+
+$cur = odbc_exec($cnx, $query);
+if(!$cur) {
+/* error handler */
+}
+
+odbc_binmode($cur, ODBC_BINMODE_PASSTHRU);
+odbc_longreadlen($cur, 16384); /* Allow 16kb thru */
+
+while(odbc_fetch_row($cur)) {
+$bigger_than_4096_var = odbc_result($cur, 1);
+/* etc... */
+
+Hope this helps someone, John

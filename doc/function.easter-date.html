@@ -1,0 +1,365 @@
+
+easter_date
+
+(PHP 4, PHP 5, PHP 7)
+
+easter_date — 得到指定年份的复活节午夜时的Unix时间戳。
+
+说明
+
+int easter_date ([ int $year ] )
+
+返回指定年份的复活节午夜时的Unix时间戳。
+
+Warning
+
+如果给定的年份超出Unix时间戳的范围（比如1970年以前或2037年以后），该函数将返回
+一个警告。
+
+复活节的日期是由尼西亚议会在AD325年确定的为每年春分月圆后的第一个星期日。春分一
+般是在3月21日，这就简化为只要计算满月的日期和紧挨的星期日的日期。这里所用的算法
+是在532年由Dionysius Exiguus所介绍的，参考了Julian历法和Gregorian历法这两个历法
+来提高精确度。（在1753年以前用Julian历法计算，该历法是一个以19年为周期来确定月
+亮的相位的历法。在1753年以后用Gregorian历法计算，该历法由Clavius和Lilius发明，
+由Pope Gregory 8世在1582年推广）
+
+参数
+
+year
+
+    1970年至2037年之间的数字形式的年份。
+
+返回值
+
+复活节日期的Unix时间戳。
+
+更新日志
+
+   版本                    说明
+Since 4.3.0 year参数可选，缺省的默认值是当年。
+
+范例
+
+Example #1 easter_date() example
+
+<?php
+
+echo date("M-d-Y", easter_date(1999));        // Apr-04-1999
+echo date("M-d-Y", easter_date(2000));        // Apr-23-2000
+echo date("M-d-Y", easter_date(2001));        // Apr-15-2001
+
+?>
+
+参见
+
+  • easter_days() - 得到指定年份的3月21日到复活节之间的天数 for calculating
+    Easter before 1970 or after 2037
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+To compute the correct Easter date for Eastern Orthodox Churches I made a
+function based on the Meeus Julian algorithm:
+
+<?php
+function orthodox_eastern($year) {
+    $a = $year % 4;
+    $b = $year % 7;
+    $c = $year % 19;
+    $d = (19 * $c + 15) % 30;
+    $e = (2 * $a + 4 * $b - $d + 34) % 7;
+    $month = floor(($d + $e + 114) / 31);
+    $day = (($d + $e + 114) % 31) + 1;
+   
+    $de = mktime(0, 0, 0, $month, $day + 13, $year);
+   
+    return $de;
+}
+?>
+===============================================================================
+
+I recently had to write a function that allows me to know if today is a
+holiday.
+
+And in France, we have some holidays which depends on the easter date. Maybe
+this will be helpful to someone.
+
+Just modify in the $holidays array the actual holidays dates of your country.
+
+<?php
+/**
+* This function returns an array of timestamp corresponding to french holidays
+*/
+protected static function getHolidays($year = null)
+{
+  if ($year === null)
+  {
+    $year = intval(date('Y'));
+  }
+   
+  $easterDate  = easter_date($year);
+  $easterDay   = date('j', $easterDate);
+  $easterMonth = date('n', $easterDate);
+  $easterYear   = date('Y', $easterDate);
+
+  $holidays = array(
+    // These days have a fixed date
+    mktime(0, 0, 0, 1,  1,  $year),  // 1er janvier
+    mktime(0, 0, 0, 5,  1,  $year),  // Fête du travail
+    mktime(0, 0, 0, 5,  8,  $year),  // Victoire des alliés
+    mktime(0, 0, 0, 7,  14, $year),  // Fête nationale
+    mktime(0, 0, 0, 8,  15, $year),  // Assomption
+    mktime(0, 0, 0, 11, 1,  $year),  // Toussaint
+    mktime(0, 0, 0, 11, 11, $year),  // Armistice
+    mktime(0, 0, 0, 12, 25, $year),  // Noel
+
+    // These days have a date depending on easter
+    mktime(0, 0, 0, $easterMonth, $easterDay + 2,  $easterYear),
+    mktime(0, 0, 0, $easterMonth, $easterDay + 40, $easterYear),
+    mktime(0, 0, 0, $easterMonth, $easterDay + 50, $easterYear),
+  );
+
+  sort($holidays);
+ 
+  return $holidays;
+}
+?>
+===============================================================================
+
+I found a problem with holidays timestamp computation and daylight saving time.
+An article about it at http://goo.gl/76t31 (in french only, sorry).
+
+In summary, this year (2013) easter begins before adding an hour for daylight
+saving time (occured sunday at 3:00). It means that if you do $easter + X,
+where x is a number of seconds equivalent to one day, 39 days or 50 days, the
+result is not equals to a midnight timestamp...
+
+Here a function to check if a midnight timestamp is equals to an holiday :
+
+function isHoliday( $ts ) {
+// Licence : Creative Commons (BY)
+// By Webpulser - http://goo.gl/76t31
+  $fixed_holidays = array( ’01-01′, ’01-05′, ’08-05′, ’14-07′, ’15-08′,
+’11-11′, ’25-12′ );
+  $format = ‘d-m’;
+
+$dm = date($format, $ts);
+  if ( in_array($dm, $fixed_holidays) ) return true;
+
+$easter = easter_date( date(‘Y’, $ts) );
+  if ( date($format, $easter +   86400) == $dm ) return true;
+  if ( date($format, $easter + 3369600) == $dm ) return true;
+  if ( date($format, $easter + 4320000) == $dm ) return true;
+
+return false;
+}
+
+feel free to use / modify.
+===============================================================================
+
+Hey, recently I needed a function to get realization dates in online shop, so
+here it is (ready to go for polish users, please adjust your dates for any
+other country):
+
+<?php
+function getWorkday($date1,$workDays) {
+        $workDays = (int)$workDays;
+        if ($workDays <= 0)
+            return null;
+
+        $date1=strtotime('-1 day',strtotime($date1));
+
+        $lastYear = null;
+        $hol=array('01-01','01-06','05-01','05-03','08-15','11-01','11-11',
+'12-25','12-26');  //array of month-date of static holidays (these are from
+Poland)
+        $i = 0;
+        while ($i<=$workDays) {
+            $year = date('Y', $date1);
+            if ($year !== $lastYear){
+                $lastYear = $year;
+                $easter = date('m-d', easter_date($year));
+                $date = strtotime($year . '-' . $easter); // easter
+                $easterSec = date('m-d', strtotime('+1 day', $date)); // easter
+monday
+                $greens = date('m-d', strtotime('+49 days', $date)); // zielone
+swiatki
+                $cc = date('m-d', strtotime('+60 days', $date)); // boze cialo
+                $hol[] = $easter;
+                $hol[] = $easterSec;
+                $hol[] = $greens;
+                $hol[] = $cc;
+            }
+            $weekDay=date('w',$date1);
+            if (!($weekDay==0 || $weekDay==6 || in_array(date('m-d',$date1),
+$hol)))
+                $i++;
+
+            $date1=strtotime('+1 day',$date1);
+        }
+        return date('Y-m-d',$date1);
+    }
+?>
+===============================================================================
+
+Due to range limitations of core functions such as easter_date(), mktime(),
+strtotime(), I wrote this function to get the Easter Day in string format
+yyyy-mm-dd.
+
+function myEaster($year)
+{
+    /*Warning: easter_date(): This function is only valid for years between
+1970 and 2037
+     * The easter_days() function can be used instead of easter_date() to
+calculate Easter for years which fall outside the range.
+      */
+     //The next line would do the work if there were no limitations:
+    //return date("Y-m-d",easter_date($year));
+
+    /*Outside range (1970,2037) they advise to use easter_days().
+     * Unfortunately, when you have to create a date object as 21-03-yyyy to
+which add easter_days(), then obtain Easter,
+     * functions like strtotime(), DateTime::createFromFormat() will fail.
+(return value is 01-01-1970)
+     */
+    $march21=date("$year-03-21");
+    $days=easter_days($year);
+    if($year<=2037)
+    //The next line would do the work if strtotime() wasn't affected by same
+limitations. But, the if..else is required to handle all years.
+        $date = date("Y-m-d",strtotime(date("Y-m-d", strtotime($march21)) . "
++$days day"));
+    else
+    {
+        if($days<=10){
+            $day=str_pad(21+$days, 2, '0', STR_PAD_LEFT);
+            $date=date("$year-03-$day");
+        }
+        else
+        {
+            $day=str_pad($days-10, 2, '0', STR_PAD_LEFT);
+            $date=date("$year-04-$day");
+        }
+    }
+
+    return $date;
+}
+===============================================================================
+
+I made the function like this ... works fine !
+
+<?php
+function ostern
+{
+    $maerz21=date('z',mktime(0,0,0,3,21,$jb));
+
+    $d=((15 + $jb/100 - $jb/400 - (8 * $jb/100 + 13) / 25)%30 + 19 * ($jb%19))%
+30;
+
+    if ($d==29)
+    {
+        $D=28;
+    }
+    elseif($d==28 && ($jb%17)>=11)
+    {
+        $D=27;
+    }
+    else $D=$d;   
+
+    $e=(2 * ($jb%4) + 4 *($jb%7) + 6 * $D + (6 + $jb/100 - $jb/400 - 2)%7)%7;
+
+    $ostersonntag=$e+$D+1+$maerz21;
+    return $ostersonntag;
+}
+?>
+===============================================================================
+
+The algorithm from Bigtree is correct if you add some (int) cast
+<?php
+   function easter_date ($Year) {
+  
+       /*
+       G is the Golden Number-1
+       H is 23-Epact (modulo 30)
+       I is the number of days from 21 March to the Paschal full moon
+       J is the weekday for the Paschal full moon (0=Sunday,
+         1=Monday, etc.)
+       L is the number of days from 21 March to the Sunday on or before
+         the Paschal full moon (a number between -6 and 28)
+       */
+      
+
+         $G = $Year % 19;
+         $C = (int)($Year / 100);
+         $H = (int)($C - (int)($C / 4) - (int)((8*$C+13) / 25) + 19*$G + 15) % 
+30;
+         $I = (int)$H - (int)($H / 28)*(1 - (int)($H / 28)*(int)(29 / ($H + 1))
+*((int)(21 - $G) / 11));
+         $J = ($Year + (int)($Year/4) + $I + 2 - $C + (int)($C/4)) % 7;
+         $L = $I - $J;
+         $m = 3 + (int)(($L + 40) / 44);
+         $d = $L + 28 - 31 * ((int)($m / 4));
+         $y = $Year;
+         $E = mktime(0,0,0, $m, $d, $y);
+
+         return $E;
+
+   }
+?>
+===============================================================================
+
+v5.2.1 - There is a known bug with easter_date() that can return incorrect
+dates for some years:
+
+<?php
+// 2008 OK
+echo date("D d M Y", easter_date(2008));  // Sun 23 Mar 2008
+
+// 2009 returns Saturday
+echo date("D d M Y", easter_date(2009));  // Sat 11 Apr 2009
+?>
+
+
+However easter_days() works correctly:
+
+<?php
+echo date("D d M Y", strtotime("2009-03-21 +".easter_days(2009)." days"));  //
+Sun 12 Apr 2009
+?>
+
+It is apparently related to timezone settings.
+===============================================================================
+
+In 5.3.1 easter_date() returns GMT of start of Easter Day in UK allowing
+for UK Summer Time. If you are in another time zone you need to
+calculate offsets.
+<?php
+        $e1 = easter_date(2008);
+        $e2 = easter_date(2009);
+        echo "Timestamps " . $e1 . " " . $e2 . "\n";
+
+        //      Timestamps 1206230400 1239490800
+
+        echo "Days between Easter 2008 Easter 2009 = " . ($e2-$e1)/86400 . "\n"
+;
+
+        //      Days between Easter 2008 Easter 2009 = 384.958333333 - i.e. 384
+days 23 hours
+
+        date_default_timezone_set("Europe/London");
+        echo date( " l, jS F Y H:i TO",$e1) . "\n";
+        echo date( " l, jS F Y H:i TO",$e2) . "\n";
+
+        //      Sunday, 23rd March 2008 00:00 GMT+0000
+        //      Sunday, 12th April 2009 00:00 BST+0100
+
+        date_default_timezone_set("America/New_York");
+        echo date( " l, jS F Y H:i TO",$e1) . "\n";
+        echo date( " l, jS F Y H:i TO",$e2) . "\n";
+
+        //      Saturday, 22nd March 2008 20:00 EDT-0400
+        //      Saturday, 11th April 2009 19:00 EDT-0400
+        //      Daylight saving time in effect - New York 4 hours behind GMT
+?>

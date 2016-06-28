@@ -1,0 +1,790 @@
+
+microtime
+
+(PHP 4, PHP 5, PHP 7)
+
+microtime — 返回当前 Unix 时间戳和微秒数
+
+说明
+
+mixed microtime ([ bool $get_as_float ] )
+
+microtime() 当前 Unix 时间戳以及微秒数。本函数仅在支持 gettimeofday() 系统调用
+的操作系统下可用。
+
+如果调用时不带可选参数，本函数以 "msec sec" 的格式返回一个字符串，其中 sec 是自
+Unix 纪元（0:00:00 January 1, 1970 GMT）起到现在的秒数，msec 是微秒部分。字符串
+的两部分都是以秒为单位返回的。
+
+如果给出了 get_as_float 参数并且其值等价于 TRUE，microtime() 将返回一个浮点数。
+
+    Note: get_as_float 参数是 PHP 5.0.0 新加的。
+
+Example #1 用 microtime() 对脚本的运行计时
+
+<?php
+/**
+ * Simple function to replicate PHP 5 behaviour
+ */
+function microtime_float()
+{
+    list($usec, $sec) = explode(" ", microtime());
+    return ((float)$usec + (float)$sec);
+}
+
+$time_start = microtime_float();
+
+// Sleep for a while
+usleep(100);
+
+$time_end = microtime_float();
+$time = $time_end - $time_start;
+
+echo "Did nothing in $time seconds\n";
+?>
+
+参见 time()。
+
+
+User Contributed Notes 28 notes
+
+===============================================================================
+
+You can use one variable to check execution $time as follow:
+
+<?php
+$time = -microtime(true);
+$hash = 0;
+for ($i=0; $i < rand(1000,4000); ++$i) {
+    $hash ^= md5(substr(str_shuffle(
+"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"), 0, rand(1,10
+)));
+}
+$time += microtime(true);
+echo "Hash: $hash iterations:$i time: ",sprintf('%f', $time),PHP_EOL;
+?>
+===============================================================================
+
+A lot of the comments here suggest adding in the following way:  (float)$usec +
+(float)$sec
+Make sure you have the float precision high enough as with the default
+precision of 12, you are only precise to the 0.01 seconds. 
+Set this in you php.ini file.
+        precision    =  16
+===============================================================================
+
+Note that the timestamp returned is "with microseconds", not "in microseconds".
+This is especially good to know if you pass 'true' as the parameter and then
+calculate the difference between two float values -- the result is already in
+seconds; it doesn't need to be divided by a million.
+===============================================================================
+
+All these timing scripts rely on microtime which relies on gettimebyday(2)
+
+This can be inaccurate on servers that run ntp to syncronise the servers
+time.
+
+For timing, you should really use clock_gettime(2) with the
+CLOCK_MONOTONIC flag set.
+
+This returns REAL WORLD time, not affected by intentional clock drift.
+
+This may seem a bit picky, but I recently saw a server that's clock was an
+hour out, and they'd set it to 'drift' to the correct time (clock is speeded
+up until it reaches the correct time)
+
+Those sorts of things can make a real impact.
+
+Any solutions, seeing as php doesn't have a hook into clock_gettime?
+
+More info here: http://tinyurl.com/28vxja9
+
+http://blog.habets.pp.se/2010/09/
+gettimeofday-should-never-be-used-to-measure-time
+===============================================================================
+
+Check Program runtime:
+<?php
+
+class bwruntime
+{
+    var $timestart;
+    var $digits;
+
+    function bwruntime($digits = "")
+    {
+        $this->timestart    = explode (' ', microtime());
+        $this->digits       = $digits;
+    }
+
+    function totaltime()
+    {
+        $timefinish         = explode (' ', microtime());
+        if($this->digits == ""){
+            $runtime_float  = $timefinish[0] - $this->timestart[0];
+        }else{
+            $runtime_float  = round(($timefinish[0] - $this->timestart[0]), 
+$this->digits);
+        }
+        $runtime = ($timefinish[1] - $this->timestart[1]) + $runtime_float;
+        return $runtime;
+    }
+}
+?>
+===============================================================================
+
+Need a mini benchmark ?
+Use microtime with this (very smart) benchmark function :
+
+mixed mini_bench_to(array timelist[, return_array=false])
+return a mini bench result
+
+-the timelist first key must be 'start'
+-default return a resume string, or array if return_array= true :
+'total_time' (ms) in first row
+details (purcent) in next row
+
+example :
+<?php
+unset($t);    // if previous used
+
+//-- zone to bench
+$t['start'] = microtime(true);
+$tab_test=array(1,2,3,4,5,6,7,8);
+$fact=1;
+$t['init_values'] = microtime(true);
+foreach ($tab_test as $key=>$value)
+{
+    $fact=$fact*$value;
+}
+$t['loop_fact'] = microtime(true);
+echo "fact = ".$fact."\n";
+//-- END zone to bench
+
+echo "---- string result----\n";
+$str_result_bench=mini_bench_to($t);
+echo $str_result_bench; // string return
+echo "---- tab result----\n";
+$tab_result_bench=mini_bench_to($t,true);
+echo var_export($tab_result_bench,true);
+?>
+this example return:
+
+---- string result----
+total time : 0.0141 ms
+start -> init_values : 51.1 %
+init_values -> loop_fact : 48.9 %
+---- tab result----
+array (
+  'total_time' => 0.0141,
+  'start -> init_values' => 51.1,
+  'init_values -> loop_fact' => 48.9,
+)
+
+The function to include :
+
+<?php
+function mini_bench_to($arg_t, $arg_ra=false)
+  {
+    $tttime=round((end($arg_t)-$arg_t['start'])*1000,4);
+    if ($arg_ra) $ar_aff['total_time']=$tttime;
+    else $aff="total time : ".$tttime."ms\n";
+    $prv_cle='start';
+    $prv_val=$arg_t['start'];
+
+    foreach ($arg_t as $cle=>$val)
+    {
+        if($cle!='start')   
+        {
+            $prcnt_t=round(((round(($val-$prv_val)*1000,4)/$tttime)*100),1);
+            if ($arg_ra) $ar_aff[$prv_cle.' -> '.$cle]=$prcnt_t;
+            $aff.=$prv_cle.' -> '.$cle.' : '.$prcnt_t." %\n";
+            $prv_val=$val;
+            $prv_cle=$cle;
+        }
+    }
+    if ($arg_ra) return $ar_aff;
+    return $aff;
+  }
+?>
+===============================================================================
+
+Of the methods I've seen here, and thought up myself, to convert microtime()
+output into a numerical value, the microtime_float() one shown in the
+documentation proper(using explode,list,float,+) is the slowest in terms of
+runtime.
+
+I implemented the various methods, ran each in a tight loop 1,000,000 times,
+and compared runtimes (and output). I did this 10 times to make sure there
+wasn't a problem of other things putting a load spike on the server. I'll admit
+I didn't take into account martijn at vanderlee dot com's comments on testing
+accuracy, but as I figured the looping code etc would be the same, and this was
+only meant as a relative comparison, it should not be necessary.
+
+The above method took on average 5.7151877 seconds, while a method using substr
+and simply adding strings with . took on average 3.0144226 seconds. rsalazar at
+innox dot com dot mx's method using preg_replace used on average 4.1819633
+seconds. This shows that there are indeed differences, but for normal use noone
+is going to notice it.
+
+Note that the substr method mentioned isn't quite the one given anonymously
+below, but one I made based on it:
+<?php
+$time=microtime();
+$timeval=substr($time,11).substr($time,1,9);
+?>
+
+Also worth noting is that the microtime_float() method gets faster, and no less
+accurate, if the (float) conversions are taken out and the variables are simply
+added together.
+
+Any of the methods that used + or array_sum ended up rounding the result to 2
+digits after the decimal point, while (most of) the ones using preg_replace or
+substr and . kept all the digits.
+
+For accurate timing, since floating-point arithmetic would lose precision, I
+stored microtime results as-is and calculated time difference with this
+function:
+<?php
+function microtime_used($before,$after) {
+    return (substr($after,11)-substr($before,11))
+        +(substr($after,0,9)-substr($before,0,9));
+}
+?>
+
+For further information, the script itself, etc, see http://edorfaus.xepher.net
+/div/convert-method-test.php
+===============================================================================
+
+Rather than using the list() function, etc. I have found the following code to
+be a bit cleaner and simpler:
+<?php
+$theTime = array_sum( explode( ' ' , microtime() ) );
+echo $theTime;
+# Displays "1212018372.3366"
+?>
+===============================================================================
+
+Get date time with milliseconds
+
+$micro_date = microtime();
+$date_array = explode(" ",$micro_date);
+$date = date("Y-m-d H:i:s",$date_array[1]);
+echo "Date: $date:" . $date_array[0];
+
+Test accuracy by running it in a loop.
+===============================================================================
+
+While doing some experiments on using microtime()'s output for an entropy
+generator I found that its microsecond value was always quantified to the
+nearest hundreds (i.e. the number ends with 00), which affected the randomness
+of the entropy generator. This output pattern was consistent on three separate
+machines, running OpenBSD, Mac OS X and Windows.
+
+The solution was to instead use gettimeofday()'s output, as its usec value
+followed no quantifiable pattern on any of the three test platforms.
+===============================================================================
+
+I like to use bcmath for it
+<?php
+function micro_time() {
+    $temp = explode(" ", microtime());
+    return bcadd($temp[0], $temp[1], 6);
+}
+
+$time_start = micro_time();
+sleep(1);
+$time_stop = micro_time();
+
+$time_overall = bcsub($time_stop, $time_start, 6);
+echo "Execution time - $time_overall Seconds";
+?>
+===============================================================================
+
+I have been getting negative values substracting a later microtime(true) call
+from an earlier microtime(true) call on Windows with PHP 5.3.8
+
+Produces negative values
+------------------------------
+for($i = 0; $i<100; $i++) {
+    $x =  microtime(true);
+    //short calculation
+    $y = microtime(true);
+    echo ($y-$x) . "\n"; // <--- mostly negatives
+}
+
+Calling usleep(1) seems to work
+---------------------------------------
+for($i = 0; $i<100; $i++) {
+    $x =  microtime(true);
+    //short calculation
+    usleep(1);
+    $y = microtime(true);
+    echo ($y-$x) . "\n"; // <--- fixed now
+}
+===============================================================================
+
+I use this for measure duration of script execution. This function should be
+defined (and of couse first call made) as soon as possible.
+
+<?php
+/**
+* get execution time in seconds at current point of call in seconds
+* @return float Execution time at this point of call
+*/
+function get_execution_time()
+{
+    static $microtime_start = null;
+    if($microtime_start === null)
+    {
+        $microtime_start = microtime(true);
+        return 0.0;
+    }   
+    return microtime(true) - $microtime_start;
+}
+get_execution_time();
+
+?>
+
+However it is true that result depends of gettimeofday() call. ([jamie at
+bishopston dot net] wrote this & I can confirm)
+If system time change, result of this function can be unpredictable (much
+greater or less than zero).
+===============================================================================
+
+Microtime as float in a functional way
+
+<?php
+array_reduce(
+    explode(" ", microtime),
+    function($time, $microtime) {
+        return $microtime + (float) $time;
+    },
+    0.0
+);
+?>
+===============================================================================
+
+To know how much time a code need to execute, I use my own class which I
+defined like this :
+
+<?php
+    class RenderTime{
+        const PRECISION_SECOND = 0;
+        const PRECISION_MILLISECOND = 1;
+        const PRECISION_MICROSECOND = 2;
+   
+        private $start;
+        private $end;
+   
+        public function __construct(){
+            $this->start = null;
+            $this->end = null;
+        }
+   
+        public function start(){
+            $this->start = microtime(true);
+            $this->end = null;
+        }
+   
+        public function end(){
+            $this->end = microtime(true);
+        }
+   
+        /**
+        * This function return the time the code use to process
+        * @param $precision the precision wanted, with const. second,
+millisecond and microsecond available (default PRECISION_SECOND)
+        * @param $floatingPrecision the number of numbers after the floating
+point (default 0)
+        * @param $showUnit precise if the unit should be returned (default
+true)
+        * @return the render time in the precision asked. Note that the
+precision is ±0.5 the precision (eq. 5s is at least 4.5s and at most 5.5s) <br
+/>
+        * The code have an error about 2 or 3µs (time to execute the end
+function)
+        */
+        public function getRenderTime($precision = self::PRECISION_SECOND, 
+$floatingPrecision = 0, $showUnit = true){
+
+            $test = is_int($precision) && $precision >= self::PRECISION_SECOND 
+&& $precision <= self::PRECISION_MICROSECOND &&
+                is_float($this->start) && is_float($this->end) && $this->start 
+<= $this->end &&
+                is_int($floatingPrecision) && $floatingPrecision >= 0 &&
+                is_bool($showUnit);
+
+            if($test){
+                $duration = round(($this->end - $this->start) * 10 ** (
+$precision * 3), $floatingPrecision);
+
+                if($showUnit)
+                    return $duration.' '.self::getUnit($precision);
+                else
+                    return $duration;
+            }else{
+                return 'Can\'t return the render time';
+            }
+        }
+   
+        private static function getUnit($precision){
+            switch($precision){
+                case self::PRECISION_SECOND :
+                    return 's';
+                case self::PRECISION_MILLISECOND :
+                    return 'ms';
+                case self::PRECISION_MICROSECOND :
+                    return 'µs';
+                default :
+                    return '(no unit)';
+            }
+        }
+    }
+?>
+If you want to use it, it's quiet simple:
+
+<?php
+    $render_time = new RenderTime();
+
+    $render_time->start();
+    for($i = 0; $i < 2 ** 24; $i++){}
+    $render_time->end();
+    echo 'Time to render: '.$render_time->getRenderTime(RenderTime::
+PRECISION_MILLISECOND);
+?>
+
+It should output somthing like this : 'Time to render: 3029 ms'
+Very useful for quick optimisation
+===============================================================================
+
+Following are tested under PHP 5.6.2:
+microtime() returns a string in the form "msec.sec" not "msec sec".
+
+So in Example #1, this line should be
+list ($usec, $sec) = explode(".", $e);
+===============================================================================
+
+I wrote a class which allows to time execution of php scripts very easily. You
+can even time multiple separate blocks and then get the total time at the end.
+
+The class is pretty long so I won't post it here, but here's the link:
+http://codeaid.net/php/calculate-script-execution-time-(php-class)
+
+An quick usage example:
+<?php
+for ($i = 0; $i < 100; $i++) {
+     // calculate the time it takes to run fx()
+     Timer::start();
+     fx();
+     Timer::stop();
+
+     fy();
+
+     // calculate the time it takes to run fz()
+     Timer::start();
+     fz();
+     Timer::stop();
+}
+
+print Timer::get();
+?>
+===============================================================================
+
+Want to make sure your script doesn't time out on large updates? Say you're
+doing a poor mans cron job or working with large amounts of data in loop and
+the user begins to hang too long. Instead of them giving up and leaving you can
+break the loop when it reaches a set time and still display data.
+
+Here's a simple handy dandy loop timer rounded to second.
+<?php
+$starttime = round(microtime(true));
+$totaltime  = 0;
+$maxtime = 5; //seconds
+for ($i = 1; $i <= 20; $i++) {  /// 20 loops 1 sec each
+
+        usleep(1000000);
+
+    if($totaltime < $maxtime){
+    $currenttime = round(microtime(true));
+    $totaltime = $totaltime + ($currenttime -$starttime);
+        //update and continue
+    echo  $i.'<br>';
+   
+    }else{
+        // stop updating or display not updated data.
+    break;
+    }
+}
+
+?>
+===============================================================================
+
+<?php
+class StopWatch {
+    public $total;
+    public $time;
+   
+    public function __construct() {
+        $this->total = $this->time = microtime(true);
+    }
+   
+    public function clock() {
+        return -$this->time + ($this->time = microtime(true));
+    }
+   
+    public function elapsed() {
+        return microtime(true) - $this->total;
+    }
+   
+    public function reset() {
+        $this->total=$this->time=microtime(true);
+    }
+}
+
+$stopwatch = new StopWatch();
+usleep(1000000);
+echo "Checkpoint 1: ".$stopwatch->clock()." seconds<br />";
+
+usleep(1000000);
+echo "Checkpoint 2: ".$stopwatch->clock()." seconds<br />";
+
+echo "Total Elapsed: ".$stopwatch->elapsed()." seconds<br />";
+?>
+===============================================================================
+
+This function is very useful for putting a start and end point in your page to
+find out where is the delay.
+
+<?php
+
+$start = microtime(true);
+// My source code here
+$end = microtime(true);
+
+echo $end."-".$start."=".($end - $start). " seconds";
+
+?>
+
+If you try this example above (without any source code between the start and
+the end point). You will get an ugly value, something like:
+1212690530.4132-1212690530.4132=8.1062316894531E-6 seconds
+
+You will wonder why you get this because both numbers seem to be equal. Well
+this is because there is a hidden precision that we are not able to see.
+
+To solve this problem I made a new function:
+
+<?php
+
+function my_microtime($precision = 4)
+{
+    return round(microtime(true),4);
+}
+
+$start = microtime(true);
+// My source code here
+$end = microtime(true);
+
+echo $end."-".$start."=".substr(($end - $start),0,5). " seconds";
+
+?>
+
+It would be useful if they add another parameter for precision in this function
+or at least another boolean that will not include the hidden precision.
+You can read more about the hidden precision in http://php.net/float
+===============================================================================
+
+Hi, I made a function to get the generation page time :
+
+<?php
+function gentime() {
+    static $a;
+    if($a == 0) $a = microtime(true);
+    else return (string)(microtime(true)-$a);
+}
+?>
+
+(You can add a round() to the return value if you want)
+
+Use :
+
+<?php
+# you should include your libraries/conf files here (including the gentime
+function)
+gentime();
+
+# your source code here
+
+echo 'Generated in '.gentime().' seconds.'
+?>
+===============================================================================
+
+Observed in php 5.3.3 on CentOS 6 and php 5.3.14 on Amazon Linux 2012.03:
+
+microtime()'s string value is in the format "0.dddddd00 ddddd...".  That is,
+there's room for 10-ns precision that isn't being used, and the "msec" value is
+in decimal, not a literal number of microseconds (and *especially* not
+milliseconds, which is what msec usually stands for) as the documentation might
+imply.
+===============================================================================
+
+I wanted to find out whether echo would be quicker in small chunks or one large
+chunk to test the theory mentioned in the previous post.  The following
+experiment shows that there is no significant performance difference, in terms
+of execution time elapsed, between the two methods of using echo.  I ran two
+test cases, one with a string that is 100000 bytes long and another with a
+string length of 1000000.  The source code follows below.
+
+<?php
+
+function echobig($string, $bufferSize = 8192)
+{
+    $splitString = str_split($string, $bufferSize);
+
+    foreach($splitString as $chunk)
+        echo $chunk;
+}
+
+global $dat;
+$dat = "";
+
+function testit()
+{
+global $dat;
+$data = "";
+
+for( $a = 0; $a <= 1000000; $a += 1 ) $data .= "a";
+
+$u1= microtime(true);
+echobig( $data );
+$u2= microtime(true);
+echo $data;
+$u3= microtime(true);
+
+$diff = $u2 - $u1;
+$diff2= $u3 - $u2;
+$dat .= "$diff2 $diff    $u2  $u1\r\n";
+}
+
+$i = 0;
+while( $i < 5 )
+{
+  testit(); $i += 1;
+}
+
+global $dat;
+$fp = fopen( "../Data/results.txt", "w" );
+fwrite( $fp, $dat );
+fclose( $fp );
+?>
+
+You can run the above experiment yourself or you can look at my test data.  I
+got some test data here:  http://www.codesplunk.com/examples/echo.html
+===============================================================================
+
+But note that the default 'precision' setting of PHP* - which is used when a
+float is converted to a stringy format by echo()ing, casting or json_encode()
+ing etc - is not enough to hold the six digit accuracy of microtime(true).
+
+Out of the box, microtime(true) will echo something like:
+
+1377611450.1234
+
+Which is obviously less than microsecond accuracy. You'll probably want to bump
+the 'precision' setting up to 16 which will echo something like:
+
+1377611450.123456
+
+*Internally* it will be accurate to the six digits even with the default
+'precision', but a lot of things (ie. NoSQL databases) are moving to all-text
+representations these days so it becomes a bit more important.
+
+* 14 at the time of writing
+===============================================================================
+
+Interesting quirk (tested in PHP 5.0.3): You can get very wacky results from
+microtime when it is called in the destructor of an object at the end of a
+script. These times vary enormously and can be in the *past*, when compared to
+microtime calls in the body of the script.
+
+As a case example, I played with a timer object that measured microtime when it
+was created at the start of the script, and measured microtime again at the end
+of the script using __destruct(); and then printed the total execution time
+(end time - start time) at the bottom of the page. On short scripts, this would
+often give a negative time!
+
+This quirk does not appear if microtime is measured with an automatic shutdown
+function (using <?PHP register_shutdown_function('myfunc') ?>. Incidentally,
+the automatic shutdown functions are called after output buffers are flushed
+but before object destructors are called.
+===============================================================================
+
+This little function comes in handy if you want a single integer when your
+server doesn't have php >= 5.0
+
+It returns seconds passed unix epoch to the microsecond. Or microseconds since
+unix epoch.
+
+<?php
+//A hack for PHP < 5.0
+function utime($inms){
+    $utime = preg_match("/^(.*?) (.*?)$/", microtime(), $match);
+    $utime = $match[2] + $match[1];
+    if($inms){
+        $utime *=  1000000;
+    }
+    return $utime;
+}
+
+//Example:
+print utime();
+//Returns:
+//1156127104.746352 Seconds
+
+//Example two:
+print utime(1);
+//Returns:
+//1156127104746352 Microseconds
+?>
+===============================================================================
+
+This function allows you to easily calculate time difference between two points
+in time without losing the precision.
+
+<?php
+
+    /**    Calculate a precise time difference.
+        @param string $start result of microtime()
+        @param string $end result of microtime(); if NULL/FALSE/0/'' then it's
+now
+        @return flat difference in seconds, calculated with minimum precision
+loss
+    */
+    function microtime_diff( $start, $end=NULL ) {
+        if( !$end ) {
+            $end= microtime();
+        }
+        list($start_usec, $start_sec) = explode(" ", $start);
+        list($end_usec, $end_sec) = explode(" ", $end);
+        $diff_sec= intval($end_sec) - intval($start_sec);
+        $diff_usec= floatval($end_usec) - floatval($start_usec);
+        return floatval( $diff_sec ) + $diff_usec;
+    }
+
+?>
+===============================================================================
+
+that related to the prescedence of the . operator
+
+<?php
+# normal prescedence
+$a = "te" .   1 - 2   . "st"; # ((te . 1) - 2 ) . st ==> -2st
+$b = "te" .   1 + 2   . "st"; # ((te . 1) + 2 ) . st ==>  2st
+
+# modified prescedence
+$c = "te" . ( 1 - 2 ) . "st"; # te . ( 1 - 2 ) . st ==> te-1st
+$d = "te" . ( 1 + 2 ) . "st"; # te . ( 1 + 2 ) . st ==> te3st
+
+var_dump( $a, $b );
+var_dump( $c, $d );

@@ -1,0 +1,2404 @@
+
+set_error_handler
+
+(PHP 4 >= 4.0.1, PHP 5, PHP 7)
+
+set_error_handler — 设置一个用户定义的错误处理函数
+
+说明
+
+mixed set_error_handler ( callable $error_handler [, int $error_types = E_ALL |
+E_STRICT ] )
+
+设置一个用户的函数(error_handler)来处理脚本中出现的错误。
+
+本函数可以用你自己定义的方式来处理运行中的错误，例如，在应用程序中严重错误发生
+时，或者在特定条件下触发了一个错误(使用 trigger_error())，你需要对数据/文件做清
+理回收。
+
+重要的是要记住 error_types 里指定的错误类型都会绕过 PHP 标准错误处理程序，除非
+回调函数返回了 FALSE。 error_reporting() 设置将不会起到作用而你的错误处理函数继
+续会被调用 —— 不过你仍然可以获取 error_reporting 的当前值，并做适当处理。需要特
+别注意的是带 @ error-control operator 前缀的语句发生错误时，这个值会是 0。
+
+同时注意，在需要时你有责任使用 die()。如果错误处理程序返回了，脚本将会继续执行
+发生错误的后一行。
+
+以下级别的错误不能由用户定义的函数来处理： E_ERROR、 E_PARSE、 E_CORE_ERROR、
+E_CORE_WARNING、 E_COMPILE_ERROR、 E_COMPILE_WARNING，和在调用 
+set_error_handler() 函数所在文件中产生的大多数 E_STRICT。
+
+如果错误发生在脚本执行之前（比如文件上传时），将不会调用自定义的错误处理程序因
+为它尚未在那时注册。
+
+参数
+
+error_handler
+
+    用户的函数需要接受两个参数：错误码和描述错误的 string。另外有可能提供三个可
+    选参数：发生错误的文件名、发生错误的行号以及发生错误的上下文(一个指向错误发
+    生时活动符号表的 array)。该函数可以表示为：
+
+    handler ( int $errno , string $errstr [, string $errfile [, int $errline [,
+    array $errcontext ]]] )
+
+    errno
+        第一个参数 errno，包含了错误的级别，是一个 integer。
+    errstr
+        第二个参数 errstr，包含了错误的信息，是一个 string。
+    errfile
+        第三个参数是可选的，errfile，包含了发生错误的文件名，是一个 string。
+    errline
+        第四个参数是一个可选项， errline，包含了错误发生的行号，是一个 integer
+        。
+    errcontext
+        第五个可选参数， errcontext，是一个指向错误发生时活动符号表的 array。也
+        就是说，errcontext 会包含错误触发处作用域内所有变量的数组。用户的错误处
+        理程序不应该修改错误上下文（context）。
+
+    如果函数返回 FALSE，标准错误处理处理程序将会继续调用。
+
+error_types
+
+    就像error_reporting 的 ini 设置能够控制错误的显示一样，此参数能够用于屏蔽
+    error_handler 的触发。如果没有该掩码，无论 error_reporting 是如何设置的，
+    error_handler 都会在每个错误发生时被调用。
+
+返回值
+
+如果之前有定义过错误处理程序，则返回该程序名称的 string；如果是内置的错误处理程
+序，则返回 NULL。如果你指定了一个无效的回调函数，同样会返回 NULL。如果之前的错
+误处理程序是一个类的方法，此函数会返回一个带类和方法名的索引数组(indexed array)
+。
+
+更新日志
+
+版本                                    说明
+5.2.0 错误处理器必须返回 FALSE 来显示 $php_errormsg。
+5.0.0 引入 error_types 参数。
+4.3.0 除了一个函数名，也可以使用一个包含对象引用和方法名的数组来作为
+      error_handler。
+4.0.2 为用户的 error_handler 引入三个可选参数，分别是文件名、行号和上下文
+      (context)。
+
+范例
+
+Example #1 用 set_error_handler() 和 trigger_error() 进行错误处理
+
+以下示例展示了通过触发错误并以用户自定义的程序来进行内部异常的处理。
+
+<?php
+// error handler function
+function myErrorHandler($errno, $errstr, $errfile, $errline)
+{
+    if (!(error_reporting() & $errno)) {
+        // This error code is not included in error_reporting
+        return;
+    }
+
+    switch ($errno) {
+    case E_USER_ERROR:
+        echo "<b>My ERROR</b> [$errno] $errstr<br />\n";
+        echo "  Fatal error on line $errline in file $errfile";
+        echo ", PHP " . PHP_VERSION . " (" . PHP_OS . ")<br />\n";
+        echo "Aborting...<br />\n";
+        exit(1);
+        break;
+
+    case E_USER_WARNING:
+        echo "<b>My WARNING</b> [$errno] $errstr<br />\n";
+        break;
+
+    case E_USER_NOTICE:
+        echo "<b>My NOTICE</b> [$errno] $errstr<br />\n";
+        break;
+
+    default:
+        echo "Unknown error type: [$errno] $errstr<br />\n";
+        break;
+    }
+
+    /* Don't execute PHP internal error handler */
+    return true;
+}
+
+// function to test the error handling
+function scale_by_log($vect, $scale)
+{
+    if (!is_numeric($scale) || $scale <= 0) {
+        trigger_error("log(x) for x <= 0 is undefined, you used: scale = $scale
+", E_USER_ERROR);
+    }
+
+    if (!is_array($vect)) {
+        trigger_error("Incorrect input vector, array of values expected", 
+E_USER_WARNING);
+        return null;
+    }
+
+    $temp = array();
+    foreach($vect as $pos => $value) {
+        if (!is_numeric($value)) {
+            trigger_error("Value at position $pos is not a number, using 0 
+(zero)", E_USER_NOTICE);
+            $value = 0;
+        }
+        $temp[$pos] = log($scale) * $value;
+    }
+
+    return $temp;
+}
+
+// set to the user defined error handler
+$old_error_handler = set_error_handler("myErrorHandler");
+
+// trigger some errors, first define a mixed array with a non-numeric item
+echo "vector a\n";
+$a = array(2, 3, "foo", 5.5, 43.3, 21.11);
+print_r($a);
+
+// now generate second array
+echo "----\nvector b - a notice (b = log(PI) * a)\n";
+/* Value at position $pos is not a number, using 0 (zero) */
+$b = scale_by_log($a, M_PI);
+print_r($b);
+
+// this is trouble, we pass a string instead of an array
+echo "----\nvector c - a warning\n";
+/* Incorrect input vector, array of values expected */
+$c = scale_by_log("not array", 2.3);
+var_dump($c); // NULL
+
+// this is a critical error, log of zero or negative number is undefined
+echo "----\nvector d - fatal error\n";
+/* log(x) for x <= 0 is undefined, you used: scale = $scale" */
+$d = scale_by_log($a, -2.5);
+var_dump($d); // Never reached
+?>
+
+以上例程的输出类似于：
+
+vector a
+Array
+(
+    [0] => 2
+    [1] => 3
+    [2] => foo
+    [3] => 5.5
+    [4] => 43.3
+    [5] => 21.11
+)
+----
+vector b - a notice (b = log(PI) * a)
+<b>My NOTICE</b> [1024] Value at position 2 is not a number, using 0 (zero)<br />
+Array
+(
+    [0] => 2.2894597716988
+    [1] => 3.4341896575482
+    [2] => 0
+    [3] => 6.2960143721717
+    [4] => 49.566804057279
+    [5] => 24.165247890281
+)
+----
+vector c - a warning
+<b>My WARNING</b> [512] Incorrect input vector, array of values expected<br />
+NULL
+----
+vector d - fatal error
+<b>My ERROR</b> [256] log(x) for x <= 0 is undefined, you used: scale = -2.5<br />
+  Fatal error on line 35 in file trigger_error.php, PHP 5.2.1 (FreeBSD)<br />
+Aborting...<br />
+
+参见
+
+  • ErrorException
+  • error_reporting() - 设置应该报告何种 PHP 错误
+  • restore_error_handler() - 还原之前的错误处理函数
+  • trigger_error() - 产生一个用户级别的 error/warning/notice 信息
+  • error level constants
+  • callback 类型的信息
+
+
+User Contributed Notes 69 notes
+
+===============================================================================
+
+By this function alone you can not catch fatal errors, there is a simple work
+around. Below is part of my error.php file which handles errors and exceptions
+in the application. Before someone complains I'll add that I do not care that I
+am using globals, this file is part of my mini framework and without the
+'config' variable the application would crash anyways.
+
+<?php
+
+/**
+* Error handler, passes flow over the exception logger with new ErrorException.
+*/
+function log_error( $num, $str, $file, $line, $context = null )
+{
+    log_exception( new ErrorException( $str, 0, $num, $file, $line ) );
+}
+
+/**
+* Uncaught exception handler.
+*/
+function log_exception( Exception $e )
+{
+    global $config;
+   
+    if ( $config["debug"] == true )
+    {
+        print "<div style='text-align: center;'>";
+        print "<h2 style='color: rgb(190, 50, 50);'>Exception Occured:</h2>";
+        print "<table style='width: 800px; display: inline-block;'>";
+        print "<tr style='background-color:rgb(230,230,230);'><th style='width:
+80px;'>Type</th><td>" . get_class( $e ) . "</td></tr>";
+        print "<tr style='background-color:rgb(240,240,240);'><th>Message</th>
+<td>{$e->getMessage()}</td></tr>";
+        print "<tr style='background-color:rgb(230,230,230);'><th>File</th><td>
+{$e->getFile()}</td></tr>";
+        print "<tr style='background-color:rgb(240,240,240);'><th>Line</th><td>
+{$e->getLine()}</td></tr>";
+        print "</table></div>";
+    }
+    else
+    {
+        $message = "Type: " . get_class( $e ) . "; Message: {$e->getMessage()};
+File: {$e->getFile()}; Line: {$e->getLine()};";
+        file_put_contents( $config["app_dir"] . "/tmp/logs/exceptions.log", 
+$message . PHP_EOL, FILE_APPEND );
+        header( "Location: {$config["error_page"]}" );
+    }
+   
+    exit();
+}
+
+/**
+* Checks for a fatal error, work around for set_error_handler not working on
+fatal errors.
+*/
+function check_for_fatal()
+{
+    $error = error_get_last();
+    if ( $error["type"] == E_ERROR )
+        log_error( $error["type"], $error["message"], $error["file"], $error[
+"line"] );
+}
+
+register_shutdown_function( "check_for_fatal" );
+set_error_handler( "log_error" );
+set_exception_handler( "log_exception" );
+ini_set( "display_errors", "off" );
+error_reporting( E_ALL );
+===============================================================================
+
+<?php
+/**
+* throw exceptions based on E_* error types
+*/
+set_error_handler(function ($err_severity, $err_msg, $err_file, $err_line,
+array $err_context)
+{
+    // error was suppressed with the @-operator
+    if (0 === error_reporting()) { return false;}
+    switch($err_severity)
+    {
+        case E_ERROR:               throw new ErrorException            (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_WARNING:             throw new WarningException          (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_PARSE:               throw new ParseException            (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_NOTICE:              throw new NoticeException           (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_CORE_ERROR:          throw new CoreErrorException        (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_CORE_WARNING:        throw new CoreWarningException      (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_COMPILE_ERROR:       throw new CompileErrorException     (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_COMPILE_WARNING:     throw new CoreWarningException      (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_USER_ERROR:          throw new UserErrorException        (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_USER_WARNING:        throw new UserWarningException      (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_USER_NOTICE:         throw new UserNoticeException       (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_STRICT:              throw new StrictException           (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_RECOVERABLE_ERROR:   throw new RecoverableErrorException (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_DEPRECATED:          throw new DeprecatedException       (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+        case E_USER_DEPRECATED:     throw new UserDeprecatedException   (
+$err_msg, 0, $err_severity, $err_file, $err_line);
+    }
+});
+
+class WarningException              extends ErrorException {}
+class ParseException                extends ErrorException {}
+class NoticeException               extends ErrorException {}
+class CoreErrorException            extends ErrorException {}
+class CoreWarningException          extends ErrorException {}
+class CompileErrorException         extends ErrorException {}
+class CompileWarningException       extends ErrorException {}
+class UserErrorException            extends ErrorException {}
+class UserWarningException          extends ErrorException {}
+class UserNoticeException           extends ErrorException {}
+class StrictException               extends ErrorException {}
+class RecoverableErrorException     extends ErrorException {}
+class DeprecatedException           extends ErrorException {}
+class UserDeprecatedException       extends ErrorException {}
+===============================================================================
+
+<?php
+/**
+* Used for logging all php notices,warings and etc in a file when error
+reporting
+* is set and display_errors is off
+* @uses used in prod env for logging all type of error of php code in a file
+for further debugging
+* and code performance
+* @author Aditya Mehrotra<aditycse@gmail.com>
+*/
+error_reporting(E_ALL);
+ini_set("display_errors", "off");
+define('ERROR_LOG_FILE', '/var/www/error.log');
+
+/**
+* Custom error handler
+* @param integer $code
+* @param string $description
+* @param string $file
+* @param interger $line
+* @param mixed $context
+* @return boolean
+*/
+function handleError($code, $description, $file = null, $line = null, $context 
+= null) {
+    $displayErrors = ini_get("display_errors");
+    $displayErrors = strtolower($displayErrors);
+    if (error_reporting() === 0 || $displayErrors === "on") {
+        return false;
+    }
+    list($error, $log) = mapErrorCode($code);
+    $data = array(
+        'level' => $log,
+        'code' => $code,
+        'error' => $error,
+        'description' => $description,
+        'file' => $file,
+        'line' => $line,
+        'context' => $context,
+        'path' => $file,
+        'message' => $error . ' (' . $code . '): ' . $description . ' in [' . 
+$file . ', line ' . $line . ']'
+    );
+    return fileLog($data);
+}
+
+/**
+* This method is used to write data in file
+* @param mixed $logData
+* @param string $fileName
+* @return boolean
+*/
+function fileLog($logData, $fileName = ERROR_LOG_FILE) {
+    $fh = fopen($fileName, 'a+');
+    if (is_array($logData)) {
+        $logData = print_r($logData, 1);
+    }
+    $status = fwrite($fh, $logData);
+    fclose($fh);
+    return ($status) ? true : false;
+}
+
+/**
+* Map an error code into an Error word, and log location.
+*
+* @param int $code Error code to map
+* @return array Array of error word, and log location.
+*/
+function mapErrorCode($code) {
+    $error = $log = null;
+    switch ($code) {
+        case E_PARSE:
+        case E_ERROR:
+        case E_CORE_ERROR:
+        case E_COMPILE_ERROR:
+        case E_USER_ERROR:
+            $error = 'Fatal Error';
+            $log = LOG_ERR;
+            break;
+        case E_WARNING:
+        case E_USER_WARNING:
+        case E_COMPILE_WARNING:
+        case E_RECOVERABLE_ERROR:
+            $error = 'Warning';
+            $log = LOG_WARNING;
+            break;
+        case E_NOTICE:
+        case E_USER_NOTICE:
+            $error = 'Notice';
+            $log = LOG_NOTICE;
+            break;
+        case E_STRICT:
+            $error = 'Strict';
+            $log = LOG_NOTICE;
+            break;
+        case E_DEPRECATED:
+        case E_USER_DEPRECATED:
+            $error = 'Deprecated';
+            $log = LOG_NOTICE;
+            break;
+        default :
+            break;
+    }
+    return array($error, $log);
+}
+
+//calling custom error handler
+set_error_handler("handleError");
+
+print_r($arra); //undefined variable
+print_r($dssdfdfgg); //undefined variable
+include_once 'file.php'; //No such file or directory
+?>
+===============================================================================
+
+Keep in mind that, when attempting to set a statically-defined error handler on
+a namespaced class in PHP >= 5.3, you need to use the class namespace:
+
+<?php
+set_error_handler('\\My\\Namespace\\Bob::errorHandler');
+?>
+===============================================================================
+
+This may be of help to someone, who is/was looking for a way to get a backtrace
+of fatal errors such as maximum memory allocation issues, which can not be
+handled with user-defined functions, to pin-point the problem:
+
+On a server hosting many sites that share common PHP includes, I set in one
+spot:
+
+<?php
+@ini_set ("error_log", "/my/path/php.err-" . $_SERVER ["HTTP_HOST"] . "-" . 
+$_SERVER ["REMOTE_ADDR"] . "-" . $_SERVER ["REQUEST_METHOD"] . "-" . 
+str_replace ("/", "|", $_SERVER ["REQUEST_URI"]));
+?>
+
+I actually used some additional information too from my software that I
+omitted, but that way, you'll find errors sorted more neatly in for example:-
+
+/my/path/php.err-website.com-127.0.0.1-GET-path|index.html?xyz
+
+And that at least helped me tremendously to then further pin-point where the
+problem is, as opposed to before just seeing the out of memory and not knowing
+which site/page it was on (as the PHP error only contains the very latest PHP
+code where it ran out of memory, which usually is just a shared included file,
+not the actual page).
+===============================================================================
+
+i made an error handler that print also the backtrace and that can die on some
+errors. It can be useful if you want to die on every error you find.
+
+<?php
+
+function my_error_handler($errno, $errstr, $errfile, $errline){
+    $errno = $errno & error_reporting();
+    if($errno == 0) return;
+    if(!defined('E_STRICT'))            define('E_STRICT', 2048);
+    if(!defined('E_RECOVERABLE_ERROR')) define('E_RECOVERABLE_ERROR', 4096);
+    print "<pre>\n<b>";
+    switch($errno){
+        case E_ERROR:               print "Error";                  break;
+        case E_WARNING:             print "Warning";                break;
+        case E_PARSE:               print "Parse Error";            break;
+        case E_NOTICE:              print "Notice";                 break;
+        case E_CORE_ERROR:          print "Core Error";             break;
+        case E_CORE_WARNING:        print "Core Warning";           break;
+        case E_COMPILE_ERROR:       print "Compile Error";          break;
+        case E_COMPILE_WARNING:     print "Compile Warning";        break;
+        case E_USER_ERROR:          print "User Error";             break;
+        case E_USER_WARNING:        print "User Warning";           break;
+        case E_USER_NOTICE:         print "User Notice";            break;
+        case E_STRICT:              print "Strict Notice";          break;
+        case E_RECOVERABLE_ERROR:   print "Recoverable Error";      break;
+        default:                    print "Unknown error ($errno)"; break;
+    }
+    print ":</b> <i>$errstr</i> in <b>$errfile</b> on line <b>$errline</b>\n";
+    if(function_exists('debug_backtrace')){
+        //print "backtrace:\n";
+        $backtrace = debug_backtrace();
+        array_shift($backtrace);
+        foreach($backtrace as $i=>$l){
+            print "[$i] in function <b>{$l['class']}{$l['type']}{$l['function'
+]}</b>";
+            if($l['file']) print " in <b>{$l['file']}</b>";
+            if($l['line']) print " on line <b>{$l['line']}</b>";
+            print "\n";
+        }
+    }
+    print "\n</pre>";
+    if(isset($GLOBALS['error_fatal'])){
+        if($GLOBALS['error_fatal'] & $errno) die('fatal');
+    }
+}
+
+function error_fatal($mask = NULL){
+    if(!is_null($mask)){
+        $GLOBALS['error_fatal'] = $mask;
+    }elseif(!isset($GLOBALS['die_on'])){
+        $GLOBALS['error_fatal'] = 0;
+    }
+    return $GLOBALS['error_fatal'];
+}
+
+?>
+
+Usage :
+
+<?php
+error_reporting(E_ALL);      // will report all errors
+set_error_handler('my_error_handler');
+error_fatal(E_ALL^E_NOTICE); // will die on any error except E_NOTICE
+?>
+===============================================================================
+
+We needed to use an error handler to handle SQL errors while passing the query
+along so the query is also logged and this is what we came up with, its kind of
+an ugly bridge but it works 100%
+
+<?php
+
+function myErrorHandler($errno, $errstr, $errfile, $errline){
+    switch ($errno) {
+    case E_USER_ERROR:
+        if ($errstr == "(SQL)"){
+            // handling an sql error
+            echo "<b>SQL Error</b> [$errno] " . SQLMESSAGE . "<br />\n";
+            echo "Query : " . SQLQUERY . "<br />\n";
+            echo "On line " . SQLERRORLINE . " in file " . SQLERRORFILE . " ";
+            echo ", PHP " . PHP_VERSION . " (" . PHP_OS . ")<br />\n";
+            echo "Aborting...<br />\n";
+        } else {
+            echo "<b>My ERROR</b> [$errno] $errstr<br />\n";
+            echo "  Fatal error on line $errline in file $errfile";
+            echo ", PHP " . PHP_VERSION . " (" . PHP_OS . ")<br />\n";
+            echo "Aborting...<br />\n";
+        }
+        exit(1);
+        break;
+
+    case E_USER_WARNING:
+    case E_USER_NOTICE:
+    }
+    /* Don't execute PHP internal error handler */
+    return true;
+}
+
+// function to test the error handling
+
+function sqlerrorhandler($ERROR, $QUERY, $PHPFILE, $LINE){
+    define("SQLQUERY", $QUERY);
+    define("SQLMESSAGE", $ERROR);
+    define("SQLERRORLINE", $LINE);
+    define("SQLERRORFILE", $PHPFILE);
+    trigger_error("(SQL)", E_USER_ERROR);
+}
+
+set_error_handler("myErrorHandler");
+
+// trigger an sql error
+$query = "SELECT * FROM tbl LIMIT 1";
+$sql = @mysql_query($query)
+    or sqlerrorhandler("(".mysql_errno().") ".mysql_error(), $query, $_SERVER[
+'PHP_SELF'], __LINE__);
+   
+
+?>
+===============================================================================
+
+"The following error types cannot be handled with a user defined function:
+E_ERROR, E_PARSE, E_CORE_ERROR, E_CORE_WARNING, E_COMPILE_ERROR,
+E_COMPILE_WARNING, and most of E_STRICT raised in the file where
+set_error_handler() is called."
+
+This is not exactly true.  set_error_handler() can't handle them, but ob_start
+() can handle at least E_ERROR.
+
+<?php
+
+function error_handler($output)
+{
+    $error = error_get_last();
+    $output = "";
+    foreach ($error as $info => $string)
+        $output .= "{$info}: {$string}\n";
+    return $output;
+}
+
+ob_start('error_handler');
+
+will_this_undefined_function_raise_an_error();
+
+?>
+===============================================================================
+
+Given this code:
+
+class CallbackClass {
+    function CallbackFunction() {
+        // refers to $this
+    }
+
+    function StaticFunction() {
+        // doesn't refer to $this
+    }
+}
+
+function NonClassFunction() {
+}
+
+there appear to be 3 ways to set a callback function in PHP (using
+set_error_handler() as an example):
+
+1: set_error_handler('NonClassFunction');
+
+2: set_error_handler(array('CallbackClass', 'StaticFunction'));
+
+3: $o =& new CallbackClass();
+   set_error_handler(array($o, 'CallbackFunction'));
+
+The following may also prove useful:
+
+class CallbackClass {
+    function CallbackClass() {
+        set_error_handler(array(&$this, 'CallbackFunction')); // the & is
+important
+    }
+   
+    function CallbackFunction() {
+        // refers to $this
+    }
+}
+
+The documentation is not clear in outlining these three examples.
+===============================================================================
+
+I saw many checking for all the error constants manually in a switch statement.
+If you just want to add the type of the error (E_WARNING, E_NOTICE, etc) to
+your ErrorException, use array_search() with get_defined_constants():
+
+new ErrorException("[" . array_search($errno, get_defined_constants(), true)  .
+"] " . $errstr, 0, $errno, $errfile, $errline);
+===============================================================================
+
+The manual states:
+
+"errcontext will contain an array of every variable that existed in the scope
+the error was triggered in. User error handler must not modify error context."
+
+But do you know WHY you must not modify the error context? It appears that
+errcontext is (in effect if not literally) created by taking $GLOBALS and
+adding the non-global local variables as additional entries in that array, then
+passing the whole thing *by reference*.
+
+(You can prove this to be true if you set up a custom error handler and then
+print_r($errcontext) within it, because $GLOBALS will be printed as a recursive
+array).
+
+In other words, the language in the manual is misleading, because errcontext is
+NOT a copy of the variables that existed when the error WAS triggered, but
+rather is a reference to the *existing LIVE variables* in the calling script.
+
+This includes superglobal variables like $_SERVER, $_POST, $_GET, etc., as well
+as all user-defined variables in scope.
+
+The significance of that is that if you modify errcontext, you will be
+modifying those other variables, not just for the life of your error handling
+function, but for the life of the calling script as well.
+
+That doesn't matter if you plan to halt execution in your error handling
+function, but it will lead to unexpected behavior if you modify $errcontext and
+then return to the program's normal flow after handling the error, because the
+variables will stay modified. For example, if you unset $_SERVER in your custom
+error handling function, it will remain unset once the function is over and you
+have returned to the page that generated the error.
+
+This should be made clearer in the manual, starting by marking errhandler with
+an ampersand (&) for passage by reference in the "Parameters" section above,
+like so:
+
+handler ( int $errno, string $errstr [, string $errfile [, int $errline [,
+array &$errcontext]]] )
+===============================================================================
+
+This is a note when using php from the terminal (the CLI interface). From the
+command line, even if you have some kind of error user handler function so
+STDERR will not display, fatal errors will still cause the PHP interpreter to
+display error text. There is nothing you can do about that php-wise. If using
+UNIX/Linux, you can add " 2>/dev/null" at the end of your command to force
+STDERR not to show
+===============================================================================
+
+At work I have some code with errors that uncatched are the causes of integrity
+loss (people calling web services with file_get_contents that fails silently
+and afterwards insert garbage in the database).
+
+here is the solution I found to transform a specific set of errors into
+exception and afterwards be able to selectively act (with the error code)
+regarding categories : 
+
+<?php
+ini_set('error_reporting',E_ALL^E_NOTICE);
+
+## first 10 bits reserved for the initial error number
+define('EMASK',(~0)<<10);
+define('ECODEMASK',~EMASK);
+## categories
+define('IOERROR', 1<<10);
+define('EMPTYPARMS', 1<<11);
+define('FAILURE', 1<<12);
+## string error patterns => code
+
+$catch_me=array(
+    "/^(file_get_contents)\((.*)\).*failed to open stream: (.*)/ " =>
+        array ( 'mesg' => "IO::Failed to open stream with",
+                'code' => IOERROR | FAILURE
+        ),
+    "/^fopen\(.*\): Filename cannot be empty/" =>
+        array( 'msg' => "Parameters::empty",
+                'code' => EMPTYPARMS
+        )
+    );
+function error_2_exception($errno, $errstr, $errfile, $errline,$context) {
+    global $catch_me;
+    foreach ($catch_me as $regexp  => $res) {
+        if(preg_match($regexp,$errstr,$match)){
+            throw new Exception($res['mesg'],$res['code']|( $errno & EMASK ) );
+        }
+    }
+    /* switch back to PHP internal error handler  */
+    return false;
+}
+## => want to catch this one
+$f=file_get_contents("mlsdkfm");
+## dont want to break existing wrong behaviour yet (so not caught)
+$f=file_get_contents('');
+## magic
+set_error_handler("error_2_exception");
+## behaviour remains the same
+$f=file_get_contents('');
+try {
+## web services that dont work now raise an exception \o/
+$f=file_get_contents("mlsdkfm");
+} catch(Exception $e) {
+## and I can group my exception by category
+    echo ( $e->getCode() & FAILURE )  ? "\nEPIC FAIL\n" : "\nbegnine";
+}
+
+?>
+===============================================================================
+
+To honor the value of PHP's error_reporting() function, use:
+
+<?
+  if( ($level & error_reporting()) == 0 ) return;
+?>
+===============================================================================
+
+It is not possible to handle fatal errors with own handler. Even if you have
+set your own handler, fatal error will be always handled by PHP's default
+handler. The reason is the script may be in unstable state after fatal error
+occurence (details here: http://marc.theaimsgroup.com/?l=php-dev&m=
+97673386418430&w=2).
+===============================================================================
+
+Two notes on using set_error_handler() on behaviour that I noticed when
+migrating an application from php 4.2.1 to php 4.3.9 (I do not yet have php 5.0
+available, this might not apply there!).
+
+1. setting the system error handler
+
+If you want to set the standard php error handler again, after having set your
+own error handler, this works in php 4.2.1 by passing in an empty string:
+
+<?php
+
+   function my_handler($log_level, $log_text, $error_file, $error_line)
+   {
+      // if an error occurs here, the standard error
+      // would be called (to avoid recursion)
+
+      // do something useful
+      // ...
+   }
+
+   $last_handler = set_error_handler("my_handler");
+
+   // after this, $last_handler == ""
+
+   // restore standard error handler
+
+   $last_handler = set_error_handler("");
+
+   // after this, $last_handler == "my_handler"
+
+?>
+
+The very same code now raises an error in php 4.3.9:
+
+   set_error_handler() expects argument 1, '', to be a valid callback
+
+(Since the return value of the first call to set_error_handler() is still the
+empty string "", I don't see how this can be done any more. I don't really need
+this, because I use my own handlers as shown below, but it might be good to be
+aware of this.)
+
+2. setting your own 'second level' handler
+
+If you have set your own error handler, and want to replace it by another one
+(other than the standard php error handler) while it is being executed, note
+that the return value of set_error_handler when used INSIDE the error handler
+is "" instead of the name of the previous handler! This is not too surprising,
+because during execution of your self defined error handler, php replaces it
+with the standard php error handler to avoid infinite loops in case of problems
+inside the handler. This is only interesting if you want nested handlers as I
+do. Background of my design:
+
+   1st level handler: log into DB
+   2nd level handler: log into flat file (if log into DB fails)
+   3rd level handler: print to stdout (if log into flat file fails) (this is
+the sytem handler, finally).
+
+<?php
+
+   function my_fallback_handler($log_level, $log_text, $error_file, $error_line
+)
+   {
+      // if an error occurs here, the standard error
+      // would be called (to avoid recursion)
+
+      // do something useful
+      // ...
+
+   } // my_fallback_handler
+
+   function my_handler($log_level, $log_text, $error_file, $error_line)
+   {
+      // if an error occurs here, the standard error
+      // would be called (to avoid recursion)
+
+      // but we want to have a fallback handler different
+      // to the standard error handler
+
+      $last_handler = set_error_handler("my_fallback_handler");
+
+      // I expected $last_handler == "my_handler"
+      // (which it would outside my_handler())
+      // but here it is the empty string ""
+
+      // do something useful
+      // ...
+
+      // now set the 1st level handler again:
+      // (do NOT use $last_handler as argument,
+      // because it equals "")
+
+      $last_handler = set_error_handler("my_handler");
+
+   } // my_handler
+
+   $last_handler = set_error_handler("my_handler");
+
+?>
+===============================================================================
+
+@jayp at groovejob dot com
+As I said before, the reference operator doesn't have any effect on the the
+error handler.
+
+Proof of concepts:
+http://trouby.digitized.nl/set_error_handler2.php
+http://trouby.digitized.nl/set_error_handler2.php?source=1
+===============================================================================
+
+It seems that when you're letting PHP know that you have a custom  error
+handler, you're not able to -update/set new- variables inside the class.
+Example:
+
+<?php
+class error {
+   var $error;
+
+   function error() {
+       $this->setIni();    // this causes PHP to ignore all other changes to
+the class.
+   }
+
+   function handler() {
+       echo $this->error.'!!';
+   }
+
+   function setText($text) {
+         $this->error = $text;
+   }
+
+   function setIni() {
+       set_error_handler(array($this, 'handler'));
+   }
+}
+
+$eh = new error;
+$eh->setText('Error! <br>');  // this will not be saved
+
+trigger_error('text', E_USER_ERROR);
+// prints '!!'
+?>
+
+How it should be done:
+<?php
+class error {
+   var $error;
+
+   function error() {
+         // dont let PHP know of our error handler yet
+   }
+
+   function handler() {
+       echo $this->error.'!!';
+   }
+
+   function setText($text) {
+         $this->error = $text;
+   }
+
+   function setIni() {
+       set_error_handler(array($this, 'handler'));
+   }
+}
+
+$eh = new error;
+$eh->setText('Error! <br>');  // this WILL work
+$eh->setIni();  // call this method when you're ready with configuring the
+class. All other methods that will be called will have no effect on the
+errorHandling by PHP
+
+trigger_error('text', E_USER_ERROR);
+// prints 'Error! <br>!!'
+?>
+===============================================================================
+
+If you want to be sure that the native PHP error handler is called without
+resetting the handler stack (as set_error_handler(null) does), you can simply
+call set_error_handler with $error_types set to zero. This can be especially
+use full in conjunction with e.g. error_get_last():
+
+<?php
+
+// var_dump or anything else, as this will never be called because of the 0
+set_error_handler('var_dump', 0);
+@$undef_var;
+restore_error_handler();
+
+// error_get_last() is now in a well known state:
+// Undefined variable: undef_var
+
+... // Do something
+
+$e = error_get_last();
+
+...
+
+?>
+===============================================================================
+
+How to handle fatal errors in php 5.2:
+
+<?php
+register_shutdown_function('shutdownFunction');
+function shutDownFunction() {
+    $error = error_get_last();
+    if ($error['type'] == 1) {
+        //do your stuff    
+    }
+}
+?>
+===============================================================================
+
+This might be handy if you don't want your clients to see the errors, and you
+do want to be one step ahead of them.
+
+It emails you the errors even if it's a parse error.
+
+set_error_handler() doesn't work for what I wanted.
+
+<?php
+ini_set('log_errors',TRUE);
+ini_set('error_log','tiny_uploads/errors.txt');
+
+if($_SERVER['REMOTE_ADDR'] != "YOUR IP ADDRESS"){
+    ini_set('display_errors',false);
+}
+  
+function byebye(){
+
+        $dir = dirname(__FILE__);
+        if(file_exists($dir."/tiny_uploads/errors.txt")){
+       
+            $errors = file_get_contents($dir."/tiny_uploads/errors.txt");
+           
+            if(trim($errors)){
+           
+                $head = "From: php_errors@".str_replace('www.','',$_SERVER[
+'HTTP_HOST'])."\r\n";
+               
+                $errors .= "---------------------------------------------\n\n";
+               
+                $errors .= "\n\nServer Info:\n\n".print_r($_SERVER, 1)."\n\n";
+                $errors .= "---------------------------------------------\n\n";
+               
+                $errors .= "\n\nCOOKIE:\n\n".print_r($_COOKIE, 1)."\n\n";
+                $errors .= "---------------------------------------------\n\n";
+               
+                $errors .= "\n\nPOST:\n\n".print_r($_POST, 1)."\n\n";
+                $errors .= "---------------------------------------------\n\n";
+               
+                $errors .= "\n\nGET:\n\n".print_r($_GET, 1)."\n\n";
+               
+               
+                mail("YOUR@EMAIL.COM","PHP Error ".$_SERVER['HTTP_HOST']."", 
+$errors , $head);
+               
+                $fp = fopen($dir."/tiny_uploads/errors.txt","w+");
+                fputs($fp, "");
+                fclose($fp);   
+            }   
+        }
+}
+register_shutdown_function("byebye");
+?>
+===============================================================================
+
+This actually works to catch Fatal errors...
+
+<?php
+function shutdown()
+{
+    $a=error_get_last();
+    if($a==null)  
+        echo "No errors";
+    else
+         print_r($a);
+   
+}
+register_shutdown_function('shutdown');
+ini_set('max_execution_time',1 );
+sleep(3);
+?>
+
+it will output
+Array ( [type] => 1 [message] => Maximum execution time of 1 second exceeded
+[file] => /path/to/file_name.php [line] => 136 )
+===============================================================================
+
+The @ operator sets the error_reporting() value to 0.
+This means you can use it with your own Error Handler too. for example:
+
+function userErrorHandler($errno, $errmsg, $filename, $linenum, $vars) {
+   if (error_reporting())
+echo $errmsg;
+    }
+set_error_handler("userErrorHandler");
+
+function test(){
+trigger_error("Error Message", E_USER_WARNING);
+}
+
+@test(); // doesn't output anything
+===============================================================================
+
+This is my customized error handler : (excuse my english)
+
+https://gist.github.com/anonymous/556c6c75daf83039b6f8/
+9c36020422a4be148a1f4df88a478526b985496e
+===============================================================================
+
+For anyone interested in the actual translated error codes and their meanings:
+
+1    E_ERROR (integer)     Fatal run-time errors. These indicate errors that
+can not be recovered from, such as a memory allocation problem. Execution of
+the script is halted.    
+2    E_WARNING (integer)     Run-time warnings (non-fatal errors). Execution of
+the script is not halted.    
+4    E_PARSE (integer)     Compile-time parse errors. Parse errors should only
+be generated by the parser.    
+8    E_NOTICE (integer)     Run-time notices. Indicate that the script
+encountered something that could indicate an error, but could also happen in
+the normal course of running a script.    
+16    E_CORE_ERROR (integer)     Fatal errors that occur during PHP's initial
+startup. This is like an E_ERROR, except it is generated by the core of PHP. 
+  
+32    E_CORE_WARNING (integer)     Warnings (non-fatal errors) that occur
+during PHP's initial startup. This is like an E_WARNING, except it is generated
+by the core of PHP.    
+64    E_COMPILE_ERROR (integer)     Fatal compile-time errors. This is like an
+E_ERROR, except it is generated by the Zend Scripting Engine.    
+128    E_COMPILE_WARNING (integer)     Compile-time warnings (non-fatal
+errors). This is like an E_WARNING, except it is generated by the Zend
+Scripting Engine.    
+256    E_USER_ERROR (integer)     User-generated error message. This is like an
+E_ERROR, except it is generated in PHP code by using the PHP function
+trigger_error().    
+512    E_USER_WARNING (integer)     User-generated warning message. This is
+like an E_WARNING, except it is generated in PHP code by using the PHP function
+trigger_error().    
+1024    E_USER_NOTICE (integer)     User-generated notice message. This is like
+an E_NOTICE, except it is generated in PHP code by using the PHP function
+trigger_error().    
+2048    E_STRICT (integer)     Enable to have PHP suggest changes to your code
+which will ensure the best interoperability and forward compatibility of your
+code.    Since PHP 5 but not included in E_ALL until PHP 5.4.0
+4096    E_RECOVERABLE_ERROR (integer)     Catchable fatal error. It indicates
+that a probably dangerous error occurred, but did not leave the Engine in an
+unstable state. If the error is not caught by a user defined handle (see also
+set_error_handler()), the application aborts as it was an E_ERROR.    Since PHP
+5.2.0
+8192    E_DEPRECATED (integer)     Run-time notices. Enable this to receive
+warnings about code that will not work in future versions.    Since PHP 5.3.0
+16384    E_USER_DEPRECATED (integer)     User-generated warning message. This
+is like an E_DEPRECATED, except it is generated in PHP code by using the PHP
+function trigger_error().    Since PHP 5.3.0
+32767    E_ALL (integer)     All errors and warnings, as supported, except of
+level E_STRICT prior to PHP 5.4.0.     32767 in PHP 5.4.x, 30719 in PHP 5.3.x,
+6143 in PHP 5.2.x, 2047 previously
+
+(Copied from http://php.net/manual/en/errorfunc.constants.php)
+===============================================================================
+
+It is important to note that the registered SPL autoloader will NOT be called
+if an E_STRICT error triggers the error handler which, in turn, tries to use
+classes which are not yet loaded.
+
+In this instance, you should manually load classes required by the error
+handler.
+===============================================================================
+
+There seems to be no way to access to access the _POST, _GET, etc if you call
+trigger_error from within a function inside a class file.
+===============================================================================
+
+using the output_buffer as a way to trap fatal errors from php itself, like
+E_ERROR, cannot offer a complete solution, b/c output buffering is disabled on
+the cli since 4.3.5 ..
+===============================================================================
+
+If using E_USER_ERROR in conjunction with a custom error-handler, we are faced
+with an annoying choice:
+
+If you choose to die() on such errors, __destruct()ors can still function, but
+we can't then return false and have the inbuilt handler log the error.
+
+If you return false thus allowing the error to be logged, the script will halt,
+exit() style, and __destruct()'s won't happen.
+
+It seems the only solutions in such a case is to a) log your own errors, or b)
+don't use E_USER_ERROR.
+===============================================================================
+
+Another way to catch PHP's fatal errors:
+
+<?php
+    error_reporting(E_ALL);
+    ini_set('display_errors', 0);
+
+    function shutdown(){
+        $isError = false;
+        if ($error = error_get_last()){
+            switch($error['type']){
+                case E_ERROR:
+                case E_CORE_ERROR:
+                case E_COMPILE_ERROR:
+                case E_USER_ERROR:
+                    $isError = true;
+                    break;
+            }
+        }
+
+        if ($isError){
+            echo "Script execution halted ({$error['message']})";
+        } else {
+            echo "Script completed";
+        }
+    }
+
+    register_shutdown_function('shutdown');
+?>
+
+Note that this will only catch runtime errors. So calling a method in a non
+existing class, or declaring a function twice does not trigger the shutdown
+handler.
+===============================================================================
+
+Per the comment below:
+
+There's no problem with static class functions.
+
+The proper way to set a callback for a static class function is:
+
+array("Classname", "functionname")
+
+The class name is a string.  If you don't quote the string, PHP treats it as a
+barestring and triggers a notice.
+
+/manual/en/language.pseudo-types.php
+===============================================================================
+
+Note that this function may return NULL in some cases, even when there are no
+errors.
+For instance, this is the case when you call this function for the first time:
+the function returns NULL simply because there is no previous error handler
+defined.
+===============================================================================
+
+error handling function that handles both errors and exceptions; also features
+a backtrace including possible function arguments.
+
+<?php
+
+$cfg = array();
+$cfg['debug'] = 1;
+$cfg['adminEmail'] = 'name@domain.tld';
+
+function errorHandler($errno, $errstr='', $errfile='', $errline='')
+{
+    // if error has been supressed with an @
+    if (error_reporting() == 0) {
+        return;
+    }
+
+    global $cfg;
+
+    // check if function has been called by an exception
+    if(func_num_args() == 5) {
+        // called by trigger_error()
+        $exception = null;
+        list($errno, $errstr, $errfile, $errline) = func_get_args();
+
+        $backtrace = array_reverse(debug_backtrace());
+
+    }else {
+        // caught exception
+        $exc = func_get_arg(0);
+        $errno = $exc->getCode();
+        $errstr = $exc->getMessage();
+        $errfile = $exc->getFile();
+        $errline = $exc->getLine();
+
+        $backtrace = $exc->getTrace();
+    }
+
+    $errorType = array (
+               E_ERROR            => 'ERROR',
+               E_WARNING        => 'WARNING',
+               E_PARSE          => 'PARSING ERROR',
+               E_NOTICE         => 'NOTICE',
+               E_CORE_ERROR     => 'CORE ERROR',
+               E_CORE_WARNING   => 'CORE WARNING',
+               E_COMPILE_ERROR  => 'COMPILE ERROR',
+               E_COMPILE_WARNING => 'COMPILE WARNING',
+               E_USER_ERROR     => 'USER ERROR',
+               E_USER_WARNING   => 'USER WARNING',
+               E_USER_NOTICE    => 'USER NOTICE',
+               E_STRICT         => 'STRICT NOTICE',
+               E_RECOVERABLE_ERROR  => 'RECOVERABLE ERROR'
+               );
+
+    // create error message
+    if (array_key_exists($errno, $errorType)) {
+        $err = $errorType[$errno];
+    } else {
+        $err = 'CAUGHT EXCEPTION';
+    }
+
+    $errMsg = "$err: $errstr in $errfile on line $errline";
+
+    // start backtrace
+    foreach ($backtrace as $v) {
+
+        if (isset($v['class'])) {
+
+            $trace = 'in class '.$v['class'].'::'.$v['function'].'(';
+
+            if (isset($v['args'])) {
+                $separator = '';
+
+                foreach($v['args'] as $arg ) {
+                    $trace .= "$separator".getArgument($arg);
+                    $separator = ', ';
+                }
+            }
+            $trace .= ')';
+        }
+
+        elseif (isset($v['function']) && empty($trace)) {
+            $trace = 'in function '.$v['function'].'(';
+            if (!empty($v['args'])) {
+
+                $separator = '';
+
+                foreach($v['args'] as $arg ) {
+                    $trace .= "$separator".getArgument($arg);
+                    $separator = ', ';
+                }
+            }
+            $trace .= ')';
+        }
+    }
+
+    // display error msg, if debug is enabled
+    if($cfg['debug'] == 1) {
+        echo '<h2>Debug Msg</h2>'.nl2br($errMsg).'<br />
+            Trace: '.nl2br($trace).'<br />';
+    }
+
+    // what to do
+    switch ($errno) {
+        case E_NOTICE:
+        case E_USER_NOTICE:
+            return;
+            break;
+
+        default:
+            if($cfg['debug'] == 0){
+                // send email to admin
+                if(!empty($cfg['adminEmail'])) {
+                    @mail($cfg['adminEmail'],'critical error on '.$_SERVER[
+'HTTP_HOST'], $errorText,
+                            'From: Error Handler');
+                }
+                // end and display error msg
+                exit(displayClientMessage());
+            }
+            else
+                exit('<p>aborting.</p>');
+            break;
+
+    }
+
+} // end of errorHandler()
+
+function displayClientMessage()
+{
+    echo 'some html page with error message';
+
+}
+
+function getArgument($arg)
+{
+    switch (strtolower(gettype($arg))) {
+
+        case 'string':
+            return( '"'.str_replace( array("\n"), array(''), $arg ).'"' );
+
+        case 'boolean':
+            return (bool)$arg;
+
+        case 'object':
+            return 'object('.get_class($arg).')';
+
+        case 'array':
+            $ret = 'array(';
+            $separtor = '';
+
+            foreach ($arg as $k => $v) {
+                $ret .= $separtor.getArgument($k).' => '.getArgument($v);
+                $separtor = ', ';
+            }
+            $ret .= ')';
+
+            return $ret;
+
+        case 'resource':
+            return 'resource('.get_resource_type($arg).')';
+
+        default:
+            return var_export($arg, true);
+    }
+}
+
+?>
+===============================================================================
+
+Be careful with error-handlers if you are using require() with a function as
+argument, like
+<?php
+  require(foo($foo));
+?>
+If the result of the function isn't a valid file to be included, you wont get
+any errormessage, but your script will crash without any output (see the
+bug-database for further details: http://bugs.php.net/bug.php?id=41862).
+===============================================================================
+
+To ereg error in a text file
+
+<?php
+$log_file="log.txt";
+
+set_error_handler(log_handler);
+
+function log_handler ( $errno, $errstr,  $errfile, $errline, $errcontext )
+{
+    $context = var_export($errcontext, TRUE);
+    log_error_ereg("errno:$errno ($errstr) file:$errfile, line:$errline,
+context:$context\n");
+}
+
+function log_error_ereg($mess)
+{
+    global $log_file;
+
+    $fd = fopen($log_file, 'a');
+    if(!$fd)
+    {
+        echo "<pre>$mess</pre>";
+    }
+    else
+    {
+        if(!fwrite($fd, date('Y-m-d H:i:s')." ERR : \n$mess\n\n"))
+        {
+            echo "<pre>$mess</pre>";
+        }
+        fclose($fd);
+    }
+}
+?>
+===============================================================================
+
+I was using a class, and needed to have a function within it handle php errors.
+
+The following code will allow you to call a class function of already defined
+object while maintaining access to all the objects current data .
+============================
+
+set_error_handler("classPassPHPError");
+
+$ObjectName="test";
+
+$test->new className;
+
+function classPassPHPError($errno, $errstr, $errfile, $errline){
+global $ObjectName;
+
+eval("global \$".$ObjectName.";");
+eval("\$object=\$".$ObjectName.";");
+
+$object->phpErrorHandler($errno, $errstr, $errfile, $errline);
+$object=null;
+}
+===============================================================================
+
+When fatal error occurs, class destructors are not executed.
+
+<?
+
+class someClass {
+  function __construct() {
+    echo '__construct()';
+  }
+
+  function __destruct() {
+    echo '__destruct()';
+  }
+}
+
+$someClass = new someClass();
+someNonExistentFunction();
+
+?>
+
+Result will be:
+
+__construct()
+Fatal error: Call to undefined function someNonExistentFunction() in tes.php on
+line 14
+===============================================================================
+
+2errd
+I've got more convenient and safe error to exception converter:
+
+class CustomException extends Exception {
+  public static function errorHandlerCallback($code, $string, $file, $line,
+$context) {
+    $e = new self($string, $code);
+    $e->line = $line;
+    $e->file = $file;
+    throw $e;
+  }
+}
+set_error_handler(array("CustomException", "errorHandlerCallback"), E_ALL);
+===============================================================================
+
+Other option to "handle" ALL errors
+
+set_error_handler("yourHandler");
+
+// Parse,Compile, Core, etc... Errors
+ini_set('html_errors',false);
+ini_set('error_prepend_string','<html><head><META http-equiv="refresh" content=
+"0;URL=/error.php?msg=');
+ini_set('error_append_string','"></head></html>');
+===============================================================================
+
+if you wan't to know the current error-handler
+set use something like this:
+
+$current_errorhandler = set_error_handler("myerrorhandler");
+restore_error_handler();
+
+this will set your custom error_handler and return
+the name of the previous set error handler. by
+calling restore_error_handler, you remove your
+custom error_handler and set the error_handler that
+was set back again.
+
+this way you can also switch back to php-default error-handler
+without knowing how many error-handler already
+are set, by using a loop till an empty string is
+returned. because an empty string means
+"no error-handler set" wich means php's default
+errorhandler is set back.
+
+like in this code below:
+
+function restore_phperrorhandler()
+{
+// get current error handler.
+$previous_errorhandler =
+set_error_handler("myerrorhandler");
+restore_error_handler();
+
+$max_loops = 20;
+$cur_loops = 0;
+    
+// if current error handler is not already php's or fails.
+    if(($previous_errorhandler != NULL) OR
+      ($previous_errorhandler != "")){
+   
+        while($previous_errorhandler != ""){
+         $cur_loops = $cur_loops + 1;
+            
+            // check if not exceeding infinit loop.
+            if($cur_loops >= $max_loops){
+              trigger_error("Restoring exceeds max. loops.",
+              E_USER_WARNING);
+             return false;
+            }
+        
+            //switch to previous handler.
+            restore_error_handler();
+        
+            // get its name and switch to it again.
+            $previous_errorhandler =
+            set_error_handler("myerrorhandler");
+            restore_error_handler();
+        
+           // check if getting errorhandler failed.
+           if($previous_errorhandler == NULL){
+              trigger_error("Failed to get prev. error handler",
+              E_USER_WARNING);
+            return false;
+            
+            // empty string = php-default error handler
+            }elseif($previous_errorhandler == ""){
+             return true;
+            }
+        }
+    }else{
+      trigger_error("Current Error-Handler is default.",
+      E_USER_NOTICE);
+     return true;
+    }
+}
+
+this function will loop and return true when no
+error handler is left. leaving php-default handler
+in controll again. this is usefull if you want to
+disable your own error-handler but be sure that
+php's is handling your error's and not any other
+error-handler.
+===============================================================================
+
+In errors to exceptions conversion below I found some incorrect stuff. File and
+line properties of Exception point to line and file where Exception is thrown,
+but not where real error is occured.
+
+Impoved errors to exceptions converting:
++ Fixed filename of exception handled
++ Fixed code line of exception handled
+
+<?php
+
+class CustomException extends Exception {
+    public function setLine($line) { 
+        $this->line=$line;
+    }
+    
+    public function setFile($file) {
+        $this->file=$file;
+    }
+}
+
+function exceptionsHandler($code, $string, $file, $line) { 
+    $exception=new CustomException($string, $code);
+    $exception->setLine($line);
+    $exception->setFile($file);
+    throw $exception;
+} 
+
+set_error_handler('exceptionsHandler', E_ALL);
+
+?>
+===============================================================================
+
+as reply to dawiddr at gmail dot com:
+
+Be careful with this when using __autoload(). When there is some error during
+parsing the file included in __autoload() so an exception is thrown, it results
+in following error:
+
+Fatal error:  Function __autoload(ClassName) threw an exception of type
+'Exception' in /network/webroot/dev/test.php on line 121
+
+It is because exceptions can't be thrown in __autoload().
+See __autoload() documentation (http://www.php.net/autoload) and bug #31102 (
+http://bugs.php.net/bug.php?id=31102&edit=3)
+===============================================================================
+
+Perhaps it is worth mentioning that in
+PHP5
+both set_error_handler & set_exception_handler can be called with an array
+containing 2 arguments:
+1) var  ==> object
+2) string ==> name of handler function in object
+
+EXAMPLE:
+<?php
+set_error_handler               (array($object, 'handler_function'));
+set_exception_handler      (array($object, 'handler_function'));
+?>
+
+Both can point to the same object and handler_function so that both error and
+exception handling, which are very much alike usually, can be done by only 1
+dedicated class.
+===============================================================================
+
+In PHP5, ou can ask for the default handler to be called after your custom
+handler by returning "false". See this pseudo-code :
+<?
+function MyHandler($errno, $errstr, $errfile, $errline, $errcontext) {
+    my_handling_code;        // Do something, such as sending an email to the
+admin
+    if (i_want_to_call_the_default_handler) return false;        // will invoke
+the default error handler just after
+    else return true;        // This will NOT invoke it (= you've properly
+handled the error)
+}
+set_error_handler("MyHandler");
+?>
+
+I have not tested the functionality, but I think that the php.ini directive
+"log_errors" keeps working, but *only* when you call the default handler (=
+retrun false).
+
+>>> Source : Mailing list thread about "re-invoking default error handler" at
+http://www.zend.com/lists/php-dev/200405/msg00491.html (be careful about the
+first post : "true" and "false" are switched - because it's only a
+proposition).
+===============================================================================
+
+When a custom error handler is set, the php.ini directive "log_errors" stops
+working.  I'm guessing to favor your custom handler.  You can still log your
+errors with the "error_log" function, but it doesn't happen when you have a
+custom error handler.
+===============================================================================
+
+Here is a script to debug / display errors in a nice way: http://gosu.pl/demo/
+ErrorHandler/ErrorHandler.zip
+
+Example of displaying an error: http://gosu.pl/demo/ErrorHandler/example1.html
+Example of displaying source of the file where the error appeared: http://
+gosu.pl/demo/ErrorHandler/example2.html
+
+Displaying error: generates a backtrace, show file / line, show function /
+arguments (and values), source of the file
+===============================================================================
+
+@sijmen at digitized dot nl
+That's not true. The reference operator does have effect, when used correctly.
+
+Your code doesn't use the reference operator in the set_error_handler function,
+but it does when creating the new error object. In your case, you have to use
+the reference operator two times.
+
+When calling the set_error_handler function
+
+<?php
+        set_error_handler(array(&$this, 'handler'));
+?>
+
+and when creating the class
+
+<?php
+$eh = &new error;
+?>
+
+In that case the same error class will be used and the output will be
+following:
+Error!
+!!
+
+Hope this helps.
+===============================================================================
+
+You can't use this functionality to catch parse errors in included, required,
+or eval()'d code.  Parse errors seem to exist on a deeper level.
+===============================================================================
+
+In response to sijmen at digitized dot nl:
+
+Instead of
+
+$eh = new error;
+
+use
+
+$eh =& new error();
+
+The new operator returns a copy of the error object, so the error handler that
+is set in the constructor is tied to a different object instance than the
+instance returned by "new".  To make sure you are working with the exact same
+object instance that you think you are, it's best to use the reference object
+when creating instances of objects, like so:
+
+$oMyObject =& new MyObject();
+
+HTH,
+
+Jay
+===============================================================================
+
+@skyrl at free dot fr
+It seems that the reference operator '&' doesn't have any effect. That's why I
+submitted the comment.
+
+<?php
+class error {
+    var $error;
+
+    function error() {
+        $this->setIni();
+    }
+
+    function handler() {
+        echo $this->error.'!!';
+    }
+
+    function setText($text) {
+         $this->error = $text;
+    }
+
+    function setIni() {
+        set_error_handler(array(&$this, 'handler')); // The '&' operator
+doesn't have any effect
+    }
+}
+
+$eh = new error;
+$eh->setText('Error! <br>'); // Will not get set
+
+trigger_error('text', E_USER_ERROR); // prints '!!'
+?>
+
+Proof of concept
+http://trouby.digitized.nl/set_error_handler.php
+http://trouby.digitized.nl/set_error_handler.php?source=1
+===============================================================================
+
+in reaction to the last '29-Mar-2004 11:13' post, just have to say that's
+normal the values are not "saved" in your error handler object. because the
+error object of the handler is not the same object as the one you
+instantiate...
+
+You have to write set_error_handler(array(&this, 'my_error_handler')). The & is
+important for php to know that your error handler belongs to the same instance
+you allocate.
+===============================================================================
+
+Looks like there's no way to distinguish between catched exceptions thrown by
+internal classes and real warnings in custom error handlers:
+
+<?php
+function handleError($n, $m, $f, $l) {
+    //no difference between excpetions and E_WARNING
+    echo "user error handler: e_warning=".E_WARNING."  num=".$n." msg=".$m."
+line=".$l."\n";
+    return true;
+    //change to return false to make the "catch" block execute;
+}
+set_error_handler('handleError');
+//turn off to make try/catch work normally
+
+//uncomment this for a regular warning
+timezone_open(1202229163);
+
+//comment this whole try/catch out to see new DateTimeZone outside of a try /
+catch
+//behavior is the same if you have set a custom error handler
+
+//echo new DateTimeZone(1202229163);
+
+//*
+try {
+    $z = new DateTimeZone(1202229163);
+} catch (Exception $e) {
+    echo "caught";
+}
+// */
+?>
+===============================================================================
+
+The documentation on this page kindly offers the following on using (class)
+methods as error handlers:
+
+Note:  Instead of a function name, an array containing an object reference and
+a method name can also be supplied. (Since PHP 4.3.0)
+
+Since that's all it says about the subject, I thought I'd offer a sample
+implementation to show how this can be used:
+
+<?php
+
+        class error {
+
+                var $conf;
+                var $lang;
+
+                function error($conf, $lang) {
+                        $this->conf = $conf;
+                        $this->lang = $lang;
+
+                        set_error_handler(array(&$this, 'handler'));
+                }
+
+                function handler($no, $str, $file, $line, $ctx) {
+                        echo '<pre>';
+                        echo 'no   : ' . $no . "\n";
+                        echo 'str  : ' . $str . "\n";
+                        echo 'file : ' . $file . "\n";
+                        echo 'line : ' . $line . "\n";
+                        echo 'ctx  : ';
+                        print_r($ctx);
+                        echo '</pre>';
+                }
+
+        }
+?>
+===============================================================================
+
+Be aware of efficiency and speed of your scripts!
+
+If you use old-fashioned non-strict variable calling (example follows...), your
+custom error handler function degrades the script speed very big (especially
+for bigger projects). Because of for every "use of undefined constant" or
+"undefined variable" E_NOTICEs will be called your own custom error handler
+function.
+
+<?
+if ($form_variable) { ///< E_NOTICE Undefined variable
+   // process form stuff
+}
+$foo[bar] = $const_array[baz]; ///< 2x E_NOTICE Use of undefined constant bar,
+baz
+
+if (!$d) { // declare default $d ///< E_NOTICE Undefined variable
+   $d = 5;
+}
+?>
+
+As you can see in this poor example, badly writted scripts decrease the
+performace very big 'cause of the error handler is called almost everytime. So
+use custom-error-handler on heavily used pages only if you are writing scripts
+strictly. (Example follows:)
+<?
+if (isset($form_variable) && $form_variable != null) {
+   // process form stuff
+}
+$foo['bar'] = $const_array['baz'];
+
+if (!isset($d) || $d == null) {
+   $d = 5;
+}
+?>
+===============================================================================
+
+Additional note based on some further testing:
+
+Although errcontext is effectively an array passed by reference to your custom
+error handling function, you cannot simply copy it over to another variable,
+because that variable will also act like a reference to errcontext, almost like
+an object.
+
+Instead, the only way I can find to copy the errcontext array to a separate
+variable so that you can actually modify its values without changing the
+surrounding variable context, is to copy it piece-by-piece with a foreach loop.
+Not the most efficient way of working, but then again, errors are hopefully
+exceptional enough for you that performance will not be an overriding concern
+in this case.
+===============================================================================
+
+Useful thing to note - if your error handler throws an error in itself, PHP is
+smart enough to use the deault error handler to handle it. This way, you don't
+end up in infinite flaming loops of death. This seems to be true, at least, in
+PHP 4.2.
+
+('Course, there are ways to create your handler to handle even this situation,
+but it's probably best left this way for general purposes.)
+===============================================================================
+
+Unfortunately, none of the procedures described here by other users to catch
+all errors work.
+
+Then again this would be impossible as parse errors are triggered before the
+code is interpreted and executed so no code solution is possible (just as the
+documentation says).
+
+You can test them easily against this simple code:
+
+some_function_that_doesnt_exist();
+
+using it in this form will trigger a Fatal Error (call to undefined function),
+which can't be caught by using your custom defined handler but *can* be caught
+by using the solutions presented by other programmers.
+
+if you remove the ; from the end will trigger a Parse Error (syntax error),
+which *can't* be caught by any of these solutions. If this called is however
+places as the last line of code, just before the ?> then it will again generate
+a Fatal Error (call to undefined function).
+
+if you further remove the () then you'll get a Notice (undefined constant)
+which can be caught by the manual method of defining a custom error handler.
+===============================================================================
+
+Just spent two days trying to find some method where a class can handle errors
+thrown at my convienience. After fighting with the pitfalls of this problem
+this is what I came up with. Hope it helps someone else save a little time. Its
+nice because all instances of this class will point to the same array that
+stores the errors.
+
+class ApplicationObject {
+    var $error_List;
+   
+    function ApplicationObject() {
+        set_error_handler('trapError');
+        $this->error_List = &trapError();
+    }
+
+}
+
+function &trapError() {
+    static $error_Vals = array();
+
+    if (func_num_args()==5) { // Error Event has been passed
+        $error_Vals[] = array(    'err_no' => func_get_arg(0), 'err_text' =>
+func_get_arg(1), 'err_file' => func_get_arg(2), 'err_line' => func_get_arg(3),
+'err_vars'=>func_get_arg(4));
+    }
+    if (func_num_args()==0) { // Setup call. Return reference
+        return $error_Vals;
+    }
+}
+===============================================================================
+
+function errorlog($type, $info, $file, $row)
+{
+   if ($handle = fopen("./log/ftp_error.log", "a"))
+   {
+      @fwrite($handle, date("Y-m-d H:i:s")." "--> $type: $info FILE: $file - 
+Row $row\r\n" );
+      @fclose($handle);
+   }//end if
+}//end function
+
+### in the error logging code for example ftp: ###
+
+set_error_handler("errorlog");  //set your own Handler
+
+$this->connect = ftp_connect(TXTCONNECT);
+$this->login = ftp_login($this->connect, TXTID, FTPPASS);
+$this->systype= ftp_systype($this->connect);
+
+restore_error_handler(); //restore the old handler
+
+------------------
+content in file
+------------------
+
+2006-05-08 09:36:02 2: ftp_login(): Login incorrect. FILE: /html/cgi-bin/test/
+classes/ftp.class.php - Row 63
+===============================================================================
+
+Also note that even though the documentation states "errcontext will contain an
+array of every variable that existed in the scope the error was triggered in,"
+that is not the case for $this in an instantiated object, as of PHP 5.1.1.
+
+<?php
+
+function error_function($errno, $errstr, $errfile, $errline, $errcontext) {
+    print_r($errcontext);
+}
+
+set_error_handler('error_function');
+
+class test_class {
+    private $id;
+   
+    function __construct($id) {
+        $this->id = $id;
+        trigger_error('Test error');
+    }
+}
+
+$test = new test_class(5);
+
+?>
+
+Result:
+
+Array
+(
+    [id] => 5
+)
+
+I discovered this when trying to write an error handler that would log the
+class the error occured in, as it was triggered from a function in a parent
+class extended by several individual classes.
+===============================================================================
+
+In PHP5, if you want to have exceptions thrown instead of normal errors - you
+could use an error handler, which throw exceptions:
+
+<?php
+
+function handler($errno, $errstr, $errfile, $errline)
+{
+    print "Error handled!\n";
+    throw new Exception($errstr, $errno);
+}
+
+set_error_handler('handler');
+
+try
+{
+    print 2 / 0; // simple error - division by zero
+    print "This will never be printed";
+}
+catch (Exception $e)
+{
+    print "Exception catched:\n";
+    print "Code: ".$e->getCode()."\n";
+    print "Message: ".$e->getMessage()."\n";
+    print "Line: ".$e->getLine();
+}
+
+?>
+
+Result:
+
+Error handled!
+Exception catched:
+Code: 2
+Message: Division by zero
+Line: 6
+
+As you see, exception is catched like it have been thrown by division by zero -
+in try/catch clause. But line numer and backtrace shows, that is was thrown by
+the error handler.
+===============================================================================
+
+set_error_handler also overrides the default behavior of postgresql which is to
+shoot HTML errors to the browser on a query failure or other database error.
+
+I can't find a list of symbolic $errno names for postgres errors, but a normal
+"bad query" throws an errno of 2.
+
+Be careful to not use an empty default case in your errno case statement if you
+use postgresql, and expect php to generate DB errors automatically.
+===============================================================================
+
+The best way, I have found to use a class/object as an error handler is to
+define a class, add your desired error handling function into the constructor
+and then call set_error_handler() to the name of your function, thats it. e.g.
+
+Class Error {
+
+  Function Error() {
+    Function HandleError($n, $m, $f, $l){
+      print_r(debug_backtrace());
+    }
+    set_error_handler('HandleError');
+  }
+}
+===============================================================================
+
+Note: If you have a custom error handler and use assert(), you MUST set:
+
+assert_options (ASSERT_WARNING, 0);
+
+Otherwise, no output whatsoever will ever be shown if an assert fails.
+===============================================================================
+
+Here's a way to customize error messages for each function or functions within
+classes:
+
+<?php
+
+// This lists all error messages from each function including functions
+contained within classes and their associated scope:
+$_ERRORS [ 'errorTest::makeError1' ]= 'Attempting to make an error' ;
+$_ERRORS [ 'errorTest->makeError2' ]= 'Attempting to make another error' ;
+$_ERRORS [ 'strpos' ]                = 'Failed to find offset of data from
+string' ;
+$_ERRORS [ 'strlen' ]                = 'Failed to calculate length of string' ;
+$_ERRORS [ 'substr' ]                = 'Failed to retrieve data from string' ;
+$_ERRORS [ 'pack' ]                    = 'Failed to export binary package' ;
+$_ERRORS [ 'unpack' ]                = 'Failed to import binary package' ;
+$_ERRORS [ 'number_format' ]        = 'Failed to represent numeracy as number' 
+;
+$_ERRORS [ 'implode' ]                = 'Failed to implode array elements' ;
+$_ERRORS [ 'explode' ]                = 'Failed to explode array elements' ;
+$_ERRORS [ 'fopen' ]                = 'Failed to initialize stream opening' ;
+$_ERRORS [ 'fread' ]                = 'Failed to extract data from stream' ;
+$_ERRORS [ 'fwrite' ]                = 'Failed to retract data into stream' ;
+$_ERRORS [ 'fseek' ]                = 'Failed to seek offset from stream' ;
+$_ERRORS [ 'rewind' ]                = 'Failed to rewind offset from stream' ;
+$_ERRORS [ 'ftell' ]                = 'Failed to retrieve offset from stream' ;
+$_ERRORS [ 'file_get_contents' ]    = 'Failed to retrieve contents from file' ;
+$_ERRORS [ 'file_put_contents' ]    = 'Failed to conduct contents into file' ;
+$_ERRORS [ 'stream_get_contents' ]    = 'Failed to retrieve contents from
+stream' ;
+$_ERRORS [ 'call_user_func_array' ]    = 'Failed to call function with array' ;
+$_ERRORS [ 'max' ]                    = 'Failed to retrieve maximum elements' ;
+$_ERRORS [ 'min' ]                    = 'Failed to retrieve minimum elements' ;
+$_ERRORS [ 'array_chunk' ]            = 'Failed to retrieve chunks of array
+elements' ;
+$_ERRORS [ 'array_combine' ]        = 'Failed to combine keys for array
+elements' ;
+$_ERRORS [ 'array_diff' ]            =
+$_ERRORS [ 'array_diff_assoc' ]        =
+$_ERRORS [ 'array_diff_key' ]        =
+$_ERRORS [ 'array_diff_uassoc' ]    =
+$_ERRORS [ 'array_diff_ukey' ]        = 'Failed to differentiate array
+elements' ;
+$_ERRORS [ 'array_fill' ]            =
+$_ERRORS [ 'array_fill_keys' ]        = 'Failed to allocate array elements' ;
+$_ERRORS [ 'array_flip' ]            = 'Failed to flip array elements to keys' 
+;
+//$_ERRORS [ 'array_slice' ]            = 'Failed to slice array elements' ;
+
+/**
+* 
+*/
+set_error_handler
+(
+    function ( $code , $text , $file , $line , array $cont ) use ( $_ERRORS )
+    {
+        if ( error_reporting () )
+        {
+            $result = [] ;
+            foreach ( debug_backtrace () as $detail )
+            {
+                $string = @ $_ERRORS [ @ $detail [ 'class' ] . @ $detail [ 
+'type' ] . @ $detail [ 'function' ] ] ;
+                if ( isset ( $string ) )
+                {
+                    $result [] = $string ;
+                }
+            }
+            if ( count ( $result ) )
+            {
+                $result = implode ( ': ' , array_reverse ( $result ) ) . '.' ;
+            }
+            else
+            {
+                $result = 'Undefined procedural behaviour' ;
+            }
+            throw new ErrorException ( $result , $code , 0 , $file , $line ) ;
+        }
+    } ,
+    E_ALL | E_STRICT
+) ;
+
+// Examples :
+
+class errorTest
+{
+    static function makeError1 ()
+    {
+        strpos () ;
+    }
+
+    public function makeError2 ()
+    {
+        strlen () ;
+    }
+}
+
+$err = new errorTest ;
+
+try
+{
+    substr () ;
+}
+catch ( Exception $E )
+{
+    echo $E -> getMessage () . "\n" ;
+}
+
+try
+{
+    errorTest :: makeError1 () ;
+}
+catch ( Exception $E )
+{
+    echo $E -> getMessage () . "\n" ;
+}
+
+try
+{
+    $err -> makeError2 () ;
+}
+catch ( Exception $E )
+{
+    echo $E -> getMessage () . "\n" ;
+}
+
+try
+{
+    // this function was not listed in the $_ERRORS variable and will therefore
+view the default message
+    array_slice () ;
+}
+catch ( Exception $E )
+{
+    echo $E -> getMessage () . "\n" ;
+}
+
+/*
+The above examples will output:
+
+    Failed to retrieve data from string.
+    Attempting to make an error: Failed to find offset of data from string.
+    Attempting to make another error: Failed to calculate length of string.
+    Undefined procedural behaviour
+*/
+?>
+===============================================================================
+
+I have realized that a few people here mentioned that you cannot capture parse
+errors (type 4, E_PARSE). This is not true. Here is how I do. I hope this helps
+someone.
+
+1) Create a "auto_prepend.php" file in the web root and add this:
+
+<?php
+register_shutdown_function('error_alert');
+
+function error_alert()
+{
+        if(is_null($e = error_get_last()) === false)
+        {
+                mail('your.email@example.com', 'Error from auto_prepend', 
+print_r($e, true));
+        }
+}
+?>
+
+2) Then add this "php_value auto_prepend_file /www/auto_prepend.php" to your
+.htaccess file in the web root.
+
+* make sure you change the email address and the path to the file.
+===============================================================================
+
+Sometimes, you want to "catch" only some errors, and let the default handler
+deal with the result. I just found out that (at least in PHP 5), the default
+handler will be called if you return false (not 0 or NULL or '', but false)
+from your custom handler. This allows for "chaining" handlers.
+
+The fature was suggested in this thread:
+http://www.zend.com/lists/php-dev/200405/msg00491.html - the initial suggestion
+was to call the default handler if true is returned, but this was changed later
+on, apperently.
+===============================================================================
+
+@ mmtache at yahoo dot com
+you have to use
+if(error_reporting() != 0){
+   .... (yourOwnHandler)
+
+instead of
+if(error_reporting()){
+   ....
+
+in PHP5. then operations like this "@fopen" won't show an error-message
+===============================================================================
+
+<html>
+<head><title>自定义错误</title></head>
+自定义错误函数：<br>
+<form action='index.php' method='post'>
+<select name='kind'>
+<option value='E_WARNING'>E_WARNING</option>
+<option value='E_NOTICE'>E_NOTICE</option>
+<option value='E_USER_ERROR'>E_USER_ERROR</option>
+<option value='E_USER_WARNING'>E_USER_WARNING</option>
+<option value='E_USER_NOTICE'>E_USER_NOTICE</option>
+</select>
+<input type='submit' value='测试自定义错误函数'>
+</form>
+</html>
+<?php
+//自定义错误函数：
+set_error_handler('a',E_WARNING);
+set_error_handler('b',E_NOTICE);
+set_error_handler('c',E_USER_ERROR);
+set_error_handler('d',E_USER_WARNING);
+set_error_handler('e',E_USER_NOTICE);
+$x=$_REQUEST['kind'];
+switch($x)
+{
+    case 'E_WARNING':trigger_error('这是自定义错误函数E_WARNING:',E_WARNING);
+break;
+    case 'E_NOTICE':trigger_error('这是自定义错误函数E_NOTICE:',E_NOTICE);
+break;
+    case 'E_USER_ERROR':trigger_error('这是自定义错误函数E_USER_ERROR:',
+E_USER_ERROR);break;
+    case 'E_USER_WARNING':trigger_error('这是自定义错误函数E_USER_WARNING:',
+E_USER_WARNING);break;
+    case 'E_USER_NOTICE':trigger_error('这是自定义错误函数E_USER_NOTICE:',
+E_USER_NOTICE);break;
+    default: echo '请选择支持的错误';break;
+}
+
+//错误函数：
+function a($errno,$errstr){echo '我就是自定义错误函数E_WARNING'.$errno;}
+function b($errno,$errstr){echo '我就是E_NOTICE自定义错误函数'.$errno;}
+function c($errno,$errstr){echo '我就是E_USER_ERROR自定义错误函数'.$errno;}
+function d($errno,$errstr){echo '我就是E_USER_WARNING自定义错误函数'.$errno;}
+function e($errno,$errstr){echo '我就是E_USER_NOTICE自定义错误函数'.$errno;}
+?>
+完整的set_error_handler与trigger_error使用。
+保存为php文件浏览器访问即可见到效果

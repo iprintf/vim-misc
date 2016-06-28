@@ -1,0 +1,233 @@
+
+MongoId 类
+
+(PECL mongo >=0.8.0)
+
+简介
+
+为数据库对象创建的唯一标识符。如果插入数据库的对象不具有 _id 字段，将会为 _id
+字段添加一个 MongoId 实例作为值。如果数据具有自然的唯一字段（比如说，用户名或
+timestamp），用来作为 _id 字段也不错，它不会被一个 MongoId 替换。
+
+MongoId 类实例满足了关系数据库中自增列的角色：如果数据不具有天然的唯一键，则提
+供一个。自增列在分布式数据库中不会工作得很好，因为它无法快速找到下一个数字。这
+个类能够满足在分布式下快速产生唯一值的条件。
+
+每个 MongoId 具有 12 个字节（使它的字符串形式是 24 个十六进制字符）。前四个字节
+是一个时间戳（timestamp），后三个是客户端主机名的 hash 摘要，然后两个是运行脚本
+的进程 ID，最后三位是一个自增值。
+
+MongoId 是可以序列化/反序列化的。它们序列化后的格式和它们的字符串格式比较像：
+
+C:7:"MongoId":24:{4af9f23d8ead0e1d32000000}
+
+类摘要
+
+MongoId {
+public string $id = NULL ;
+/* 方法 */
+public __construct ([ string $id = NULL ] )
+public static string getHostname ( void )
+public int getInc ( void )
+public int getPID ( void )
+public int getTimestamp ( void )
+public static bool isValid ( mixed $value )
+public static MongoId __set_state ( array $props )
+public string __toString ( void )
+}
+
+Fields
+
+id
+    这个字段包含了该对象的字符串表达形式。
+
+参见
+
+关于 » ids 的 MongoDB 核心文档。
+
+Table of Contents
+
+  • MongoId::__construct — 创建一个新的id
+  • MongoId::getHostname — 获取这台机器上 id 所使用的 hostname
+  • MongoId::getInc — 返回用于创建 id 所增加的值
+  • MongoId::getPID — 获取进程 ID
+  • MongoId::getTimestamp — 获取新纪元时间到 id 创建时的秒数。
+  • MongoId::isValid — Check if a value is a valid ObjectId
+  • MongoId::__set_state — 创建一个假的 MongoId
+  • MongoId::__toString — 返回该 id 十六进制的表示形式
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+Just to be careful with the strict comparison. Object inequalities holds.
+
+<?php
+
+$m1 = new MongoId('51b14c2de8e185801f000006');
+$m2 = new MongoId('51b14c2de8e185801f000006');
+
+var_dump($m1 === $m2); //gives you boolean false
+var_dump($m1 == $m2); //gives you boolean true
+
+$m3 = new MongoId('51b14c2de8e185801f000006');
+$m4 = new MongoId('51b14c2de8e185801f000007');
+
+var_dump($m3 === $m4); //gives you boolean false
+var_dump($m3 == $m4); //gives you boolean false
+
+?>
+===============================================================================
+
+You can also cast the id to a string rather than access the $id property to get
+a string representation of the MongoId.
+
+<?php
+$stringId = (string) $mongoId;
+?>
+===============================================================================
+
+Due to Recent changes.
+
+* [PHP-554] - MongoId should not get constructed when passing in an invalid ID.
+
+Constructor will throw an exception when passing invalid ID.
+
+<?php
+
+$_id = new MongoId(); //Generates new ID
+$_id = new MongoId(null); //Generates new ID
+
+$_id = new MongoId("invalid id"); //throws MongoException
+
+?>
+
+<?php
+//Revert to old behaviour
+$_id = "invalid id";
+try {
+    $_id = new MongoId($_id);
+} catch (MongoException $ex) {
+    $_id = new MongoId();
+}
+?>
+
+<?php
+//Nifty hack
+class SafeMongoId extends MongoId {
+
+    public function __construct($id=null) {
+
+        try {
+            parent::__construct($id);
+        } catch (MongoException $ex) {
+            parent::__construct(null);
+        }
+
+    }
+}
+?>
+===============================================================================
+
+it is important to note that
+
+<?php
+    array("_id" => new MongoId("50cf7d2841d41f4f35000000"))
+//                   ≠
+    array("_id" => array("$id" => "50cf7d2841d41f4f35000000"))
+?>
+
+This issue can arrise when using json_encode() and json_decode(). If not paying
+close enough attention one can assume due to the encoded value of the object
+that it is just this simple:
+
+<?php
+    $item = $db->myCollection->findOne();
+    print json_encode($item);
+    // {"_id": {"$id": "50cf7d2841d41f4f35000000"}}
+    $item = $db->myCollection->findOne(json_encode($item));
+    // $item is empty aka not found
+?>
+
+Simple solution to handle these situations:
+
+<?php
+    class MongoId2 extends MongoId {
+        public function __construct($id = null) {
+            if(is_array($id)) {
+                $id = (object) $id;
+            }
+
+            if(is_object($id) && isset($id->{'$id'})) {
+                $id = $id->{'$id'};
+            }
+
+            return parent::__construct($id);
+        }
+    }
+?>
+===============================================================================
+
+this is useful for querying for an object by id, given the id's hex:
+
+<?php
+$userid = '4cb4ab6d7addf98506010000';
+
+$theObjId = new MongoId($userid);
+
+$connection = new Mongo();
+$db = $connection->thedb->users;
+
+// this will return our matching entry.
+$item = $db->findOne(array("_id" => $theObjId));
+
+$connection->close();
+
+?>
+===============================================================================
+
+Get ObjectId MongoDB via PHP
+
+var_dump($object);
+
+object(MongoDB\Model\BSONDocument)#36 (1) {
+  ["storage":"ArrayObject":private]=>
+  array(8) {
+    ["_id"]=>
+    object(MongoDB\BSON\ObjectID)#33 (1) {
+      ["oid"]=>
+      string(24) "573e69e78fccd968aa066611"
+    }
+    ["dummy"]=>
+    string(5) "mongo"
+  }
+}
+
+Failure
+var_dump($object->_id->oid);
+>>> null
+
+var_dump($object->_id->{'oid'});
+>>> null
+
+var_dump($object->_id->{'$oid'});
+>>> null
+
+Success
+$bson = \MongoDB\BSON\fromPHP($object);
+$json = \MongoDB\BSON\toJSON($bson);
+$result = json_decode($json, true);
+
+var_dump($result['_id']['$oid']);
+>>> string(24) "573e69e78fccd968aa066611"
+exit;
+===============================================================================
+
+If you need to get the actual ID string, and you try the usual way, PHP will
+whine because it starts with a dollar sign and it thinks it's a variable.
+Instead, use this notation:
+
+<?php
+    $mongoid->{'$id'} //Get the $id property of a MongoId object
+?>

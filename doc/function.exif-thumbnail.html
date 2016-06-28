@@ -1,0 +1,257 @@
+
+exif_thumbnail
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+exif_thumbnail — 取得嵌入在 TIFF 或 JPEG 图像中的缩略图
+
+说明
+
+string exif_thumbnail ( string $filename [, int &$width [, int &$height [, int
+&$imagetype ]]] )
+
+exif_thumbnail() 读取 TIFF 或 JPEG 图像中的嵌入缩略图。如果图像不包含缩略图则返
+回 FALSE。
+
+If you want to deliver thumbnails through this function, you should send the
+mimetype information using the header() function.
+
+It is possible that exif_thumbnail() cannot create an image but can determine
+its size. In this case, the return value is FALSE but width and height are set.
+
+参数
+
+filename
+
+    The name of the image file being read. This image contains an embedded
+    thumbnail.
+
+width
+
+    The return width of the returned thumbnail.
+
+height
+
+    The returned height of the returned thumbnail.
+
+imagetype
+
+    The returned image type of the returned thumbnail. This is either TIFF or 
+    JPEG.
+
+返回值
+
+Returns the embedded thumbnail, or FALSE if the image contains no thumbnail.
+
+更新日志
+
+版本                                    说明
+4.3.0 The optional parameters width, height, and imagetype all became
+      available.
+4.3.0 May return thumbnails in the TIFF format.
+
+范例
+
+Example #1 exif_thumbnail() 例子
+
+<?php
+if (array_key_exists('file',$_REQUEST)) {
+    $image = exif_thumbnail($_REQUEST['file'], $width, $height, $type);
+} else {
+    $image = false;
+}
+if ($image!==false) {
+    header("Content-type: ".image_type_to_mime_type($type));
+    echo $image;
+    exit;
+} else {
+    // no thumbnail available, handle the error here
+    echo "No thumbnail available";
+}
+?>
+
+参见
+
+  • exif_read_data() - 从 JPEG 或 TIFF 文件中读取 EXIF 头信息
+  • image_type_to_mime_type() - 取得 getimagesize，exif_read_data，
+    exif_thumbnail，exif_imagetype 所返回的图像类型的 MIME 类型
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+This will allow you to manipulate the thumbnail image ($imgJpeg) using the
+various gd commands:
+
+<?php
+  if (($imgJpeg = exif_thumbnail($strImagePath)) === false)
+    print "No Thumbnail!";
+  else
+    $imgJpeg = imageCreateFromString($imgJpeg);
+?>
+===============================================================================
+
+If you've edited the image with image editing software and it no longer
+contains an exif thumbnail, I've created a script that will add one back into
+it, using the "PHP Exif Library": http://pel.sourceforge.net/index.php
+
+<?php
+require_once('../PEL/PelJpeg.php');
+require_once('../PEL/PelIfd.php');
+$fullpath = 'images/DSC_0013c.JPG';  # path of source image (does not contain
+an exif thumbnail)
+     
+$jpeg = new PelJpeg($fullpath);
+$exif = $jpeg->getExif();
+$tiff = $exif->getTiff();
+$ifd0 = $tiff->getIfd();        # need this so that we can later link it to the
+new IFD
+
+$ifd1 = $ifd0->getNextIfd();
+if (!$ifd1) {        # Only create thumbnail if one doesn't exist (i.e. there
+is no IFD1)
+    $ifd1 = new PelIfd(1);
+    $ifd0->setNextIfd($ifd1); # point ifd0 to the new ifd1 (or else ifd1 will
+not be read)
+
+    $original = ImageCreateFromString($jpeg->getBytes()); # create image
+resource of original
+    $orig_w=imagesx($original);
+    $orig_h=imagesy($original);
+    $wmax = 160;
+    $hmax = 120;
+
+    if ($orig_w>$wmax || $orig_h>$hmax) {
+        $thumb_w=$wmax;
+        $thumb_h=$hmax;
+        if ($thumb_w/$orig_w*$orig_h>$thumb_h)
+            $thumb_w=round($thumb_h*$orig_w/$orig_h); # maintain aspect ratio
+        else
+            $thumb_h=round($thumb_w*$orig_h/$orig_w);
+    }
+    else { # only set the thumb's size if the original is larger than
+'wmax'x'hmax'
+        $thumb_w=$orig_w;
+        $thumb_h=$orig_h;
+    }
+
+        # create image resource with thumbnail sizing
+    $thumb=imagecreatetruecolor($thumb_w,$thumb_h);
+        ## Resize original and copy to the blank thumb resource
+    imagecopyresampled($thumb,$original,
+                               0,0,0,0,$thumb_w,$thumb_h,$orig_w,$orig_h);
+
+        # start writing output to buffer
+    ob_start();       
+        # outputs thumb resource contents to buffer
+    ImageJpeg($thumb);   
+        # create PelDataWindow from buffer thumb contents (and end output to
+buffer)
+    $window = new PelDataWindow(ob_get_clean());
+
+    if ($window) {   
+
+        $ifd1->setThumbnail($window); # set window data as thumbnail in ifd1
+        $outpath = $fullpath; # overwrite original jpg file
+        file_put_contents($outpath, $jpeg->getBytes()); # write everything to
+output filename
+            # Show thumbnail in file:
+        echo '<img src="thumb_exif.php?image='.$outpath.'" border=0 alt="If you
+see this, it did not work"><br>';
+
+       
+    }
+}
+else {
+    echo 'ifd1 already exists! (IFD1 is where the thumbnail is stored)<br>';
+}
+?>
+<?php # This is the code in thumb_exif.php :
+        $imgdat = exif_thumbnail($_REQUEST['image'], $width, $height, $type);
+        header('Content-type: ' . image_type_to_mime_type($type));
+        echo($imgdat);
+?>
+
+If you have a lot of such files, you can easily make a script that searches
+them out and adds thumbnails to their exif.
+===============================================================================
+
+use this if you want to embed a thumbnail directly on the HTML page without
+writing it first to a file:
+
+<?php
+$image = exif_thumbnail($file, $width, $height, $type);
+
+echo "<img  width='$width' height='$height' src='data:image/gif;base64,".
+base64_encode($image)."'>";
+?>
+===============================================================================
+
+If you want to convert from TIFF to JPG you can use ImageMagick if it is
+installed in your server.
+
+<?php
+$exec = 'convert /path/to/file.tiff /path/to/file.jpg 2>&1';
+@exec($exec, $exec_output, $exec_retval);
+
+//possible error
+print_r($exec_output)
+?>
+===============================================================================
+
+Great that the thumbnail can be in TIFF format (f.i. Kodak cameras have
+embedded thumbnail in TIFF) BUT I have not been able to show TIFF as an
+embedded image in HTML (using the <IMG...> tag). There seems to be no function
+in PHP to change TIFF to, lets say, JPG. (imagecreatefromstring gives a
+'unknown datatype' error for the TIFF stream. So below sample works great for
+JPEG embedded thumbnail, but not for TIFF embedded (but then, maybe I did
+something wrong?):
+
+test_exif.php:
+
+<HTML>
+<HEAD>
+    <TITLE>Test EXIF Read  </TITLE>
+</HEAD>
+<BODY>
+<?php
+$image='P0000614.JPG';
+echo("<B>". $image. "</B>:<BR><BR>\n");
+
+$exif = exif_read_data($image, 'ANY_TAG',true);
+if (!$exif===false)
+{
+    echo("Image contains headers<br><br>");
+    echo("<A href=showthumb.php?image=" . $image ."> <IMG border=0 src=
+showthumb.php?image=" . $image ."></A><BR><BR>");
+
+    foreach ($exif as $key => $section)
+    {
+        foreach ($section as $name => $val)
+        {
+            echo "$key.$name: $val<br>\n";
+        }
+    }
+}
+else
+{
+    echo("Sorry, image <B>".$image . "</B> does not contain (readable) EXIF
+data.");
+}
+?>
+</BODY>
+</HTML>
+
+showthumb.php:
+
+<?php
+$imgdat = exif_thumbnail($_REQUEST['image'],$width, $height, $type);
+header('Content-type: ' . image_type_to_mime_type($type));
+echo($imgdat);
+?>
+
+When clicking on the <A> opens the TIFF image in the program that windows
+assigned to this type, but the JPEG opens in the browser.
+
+I am using PHP 4.3.6 on windows iis 4 (yeah, I know.....)

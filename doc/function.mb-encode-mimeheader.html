@@ -1,0 +1,354 @@
+
+mb_encode_mimeheader
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+mb_encode_mimeheader — 为 MIME 头编码字符串
+
+说明
+
+string mb_encode_mimeheader ( string $str [, string $charset =
+mb_internal_encoding() [, string $transfer_encoding = "B" [, string $linefeed =
+"\r\n" [, int $indent = 0 ]]]] )
+
+按 MIME 头编码方案将指定的字符串 str 进行编码。
+
+参数
+
+str
+
+    要编码的 string。
+
+charset
+
+    charset 指定了 str 的字符集名。其默认值由当前的 NLS 设置（mbstring.language
+    ）来确定。 mb_internal_encoding() 应当设置为同样的编码。
+
+transfer_encoding
+
+    transfer_encoding 指定了 MIME 的编码方案。它可以是 "B"（Base64）也可以是
+    "Q"（Quoted-Printable）。如果未设置，将回退为 "B"。
+
+linefeed
+
+    linefeed 指定了 EOL（行尾）标记，使 mb_encode_mimeheader() 执行了一个换行（
+    » RFC 文档中规定，超过长度的一行将换成多行，当前该长度硬式编码为 74 个字符
+    ）。如果没有设定，则回退为 "\r\n" (CRLF)。
+
+indent
+
+    首行缩进（header 里 str 前的字符数目）。
+
+返回值
+
+转换后的字符串版本以 ASCII 形式表达。
+
+范例
+
+Example #1 mb_encode_mimeheader() 例子
+
+<?php
+$name = ""; // kanji
+$mbox = "kru";
+$doma = "gtinn.mon";
+$addr = mb_encode_mimeheader($name, "UTF-7", "Q") . " <" . $mbox . "@" . $doma 
+. ">";
+echo $addr;
+?>
+
+注释
+
+    Note:
+
+    这个函数没有设计成据更高级上下文的中断点来换行（单词边界等）。这个特性将导
+    致意外的空格可能会让原始字符串看上去很乱。
+
+参见
+
+  • mb_decode_mimeheader() - 解码 MIME 头字段中的字符串
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+mb_encode_mimeheader() depends on correct mbstring.internal_encoding setting.
+It tries to convert $str from internal encoding to $charset. If you ignore
+mbstring internal encoding, function might encode strings incorrectly even when
+$str character set matches $charset
+===============================================================================
+
+Some solution for using national chars and have problem with UTF-8 for example
+in mail subject. Before you use mb_encode_mimeheader with UTF-8 set
+mb_internal_encoding('UTF-8').
+===============================================================================
+
+I could not find a PHP function to MIME encode the name for a n email address.
+
+Input   = "Karl Müller<kmueller@gmx.de>"
+Output = "Karl%20M%FCller<kmueller@gmx.de>"
+
+I wrote it on my own:
+
+<?php
+// required to encode names in email addresses   
+// replace " " with "%20"
+// replace "ü" with "%FC"
+// replace "%" with "%25"      etc....
+// Use "%" as Delimiter for MIME
+// Use "=" as Delimiter for Quoted Printable
+// Input string must be UTF8 encoded
+public static function EncodeMime($Text, $Delimiter)
+{
+    $Text = utf8_decode($Text);
+    $Len  = strlen($Text);
+    $Out  = "";
+    for ($i=0; $i<$Len; $i++)
+    {
+        $Chr = substr($Text, $i, 1);
+        $Asc = ord($Chr);
+
+        if ($Asc > 0x255) // Unicode not allowed
+        {
+            $Out .= "?";
+        }
+        else if ($Chr == " " || $Chr == $Delimiter || $Asc > 127)
+        {
+            $Out .= $Delimiter . strtoupper(bin2hex($Chr));
+        }
+        else $Out .= $Chr;
+    }
+    return $Out;
+}
+?>
+===============================================================================
+
+My first post was around 2003, and still the mb_mime_header is broken. It is
+*NOT* usable with longer subjects, and mostly unusable with anything else than
+japanese.
+
+iwakura at junx dot org is also not working for me, it produces also some
+gargabe.
+
+I updated my old function (the one I posted 2003) and I tested it with overlong
+subjects in UTF-8, ISO-2022-JP (japanese), GB2312 (simplified chinese) and
+EUC-KR (korean) and I got readable results in thunderbird, mail.app, outlook,
+etc.
+
+<?php
+
+function _mb_mime_encode($string, $encoding)
+{
+    $pos = 0;
+    // after 36 single bytes characters if then comes MB, it is broken
+    // but I trimmed it down to 24, to stay 100% < 76 chars per line
+    $split = 24;
+    while ($pos < mb_strlen($string, $encoding))
+    {
+        $output = mb_strimwidth($string, $pos, $split, "", $encoding);
+        $pos += mb_strlen($output, $encoding);
+        $_string_encoded = "=?".$encoding."?B?".base64_encode($output)."?=";
+        if ($_string)
+            $_string .= "\r\n";
+        $_string .= $_string_encoded;
+    }
+    $string = $_string;
+    return $string;
+}
+
+?>
+===============================================================================
+
+Read this FIRST: http://bugs.php.net/bug.php?id=23192 because
+mb_encode_mimeheaders is BUGGY!
+
+a work around for the multibyte broken error for too long subjects for
+ISO-2022-JP:
+
+$pos=0;
+$split=36; // after 36 single bytes characters, if then comes MB, it is broken
+while ($pos<mb_strlen($string,$encoding))
+{
+  $output=mb_strimwidth($string,$pos,$split,"",$encoding);
+  $pos+=mb_strlen($output,$encoding);
+  $_string.=(($_string)?' ':'').mb_encode_mimeheader($output,$encoding);
+}
+$string=$_string;
+
+is not the best, but it works
+===============================================================================
+
+If mb_ version doesn't work for you in MIME-B mode:
+
+function encode_mimeheader($string, $charset=null, $linefeed="\r\n") {
+    if (!$charset)
+        $charset = mb_internal_encoding();
+
+    $start = "=?$charset?B?";
+    $end = "?=";
+    $encoded = '';
+
+    /* Each line must have length <= 75, including $start and $end */
+    $length = 75 - strlen($start) - strlen($end);
+    /* Average multi-byte ratio */
+    $ratio = mb_strlen($string, $charset) / strlen($string);
+    /* Base64 has a 4:3 ratio */
+    $magic = $avglength = floor(3 * $length * $ratio / 4);
+
+    for ($i=0; $i <= mb_strlen($string, $charset); $i+=$magic) {
+        $magic = $avglength;
+        $offset = 0;
+        /* Recalculate magic for each line to be 100% sure */
+        do {
+            $magic -= $offset;
+            $chunk = mb_substr($string, $i, $magic, $charset);
+            $chunk = base64_encode($chunk);
+            $offset++;
+        } while (strlen($chunk) > $length);
+        if ($chunk)
+            $encoded .= ' '.$start.$chunk.$end.$linefeed;
+    }
+    /* Chomp the first space and the last linefeed */
+    $encoded = substr($encoded, 1, -strlen($linefeed));
+
+    return $encoded;
+}
+===============================================================================
+
+True, function is broken (PHP5.1, encoding from UTF-8 with pl_PL charset).
+Below is about 15% faster version of proposed _mb_mime_encode. Also it has
+header more like othe mb_* functions and doesn't trigger any errors/warnings/
+notices.
+
+<?php
+
+function mb_mime_header($string, $encoding=null, $linefeed="\r\n") {
+  if(!$encoding) $encoding = mb_internal_encoding();
+  $encoded = '';
+
+  while($length = mb_strlen($string)) {
+    $encoded .= "=?$encoding?B?"
+             . base64_encode(mb_substr($string,0,24,$encoding))
+             . "?=$linefeed";
+
+    $string = mb_substr($string,24,$length,$encoding);
+  }
+
+  return $encoded;
+}
+
+?>
+===============================================================================
+
+In countries where there's non-us ASCII, it's a very good example, for sending
+mail:
+
+mb_internal_encoding('iso-8859-2');
+setlocale(LC_CTYPE, 'hu_HU');
+
+function encode($str,$charset){
+    $str=mb_encode_mimeheader(trim($str),$charset, 'Q', "\n\t");
+    return $str;
+}
+
+print encode('the text with spec. chars: &#337; &#368; &#336; &#369;,  
+','iso-8859-2');
+
+It creates a 7bit string
+===============================================================================
+
+I found a bad function.
+
+<?php
+function encodeHeader($input, $charset = 'ISO-8859-2')
+{
+    preg_match_all('/(\\w*[\\x80-\\xFF]+\\w*)/', $input, $matches);
+    foreach ($matches[1] as $value) {
+        $replacement = preg_replace('/([\\x80-\\xFF])/e', '"=" . strtoupper
+(dechex(ord("\\1")))', $value);
+        $input = str_replace($value, '=?' . $charset . '?Q?' . $replacement . 
+'?=', $input);
+    }
+    return $input;
+}
+?>
+
+This function should be used:
+
+<?php
+function encodeHeader($input, $charset = 'ISO-8859-2')
+{
+    $m=preg_match_all('/(\w*[\x80-\xFF]+\w*)/', $input, $matches);
+    if($m)$input=mb_encode_mimeheader($input,$charset, 'Q');
+    return $input;
+}
+?>
+===============================================================================
+
+i think mb_encode_mimeheader still have bug. here is sample code:
+
+function mb_encode_mimeheader2($string, $encoding = "ISO-2022-JP") {
+    $string_array = array();
+    $pos = 0;
+    $row = 0;
+    $mode = 0;
+   
+    while ($pos < mb_strlen($string)) {
+        $word = mb_strimwidth($string, $pos, 1);
+        if (!$word) {
+            $word = mb_strimwidth($string, $pos, 2);
+        }
+        if (mb_ereg_match("[ -~]", $word)) {    // ascii
+            if ($mode != 1) {
+                $row++;
+                $mode = 1;
+                $string_array[$row] = NULL;
+            }
+        } else {                                // multibyte
+            if ($mode != 2) {
+                $row++;
+                $mode = 2;
+                $string_array[$row] = NULL;
+            }
+        }
+        $string_array[$row] .= $word;
+        $pos++;
+    }
+   
+    //echo "<pre>";
+    //print_r($string_array);
+    //echo "</pre>";
+   
+    foreach ($string_array as $key => $value) {
+        $value = mb_convert_encoding($value, $encoding);
+        $string_array[$key] = mb_encode_mimeheader($value, $encoding);
+    }
+   
+    //echo "<pre>";
+    //print_r($string_array);
+    //echo "</pre>";
+   
+    return implode("", $string_array);
+}
+
+is not the best, but it works
+===============================================================================
+
+At least for Q encoding, this function is unsafe and does not encode correctly.
+Raw characters which appear as RFC2047 sequences are simply left as is.
+
+Ex:
+
+mb_encode_mimeheader( '=?iso-8859-1?q?this=20is=20some=20text?=' );
+
+returns '=?iso-8859-1?q?this=20is=20some=20text?='
+
+The exact same string, which is obviously not the encoding for the source
+string.  That is, mb_encode_mimeheader does not do any type of escaping.
+
+That is, the following condition is not always true:
+    mb_decode_mimeheader( mb_encode_mimeheader( $text ) ) == $text
+===============================================================================
+
+second parameter 'charset' is character encoding name, but default must be
+UTF-8 on PHP4.3.1.

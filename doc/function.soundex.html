@@ -1,0 +1,872 @@
+
+soundex
+
+(PHP 4, PHP 5, PHP 7)
+
+soundex — Calculate the soundex key of a string
+
+说明
+
+string soundex ( string $str )
+
+Calculates the soundex key of str.
+
+Soundex keys have the property that words pronounced similarly produce the same
+soundex key, and can thus be used to simplify searches in databases where you
+know the pronunciation but not the spelling. This soundex function returns a
+string 4 characters long, starting with a letter.
+
+This particular soundex function is one described by Donald Knuth in "The Art
+Of Computer Programming, vol. 3: Sorting And Searching", Addison-Wesley (1973),
+pp. 391-392.
+
+参数
+
+str
+
+    The input string.
+
+返回值
+
+Returns the soundex key as a string.
+
+范例
+
+Example #1 Soundex Examples
+
+<?php
+soundex("Euler")       == soundex("Ellery");    // E460
+soundex("Gauss")       == soundex("Ghosh");     // G200
+soundex("Hilbert")     == soundex("Heilbronn"); // H416
+soundex("Knuth")       == soundex("Kant");      // K530
+soundex("Lloyd")       == soundex("Ladd");      // L300
+soundex("Lukasiewicz") == soundex("Lissajous"); // L222
+?>
+
+参见
+
+  • levenshtein() - 计算两个字符串之间的编辑距离
+  • metaphone() - Calculate the metaphone key of a string
+  • similar_text() - 计算两个字符串的相似度
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+I made some improvements to the "Cologne Phonetic" function of niclas zimmer.
+Key and value of the arrays are inverted to uses simple arrays instead of
+multidimensional arrays. Therefore all loops and iterations are not longer
+necessary to find the matching value  for a char.
+I put the function into a static class and moved the array declarations outside
+the function.
+
+The result is more reliable and five times faster than the original.
+
+<?php  
+class CologneHash() {
+
+    static $eLeading = array("ca" => 4, "ch" => 4, "ck" => 4, "cl" => 4, "co" 
+=> 4, "cq" => 4, "cu" => 4, "cx" => 4, "dc" => 8, "ds" => 8, "dz" => 8, "tc" =>
+8, "ts" => 8, "tz" => 8);
+
+    static $eFollow = array("sc", "zc", "cx", "kx", "qx");
+
+    static $codingTable = array("a" => 0, "e" => 0, "i" => 0, "j" => 0, "o" => 
+0, "u" => 0, "y" => 0,
+        "b" => 1, "p" => 1, "d" => 2, "t" => 2, "f" => 3, "v" => 3, "w" => 3, 
+"c" => 4, "g" => 4, "k" => 4, "q" => 4,
+        "x" => 48, "l" => 5, "m" => 6, "n" => 6, "r" => 7, "c" => 8, "s" => 8, 
+"z" => 8);
+
+    public static function getCologneHash($word)
+    {
+        if (empty($word)) return false;
+        $len = strlen($word);
+
+        for ($i = 0; $i < $len; $i++) {
+            $value[$i] = "";
+
+            //Exceptions
+            if ($i == 0 && $word[$i] . $word[$i + 1] == "cr") {
+                $value[$i] = 4;
+            }
+
+            if (isset($word[$i + 1]) && isset(self::$eLeading[$word[$i] . $word
+[$i + 1]])) {
+                $value[$i] = self::$eLeading[$word[$i] . $word[$i + 1]];
+            }
+
+            if ($i != 0 && (in_array($word[$i - 1] . $word[$i], self::$eFollow
+))) {
+                $value[$i] = 8;
+            }
+
+            // normal encoding
+            if ($value[$i]=="") {
+                if (isset(self::$codingTable[$word[$i]])) {
+                    $value[$i] = self::$codingTable[$word[$i]];
+                }
+            }
+        }
+
+        // delete double values
+        $len = count($value);
+
+        for ($i = 1; $i < $len; $i++) {
+            if ($value[$i] == $value[$i - 1]) {
+                $value[$i] = "";
+            }
+        }
+
+        // delete vocals
+        for ($i = 1; $i > $len; $i++) {
+            // omitting first characer code and h
+            if ($value[$i] == 0) {
+                $value[$i] = "";
+            }
+        }
+
+        $value = array_filter($value);
+        $value = implode("", $value);
+
+        return $value;
+    }
+
+}
+?>
+===============================================================================
+
+Since soundex() does not produce optimal results for German language
+we have written a function to implement the so called Kölner Phonetik
+(Cologne Phonetic).
+
+Please find the code below in the hope it might be useful:
+
+<?php
+/**
+* A function for retrieving the Kölner Phonetik value of a string
+*
+* As described at http://de.wikipedia.org/wiki/Kölner_Phonetik
+* Based on Hans Joachim Postel: Die Kölner Phonetik.
+* Ein Verfahren zur Identifizierung von Personennamen auf der
+* Grundlage der Gestaltanalyse.
+* in: IBM-Nachrichten, 19. Jahrgang, 1969, S. 925-931
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* @package phonetics
+* @version 1.0
+* @link http://www.einfachmarke.de
+* @license GPL 3.0 <http://www.gnu.org/licenses/>
+* @copyright  2008 by einfachmarke.de
+* @author Nicolas Zimmer <nicolas dot zimmer at einfachmarke.de>
+*/
+
+function cologne_phon($word){
+   
+  /**
+  * @param  string  $word string to be analyzed
+  * @return string  $value represents the Kölner Phonetik value
+  * @access public
+  */
+ 
+    //prepare for processing
+    $word=strtolower($word);
+    $substitution=array(
+            "ä"=>"a",
+            "ö"=>"o",
+            "ü"=>"u",
+            "ß"=>"ss",
+            "ph"=>"f"
+            );
+
+    foreach ($substitution as $letter=>$substitution) {
+        $word=str_replace($letter,$substitution,$word);
+    }
+   
+    $len=strlen($word);
+   
+    //Rule for exeptions
+    $exceptionsLeading=array(
+    4=>array("ca","ch","ck","cl","co","cq","cu","cx"),
+    8=>array("dc","ds","dz","tc","ts","tz")
+    );
+   
+    $exceptionsFollowing=array("sc","zc","cx","kx","qx");
+   
+    //Table for coding
+    $codingTable=array(
+    0=>array("a","e","i","j","o","u","y"),
+    1=>array("b","p"),
+    2=>array("d","t"),
+    3=>array("f","v","w"),
+    4=>array("c","g","k","q"),
+    48=>array("x"),
+    5=>array("l"),
+    6=>array("m","n"),
+    7=>array("r"),
+    8=>array("c","s","z"),
+    );
+   
+    for ($i=0;$i<$len;$i++){
+        $value[$i]="";
+       
+        //Exceptions
+        if ($i==0 AND $word[$i].$word[$i+1]=="cr") $value[$i]=4;
+       
+        foreach ($exceptionsLeading as $code=>$letters) {
+            if (in_array($word[$i].$word[$i+1],$letters)){
+
+                    $value[$i]=$code;
+
+}                }
+       
+        if ($i!=0 AND (in_array($word[$i-1].$word[$i],
+$exceptionsFollowing))) {
+
+            value[$i]=8;       
+
+}               
+       
+        //Normal encoding
+        if ($value[$i]==""){
+                foreach ($codingTable as $code=>$letters) {
+                    if (in_array($word[$i],$letters))$value[$i]=$code;
+                }
+            }
+        }
+   
+    //delete double values
+    $len=count($value);
+   
+    for ($i=1;$i<$len;$i++){
+        if ($value[$i]==$value[$i-1]) $value[$i]="";
+    }
+   
+    //delete vocals
+    for ($i=1;$i>$len;$i++){//omitting first characer code and h
+        if ($value[$i]==0) $value[$i]="";
+    }
+   
+   
+    $value=array_filter($value);
+    $value=implode("",$value);
+   
+    return $value;
+   
+}
+
+?>
+===============================================================================
+
+A MUCH easier way to check for similarity between words and avoid the problems
+that come up with Klancy/Clancy would be to simply add any letter infront of
+the string
+
+ie:  OKlancy/OClancy
+===============================================================================
+
+Although the standard soundex string is 4 characters long, and this is what's
+returned by the php function, some database programs return an arbitrary number
+of strings. MySQL, for instance.
+
+The MySQL documentation covers this, recommending that you may wish to use
+substring to output the standard 4 characters. Let's take 'Dostoyevski' as an
+example.
+
+select soundex("Dostoyevski")
+returns D2312
+select substring(soundex("Dostoyevski"), 1, 4);
+returns D231
+
+PHP will return the value as 'D231'
+
+So, to use the soundex function to generate a WHERE parameter in a MySQL SELECT
+statement, you might try this:
+$s = soundex('Dostoyevski');
+SELECT * FROM authors WHERE substring(soundex(lastname), 1 , 4) = "' . $s  .
+'"';
+
+Or, if you want to bypass the php function
+$result = mysql_query("select soundex('Dostoyevski')");
+$s = mysql_result($result, 0, 0);
+===============================================================================
+
+soundex() unfortunately is very sensitive about the first character. It is not
+possible to use it and have Clansy and Klansy return the same value. If you
+want to do a phonetic search on such names you will still need to write a
+routine to evaluate C452 as being similar to K452.
+===============================================================================
+
+I wrote this function a long time ago in CGI-perl and then translated (if you
+can call it that) into PHP.  A little clunky to say the least, but should
+handle true soundex specs 100%:
+
+// ---begin code---
+
+function MakeSoundEx($stringtomakesoundexof)
+{
+    $temp_Name = $stringtomakesoundexof;
+    $SoundKey1 = "BPFV";
+    $SoundKey2 = "CSKGJQXZ";
+    $SoundKey3 = "DT";
+    $SoundKey4 = "L";
+    $SoundKey5 = "MN";
+    $SoundKey6 = "R";
+    $SoundKey7 = "AEHIOUWY";
+
+        $temp_Name = strtoupper($temp_Name);
+    $temp_Last = "";
+    $temp_Soundex = substr($temp_Name, 0, 1);
+
+    $n = 1;
+    for ($i = 0; $i < strlen($SoundKey1); $i++)
+    {
+            if ($temp_Soundex == substr($SoundKey1, i - 1, 1))
+        {
+            $temp_Last = "1";
+            }
+    }
+    for ($i = 0; $i < strlen($SoundKey2); $i++)
+    {
+            if ($temp_Soundex == substr($SoundKey2, i - 1, 1))
+        {
+            $temp_Last = "2";
+            }
+    }
+    for ($i = 0; $i < strlen($SoundKey3); $i++)
+    {
+            if ($temp_Soundex == substr($SoundKey3, i - 1, 1))
+        {
+            $temp_Last = "3";
+            }
+    }
+    for ($i = 0; $i < strlen($SoundKey4); $i++)
+    {
+            if ($temp_Soundex == substr($SoundKey4, i - 1, 1))
+        {
+            $temp_Last = "4";
+            }
+    }
+    for ($i = 0; $i < strlen($SoundKey5); $i++)
+    {
+            if ($temp_Soundex == substr($SoundKey5, i - 1, 1))
+        {
+            $temp_Last = "5";
+            }
+    }
+    for ($i = 0; $i < strlen($SoundKey6); $i++)
+    {
+            if ($temp_Soundex == substr($SoundKey6, i - 1, 1))
+        {
+            $temp_Last = "6";
+            }
+    }
+    for ($i = 0; $i < strlen($SoundKey6); $i++)
+    {
+            if ($temp_Soundex == substr($SoundKey6, i - 1, 1))
+        {
+            $temp_Last = "";
+            }
+    }
+
+    for ($n = 1; $n < strlen($temp_Name); $n++)
+    {
+        if (strlen($temp_Soundex) < 4)
+        {
+            for ($i = 0; $i < strlen($SoundKey1); $i++)
+            {
+                if (substr($temp_Name, $n - 1, 1) == substr($SoundKey1, $i - 1,
+1) && $temp_Last != "1")
+                {
+                    $temp_Soundex = $temp_Soundex."1";
+                    $temp_Last = "1";
+                }
+            }
+            for ($i = 0; $i < strlen($SoundKey2); $i++)
+            {
+                if (substr($temp_Name, $n - 1, 1) == substr($SoundKey2, $i - 1,
+1) && $temp_Last != "2")
+                {
+                    $temp_Soundex = $temp_Soundex."2";
+                    $temp_Last = "2";
+                }
+            }
+            for ($i = 0; $i < strlen($SoundKey3); $i++)
+            {
+                if (substr($temp_Name, $n - 1, 1) == substr($SoundKey3, $i - 1,
+1) && $temp_Last != "3")
+                {
+                    $temp_Soundex = $temp_Soundex."3";
+                    $temp_Last = "3";
+                }
+            }
+            for ($i = 0; $i < strlen($SoundKey4); $i++)
+            {
+                if (substr($temp_Name, $n - 1, 1) == substr($SoundKey4, $i - 1,
+1) && $temp_Last != "4")
+                {
+                    $temp_Soundex = $temp_Soundex."4";
+                    $temp_Last = "4";
+                }
+            }
+            for ($i = 0; $i < strlen($SoundKey5); $i++)
+            {
+                if (substr($temp_Name, $n - 1, 1) == substr($SoundKey5, $i - 1,
+1) && $temp_Last != "5")
+                {
+                    $temp_Soundex = $temp_Soundex."5";
+                    $temp_Last = "5";
+                }
+            }
+            for ($i = 0; $i < strlen($SoundKey6); $i++)
+            {
+                if (substr($temp_Name, $n - 1, 1) == substr($SoundKey6, $i - 1,
+1) && $temp_Last != "6")
+                {
+                    $temp_Soundex = $temp_Soundex."6";
+                    $temp_Last = "6";
+                }
+            }
+            for ($i = 0; $i < strlen($SoundKey7); $i++)
+            {
+                if (substr($temp_Name, $n - 1, 1) == substr($SoundKey7, $i - 1,
+1))
+                {
+                    $temp_Last = "";
+                }
+            }
+        }
+    }
+
+    while (strlen($temp_Soundex) < 4)
+    {
+        $temp_Soundex = $temp_Soundex."0";
+    }
+
+    return $temp_Soundex;
+}
+
+// --- end code---
+===============================================================================
+
+Since the first letter is included in the phonetic representation in the
+output, it is worth pointing out that if you want a soundex key to work without
+the problems of klansy and clansy sounding different, take the substring from
+the first letter, as the first letter is the main constant of the word, and the
+numerical value is that of the phontic structure of the word.
+===============================================================================
+
+Rewritten, maybe -- but the algorithm has some obvious
+optimisations which can be done, for example...
+
+        function text__soundex( $text ) {
+                $k = ' 123 12  22455 12623 1 2 2';
+                $nl = strlen( $tN = strtoupper( $text ) );
+                $p = trim( $k{ ord( $tS = $tN{0} ) - 65 } );
+                for( $n = 1; $n < $nl; ++$n )
+                        if( ( $l = trim( $k{ ord( $tN{ $n } ) - 65 } ) ) != $p
+)
+                                $tS .= ( $p = $l );
+                return substr( $tS . '000', 0, 4 );
+        }
+
+// Notes:
+// $k is the $key, essentially $SoundKey inverted
+// $tN is the uppercase of the text to be optimised
+// $tS is the partaully generated output
+// $l is the current letter, $p the previous
+// $n and $nl are iteration indicies
+// 65 is ord('A'), precalculated for speed
+// none ascii letters are not supported
+// watch the brackets, quite a mixture here
+
+(Code has suffered only basic tests, though it appears to
+match the output of PHP's soundex(), speed untested --
+though this should be /much/ faster than a4_perfect's
+rewrite due to the removal of most loops and compares.)
+
+C
+2005-09-13
+===============================================================================
+
+a workaround for the mysql/php differences in implementation of soundex is to
+do the soundex comparison entirely within mysql.
+
+for example:
+$sql = "SELECT * FROM table WHERE substring(soundex(field), 1, 4) =  substring
+(soundex('".$wordsearch."'), 1, 4)";
+===============================================================================
+
+eek... hosting got taken down on that server.. here's the code for the previous
+
+function cg_sylc($nos){
+  $nos = strtoupper($nos);
+  $syllables = 0;
+
+  $before = strlen($nos);
+  $nos = str_replace(array('AA','AE','AI','AO','AU',
+  'EA','EE','EI','EO','EU','IA','IE','II','IO',
+  'IU','OA','OE','OI','OO','OU','UA','UE',
+  'UI','UO','UU'), "", $nos);
+  $after = strlen($nos);
+  $diference = $before - $after;
+  if($before != $after) $syllables += $diference / 2;
+
+  if($nos[strlen($nos)-1] == "E") $syllables --;
+  if($nos[strlen($nos)-1] == "Y") $syllables ++;
+
+  $before = $after;
+  $nos = str_replace(array('A','E','I','O','U'),"",$nos);
+  $after = strlen($nos);
+  $syllables += ($before - $after);
+
+  return $syllables;
+}
+
+function cg_SoundEx($SExStr){
+  $syl = cg_sylc($SExStr);
+  $SExStr = strtoupper($SExStr);
+
+    for($i = 1, $ii = 2,print $SExStr[0]; ;$ii++){
+
+      if(($SExStr[$i] != $SExStr[$ii])){
+          $tsstr .= $SExStr[$ii];
+          $i ++;
+      }
+      if($SExStr[$ii] == false){
+        break;
+      }
+    }
+
+  $tsstr = str_replace(array('A', 'E', 'H', 'I', 'O', 'U', 'W', 'Y'), "",
+$tsstr);
+  $tsstr = str_replace(array('B', 'F', 'P', 'V'), "1", $tsstr);
+  $tsstr = str_replace(array('C', 'G', 'J', 'K', 'Q', 'S', 'X', 'Z', ' '), "2",
+$tsstr);
+  $tsstr = str_replace(array('D', 'T'), "3", $tsstr);
+  $tsstr = str_replace(array('L'), "4", $tsstr);
+  $tsstr = str_replace(array('M', 'N', ' '), "5", $tsstr);
+  $tsstr = str_replace(array('R'), "6", $tsstr);
+
+  while($iii < 3){
+    if($tsstr[$iii] != false){
+      $ttsstr .= $tsstr[$iii];
+    } else {
+      $ttsstr .= "0";
+    }
+    $iii ++;
+  }
+  $ttsstr .= $syl;
+  print $ttsstr;
+}
+===============================================================================
+
+<?php
+// https://github.com/Fruneau/Fruneau.github.io/blob/master/assets/
+soundex_fr.php
+// http://blog.mymind.fr/blog/2007/03/15/soundex-francais/
+function soundex_fr($sIn){
+    static $convVIn, $convVOut, $convGuIn, $convGuOut, $accents;
+    if (!isset($convGuIn)) {
+        $accents = array('É' => 'E', 'È' => 'E', 'Ë' => 'E', 'Ê' => 'E',
+                    'Á' => 'A', 'À' => 'A', 'Ä' => 'A', 'Â' => 'A', 'Å' => 'A',
+'Ã' => 'A',
+                    'Ï' => 'I', 'Î' => 'I', 'Ì' => 'I', 'Í' => 'I',
+                    'Ô' => 'O', 'Ö' => 'O', 'Ò' => 'O', 'Ó' => 'O', 'Õ' => 'O',
+'Ø' => 'O',
+                    'Ú' => 'U', 'Ù' => 'U', 'Û' => 'U', 'Ü' => 'U',
+                    'Ç' => 'C', 'Ñ' => 'N', 'Ç' => 'S', '¿' => 'E',
+                    'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+                    'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a', 'å' => 'a',
+'ã' => 'a',
+                    'ï' => 'i', 'î' => 'i', 'ì' => 'i', 'í' => 'i',
+                    'ô' => 'o', 'ö' => 'o', 'ò' => 'o', 'ó' => 'o', 'õ' => 'o',
+'ø' => 'o',
+                    'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u',
+                    'ç' => 'c', 'ñ' => 'n');
+        $convGuIn  = array( 'GUI', 'GUE', 'GA', 'GO', 'GU', 'SCI', 'SCE', 'SC',
+'CA', 'CO',
+                            'CU', 'QU', 'Q', 'CC', 'CK', 'G', 'ST', 'PH');
+        $convGuOut = array( 'KI', 'KE', 'KA', 'KO', 'K', 'SI', 'SE', 'SK', 'KA'
+, 'KO',
+                            'KU', 'K', 'K', 'K', 'K', 'J', 'T', 'F');
+        $convVIn   = array( '/E?(AU)/', '/([EA])?[UI]([NM])([^EAIOUY]|$)/', '/
+[AE]O?[NM]([^AEIOUY]|$)/',
+                            '/[EA][IY]([NM]?[^NM]|$)/', '/(^|[^OEUIA])(OEU|OE|
+EU)([^OEUIA]|$)/', '/OI/',
+                            '/(ILLE?|I)/', '/O(U|W)/', '/O[NM]($|[^EAOUIY])/', 
+'/(SC|S|C)H/',
+                            '/([^AEIOUY1])[^AEIOUYLKTPNR]([UAO])([^AEIOUY])/', 
+'/([^AEIOUY]|^)([AUO])[^AEIOUYLKTP]([^AEIOUY1])/', '/^KN/',
+                            '/^PF/', '/C([^AEIOUY]|$)/',  '/E(Z|R)$/',
+                            '/C/', '/Z$/', '/(?<!^)Z+/', '/H/', '/W/');
+        $convVOut  = array( 'O', '1\3', 'A\1',
+                            'E\1', '\1E\3', 'O',
+                            'Y', 'U', 'O\1', '9',
+                            '\1\2\3', '\1\2\3', 'N',
+                            'F', 'K\1', 'E',
+                            'S', 'SE', 'S', '', 'V');
+    }
+
+    if ( $sIn === '' ) return '    ';
+    $sIn = strtr( $sIn, $accents);
+    $sIn = strtoupper( $sIn );
+    $sIn = preg_replace( '`[^A-Z]`', '', $sIn );
+    if ( strlen( $sIn ) === 1 ) return $sIn . '   ';
+    $sIn = str_replace( $convGuIn, $convGuOut, $sIn );
+    $sIn = preg_replace( '`(.)\1`', '$1', $sIn );
+    $sIn = preg_replace( $convVIn, $convVOut, $sIn);
+    $sIn = preg_replace( '`L?[TDX]?S?$`', '', $sIn );
+    $sIn = preg_replace( '`(?!^)Y([^AEOU]|$)`', '\1', $sIn);
+    $sIn = preg_replace( '`(?!^)[EA]`', '', $sIn);
+    return substr( $sIn . '    ', 0, 4);
+}
+?>
+===============================================================================
+
+administrator at zinious dot com:
+
+Sorry but your code wasnt soundex compliant
+here were my results with your code, my code, and the default..
+
+string: rest
+R620 perform administrator's function 0.009452
+R230 perform cg's function 0.001779
+R230 perform default soundex function 9.4999999999956E-005
+
+string: reset
+R620 perform administrator's function 0.0055900000000001
+R230 perform cg's function 0.00091799999999997
+R230 perform default soundex function 0.00010600000000005
+
+i dunno why the default, every once in a while, will for some reason be 9.xxx.
+very odd i think..
+my code is at the bottom.. these tests were before the soundex modification as
+i discribe below..
+btw for all the original specs on the soundex algorithm goto
+http://www.star-shine.net/~functionifelse/GFD/?word=soundex
+
+dalibor dot toth at podravka dot hr:
+
+yes it is perhaps sad that it gives you the same code,
+even metaphone has that problem..
+but one might not want to be so accurate.. if somone
+is on search engine.. lets call it shmoogle looking
+for "php array reset" and search for "php array rest"
+then shmoogle might return stuff about beds and such..
+(if they were all stupid and didnt use the first words
+as more important) so anyways shmoogle might need it to
+be less accurate in such cases.. but nonetheless..
+my fix for this is to add the number of syllables at the end of the string
+making it 5 characters long..
+this would work as fallows..
+
+code at: http://star-shine.net/~functionifelse/cg_soundex.php
+
+or if you wanted to just use the default soundex function
+
+$str = soundex($str).cg_sylc($str);
+
+revolutionary more or less.. problly less...
+This function is only meant for one word though.. i'd like to see someone
+modify it to use split and run it through a loop to get each words cg_soundex
+that'll be fun ;)
+i would also like to sujest to the php zend apache kinda people who make php
+to add an optional additional variable the user can specify as fallows
+
+soundex("string",SYL);
+
+which would return the number of syllables at the end of the string
+highly accurate sound testing woo! also you could add VOW for vowels
+and CONS for consonant or whatever else someone would want..
+but i really think the number of syllables will be pleanty efficiant.
+umm.. if this helps anyone your welcome.. ummm.. good luck in all
+your php adventures.. oh... and the final results
+
+syllables
+1 rest
+2 reset
+metaphone
+RST rest
+RST reset
+soundex
+R230 rest
+R230 reset
+
+string: rest
+R2301 perform cg's function 0.00211
+R230 perform default soundex function 0.00011299999999997
+
+string: reset
+R2302 perform cg's function 0.001691
+R230 perform default soundex function 0.00010399999999999
+
+the default function is a tad bit faster..
+so maybe they will add this option and we'll have speed and accuracy.
+
+SILENT WIND OF DOOM WOOSH!
+===============================================================================
+
+The answer to whether soundex works except for the first letter in klancy vs
+clancy is to always prefix words with the same letter.
+
+aklancy will match aclancy
+bklancy will match bclancy
+
+soundex seems to only check the 1st 2 syllables.??
+ie:  spectacular matches spectacle
+
+just a thought if you rely on soundex.
+
+k-
+===============================================================================
+
+a French soundex version ; could be used for other foreigns languages where
+soudex lacks. Perhaps, a class with each language specifics could be writen.
+
+http://www.php-help.net/sources-php/a.french.adapted.soundex.289.html
+===============================================================================
+
+I originally looked at soundex() because I wanted to compare how individual
+letters sounded. So, when pronouncing a string of generated characters it would
+be easy to to distinguish them from eachother.  (ie, TGDE is hard to
+distinguish, whereas RFQA is easier to understand). The goal was to generate
+IDs that could be easily understood with a high degree of accuracy over a radio
+of varying quality. I quickly figured out that soundex and metaphone wouldn't
+do this (they work for words), so I wrote the following to help out. The ID
+generation function iteratively calls chrSoundAlike() to compare each new
+character with the preceeding characters. I'd be interested in recieving any
+feedback on this. Thanks.
+
+<?php
+function chrSoundAlike($char1, $char2, $opts = FALSE) {
+    $char1 = strtoupper($char1);
+    $char2 = strtoupper($char2);
+    $opts  = strtoupper($opts);
+
+    // Setup the sets of characters that sound alike.
+    // (Options: include numbers, include W, include both, or default is none
+of those.)
+    switch ($opts) {
+    case 'NUMBERS':
+        $sets = array(0 => array('A', 'J', 'K'),
+                      1 => array('B', 'C', 'D', 'E', 'G', 'P', 'T', 'V', 'Z', 
+'3'),
+                      2 => array('F', 'S', 'X'),
+                      3 => array('I', 'Y'),
+                      4 => array('M', 'N'),
+                      5 => array('Q', 'U', 'W'));
+        break;
+
+    case 'STRICT':
+        $sets = array(0 => array('A', 'J', 'K'),
+                      1 => array('B', 'C', 'D', 'E', 'G', 'P', 'T', 'V', 'Z'),
+                      2 => array('F', 'S', 'X'),
+                      3 => array('I', 'Y'),
+                      4 => array('M', 'N'),
+                      5 => array('Q', 'U', 'W'));
+        break;
+       
+    case 'BOTH':
+        $sets = array(0 => array('A', 'J', 'K'),
+                      1 => array('B', 'C', 'D', 'E', 'G', 'P', 'T', 'V', 'Z', 
+'3'),
+                      2 => array('F', 'S', 'X'),
+                      3 => array('I', 'Y'),
+                      4 => array('M', 'N'),
+                      5 => array('Q', 'U', 'W'));
+        break;
+
+    default:
+        $sets = array(0 => array('A', 'J', 'K'),
+                      1 => array('B', 'C', 'D', 'E', 'G', 'P', 'T', 'V', 'Z'),
+                      2 => array('F', 'S', 'X'),
+                      3 => array('I', 'Y'),
+                      4 => array('M', 'N'),
+                      5 => array('Q', 'U'));
+        break;
+    }
+   
+    // See if $char1 is in a set.
+    $matchset = array();
+    for ($i = 0; $i < count($sets); $i++) {
+        if (in_array($char1, $sets[$i])) {
+            $matchset = $sets[$i];
+        }
+    }
+
+    // IF char2 is in the same set as char1, or if char1 and char2 and the
+same, then return true.
+    if (in_array($char2, $matchset) OR $char1 == $char2) {
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+?>
+===============================================================================
+
+MySQL soundex (3.23.49) doesn't examine the first character at all to see
+whether it should be skipped. Therefore the Dutch name of The Hague, the
+country's government seat, 's-Gravenhage will give a soundex value of '261 in
+MySQL and S615 in PHP.
+===============================================================================
+
+A MUCH easier way to do the above search would be to simply add any letter in
+front of the string and then compare them.
+
+ie. Klancy => LKlancy
+    Clancy => LClancy
+===============================================================================
+
+The soundex 'different letter in front' problem can be solved by using
+levenshtein() on the soundex codes. in my application, which is searching a
+database of album names for entries that match a particular user provided
+string, i do the following:
+
+1. Search the database for the exact name
+2. Search the database for entries where the name occurs anyway as a string
+3. Search the database for entries where any of the words in the name (if the
+user has typed in more than one word) is present, except for little words (and,
+the, of etc)
+4. Then, if all this fails, I go to plan b:
+
+- calculate the levenshtein distance (levenshtein()) between the user search
+term and each of the entries in the database as a percentage of the length of
+the user search term entered
+
+- calculate the levenshtein distance between the metphone codes of the user
+search term entered and each field in the database as a percentage of the
+length of the metaphone code of the user search term entered
+
+- calculate the levenshtein distance between the soundex codes of the user
+search term entered and each field in the database as a percentage of the
+length of the soundex code of the original user search term entered
+
+if any of these percentages is less than 50 (means that two soundex codes with
+different first letters will be accepted!!) then the entry is accepted as a
+possible match.
+===============================================================================
+
+fie at myrealbox dot com-
+
+regarding your soudex syllable request- i think counting vowel clusters in the
+word will result in an accurate count of syllables.  so no soudex feature is
+necessary, just count through the chars in the word, and everytime you run from
+vowel to consanant, increment the syllable count.
+
+using this logic, this sentence is categorized as follows.
+2 1 2 1 1 (3) (0) (4) (0) 2
+
+where (#) marks a word that is incorrectly categorized.  i'm sure usiong a
+little thinking one could figure out the logic in those cases that would result
+in an accurate count.  counting changes from vowel to consanant would yield-
+(1) 1 2 1 2 1 (4) 1 2
+
+taking the average and then cieling of the two types would fix most of the
+errors.

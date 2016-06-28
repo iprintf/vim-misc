@@ -1,0 +1,334 @@
+
+Closure::bindTo
+
+(PHP 5 >= 5.4.0, PHP 7)
+
+Closure::bindTo — 复制当前闭包对象，绑定指定的$this对象和类作用域。
+
+说明
+
+public Closure Closure::bindTo ( object $newthis [, mixed $newscope = 'static'
+] )
+
+创建并返回一个匿名函数，它与当前对象的函数体相同、绑定了同样变量，但可以绑定不
+同的对象，也可以绑定新的类作用域。
+
+“绑定的对象”决定了函数体中的 $this 的取值，“类作用域”代表一个类型、决定在这个匿
+名函数中能够调用哪些私有和保护的方法。也就是说，此时 $this 可以调用的方法，与
+newscope 类的成员函数是相同的。
+
+静态闭包不能有绑定的对象（ newthis 参数的值应该设为 NULL）不过仍然可以用 bubdTo
+方法来改变它们的类作用域。
+
+This function will ensure that for a non-static closure, having a bound
+instance will imply being scoped and vice-versa. To this end, non-static
+closures that are given a scope but a NULL instance are made static and
+non-static non-scoped closures that are given a non-null instance are scoped to
+an unspecified class.
+
+    Note:
+
+    如果你只是想要复制一个匿名函数，可以用 cloning 代替。
+
+参数
+
+newthis
+
+    绑定给匿名函数的一个对象，或者 NULL 来取消绑定。
+
+newscope
+
+    关联到匿名函数的类作用域，或者 'static' 保持当前状态。如果是一个对象，则使
+    用这个对象的类型为心得类作用域。这会决定绑定的对象的保护、私有成员方法的可
+    见性。
+
+返回值
+
+返回新创建的 Closure 对象或者在失败时返回 FALSE
+
+范例
+
+Example #1 Closure::bindTo() 实例
+
+<?php
+
+class A {
+    function __construct($val) {
+        $this->val = $val;
+    }
+    function getClosure() {
+        //returns closure bound to this object and scope
+        return function() { return $this->val; };
+    }
+}
+
+$ob1 = new A(1);
+$ob2 = new A(2);
+
+$cl = $ob1->getClosure();
+echo $cl(), "\n";
+$cl = $cl->bindTo($ob2);
+echo $cl(), "\n";
+?>
+
+以上例程的输出类似于：
+
+1
+2
+
+参见
+
+  • 匿名函数
+  • Closure::bind() - 复制一个闭包，绑定指定的$this对象和类作用域。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+We can use the concept of bindTo to write a very small Template Engine:
+
+#############
+index.php
+############
+
+<?php
+
+class Article{
+    private $title = "This is an article";
+}
+
+class Post{
+    private $title = "This is a post";
+}
+
+class Template{
+
+    function render($context, $tpl){
+
+        $closure = function($tpl){
+            ob_start();
+            include $tpl;
+            return ob_end_flush();
+        };
+
+        $closure = $closure->bindTo($context, $context);
+        $closure($tpl);
+
+    }
+
+}
+
+$art = new Article();
+$post = new Post();
+$template = new Template();
+
+$template->render($art, 'tpl.php');
+$template->render($post, 'tpl.php');
+?>
+
+#############
+tpl.php
+############
+<h1><?php echo $this->title;?></h1>
+===============================================================================
+
+You can do pretty Javascript-like things with objects using closure binding:
+
+<?php
+trait DynamicDefinition {
+   
+    public function __call($name, $args) {
+        if (is_callable($this->$name)) {
+            return call_user_func($this->$name, $args);
+        }
+        else {
+            throw new \RuntimeException("Method {$name} does not exist");
+        }
+    }
+   
+    public function __set($name, $value) {
+        $this->$name = is_callable($value)?
+            $value->bindTo($this, $this):
+            $value;
+    }
+}
+
+class Foo {
+    use DynamicDefinition;
+    private $privateValue = 'I am private';
+}
+
+$foo = new Foo;
+$foo->bar = function() {
+    return $this->privateValue;
+};
+
+// prints 'I am private'
+print $foo->bar();
+
+?>
+===============================================================================
+
+Private/protected members are accessible if you set the "newscope" argument (as
+the manual says).
+
+<?php
+$fn = function(){
+    return ++$this->foo; // increase the value
+};
+
+class Bar{
+    private $foo = 1; // initial value
+}
+
+$bar = new Bar();
+
+$fn1 = $fn->bindTo($bar, 'Bar'); // specify class name
+$fn2 = $fn->bindTo($bar,  $bar); // or object
+
+echo $fn1(); // 2
+echo $fn2(); // 3
+===============================================================================
+
+With rebindable $this at hand it's possible to do evil stuff:
+
+<?php
+    class A {
+        private $a = 12;
+        private function getA () {
+            return $this->a;
+        }
+    }
+    class B {
+        private $b = 34;
+        private function getB () {
+            return $this->b;
+        }
+    }
+    $a = new A();
+    $b = new B();
+    $c = function () {
+        if (property_exists($this, "a") && method_exists($this, "getA")) {
+            $this->a++;
+            return $this->getA();
+        }
+        if (property_exists($this, "b") && method_exists($this, "getB")) {
+            $this->b++;
+            return $this->getB();
+        }
+    };
+    $ca = $c->bindTo($a, $a);
+    $cb = $c->bindTo($b, $b);
+    echo $ca(), "\n"; // => 13
+    echo $cb(), "\n"; // => 35
+?>
+===============================================================================
+
+Access private members of parent classes; playing with the scopes:
+<?PHP
+class Grandparents{ private $__status1 = 'married'; }
+class Parents extends Grandparents{ private $__status2 = 'divorced'; }
+class Me extends Parents{ private $__status3 = 'single'; }
+
+$status1_3 = function()
+{
+    $this->__status1 = 'happy';
+    $this->__status2 = 'happy';
+    $this->__status3 = 'happy';
+};
+
+$status1_2 = function()
+{
+    $this->__status1 = 'happy';
+    $this->__status2 = 'happy';
+};
+
+// test 1:
+$c = $status1_3->bindTo($R = new Me, Parents::class);           
+#$c();    // Fatal: Cannot access private property Me::$__status3
+
+// test 2:
+$d = $status1_2->bindTo($R = new Me, Parents::class);
+$d();
+var_dump($R);
+/*
+object(Me)#5 (4) {
+  ["__status3":"Me":private]=>
+  string(6) "single"
+  ["__status2":"Parents":private]=>
+  string(5) "happy"
+  ["__status1":"Grandparents":private]=>
+  string(7) "married"
+  ["__status1"]=>
+  string(5) "happy"
+}
+*/
+
+// test 3:
+$e = $status1_3->bindTo($R = new Me, Grandparents::class);   
+#$e(); // Fatal: Cannot access private property Me::$__status3
+
+// test 4:
+$f = $status1_2->bindTo($R = new Me, Grandparents::class);   
+$f();
+var_dump($R);
+/*
+object(Me)#9 (4) {
+  ["__status3":"Me":private]=>
+  string(6) "single"
+  ["__status2":"Parents":private]=>
+  string(8) "divorced"
+  ["__status1":"Grandparents":private]=>
+  string(5) "happy"
+  ["__status2"]=>
+  string(5) "happy"
+}
+*/
+?>
+
+Clear the stack trace:
+<?PHP
+use Exception;
+use ReflectionException;
+
+$c = function()
+{
+    $this->trace = [];
+};
+
+$c = $c->bindTo($R = new ReflectionException, Exception::class);
+$c();
+
+try
+{
+    throw $R;
+}
+catch(ReflectionException $R)
+{
+    var_dump($R->getTrace());
+}
+/*
+array(0) {
+}
+*/
+?>
+===============================================================================
+
+Closures can rebind their $this variable, but private/protected methods and
+functions of $this are not accessible to the closures.
+
+<?php
+$fn = function(){
+    return $this->foo;
+};
+
+class Bar{
+    private $foo = 3;
+}
+
+$bar = new Bar();
+
+$fn = $fn->bindTo($bar);
+
+echo $fn(); // Fatal error: Cannot access private property Bar::$foo

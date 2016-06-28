@@ -1,0 +1,294 @@
+
+ob_end_clean
+
+(PHP 4, PHP 5, PHP 7)
+
+ob_end_clean — 清空（擦除）缓冲区并关闭输出缓冲
+
+说明
+
+bool ob_end_clean ( void )
+
+此函数丢弃最顶层输出缓冲区的内容并关闭这个缓冲区。如果想要进一步处理缓冲区的内
+容，必须在ob_end_clean()之前调用ob_get_contents()，因为当调用ob_end_clean()时缓
+冲区内容将被丢弃。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。错误的原因首先是，在调用时没有一个起作
+用的缓冲区，或者是因为某些原因缓冲区不能被删除（可能对特殊缓冲区而言）。
+
+错误／异常
+
+如果函数失败了，将引发一个E_NOTICE异常。
+
+更新日志
+
+版本         说明
+4.2.0 添加了布尔返回值。
+
+范例
+
+下面的例子给出了一种去除所有输出缓冲区的方法：
+
+Example #1 ob_end_clean() example
+
+<?php
+ob_start();
+echo 'Text that won\'t get displayed.';
+ob_end_clean();
+?>
+
+参见
+
+  • ob_start() - 打开输出控制缓冲
+  • ob_get_contents() - 返回输出缓冲区的内容
+  • ob_flush() - 冲刷出（送出）输出缓冲区中的内容
+
+
+User Contributed Notes 10 notes
+
+===============================================================================
+
+Take note that if you change zlib output compression setting in between
+ob_start and ob_end_clean or ob_end_flush, you will get an error: ob_end_flush
+() failed to delete buffer zlib output compression
+
+Example:
+
+<?php
+
+ob_start();
+
+$output = ob_get_contents();
+
+ini_set('zlib.output_compression', '1');
+
+ob_end_clean();
+
+?>
+
+ob_end_clean(); in this example will throw the error.
+===============================================================================
+
+Note that if you started called ob_start with a callback, that callback will
+still be called even if you discard the OB with ob_end_clean.
+
+Because there is no way of removing the callback from the OB once you've set
+it, the only way to stop the callback function from having any effect is to do
+something like:
+
+<?php
+$ignore_callback = false;
+ob_start('my_callback');
+...
+if($need_to_abort) {
+   $ignore_callback = true;
+   ob_end_clean();
+   ...
+}
+
+function my_callback(&$buffer) {
+  if($GLOBALS['ignore_callback']) {
+     return "";
+  }
+  ...
+}
+?>
+===============================================================================
+
+Keep in mind that mrfritz379's example (#49800) is just an example. You can
+achieve that example's result in a more efficient manner without using output
+buffering functions:
+
+echo "<p>Search running. Please be patient. . .";
+$output = "<p>FileList: </p>\n";
+if (is_dir($dir)) {
+  $dh = opendir($dir);
+
+  while (($fd = readdir($dh)) != false) {
+    echo " .";
+    $output .= $fd;
+  }
+}
+echo "</br>Search Complete!</p>\n";
+echo $output;
+
+
+
+
+
+In addition to John Smith's comment (#42939), ob_gzhandler() may still set the
+HTTP header "Content-Encoding" to "gzip" or "deflate" even if you call
+ob_end_clean(). This will cause a problem in the following situation:
+
+1. Call ob_gzhandler().
+2. Echo "Some content";
+3. Call ob_end_clean().
+4. Echo "New content";
+
+In the above case, the browser may receive the "Content-Encoding: gzip" HTTP
+header and attempts to decompress the uncompressed "New content". The browser
+will fail.
+
+In the following situation, this behaviour will go unnoticed:
+
+1. Call ob_gzhandler().
+2. Echo "Some content";
+3. Call ob_end_clean().
+4. Call ob_gzhandler().
+5. Echo "New content";
+
+This is because the second ob_gzhandler() will mask the absence of the first
+ob_gzhandler().
+
+A solution would be to write a wrapper, like John Smith did, for the
+ob_gzhandler().
+===============================================================================
+
+About the previous comment:
+You can also relay on ETag and simply use time()
+
+<?php
+$time = time();
+$mins = 1;
+if (isset($_SERVER['HTTP_IF_NONE_MATCH']) and str_replace('"', '', $_SERVER[
+'HTTP_IF_NONE_MATCH'])+($mins*60) > $time)
+{
+    header('HTTP/1.1 304 Not Modified');
+    exit();
+}
+else
+{
+    header('ETag: "'.$time.'"');
+}
+echo 'Caching for ', $mins*60, 'secs<br/>', date('G:i:s');
+?>
+===============================================================================
+
+You might want to prevent your script from executing if the client already has
+the latest version.
+You can do it like so:
+
+ob_start();
+
+$mtime=filemtime($_SERVER["SCRIPT_FILENAME"])-date("Z");
+$gmt_mtime = date('D, d M Y H:i:s', $mtime) . ' GMT';
+
+$headers = getallheaders();
+
+if(isset($headers["If-Modified-Since"])) {
+    if ($headers["If-Modified-Since"] == $gmt_mtime) {
+        header("HTTP/1.1 304 Not Modified");
+        ob_end_clean();
+        exit;
+    }
+}
+
+$size=ob_get_length();
+header("Last-Modified: ".$gmt_mtime);
+header("Content-Length: $size");
+ob_end_flush();
+
+Instead of checking the If-Modified-Since-Header against the date of the last
+modification of the script, you can of course query a database or take any
+other date that is somehow related to the modification of the result of your
+script.
+
+You can for instance use this technique to generate images dynamically. If the
+user indicates he already has a version of the image by the
+If-Modified-Since-Header, there's no need to generate it and let the server
+finally discard it because the server only then interpretes the
+If-Modified-Since-Header.
+This saves server load and shortens response-times.
+===============================================================================
+
+In reference to <geoff at spacevs dot com> where he states, "If you call
+ob_end_clean in a function registered with 'register_shutdown_function', it is
+too late, any buffers will have already been sent out to the client.", here is
+a workaround I came up with.
+
+<?php
+
+function ClearBuffer($Buffer) {
+    return "";
+}
+
+function Shutdown() {
+    ob_start("ClearBuffer");
+}
+
+register_shutdown_function("Shutdown");
+
+?>
+
+This will wipe out all the contents of the output buffer as it comes in.
+Basically its the same as "STDOUT > /dev/null".
+===============================================================================
+
+Notice that ob_end_clean() does discard headers.
+
+If you would like to clear the output buffer, but not the headers (because you
+use firephp for example...), than this is the solution:
+
+<?php
+   ...
+
+    $headers = array();
+    if ( !headers_sent() ) {
+      $headers = apache_response_headers();
+    }
+
+    ob_end_clean();
+    ob_start();
+
+    if ( !empty( $headers ) ) {
+      foreach ( $headers as $name => $value ) {
+        header( "$name: $value" );
+      }
+    }
+
+   ...
+?>
+
+I use it in a general exception handler in a web application, where I clear the
+buffer (but not the debug-info-containing headers), and send a 500 error page
+with readfile().
+
+Good PHPing,
+
+Tamas.
+===============================================================================
+
+If you call ob_end_clean in a function registered with
+"register_shutdown_function", it is too late, any buffers will have already
+been sent out to the client.
+===============================================================================
+
+This may be posted elsewhere, but I haven't seen it.
+To run a progress indicator while the program is running without outputting the
+output buffer, the following will work:
+
+echo "<p>Search running. Please be patient. . .";
+$output = "<p>FileList: </p>\n";
+if (is_dir($dir)) {
+   $dh = opendir($dir);
+
+   while (($fd = readdir($dh)) != false) {
+      echo " .";
+      ob_start();
+      echo $fd;
+      $output .= ob_get_contents();
+      ob_end_clean();
+    }
+}
+echo "</br>Search Complete!</p>\n";
+echo $output;
+
+The program will continue to print the " ." without printing the file list.
+Then the "Search Complete" message will print followed by the buffered file
+list.
+===============================================================================
+
+You may want to be careful about calling ob_end_clean() from within your
+call-back function. I believe this can produce an endless-loop within PHP.

@@ -1,0 +1,965 @@
+
+ldap_bind
+
+(PHP 4, PHP 5, PHP 7)
+
+ldap_bind — 绑定 LDAP 目录
+
+说明
+
+bool ldap_bind ( resource $link_identifier [, string $bind_rdn = NULL [, string
+$bind_password = NULL ]] )
+
+使用指定的 RDN 和密码绑定到 LDAP 目录。
+
+参数
+
+link_identifier
+
+    通过 ldap_connect() 连接之后返回的 LDAP 连接标识。
+
+bind_rdn
+
+bind_password
+
+如果没有指定 bind_rdn 和 bind_password ，将会以匿名身份绑定。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 使用 LDAP Bind
+
+<?php
+
+// using ldap bind
+$ldaprdn  = 'uname';     // ldap rdn or dn
+$ldappass = 'password';  // associated password
+
+// connect to ldap server
+$ldapconn = ldap_connect("ldap.example.com")
+    or die("Could not connect to LDAP server.");
+
+if ($ldapconn) {
+
+    // binding to ldap server
+    $ldapbind = ldap_bind($ldapconn, $ldaprdn, $ldappass);
+
+    // verify binding
+    if ($ldapbind) {
+        echo "LDAP bind successful...";
+    } else {
+        echo "LDAP bind failed...";
+    }
+
+}
+
+?>
+
+Example #2 Using LDAP Bind Anonymously
+
+<?php
+
+//using ldap bind anonymously
+
+// connect to ldap server
+$ldapconn = ldap_connect("ldap.example.com")
+    or die("Could not connect to LDAP server.");
+
+if ($ldapconn) {
+
+    // binding anonymously
+    $ldapbind = ldap_bind($ldapconn);
+
+    if ($ldapbind) {
+        echo "LDAP bind anonymous successful...";
+    } else {
+        echo "LDAP bind anonymous failed...";
+    }
+
+}
+
+?>
+
+参见
+
+  • ldap_unbind() - Unbind from LDAP directory
+
+
+User Contributed Notes 42 notes
+
+===============================================================================
+
+Interesting point,
+
+if you can't bind to active directory with the error "49: Invalid Credentials",
+you can get the extended error output from the ldap_get_option function, using
+the option: LDAP_OPT_DIAGNOSTIC_MESSAGE. Unfortunately php hasn't defined this
+by default, but it's value is 0x0032.
+
+This is useful if a user must change their password at first login (Data: 773),
+or if their account has expired on the network (Data: 532).
+
+<?php
+
+define(LDAP_OPT_DIAGNOSTIC_MESSAGE, 0x0032)
+
+$handle = ldap_connect('ldap://active.directory.server/');
+$bind = ldap_bind($handle, 'user', 'expiredpass');
+
+if ($bind) {
+    if (ldap_get_option($handle, LDAP_OPT_DIAGNOSTIC_MESSAGE, $extended_error))
+{
+        echo "Error Binding to LDAP: $extended_error";
+    } else {
+        echo "Error Binding to LDAP: No additional information is available.";
+    }
+}
+?>
+
+Or something to that effect..
+
+It took me a while to work this one out, so i figured i'd share my results..
+===============================================================================
+
+I couldn't get ldap_bind to work on an ldaps connection until I followed some
+instructions about creating an ldap.conf file.  I don't see these instructions
+anywhere on the php site.  Maybe they're on the OpenLDAP site, but I thought it
+would be useful to have here as well.  Credit goes to a dude known as 'LRM',
+and I found my solution here: http://lists.horde.org/archives/sork/
+Week-of-Mon-20040503/001578.html
+
+My setup is XAMPP on Win XP.
+###### ApacheFriends XAMPP (basic package) version 1.6.3a ######
+
+  + Apache 2.2.4
+  + MySQL 5.0.45
+  + PHP 5.2.3 + PHP 4.4.7 + PEAR
+  + PHP-Switch win32 1.0 (please use the "php-switch.bat")
+  + XAMPP Control Version 2.5 from www.nat32.com   
+  + XAMPP Security 1.0   
+  + SQLite 2.8.15
+  + OpenSSL 0.9.8e
+  + phpMyAdmin 2.10.3
+  + ADOdb 4.95
+  + Mercury Mail Transport System v4.01b
+  + FileZilla FTP Server 0.9.23
+  + Webalizer 2.01-10
+  + Zend Optimizer 3.3.0
+  + eAccelerator 0.9.5.1 for PHP 5.2.3  (comment out in the php.ini)
+
+1. create C:\OpenLDAP\sysconf\ldap.conf (Yes, it MUST be this path because it's
+hard-coded in the dll)
+2. put this line at the top:
+
+TLS_REQCERT never
+
+3. Save, stop/start apache.
+
+The reason is, I think, because it doesn't understand the certificate, so this
+directive tells it to not bother checking it.  I guess that could be unsafe in
+some cases, but in my case I'm confident with the server I'm connecting to.
+
+My connection code was as follows (nothing new here, I don't think):
+
+<?php
+$con = @ldap_connect('ldaps://the.ldap.server', 636);
+ldap_set_option($con, LDAP_OPT_PROTOCOL_VERSION, 3);
+ldap_set_option($con, LDAP_OPT_REFERRALS, 0);
+var_dump(@ldap_bind($con, 'user@sub.domain.com', 'password'));
+?>
+
+Good luck!  LDAPS can be a real bitch.
+===============================================================================
+
+A number of examples and implementations of authentication schemes which use
+LDAP simple binds to authenticate users fail to properly sanitize
+user-submitted data. This can allow for an anonymous user to authenticate to a
+web-based application as an existing user. Provided below is a brief
+description and example of how this vulnerability can arise. For more detailed
+information please visit the links at the bottom of this posting.
+
+The bind operation of LDAP, as described in RFC 4513, provides a method which
+allows for authentication of users. For the Simple Authentication Method a user
+may use the anonymous authentication mechanism, the unauthenticated
+authentication mechanism, or the name/password authentication mechanism. The
+unauthenticated authentication mechanism is used when a client who desires to
+establish an anonymous authorization state passes a non-zero length
+distinguished name and a zero length password. Most LDAP servers either can be
+configured to allow this mechanism or allow it by default. Web-based
+applications which perform the simple bind operation with the client's
+credentials are at risk when an anonymous authorization state is established.
+This can occur when the web-based application passes a distinguished name and a
+zero length password to the LDAP server.
+This is commonly encountered when no password is provided from the client to
+the web-based application. This situation is described in some of the postings
+found below. For this situation, the recommendations found in other postings is
+sufficient to prevent authentication bypass.
+However, no prior postings at php.net describe a situation in which a client
+may pass a distinguished username and a password of non-zero length to the
+web-based application which results in an anonymous authorization state. Below
+is an example of this situation.
+
+$dn="testuser";
+$pass="\x00\x41";
+if (empty($dn) or empty($pass)) { exit(); } //check for empty strings
+//if (preg_match('/[^a-zA-Z]/',$dn) or preg_match('/[^a-zA-Z0-9\x20!@#$%^&*()]/
+',$pass)) { exit(); } //check for expected values (whitelisting)
+//if (preg_match('/\x00/',$dn) or preg_match('/\x00/',$pass)) { exit(); } //
+check for null byte (blacklisting)
+$ldapconn=ldap_connect("192.0.2.2") or die("Could not connect to LDAP
+server.");
+if ($ldapconn) {
+        ldap_set_option($ldapconn, LDAP_OPT_PROTOCOL_VERSION, 3);
+        $ldapbind=ldap_bind($ldapconn, $dn, $pass);
+        if ($ldapbind) {
+                echo("success");
+        } else {
+                echo("fail");
+                }
+        }
+
+References:
+http://security.okstate.edu
+===============================================================================
+
+Note that you have to specify the protocol version prior to making a call to
+ldap_bind, when the server is expecting LDAP protocol version 3.  If you do
+not, you will receive a warning and fail to bind, such as:
+
+ldap_bind(): Unable to bind to server: Protocol error
+
+In order to avoid this, make this call:
+
+<?php
+ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
+?>
+
+Where $ds is the result returned by ldap_connect(...);
+===============================================================================
+
+GnuTLS and SChannel (Microsoft) implementations are not (yet) compatible for
+TLS 1.2 negotiation during LDAPS binding (when binding with Microsoft Windows
+2012R2 server).
+
+The trick is to disable TLS1.2 before using LDAP functions:
+
+putenv(‘LDAPTLS_CIPHER_SUITE=NORMAL:!VERS-TLS1.2’);
+===============================================================================
+
+Due to a bug in PHP 5.3 you may have to place the ldap.conf in the root of all
+your drives (I had to place it on D:).
+
+See http://bugs.php.net/bug.php?id=48866
+===============================================================================
+
+When using LDAP with SSL and a LDAP server which uses a self-signed SSL
+certificate normally no connection will be established. Therefor you have to
+allow such connections explicitly.
+With Linux (e.g. Debian, Ubuntu) you have to add "TLS_REQCERT never" to your /
+etc/ldap/ldap.conf. On other distributions this config file may be located
+somewhere else.
+===============================================================================
+
+After a lot of trail and error i've found the way to authenticate to apple's
+Opendirectory (snow leopard server) and thought it maybe useful to share.
+
+<?php
+    // using ldap bind
+    $ldaprdn  = 'uid=USERNAME,cn=users,dc=HOSTNAME,dc=DOMAIN,dc=com';     //
+ldap rdn or dn
+    $ldappass = 'PASSWORD';  // associated password
+
+    // connect to ldap server
+    $ldapconn = ldap_connect("HOSTNAME.DOMAIN.com")
+            or die("Could not connect to LDAP server.");
+
+    // Set some ldap options for talking to
+    ldap_set_option($ldapconn, LDAP_OPT_PROTOCOL_VERSION, 3);
+    ldap_set_option($ldapconn, LDAP_OPT_REFERRALS, 0);
+
+    if ($ldapconn) {
+
+            // binding to ldap server
+            $ldapbind = @ldap_bind($ldapconn, $ldaprdn, $ldappass);
+
+            // verify binding
+            if ($ldapbind) {
+                echo "LDAP bind successful...\n";
+            } else {
+                echo "LDAP bind failed...\n";
+            }
+
+    }
+
+?>
+===============================================================================
+
+Hey
+
+I was trying this all day and final noticed that when you use bind and
+authenticate. The user name needs to be as follows for it to work. I am using
+PHP V 4.03 so this might be different now but here is what I used and the auth
+worked.
+
+<?php
+$ldaphost = "ldap.what.at.greatnet.com";
+$ldapport = 389;
+
+$ds = ldap_connect($ldaphost, $ldapport)
+or die("Could not connect to $ldaphost");
+
+if ($ds)
+{
+    $username = "johndoe@what.at.greatnet.com";
+    $upasswd = "pass";
+
+    $ldapbind = ldap_bind($ds, $username, $upasswd);
+                              
+    if ($ldapbind)
+        {print "Congratulations! $username is authenticated.";}
+    else
+        {print "Nice try, kid. Better luck next time!";}
+}
+
+?>
+===============================================================================
+
+I had a problem doing a ldap_bind over SSL against Active Directory. The server
+kept telling me: 'Unable to bind to server:'. To solve this (OS: CentOS 6) make
+sure that /etc/openldap/ldap.conf has this line:
+
+TLS_REQCERT allow
+===============================================================================
+
+If you're using SSL (e.g. ldaps) and ldap_bind is throwing 'Unable to bind to
+server:' errors, check that the hostname used in the ldap_connect matches the
+'CN' in the SSL certificate on the LDAP server. For example:
+
+<?
+   ldap_connect('ldaps://ldap01');
+  // 'ldap01' should match the CN in your LDAP server's SSL cert, otherwise the
+subsequent ldap_bind() will throw a bind error
+
+?>
+
+You can check your LDAP server's SSL cert using Openssl utility (Linux) - look
+for the 'Subject' line:
+
+   $ openssl x509 -in /etc/pki/tls/certs/ldap01.crt -text -noout
+   ...
+        Subject: C=XY, ST=My State, L=My City, O=My Org, CN=ldap01/emailAddress
+=me@domain.com
+   ...
+
+I recently applied some updates to my system (now Centos 5.7 and PHP 5.3.6) and
+started having this issue with PHP scripts that had been fine previously where
+I was simply using the IP address of the server. Replacing the IP address with
+the hostname fixed my issue.
+===============================================================================
+
+It seems that Active Directory stores information in UTF8 format.
+
+I needed to utf8_encode() the username and password otherwise the bind failed
+when a user has accented characters in his password...
+===============================================================================
+
+As "john dot lewis at waldenweb dot com" correctly writes (and this is
+important to note and SHOULD be incorporated into the documentation as a
+warning - trying to bind with specific username and empty password will return
+TRUE.
+===============================================================================
+
+In some structures its not possible to know the dn or rdn up front. However one
+can use $ldapuser= $samaccountname.'@'.domainname;
+===============================================================================
+
+If you are still having trouble after following all the instructions on the Web
+to get LDAPS to work, here's what worked for me:
+
+I was trying to do LDAPS connection (our LDAP server was using port 40636) by
+running following command:
+
+ldap_connect("www.example.com",40636)
+
+This didn't work for days till I changed it to the following format:
+
+ldap_connect("ldaps://www.example.com:40636")
+
+Hope it'll help some out there.
+
+-Cagdas
+===============================================================================
+
+It's nessesary to add:
+
+<?php
+ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3)
+?>
+
+for ldap_bind returned true, while you try to bind for openldap (at least
+version 2.4.21)
+===============================================================================
+
+Hi All, I just thought people should realize that the bug, or whatever change
+that was implemented with slapd and Openldap for the version V3 protocol has
+either not been repaired, or isn;t believed to be a bug or whatever...but still
+requires an implicit setting to V3 for use of the ldap_bind function. I am
+using Apache 2 and PHP 5.1 with LDAP 2. The default is set to deny V2 protocol,
+and even reconfiguring the slapd config file will not fix the problem.
+
+You must still use the ldap_set_option function.
+
+EX:
+
+<?php
+    $ldapHost = "ldap://server";
+        $ldapPort = "port";
+    $ldapUser ="cn=name,dc=domain";
+    $ldapPswd ="password";
+
+$ldapLink =ldap_connect($ldapHost, $ldapPort)
+    or die("Can't establish LDAP connection");
+
+if (ldap_set_option($ldapLink,LDAP_OPT_PROTOCOL_VERSION,3))
+{
+    echo "Using LDAP v3";
+}else{
+    echo "Failed to set version to protocol 3";
+}
+
+ldap_bind($ldapLink,$ldapUser,$ldapPswd)
+    or die("Can't bind to server.");
+
+?>
+
+Thanks to Ken on below for showing the way. There was a slight code error in
+what he chose as his link_id, but thats all. This code above worked nice and
+shinny, and demonstrates we are still working with 2004 problems. I wish they
+would update this in the code above.
+===============================================================================
+
+Set timeout for ldap_bind:
+
+<?php
+$ld = ldap_connect("ldap.example.com");
+ldap_set_option($ld, LDAP_OPT_NETWORK_TIMEOUT, 10);
+/* 10 second timeout */
+ldap_bind($ld);
+?>
+
+ref. https://bugs.php.net/bug.php?id=42837
+===============================================================================
+
+When using Active Directory 2003 (possibly also 2000) you can't search
+anonymously so you have to bind with a (known) user and password. Or else you
+will get an Search operations error. I also can confirm that an empty password
+bind succeeds! So test for an empty password first!
+
+Some excellent information is found here:
+http://www.scit.wlv.ac.uk/~jphb/sst/php/extra/ldap.html
+http://www.scit.wlv.ac.uk/~jphb/sst/basics/ldap.html
+===============================================================================
+
+Getting an error "Can't contact LDAP server"
+Solved by adding:
+TLS_CACERTDIR /etc/openldap/cacerts
+TLS_CACERT /etc/openldap/ssl/cacert.pem
+===============================================================================
+
+You should NOT attempt to bind with a made up password.  However small the
+chance, the chance remains that your code produces a valid password.  The
+correct behaviour is to test for an empty password, and if your application
+will only service authenticated users, not perform any more LDAP operations on
+behalf of the user - this also happens to be more efficient.
+===============================================================================
+
+LDAP control support is missing from this implementation. Response controls
+might be part of the response(s) to the BIND request and must be handled in
+code.
+===============================================================================
+
+I'm using OpenLDAP on linux and found out the right bind sequence the hard
+way... so I'm sharing it with you:
+
+(wkaiser solution is ok if everything works fine, but for development I would
+suggest using ldap_error command like this)
+
+<?php
+$ldapconfig['host'] = '10.10.10.10';
+$ldapconfig['port'] = NULL;
+$ldapconfig['basedn'] = 'dc=company,dc=com';
+
+$ds=ldap_connect($ldapconfig['host'], $ldapconfig['port']);
+
+$dn="uid=".$username.",ou=people,".$ldapconfig['basedn'];
+
+if ($bind=ldap_bind($ds, $dn, $password)) {
+  echo("Login correct");
+} else {
+
+  echo("Unable to bind to server.</br>");
+
+  echo("msg:'".ldap_error($ds)."'</br>");#check if the message isn't: Can't
+contact LDAP server :)
+  #if it say something about a cn or user then you are trying with the wrong
+$dn pattern i found this by looking at OpenLDAP source code :)
+  #we can figure out the right pattern by searching the user tree
+  #remember to turn on the anonymous search on the ldap server
+  if ($bind=ldap_bind($ds)) {
+
+    $filter = "(cn=*)";
+
+    if (!($search=@ldap_search($ds, $ldapconfig['basedn'], $filter))) {
+      echo("Unable to search ldap server<br>");
+      echo("msg:'".ldap_error($ds)."'</br>");#check the message again
+    } else {
+      $number_returned = ldap_count_entries($ds,$search);
+      $info = ldap_get_entries($ds, $search);
+      echo "The number of entries returned is ". $number_returned."<p>";
+      for ($i=0; $i<$info["count"]; $i++) {
+
+        var_dump($info[$i]);#look for your user account in this pile of junk
+and apply the whole pattern where you build $dn to match exactly the ldap tree
+entry
+      }
+    }
+  } else {
+    echo("Unable to bind anonymously<br>");
+    echo("msg:".ldap_error($ds)."<br>");
+  }
+}
+?>
+
+as you can see most of the examples use "cn=username" and OpenLDAP uses "uid=
+username" but who knows what will be used in the future builds, this code will
+help you check it out (I hope :)
+===============================================================================
+
+I tried using putenv() to point LDAP to the certificate path etc.
+
+putenv("TLS_CACERT=/path/to/certificate");
+putenv("TLS_REQCERT=never");
+
+This did not work for me. It has to be in the Apache configuration or LDAP
+configuration:
+
+LDAP CONFIGURATION
+
+Put these values in ldap.conf:
+
+TLS_CACERT /path/to/certificate
+TLS_REQCERT never
+
+The path varies on UNIX systems.
+
+On Windows it is C:\openldap\sysconf\ldap.conf
+
+APACHE CONFIGURATION
+
+Add these values to httpd.conf:
+
+LDAPTrustedGlobalCert <encryption method> /path/to/certificate
+LDAPVerifyServerCert Off
+
+The encryption method I was using was 'CA_BASE64'. Check the encryption method
+with your LDAP/AD sysadmin.
+===============================================================================
+
+Just a quick and easy function to authenticate against an AD domain controller:
+
+<?php
+function ad_auth( $server, $username, $password ){
+        $ldap = @ldap_connect( $server );
+
+        if ( @ldap_bind( $ldap, $username, $password ) ){
+                ldap_unbind( $ldap );
+                return 1;
+                }
+        else{
+                return 0;
+                }
+        }
+?>
+===============================================================================
+
+Active Directory doesn't accept anonymous requests anymore.
+
+With Windows Server 2003, only authenticated users may initiate an LDAP request
+against Windows Server 2003-based domain controllers. You can override this new
+default behavior by changing the seventh character of the dsHeuristics
+attribute on the DN path as follows:
+CN=Directory Service,CN=Windows NT,CN=Services,CN=Configuration,Root domain in
+forest
+
+from: http://support.microsoft.com/kb/326690
+===============================================================================
+
+Example of connecting and searching AD
+
+$con = ldap_connect('ad.domain.com');
+ldap_set_option($con, LDAP_OPT_PROTOCOL_VERSION, 3);
+ldap_set_option($con, LDAP_OPT_REFERRALS, 0);
+ldap_bind($con, 'user@DOMAIN.COM', 'clear password');
+
+ldap_search($con, 'DC=domain,DC=com', '(uniqueMember=user)');
+===============================================================================
+
+had to do a bunch of research on this, but it does work, once config'd
+correctly.
+
+using Apache/2.2.3 (Win32) mod_ssl/2.2.3 OpenSSL/0.9.8b
+PHP PHP Version 5.1.5-dev
+
+ldap_bind was getting "81 Can't contact LDAP server" which was really annoying,
+since the connection worked fine without "ldaps"
+using:
+
+$ldapconnect = @ldap_connect( $connection_string );
+
+well, actually the bind was really the one failing...
+
+$bind = ldap_bind($ldapconnect, $client, $this->objSecurityLogin->Password);
+
+many attempts to determine until i smartened up and turned on the trace level:
+
+ldap_set_option(NULL, LDAP_OPT_DEBUG_LEVEL, 7);
+
+which must go before the connect!
+
+found that on windows, you can't specifiy a quote in the ldap.conf:
+i had:
+TLS_REQCERT never
+TLS_CACERT "C:\\Documents\\Tools\\Apache2\\conf\\ssl\\ad.pem"
+which throws the error..
+TLS: could not load verify locations (file:`"C:\Documents\Tools\Apache2\conf\
+ssl\ad.pem"',dir:`').
+TLS: error:0200107B:system library:fopen:Unknown error .\crypto\bio\
+bss_file.c:122
+TLS: error:2006D002:BIO routines:BIO_new_file:system lib .\crypto\bio\
+bss_file.c:127
+TLS: error:0B084002:x509 certificate routines:X509_load_cert_crl_file:system
+lib .\crypto\x509\by_file.c:274
+ldap_err2string
+
+changed to:
+TLS_REQCERT never
+TLS_CACERT C:\\Documents\\Tools\\Apache2\\conf\\ssl\\ad.pem
+which cleans it up as:
+TLS trace: SSL_connect:before/connect initialization
+TLS trace: SSL_connect:SSLv2/v3 write client hello A
+TLS trace: SSL_connect:SSLv3 read server hello A
+TLS certificate verification: depth: 1, err: 0, subject: /DC=xxx/DC=yyy/CN=
+zzzz, issuer: /DC=abab/DC=yyy/CN=zzzz
+TLS certificate verification: depth: 0, err: 0, subject: ......
+
+so the moral to the story is even though PHP wants quotes in some windows
+config parms, it won't work if its in ldap.conf!
+===============================================================================
+
+I ran into an issue trying to bind as "cn=manager,dc=example,dc=com".  I took
+the example kenn posted where he set LDAP_OPT_PROTOCOL_VERSION to "3" for the
+connection.  Once I set this, I was able to bind with my manager id.
+===============================================================================
+
+It doesn't make much sense to let die() the script in case of an error,
+otherwise to ask if there were no errors before proceeding the script, as the
+official examples do.
+
+better:
+
+<?php
+ldap_bind(...) or die(...);
+do_something();
+?>
+
+or even better (die() is quick but dirty)
+
+<?php
+if (!ldap_bind(...)) {
+  error();
+} else {
+  do_something();
+}
+?>
+===============================================================================
+
+This code sample shows how to connect and bind to eDirectory in PHP using LDAP
+for Netware.
+
+<?php
+
+$server='137.65.138.159';
+$admin='cn=admin,o=novell';
+$passwd='novell';
+
+$ds=ldap_connect($server);  // assuming the LDAP server is on this host
+
+if ($ds) {
+    // bind with appropriate dn to give update access
+    $r=ldap_bind($ds, $admin, $passwd);
+    if(!$r) die("ldap_bind failed<br>");
+
+    echo "ldap_bind success";
+    ldap_close($ds);
+} else {
+    echo "Unable to connect to LDAP server";
+}
+?>
+===============================================================================
+
+This may be a security issue but after tinkering for hours with the below ldap
+auth function (edi01 at gmx dot at), I discovered that the ldap_bind function
+will return true if you enter a valid username AND a NULL value!
+
+so if that function were to receive something like $username = 'someuser' and
+$password = '', it would return true. As long as it isn't a null value the
+function will work as expected. Might as well check if it is null or empty
+then.
+===============================================================================
+
+complete ldap authentication script:
+
+function checkldapuser($username,$password,$ldap_server){
+  if($connect=@ldap_connect($ldap_server)){ // if connected to ldap server
+
+    if (ldap_set_option($connect, LDAP_OPT_PROTOCOL_VERSION, 3)) {
+      echo "version 3<br>\n";
+    } else {
+      echo "version 2<br>\n";
+    }
+    echo "verification on '$ldap_server': ";
+
+    // bind to ldap connection
+    if(($bind=@ldap_bind($connect)) == false){
+      print "bind:__FAILED__<br>\n";
+      return false;
+    }
+
+    // search for user
+    if (($res_id = ldap_search( $connect,
+                                "dc=auto,dc=tuwien,dc=ac,dc=at",
+                                "uid=$username")) == false) {
+      print "failure: search in LDAP-tree failed<br>";
+      return false;
+    }
+
+    if (ldap_count_entries($connect, $res_id) != 1) {
+      print "failure: username $username found more than once<br>\n";
+      return false;
+    }
+
+    if (( $entry_id = ldap_first_entry($connect, $res_id))== false) {
+      print "failur: entry of searchresult couln't be fetched<br>\n";
+      return false;
+    }
+
+    if (( $user_dn = ldap_get_dn($connect, $entry_id)) == false) {
+      print "failure: user-dn coulnd't be fetched<br>\n";
+      return false;
+    }
+
+    /* Authentifizierung des User */
+    if (($link_id = ldap_bind($connect, $user_dn, $password)) == false) {
+      print "failure: username, password didn't match: $user_dn<br>\n";
+      return false;
+    }
+
+    return true;
+    @ldap_close($connect);
+  } else {                                  // no conection to ldap server
+    echo "no connection to '$ldap_server'<br>\n";
+  }
+
+  echo "failed: ".ldap_error($connect)."<BR>\n";
+
+  @ldap_close($connect);
+  return(false);
+
+}//end function checkldapuser
+
+Here a sample for using this function:
+
+if (checkldapuser('myuser', 'secretpassword', 'ldap://link.to.ldap')) {
+  echo "ACCESS GRANTED\n";
+} else {
+  echo "ACCESS DENIED\n";
+}
+===============================================================================
+
+I am assuming that ldap_bind does a simple bind and that for other
+types of bind, ldap_sasl_bind should be used.
+
+Also, while the allow bind v2 solution will work with slapd, you really should
+use ldap v3 if at all possible because of the security improvements and
+better protocol definition.  LDAP v2 is largely deprecated at this point.
+
+Hopefully the PHP default LDAP version will move to v3 soon.
+===============================================================================
+
+As noted before with the password, I have found that if either  of the valuse
+for user or password are blank, or as in my case a typo resulted in a blank
+user as it was an undefined variable, the ldap_bind() will just perform an
+anonymous bind and return true!
+Shouldn't this detect the presence of the additional values and return an
+error? At least if the user or password is passed. If they are both blank I'm
+not sure what it should do.
+===============================================================================
+
+If you do not want to bind as unixadmin or *manager (i. e., for authentication
+on web applications), the following code could be useful:
+<?php
+
+$ldaphost = "ldap.yourdomain.com";
+
+/*for a SSL secured ldap_connect()
+
+$ldaphost = "ldap.yourdomain.com"; */
+
+$ldapport = 389;
+
+$ds = ldap_connect($ldaphost, $ldapport)
+or die("Could not connect to $ldaphost");
+
+if ($ds) {
+
+$username = "some_user";
+$upasswd = "secret";
+$binddn = "uid=$username,ou=people,dc=yourdomain,dc=com";
+
+$ldapbind = ldap_bind($ds, $binddn, $upasswd);
+                           
+if ($ldapbind) {
+
+print "Congratulations! $some_user is authenticated.";}
+
+else {
+
+print "Nice try, kid. Better luck next time!";}}
+
+?>
+===============================================================================
+
+I want to point out that the line that reads
+
+"$ldaprdn  = 'uname';" 
+
+is a bit confusing. You need to ensure that you use the entire rootdn. for
+instance. your code should look more like this...
+
+<?php
+
+// using ldap bind *** NOTE the uname *****
+$ldaprdn  = 'cn=root,dc=testserver,dc=com';    // ldap rdn or dn
+$ldappass = 'secret';  // associated password
+
+// connect to ldap server
+$ldapconn = ldap_connect("ldap.testserver.com")
+   or die("Could not connect to LDAP server.");
+
+if (ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3)) {
+   echo "Using LDAPv3";
+} else {
+   echo "Failed to set protocol version to 3";
+}
+
+if ($ldapconn) {
+
+   // binding to ldap server
+   $ldapbind = ldap_bind($ldapconn, $ldaprdn, $ldappass);
+
+   // verify binding
+   if ($ldapbind) {
+       echo "LDAP bind successful...";
+   } else {
+       echo "LDAP bind failed...";
+   }
+
+}
+
+?>
+===============================================================================
+
+OpenLdap 2.1.x libraries support both LDAPv2 and LDAPv3. The problem lies with
+the slapd, the ldap server bundled with OpenLDAP.  It's default supported
+version is LDAPv3. One can set the "allow bind_v2" in the slapd.conf file, with
+this configured, the PHP ldap_set_option() is not required.
+===============================================================================
+
+I ran into a problem where I was getting a protocol error when I tried to
+bind.  I was able to connect fine and ldap commands worked fine from the
+command line. 
+
+The problem turned out to be that openldap (v 2.1.5) was starting up in version
+3 ldap mode, and php (4.2.3) expected it to be in version 2 mode.
+
+To fix this use the ldap_set_option command to change the version that php
+expects.
+===============================================================================
+
+One useful item when trying to bind to Novell's NDS LDAP servers.
+
+If you are using NDS 8 and attempt to bind it will work with a partail context.
+
+As an example if you full context is cn=user.ou=sales.ou=division.o=company
+and you use as your authentication context cn=user.o=company it will work.
+
+But you will be required to supply the full context to authenticate to an
+eDirectory based LDAP setup. Such as Netware 6 or eDirectory 8.5 or greater.
+
+Also when using the wildcard * symbol in your object class. If you are not
+careful it is possible to dump the entire contents of your NDS tree into an
+array.
+===============================================================================
+
+An example to help you authenticate against M$ Exchange, rather than use
+anonymous mode...
+
+you will need to create an NT domain member (I've called it ldapquery) and give
+it search permission in the LDAP protocol settings in Exchange.
+
+then:
+$ds=ldap_connect ("<exchange server>"); 
+$r=@ldap_bind($ds,"cn=ldapquery, o=<your organisation>, c=<your country>, ","
+<the password for ldapquery account>");
+
+we've tested this on Exchange 5.5SP3.
+===============================================================================
+
+The OpenLDAP libraries will return error 53 (Server unwilling to perform) when
+trying to re-bind to a non-anonymous account if you accidentally leave the
+password field blank. If you want to authenticate against a different field
+than the dn, you have to bind to the server twice. Your code may look like the
+following:
+
+<?
+function ldapLogin($uname, $pass, $base_dn, $fname, $server, $port){
+    $ldc=@ldap_connect($server, $port);
+    if (!$ldc) return ERROR_CODE;
+   
+    $bn='cn=anonymous-user,'.$base_dn;
+    $pw='anonymous-pass';
+    $lbind=@ldap_bind($ldc, $bn, $pw);
+    if (!$lbind) return ERROR_CODE;
+   
+   
+    $ureturn=@ldap_search($ldc, $base_dn, "($fname=$uname)", array('dn',
+'givenName', 'sn', 'mail'));
+   
+   
+    $uent=@ldap_first_entry($ldc, $ureturn);
+    if (!$uent) return ERROR_CODE;
+   
+    $bn=@ldap_get_dn($ldc, $uent);
+   
+    //This line should use $pass rather than $password
+    $lbind=@ldap_bind($ldc, $bn, $password);
+    // Now you can find the error
+    echo ldap_error($ltc);
+
+    if ($lbind) return true; else return false;
+?>
+
+Hope this helps someone else running in to the same error.

@@ -1,0 +1,245 @@
+
+imap_sort
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_sort — Gets and sort messages
+
+说明
+
+array imap_sort ( resource $imap_stream , int $criteria , int $reverse [, int
+$options = 0 [, string $search_criteria = NULL [, string $charset = NULL ]]] )
+
+Gets and sorts message numbers by the given parameters.
+
+参数
+
+imap_stream
+
+    由 imap_open() 返回的 IMAP 流。
+
+criteria
+
+    Criteria can be one (and only one) of the following:
+      □ SORTDATE - message Date
+      □ SORTARRIVAL - arrival date
+      □ SORTFROM - mailbox in first From address
+      □ SORTSUBJECT - message subject
+      □ SORTTO - mailbox in first To address
+      □ SORTCC - mailbox in first cc address
+      □ SORTSIZE - size of message in octets
+
+reverse
+
+    Set this to 1 for reverse sorting
+
+options
+
+    The options are a bitmask of one or more of the following:
+      □ SE_UID - Return UIDs instead of sequence numbers
+      □ SE_NOPREFETCH - Don't prefetch searched messages
+
+search_criteria
+
+    IMAP2-format search criteria string. For details see imap_search().
+
+charset
+
+    MIME character set to use when sorting strings.
+
+返回值
+
+Returns an array of message numbers sorted by the given parameters.
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+I worked a lot with IMAP functions since I wrote a complete webmail and I've
+got a little tip about the imap_sort function :
+
+There is a big difference between :
+
+<?php
+imap_sort($imap, SORTDATE, 1);
+// and
+imap_sort($imap, SORTARRIVAL, 1);
+?>
+
+The first command will issue a
+>> FETCH 1:last (UID ENVELOPE BODY.PEEK[HEADER.FIELDS (Newsgroups Content-MD5
+Content-Disposition Content-Language Content-Location Followup-To References)]
+INTERNALDATE RFC822.SIZE FLAGS)
+
+While the second resulted in
+>> FETCH 1:last (UID INTERNALDATE RFC822.SIZE FLAGS)
+
+As a result, using SORTDATE took 3 seconds longer to complete on a 800-emails
+mailbox, while the results are quite the same (except if you have to deal with
+forged dates or timezones, but the arrival order is far more logical)
+
+My advice if you sort your emails by arrival is to actually use SORTARRIVAL, or
+better don't use imap_sort and go straight with message numbers (not UIDs). On
+large mailboxes, if you display messages per page, you will have significant
+performance increases (by avoiding 5 seconds of sorting).
+===============================================================================
+
+Hello,
+We used MIME and NLS libraries in our previous code(imap_locale_sort) that
+are part of PEAR and Horde projects, and so our function
+was so specific. Here is the general (pure php) code for this
+function:
+
+function imap_locale_sort($stream,$criteria,$reverse,$locale,$options)
+{
+        if ($criteria!=SORTSUBJECT)
+                return (imap_sort($stream,$criteria,$reverse,$options));
+
+        $unsorted = array();
+        $sortresult = array();
+
+        $MC=imap_check($stream);
+        $MN=$MC->Nmsgs;
+
+        $overview = imap_fetch_overview($stream,"1:$MN",0);
+        $k=0;
+        while( list($key,$val) = each($overview))
+        {
+                $unsorted[$k]["uid"]=$val->uid;
+                $unsorted[$k]["subject"]=imap_utf8($val->subject);
+                $k++;
+        }
+        usort ($unsorted, create_function('$a,$b','setlocale(LC_ALL,$locale);
+return strcoll($a["subject"],$b["subject"]);'));
+
+        for ($m=0;$m<count($unsorted);$m++)
+                array_push($sortresult,$unsorted[$m]["uid"]);
+
+        if ($reverse)
+                $sortresult = array_reverse($sortresult);
+
+        return $sortresult;
+}
+
+Sample usage:
+
+$mbox = imap_open("{localhost:143}INBOX.sent-mail","userid","password");
+
+if ($mbox)
+    echo ("Connection Successful!");
+
+$sorted = imap_locale_sort($mbox,SORTSUBJECT,0,'fa_IR',0);
+print_r($sorted);
+print ("\n\n");
+$sorted = imap_sort($mbox,SORTSUBJECT,SE_UID);
+print_r($sorted);
+
+imap_close($mbox);
+===============================================================================
+
+imap_sort uses the c-client library to sort messages. This library currently
+does not
+support locale-based sort for foreign languages (Although it has charset
+option).
+They are working on this(http://www.washington.edu/imap/IMAP-FAQs/#1.12),
+but you can use the following function which uses strcoll() for locale-based
+sorting.
+Pease note that this is required for SUBJECT field sorting, because most of
+other fields are sorted correctly by imap_sort in any locale:
+
+function imap_locale_sort($stream,$criteria,$reverse,$locale,$options)
+{
+        if ($criteria!=SORTSUBJECT)
+                return (imap_sort($stream,$criteria,$reverse,$options));
+
+        $unsorted = array();
+        $sortresult = array();
+
+        $MC=imap_check($stream);
+        $MN=$MC->Nmsgs;
+
+        $overview = imap_fetch_overview($stream,"1:$MN",0);
+        $k=0;
+        while( list($key,$val) = each($overview))
+        {
+                $unsorted[$k]["uid"]=$val->uid;
+                $unsorted[$k]["subject"]=MIME::decode($val->subject,
+NLS::getCharset());
+                $k++;
+        }
+        usort ($unsorted, create_function('$a,$b','setlocale(LC_ALL,$locale);
+return strcoll($a["subject"],$b["subject"]);'));
+
+        for ($m=0;$m<count($unsorted);$m++)
+                array_push($sortresult,$unsorted[$m]["uid"]);
+
+        if ($reverse)
+                $sortresult = array_reverse($sortresult);
+
+        return $sortresult;
+}
+
+Usage example:
+
+$sorted = imap_locale_sort($stream,SORTSUBJECT,0,'fa_IR',0);
+===============================================================================
+
+in reply to graham_NOSPAM at rdb-concepts dot NOSPAM dot co dot uk here is a
+more elegant way to achieve sorting of search results:
+
+function order_search($searchresults, $sortresults) {
+    return array_values(array_intersect($sortresults,$searchresults));
+}
+
+example of using function:
+   $sortresults = imap_sort($stream, $sort, $sortorder);
+   $searchresults = imap_search($stream, $query);
+   $sorted_search_results = order_search($searchresults, $sortresults);
+
+sorted version of search results will then be held in the array of
+$sorted_search_results.
+===============================================================================
+
+in response to fprado's problem, the solution would be to use array_multisort()
+function on imap_fetchheader(). sdavey at datalink dot net dot au wrote an
+excellent example under array_multisort. I have used it to sort POP3 by message
+size. Unfortunately, my code is much too convoluted to post it here.
+===============================================================================
+
+I use imap_sort() to go through POP3 accounts. However, sometimes, when the
+mailbox is too large, the response is incredibly slow.
+
+I tried sniffing the network to discover the source of the problem and found
+that when imap_sort() is called for a POP3 server, it downloads the full body &
+attachs of ALL the messages in the mailbox. Since my POP server and my Web
+server are on differente machines, this caused the considerably slow response.
+
+I've been trying a work-around this issue and if I manage to do this I'll post
+it here.
+===============================================================================
+
+for those of you with an old version of PHP that doesn't support the extra
+search paramater you may want to use this function:
+function order_search($searchresults, $sortresults) {
+    $searchhash = array();
+    $returnresults = array();
+    $count = 0;
+    for ($i = 0; $i < sizeof($searchresults); $i++) {
+        $searchhash[$searchresults[$i]] = true;
+    }
+    for ($i = 0; $i < sizeof($sortresults); $i++) {
+        if (@$searchhash[$sortresults[$i]]) {
+            $returnresults[$count] = $sortresults[$i];
+            $count++;
+        }
+    }
+    return $returnresults;
+}
+
+example of using function:
+    $sortresults = imap_sort($stream, $sort, $sortdir, SE_UID);
+    $searchresults = imap_search($stream, $search, SE_UID);
+    $results = order_search($searchresults, $sortresults);
+
+$results will then hold a sorted array of search results.

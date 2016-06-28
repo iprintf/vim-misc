@@ -1,0 +1,476 @@
+
+get_class_methods
+
+(PHP 4, PHP 5, PHP 7)
+
+get_class_methods — 返回由类的方法名组成的数组
+
+说明
+
+array get_class_methods ( mixed $class_name )
+
+返回由类的方法名组成的数组。
+
+参数
+
+class_name
+
+    类名或者对象实例。
+
+返回值
+
+返回由 class_name 指定的类中定义的方法名所组成的数组。如果出错，则返回 NULL。
+
+更新日志
+
+版本                                    说明
+5.0.0 自 PHP 5 起，本函数按照方法被定义的名字返回（区分大小写）。在 PHP 4 中总
+      是返回小写的。
+4.0.6 从这个版本开始，可以指定对象本身来代替类名。
+
+范例
+
+Example #1 get_class_methods() 示例
+
+<?php
+
+class myclass {
+    // constructor
+    function myclass()
+    {
+        return(true);
+    }
+
+    // method 1
+    function myfunc1()
+    {
+        return(true);
+    }
+
+    // method 2
+    function myfunc2()
+    {
+        return(true);
+    }
+}
+
+$class_methods = get_class_methods('myclass');
+// or
+$class_methods = get_class_methods(new myclass());
+
+foreach ($class_methods as $method_name) {
+    echo "$method_name\n";
+}
+
+?>
+
+以上例程会输出：
+
+myclass
+myfunc1
+myfunc2
+
+参见
+
+  • get_class() - 返回对象的类名
+  • get_class_vars() - 返回由类的默认属性组成的数组
+  • get_object_vars() - 返回由对象属性组成的关联数组
+
+
+User Contributed Notes 12 notes
+
+===============================================================================
+
+It should be noted that the returned methods are dependant on the current
+scope. See this example:
+
+<?php
+class C
+{
+    private function privateMethod()
+    {
+       
+    }
+    public function publicMethod()
+    {
+       
+    }
+    public function __construct()
+    {
+        echo '$this:';
+        var_dump(get_class_methods($this));
+        echo 'C (inside class):';
+        var_dump(get_class_methods('C'));
+    }
+}
+$c = new C;
+echo '$c:';
+var_dump(get_class_methods($c));
+echo 'C (outside class):';
+var_dump(get_class_methods('C'));
+?>
+
+Output:
+
+$this:
+array
+  0 => string 'privateMethod' (length=13)
+  1 => string 'publicMethod' (length=12)
+  2 => string '__construct' (length=11)
+
+C (inside class):
+array
+  0 => string 'privateMethod' (length=13)
+  1 => string 'publicMethod' (length=12)
+  2 => string '__construct' (length=11)
+
+$c:
+array
+  0 => string 'publicMethod' (length=12)
+  1 => string '__construct' (length=11)
+
+C (outside class):
+array
+  0 => string 'publicMethod' (length=12)
+  1 => string '__construct' (length=11)
+===============================================================================
+
+Win32 only:
+
+It's probably worth noting here that you can't get the methods of an object
+created by the built-in 'COM' class. ie - this won't work:
+
+$word = new COM('Word.Application');
+$methods = get_class_methods(get_class($word));
+print_r($methods);
+
+Matt
+===============================================================================
+
+This function will return only the methods for the object you indicate. It will
+strip out the inherited methods.
+
+function get_this_class_methods($class){
+    $array1 = get_class_methods($class);
+    if($parent_class = get_parent_class($class)){
+        $array2 = get_class_methods($parent_class);
+        $array3 = array_diff($array1, $array2);
+    }else{
+        $array3 = $array1;
+    }
+    return($array3);
+}
+===============================================================================
+
+It is important to note that get_class_methods($class) returns not only methods
+defined by $class but also the inherited methods.
+
+There does not appear to be any PHP function to determine which methods are
+inherited and which are defined explicitly by a class.
+===============================================================================
+
+In PHP4, this function converts its return values to lowercase; but in PHP5, it
+leaves the return values in their original case. This can cause serious
+problems when trying to write code that dynamically calls a class method, and
+that works in both PHP4 and PHP5. This code snippet shows one way of achieving
+compatibility with both versions:
+
+<?php
+// Example variables - these would be dynamic in a real application.
+$className = 'SomeClass';
+$methodName= 'someMethod';
+$args = array('arg1', 'arg2');
+
+// Use array_map() and strtolower() to make all values returned by
+get_class_methods() lowercase. PHP4 does this anyway - now it will happen
+regardless of the PHP version being used.
+$classMethods = array_map(strtolower, get_class_methods($className));
+
+// in_array() can only handle being given an array.
+if (!$classMethods) {
+  $classMethods = array();
+}
+
+if (in_array(strtolower($methodName), $classMethods)) {
+  // call some method
+  return call_user_func_array(array($className, $methodName), $args);
+}
+?>
+===============================================================================
+
+In PHP4, if you need to get_class_methods in their original case. You can use
+this simple function I created.
+
+// Note: this function assumes that you only have 1 class in 1 file
+
+$file = "path/to/myclass.php"
+
+function file_get_class_methods ($file)
+{
+    $arr = file($file);
+    foreach ($arr as $line)
+    {
+        if (ereg ('function ([_A-Za-z0-9]+)', $line, $regs))
+            $arr_methods[] = $regs[1];
+    }
+    return $arr_methods;
+}
+===============================================================================
+
+As an extension to onesimus's code below for finding inherited methods, in PHP
+5 you can use the Reflection API to find which of these are overriden.
+
+e.g.
+
+<?php
+function get_overriden_methods($class)
+{
+    $rClass = new ReflectionClass($class);
+    $array = NULL;
+       
+    foreach ($rClass->getMethods() as $rMethod)
+    {
+        try
+        {
+            // attempt to find method in parent class
+            new ReflectionMethod($rClass->getParentClass()->getName(),
+                                $rMethod->getName());
+            // check whether method is explicitly defined in this class
+            if ($rMethod->getDeclaringClass()->getName()
+                == $rClass->getName())
+            {
+                // if so, then it is overriden, so add to array
+                $array[] .=  $rMethod->getName();
+            }
+        }
+        catch (exception $e)
+        {    /* was not in parent class! */    }
+    }
+   
+    return $array;
+}
+?>
+===============================================================================
+
+Note that this function will answer both class AND instance methods ("class
+methods" are called "static" in PHP). Sort of a little "trap" for people who
+have in-depth experience with the OO terminology :-)
+===============================================================================
+
+I have created a very simple test runner using this function
+
+function get_bar($text) {
+    $bar = "";
+    for($i=1; $i<=strlen($text); $i++) {
+        $bar .= "=";
+    }
+    return $bar;
+}
+class Tester {
+    function __construct() {
+        $this->run_tests();
+    }
+    // run the tests
+    function run_tests() {
+        print("Tester by Minhajul Anwar \n");
+        $class = get_class($this);
+        $test_methods = preg_grep('/^test/', get_class_methods($this));
+        foreach($test_methods as $method) {
+            $start_rep = "test: $class::$method";
+            $bar = get_bar($start_rep);
+            print("\n$start_rep\n$bar\n");
+            $this->$method();
+            print("\n");
+        }
+    }
+}
+
+now you just need to write your test class with tegst methods prefixed by
+'test', and then just instantiate object of that test class of your, all those
+tests methods will get run automatically
+The drawback is: your test methods must not accept any arguments
+
+an example:
+require '../autoload.php';
+register_autoload_paths(realpath('./'));
+
+class Test_Test extends Tester {
+    function test_something() {
+        print("method got executed");
+    }
+    function testAnotherThing() {
+    print("another test method");
+    }
+}
+
+$Test = new Test_Test();
+===============================================================================
+
+If you use "get_class_methods" to check if a Method is in a Class remember that
+the function return lowered name of class methods:
+
+class classPippo
+{
+        function DummyFunct()
+        {
+                // Do nothing...
+        }
+}
+
+$aClassMethods = get_class_methods(classPippo);
+
+$sMethodName = 'DummyFunct';
+
+// This not work...
+
+        if (in_array($sMethodName, $aClassMethods))
+        classPippo::DummyFunct();
+
+// This work...
+
+        if (in_array(strtolower($sMethodName), $aClassMethods))
+        classPippo::DummyFunct();
+===============================================================================
+
+!Concerning PHP5 Only!
+
+If you want to get all methods/functions from a class you can do this with the
+get_class_methods function.
+<?php
+    $arrMethodNames = get_class_methods ( $ClassNameOrObject);
+?>
+However the drawback on this function in PHP5 is that you will NOT receive
+protected and private methods of a class/object if you are calling the method
+from another class/object context.
+
+If you want to receive all methods of a given Class in another Class you should
+use the PHP5 Reflection API. The following source allows to retrieve all
+methods from a derived class in its (abstract) Base Class.
+
+In the example you need to call the base constructor from the derived classes
+constructor in order to let the base class know the name of the derived class.
+Use the "__CLASS__" definition for passing the classname of current class to
+its base class.
+
+<?php
+
+    // Base Class - Abstract
+    abstract class A {
+       
+        // Array of ReflectionMethod Objects
+        // is being set upon instanciation
+        // derived Classes don't need to know about this array
+        private $arrMethods;
+               
+        // Constructor which MUST be called from derived Class Constructor
+        protected function __construct ( $strDerivedClassName ) {
+            $oRefl = new ReflectionClass ( $strDerivedClassName );
+            if ( is_object($oRefl) ) {
+                $this->arrMethods = $oRefl->getMethods();
+            }
+        }
+       
+        // Some abstract function
+        abstract protected function D ();
+       
+        // Some private function
+        private function E() {
+        }
+       
+        // method to print all class/object methods
+        // must be callable from derived classes
+        // can be protected if only for internal class use
+        public function PrintAllMethods () {
+            foreach ( $this->arrMethods as $curReflectionMethod ) {
+                echo $curReflectionMethod->getName()."<br>";
+            }
+        }
+    }
+   
+   
+    // Derived Class
+    class B extends A {
+       
+        // Constructor for this class
+        // MUST call Base Constructor
+        public function __construct () {
+            // Call Base Constructor
+            parent::__construct(__CLASS__);
+        }
+       
+       
+        // Some public function
+        public function A () {
+        }
+       
+        // some protected function
+        protected function B () {
+        }
+       
+        // some private function
+        private function C() {
+        }
+       
+        // some abstract method from base class implemented
+        protected function D () {
+        }
+    }
+   
+   
+    // Create new B Object
+    $b = new B();
+    // Print all Methods of this Object/Class
+    $b->PrintAllMethods();
+?>
+
+In this example output will be:
+
+__construct
+A
+B
+C
+D
+E
+PrintAllMethods
+
+As you can see these are all methods from class B and also all methods from
+Class A respectivly in order of their declaration. Note that only one method
+"__construct" and only one method "D" are being shown. This is due to
+overloading (__construct) and implementing (D) in PHP.
+
+In this example any further method-handling methods should be implemented in
+the base class as these will be available in derived classes as well. Just make
+sure that you use the right access specifiers for these additional methods (
+private, protected, public )
+
+BoD
+===============================================================================
+
+I've figured out how to get around my issue described below, using the
+Reflection API.
+
+<?
+/* Pass the name of the class, not a declared handler */
+function get_public_methods($className) {
+    /* Init the return array */
+    $returnArray = array();
+
+    /* Iterate through each method in the class */
+    foreach (get_class_methods($className) as $method) {
+
+        /* Get a reflection object for the class method */
+        $reflect = new ReflectionMethod($className, $method);
+
+        /* For private, use isPrivate().  For protected, use isProtected() */
+        /* See the Reflection API documentation for more definitions */
+        if($reflect->isPublic()) {
+            /* The method is one we're looking for, push it onto the return
+array */
+            array_push($returnArray,$method);
+        }
+    }
+
+    /* return the array to the caller */
+    return $returnArray;
+}
+?>

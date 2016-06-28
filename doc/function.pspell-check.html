@@ -1,0 +1,250 @@
+
+pspell_check
+
+(PHP 4 >= 4.0.2, PHP 5, PHP 7)
+
+pspell_check — Check a word
+
+说明
+
+bool pspell_check ( int $dictionary_link , string $word )
+
+pspell_check() checks the spelling of a word.
+
+参数
+
+dictionary_link
+
+word
+
+    The tested word.
+
+返回值
+
+Returns TRUE if the spelling is correct, FALSE if not.
+
+范例
+
+Example #1 pspell_check() Example
+
+<?php
+$pspell_link = pspell_new("en");
+
+if (pspell_check($pspell_link, "testt")) {
+    echo "This is a valid spelling";
+} else {
+    echo "Sorry, wrong spelling";
+}
+?>
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+<?php
+
+//should be using explode instead of implode
+//$word = implode(" ", $message);
+$word = explode(" ", $message);
+foreach($word as $k => $v) {
+   if (pspell_check($pspell_link, $v)) {
+      echo "spelled right";
+   } else {
+      echo "Sorry, wrong spelling";
+   };
+};
+
+?>
+===============================================================================
+
+<?php
+/*
+I had to write these routines to highlight spellings in a WYSIWYG editor.
+pspell() barfed at HTML tags and entities, so this code deals with them.
+ClearSpell() allows you to clear up the spellchecker mark up afterwards.*/
+?>
+<html>
+<head>
+<style>
+acronym.spell
+{
+text-decoration:underline;
+color:red;
+cursor:help;
+}
+</style>
+</head>
+<body>
+<?php
+    $t = "<font color=blue>text herre &amp; some more</font>";
+    echo "Before:$t";
+    $t = SpellCheck($t);
+    echo "<hr>After SpellCheck: $t";
+    $t = ClearSpell($t);
+    echo "<hr>After ClearSpell: $t";
+?>
+</body>
+</html>
+
+<?php
+
+function SpellCheck($text)
+{
+//depends on fnSpell()
+// Extracts text from HTML code. In addition to normal word separators,  HTML
+tags
+// and HTML entities also function as word delimiters
+
+    $pspell_link = pspell_new("en"); //0. Get the dictionary
+    $strings = explode(">", $text);  //1. Split $text on '>' to give us
+$strings with 0 or 1 HTML tags at the end
+    $nStrings = count($strings);
+
+    for ($cStrings=0; $cStrings < $nStrings; $cStrings++)
+    {
+        $string = $strings[$cStrings]; //2. For each string from 1
+
+        if ($string =='')
+            continue;
+
+        $temp  = explode('<', $string); //2.1   Split $string from $strings on
+'>' to give us a $tag and $cdata
+        $tag = $temp[1];
+        $cdata = $temp[0];
+
+        $subCdatas = explode(";", $cdata);  //2.2 Split &cdata on ';' to give
+$subcdatas with 0 or 1 HTML entities on the end
+        $nSubCdatas = count($subCdatas);    //2.3   For each $subCdata from
+$subcdatas in 2.2
+
+        for ($cSubCdatas = 0; $cSubCdatas < $nSubCdatas; $cSubCdatas++)
+        {
+            $subCdata = $subCdatas[$cSubCdatas];
+
+            if ($subCdata == '')
+                continue;
+
+            $temp = explode('&', $subCdata); //2.3.1     Split the $subCdata on
+'&' to give us a $subCdataEntity and a $subCdataWithNoEntities
+            $subCdataEntity = $temp[1];
+            $subCdataWithNoEntities = $temp[0];
+            $subCdataWithNoEntities = fnSpell($pspell_link, 
+$subCdataWithNoEntities); //2.3.2     Spellcheck the $cdataWithNoEntities
+
+            if (!$subCdataEntity ) //2.3.3        Put the $subCdataEntity, a '&
+' and the $cdataWithNoEntities back into the $subCdata from 2.2
+                $subCdata = $subCdataWithNoEntities;
+            else
+                $subCdata = $subCdataWithNoEntities. '&' . $subCdataEntity . ';
+' ;
+
+            $subCdatas[$cSubCdatas] = $subCdata; //2.3.4        Put the
+$subCdata back into the array of $subCdatas
+        }
+
+        $cdata = implode("", $subCdatas); //2.4    Implode the array of
+$subCdatas back into the $cdata
+
+        if ($tag) //2.5    Put the $tag , '>' and $cdata back into $string
+            $string = $cdata . '<' . $tag . '>';
+        else
+            $string = $cdata;
+
+        $strings[$cStrings] = $string; //2.6    Put $string back in its place
+in $strings
+    }
+
+    $text = implode('', $strings);     //3  Implode the $strings back into
+$text
+    return $text;
+
+}
+
+function fnSpell($pspell_link, $string)
+{
+
+   preg_match_all("/[A-Z\']{1,16}/i", $string, $words);
+
+   for ($i = 0; $i < count($words[0]); $i++)
+   {
+        $currentword = $words[0][$i];
+
+        if (!pspell_check($pspell_link, $currentword))
+        {
+            $wordarray = pspell_suggest($pspell_link, $currentword);
+                $words = implode(', ', $wordarray);
+                $suggest = "<acronym class='spell' title='$words'>$currentword
+</acronym class='spell'>";
+            $string = str_replace($currentword, $suggest, $string);
+        }
+
+    }
+    return $string;
+}
+
+function ClearSpell($text)
+{
+    $strings = explode(">", $text);
+    $nStrings = count($strings);
+
+    for ($cStrings=0; $cStrings < $nStrings; $cStrings++)
+    {
+        $string = $strings[$cStrings];
+
+        if ($string =='')
+            continue;
+
+        $temp  = explode('<', $string);
+        $tag = $temp[1];
+        $cdata = $temp[0];
+
+        if ( strstr($tag, 'acronym') && strstr($tag, "class='spell'") )
+            $string = $cdata;
+        else
+            $string = $cdata . '<' . $tag . '>';
+
+        $strings[$cStrings] = $string;
+    }
+
+    $text = implode('', $strings);
+    return $text;
+}
+?>
+===============================================================================
+
+I felt that it would help to expand on batch spell checking using this
+function. The previously posted example implodes using spaces as the separator
+for each word. There are however situations in which doing this will not return
+the desired result. For example, "Hello, I like coding." will return an array
+with two problems, "Hello," and "coding.", both these words are spelt
+correctly, but pspell_check() will deem them as spelled incorrectly because a
+comma or a period is being passed in to the function along with the word. The
+following example allows you to extract only the words (using regular
+expressions to ignore grammar such as periods or commas) in to an array and
+then add in html font tags to highlight all words spelled incorrectly red
+before returning the string.
+
+<?
+
+Function SpellCheck($string) {
+
+    $pspell_link = pspell_new("en");
+    preg_match_all("/[A-Z\']{1,16}/i", $string, $words);
+
+    for ($i = 0; $i < count($words[0]); $i++) {
+
+        if (!pspell_check($pspell_link, $words[0][$i])) {
+
+            $string = str_replace($words[0][$i], "<font color=\"#FF0000\">" .
+$words[0][$i] . "</font>", $string);       
+
+        }
+
+    }
+
+    return $string;
+
+}
+
+?>

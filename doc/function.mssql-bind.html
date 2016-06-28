@@ -1,0 +1,306 @@
+
+mssql_bind
+
+(PHP 4 >= 4.0.7, PHP 5, PECL odbtp >= 1.1.1)
+
+mssql_bind — Adds a parameter to a stored procedure or a remote stored
+procedure
+
+Warning
+
+This function was REMOVED in PHP 7.0.0.
+
+Alternatives to this function include:
+
+  • PDOStatement::bindParam()
+  • PDOStatement::bindValue()
+  • sqlsrv_prepare()
+  • odbc_prepare()
+
+说明
+
+bool mssql_bind ( resource $stmt , string $param_name , mixed &$var , int $type
+[, bool $is_output = false [, bool $is_null = false [, int $maxlen = -1 ]]] )
+
+Binds a parameter to a stored procedure or a remote stored procedure.
+
+参数
+
+stmt
+
+    Statement resource, obtained with mssql_init().
+
+param_name
+
+    The parameter name, as a string.
+
+        Note:
+
+        You have to include the @ character, like in the T-SQL syntax. See the
+        explanation included in mssql_execute().
+
+var
+
+    The PHP variable you'll bind the MSSQL parameter to. It is passed by
+    reference, to retrieve OUTPUT and RETVAL values after the procedure
+    execution.
+
+type
+
+    One of: SQLTEXT, SQLVARCHAR, SQLCHAR, SQLINT1, SQLINT2, SQLINT4, SQLBIT,
+    SQLFLT4, SQLFLT8, SQLFLTN.
+
+is_output
+
+    Whether the value is an OUTPUT parameter or not. If it's an OUTPUT
+    parameter and you don't mention it, it will be treated as a normal input
+    parameter and no error will be thrown.
+
+is_null
+
+    Whether the parameter is NULL or not. Passing the NULL value as var will
+    not do the job.
+
+maxlen
+
+    Used with char/varchar values. You have to indicate the length of the data
+    so if the parameter is a varchar(50), the type must be SQLVARCHAR and this
+    value 50.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 mssql_bind() example
+
+<?php
+// Connect to MSSQL and select the database
+mssql_connect('KALLESPC\SQLEXPRESS', 'sa', 'phpfi');
+mssql_select_db('php');
+
+// Create a new stored prodecure
+$stmt = mssql_init('NewUserRecord');
+
+// Bind the field names
+mssql_bind($stmt, '@username',  'Kalle',  SQLVARCHAR,  false,  false,  60);
+mssql_bind($stmt, '@name',      'Kalle',  SQLVARCHAR,  false,  false,  60);
+mssql_bind($stmt, '@age',       19,       SQLINT1,     false,  false,   3);
+
+// Execute
+mssql_execute($stmt);
+
+// Free statement
+mssql_free_statement($stmt);
+?>
+
+参见
+
+  • mssql_execute() - Executes a stored procedure on a MS SQL server database
+  • mssql_free_statement() - Free statement memory
+  • mssql_init() - Initializes a stored procedure or a remote stored procedure
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+The actual way to bind datetime variables to is by using a SQLVARCHAR with a
+date variable of the form date('Y-m-d H:i:s);
+
+<?php
+    ...
+    $date = date('Y-m-d H:i:s');
+    mssql_bind($stmt, "@Date", $date, SQLVARCHAR);
+?>
+===============================================================================
+
+mssql_bind binds by reference, not by value, even on input parameters. 
+Improper binding can cause strange errors; in my case "Error converting data
+type varchar to int"
+
+--SAMPLE STORED PROCEDURE
+CREATE Procedure [dbo].[myproc]
+(
+    @one VARCHAR(10) = 'n1',
+    @two VARCHAR(10) = 'n2',
+    @three VARCHAR(10) = 'n3',
+    @four VARCHAR(10) = 'n4',
+    @five VARCHAR(10) = 'n5'
+)
+AS
+BEGIN
+SET NOCOUNT ON;
+
+SELECT
+    @one AS 'one',
+    @two AS 'two',
+    @three AS 'three',
+    @four AS 'four',
+    @five AS 'five'
+END
+
+//SAMPLE PHP CALL
+$sp_name = 'mydb.dbo.myproc';
+$proc = mssql_init($sp_name);
+$sp_parms->one = 'one';
+$sp_parms->two = 'two';
+$sp_parms->three = 'three';
+
+foreach ($sp_parms as $key=>$parm) {
+    #THIS FAILS, because it's binding values!
+    #mssql_bind($proc, '@'.$key, $parm, SQLVARCHAR)
+    #    or die("Unable to bind $sp_name:$key<br>".mssql_get_last_message());
+    #THIS SUCCEEDS, USES A REFERENCE
+    mssql_bind($proc, '@'.$key, $sp_parms->$key, SQLVARCHAR)
+        or die("Unable to bind $sp_name:$key<br>".mssql_get_last_message());
+}
+===============================================================================
+
+In order to bind DATETIME, i suggest to convert the date to double, then use
+SQLFLT8 instead of SQLVARCHAR.
+
+In SQL Server Datetime is a standard double. The integer part represent the
+number of days since 1-1-1900 and the fractional part represent the fraction of
+the day (e.g: 0.5 means noon, 0.75 means 6 PM).
+
+Using SQLVARCHAR may lead to errors depending on the local server config.
+
+<?php
+function PhpTimeToOLEDateTime($timestamp)
+{
+        $a_date = getdate ($timestamp);
+        $year= $a_date['year']; //this year
+        $partial_days = ($year-1900)*365;//days elapsed since 1-1-1900
+        //let's calculate how many 29 february from 1900 to first day on this
+year
+        $partial_days +=(int)(($year-1) / 4); //each 4 years a leap year since
+year 0
+        $partial_days -= (int)(($year-1) / 100); //each 100 years skip a leap
+        $partial_days += (int)(($year-1) / 400); //each 400 years add a leap
+        $partial_days -= 460; //459 leap years before 1900 + 1 for math (year 0
+does not exist)
+        $partial_days += $a_date['yday'];
+
+        $seconds = $a_date['hours'] * 3600;
+        $seconds += $a_date['minutes'] * 60;
+        $seconds += $a_date['seconds'];
+
+        $d = (double) $partial_days;
+        $d +=  ((double)$seconds)/86400.0;
+
+        return $d;
+}
+?>
+
+Sample binding
+
+<?php
+$now = PhpTimeToOLEDateTime(time());
+mssql_bind($proc, "@dateparam", $now, SQLFLT8, false);
+?>
+===============================================================================
+
+I found SQLVARCHAR better for datetime.
+
+It was performing some other non-strtotime() convertions when it was set to
+SQLINT4
+===============================================================================
+
+Use:
+SQLVARCHAR for binary
+SQLINT4 for datetime
+SQLFLT8 for decimal
+SQLVARCHAR for image
+SQLFLT8 for money
+SQLCHAR for nchar
+SQLTEXT for ntext
+SQLFLT8 for numeric
+SQLVARCHAR for nvarchar
+SQLFLT8 for real
+SQLINT4 for smalldatetime
+SQLFLT8 for smallmoney
+SQLVARCHAR for sql_variant
+SQLINT4 for timestamp
+SQLVARCHAR for varbinary
+===============================================================================
+
+<?php
+//IP Address, if instance then IP\Instance
+$server = 'a.b.c.d';
+$link = mssql_connect($server, 'sql_user', 'sql_user_pass');
+
+//Select DB
+$dbn = 'dbName';
+mssql_select_db($dbn);
+
+//Define Procedure
+$lala = 'tstProc';
+$proc = mssql_init($lala, $link);
+
+//Define Parameters
+$parm1 = 'one';
+$parm2 = 'two';
+$parm3 = 'three';
+
+//Load Parameters
+mssql_bind($proc, '@num', $parm1, SQLCHAR, false, false, 10);
+mssql_bind($proc, '@naamen', $parm2, SQLCHAR, false, false, 10);
+mssql_bind($proc, '@desci', $parm3, SQLCHAR, false, false, 10);
+
+//Execute Procedure
+mssql_execute($proc);
+
+//Free Memory
+mssql_free_statement($proc);
+
+//...and whenever the wolf did howl, all the sheep had to do was bleat!
+?>
+===============================================================================
+
+I had the same problem but the posted solution above just produced null
+results.  Here's a modification that ended up working:
+
+#THIS SUCCEEDS, USES A REFERENCE
+mssql_bind($proc, '@'.$key, $sp_parms[$key], SQLVARCHAR)
+or die("Unable to bind $sp_name:$key<br>".mssql_get_last_message());
+===============================================================================
+
+for type :
+
+SQLCHAR     DBCHAR
+SQLVARCHAR     DBCHAR
+SQLTEXT     DBCHAR
+SQLBINARY     DBBINARY
+SQLVARBINARY     DBBINARY
+SQLIMAGE     DBBINARY
+SQLINT1     DBTINYINT
+SQLINT2     DBSMALLINT
+SQLINT4     DBINT
+SQLFLT4     DBFLT4
+SQLFLT8     DBFLT8
+SQLBIT     DBBIT
+SQLMONEY4     DBMONEY4
+SQLMONEY     DBMONEY
+SQLDATETIM4     DBDATETIM4
+SQLDATETIME     DBDATETIME
+SQLDECIMAL     DBDECIMAL
+SQLNUMERIC     DBNUMERIC
+
+source : http://msdn.microsoft.com/en-us/library/aa937008(SQL.80).aspx
+===============================================================================
+
+There isn't a bind function for regular SQL queries; not even a escape
+function. I found this nice piece of code:
+
+<?php
+function mssql_escape($data) {
+    if(is_numeric($data))
+        return $data;
+    $unpacked = unpack('H*hex', $data);
+    return '0x' . $unpacked['hex'];
+}
+?>
+
+http://stackoverflow.com/questions/574805/

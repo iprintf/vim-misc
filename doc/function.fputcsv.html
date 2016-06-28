@@ -1,0 +1,1007 @@
+
+fputcsv
+
+(PHP 5 >= 5.1.0, PHP 7)
+
+fputcsv — 将行格式化为 CSV 并写入文件指针
+
+说明
+
+int fputcsv ( resource $handle , array $fields [, string $delimiter = ',' [, 
+string $enclosure = '"' ]] )
+
+fputcsv() 将一行（用 fields 数组传递）格式化为 CSV 格式并写入由 handle 指定的文
+件。
+
+参数
+
+handle
+
+    文件指针必须是有效的，必须指向由 fopen() 或 fsockopen() 成功打开的文件(并还
+    未由 fclose() 关闭)。
+
+fields
+
+    值的一个数组。
+
+delimiter
+
+    可选的 delimiter 参数设定字段分界符（只允许一个字符）。
+
+enclosure
+
+    可选的 enclosure 参数设定字段字段环绕符（只允许一个字符）。
+
+返回值
+
+返回写入字符串的长度，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 fputcsv() 例子
+
+<?php
+
+$list = array (
+    array('aaa', 'bbb', 'ccc', 'dddd'),
+    array('123', '456', '789'),
+    array('"aaa"', '"bbb"')
+);
+
+$fp = fopen('file.csv', 'w');
+
+foreach ($list as $fields) {
+    fputcsv($fp, $fields);
+}
+
+fclose($fp);
+?>
+
+以上例子会写入以下的file.csv：
+
+aaa,bbb,ccc,dddd
+123,456,789
+"""aaa""","""bbb"""
+
+
+注释
+
+    Note: 在读取在 Macintosh 电脑中或由其创建的文件时，如果 PHP 不能正确的识别
+    行结束符，启用运行时配置可选项 auto_detect_line_endings 也许可以解决此问题
+    。
+
+参见
+
+  • fgetcsv() - 从文件指针中读入一行并解析 CSV 字段
+
+
+User Contributed Notes 29 notes
+
+===============================================================================
+
+If you need to send a CSV file directly to the browser, without writing in an
+external file, you can open the output and use fputcsv on it..
+
+<?php
+$out = fopen('php://output', 'w');
+fputcsv($out, array('this','is some', 'csv "stuff", you know.'));
+fclose($out);
+?>
+===============================================================================
+
+TAB delimiting.
+
+Using fputcsv to output a CSV with a tab delimiter is a little tricky since the
+delimiter field only takes one character.
+The answer is to use the chr() function.  The ascii code for tab is 9, so chr
+(9) returns a tab character.
+
+<?php
+    fputcsv($fp, $foo, '\t');      //won't work
+    fputcsv($fp, $foo, '    ');    //won't work
+
+    fputcsv($fp, $foo, chr(9));    //works
+?>
+
+==================
+
+it should be:
+<?php
+    fputcsv($fp, $foo, "\t");
+?>
+you just forgot that single quotes are literal...meaning whatever you put there
+that's what will come out so '\t' would be same as 't' because \ in that case
+would be only used for escaping but if you use double quotes then that would
+work.
+===============================================================================
+
+I've created a function for quickly generating CSV files that work with
+Microsoft applications. In the field I learned a few things about generating
+CSVs that are not always obvious. First, since PHP is generally *nix-based, it
+makes sense that the line endings are always \n instead of \r\n. However,
+certain Microsoft programs (I'm looking at you, Access 97), will fail to
+recognize the CSV properly unless each line ends with \r\n. So this function
+changes the line endings accordingly. Secondly, if the first column heading /
+value of the CSV file begins with uppercase ID, certain Microsoft programs
+(ahem, Excel 2007) will interpret the file as being in the SYLK format rather
+than CSV, as described here: http://support.microsoft.com/kb/323626
+
+This function accommodates for that as well, by forcibly enclosing that first
+value in quotes (when this doesn't occur automatically). It would be fairly
+simple to modify this function to use another delimiter if need be and I leave
+that as an exercise to the reader. So quite simply, this function is used for
+outputting CSV data to a CSV file in a way that is safe for use with Windows
+applications. It takes two parameters + one optional parameter: the location of
+where the file should be saved, an array of data rows, and an optional array of
+column headings. (Technically you could omit the headings array and just
+include it as the first row of the data, but it is often useful to keep this
+data stored in different arrays in practice.)
+
+<?php
+
+function mssafe_csv($filepath, $data, $header = array())
+{
+    if ( $fp = fopen($filepath, 'w') ) {
+        $show_header = true;
+        if ( empty($header) ) {
+            $show_header = false;
+            reset($data);
+            $line = current($data);
+            if ( !empty($line) ) {
+                reset($line);
+                $first = current($line);
+                if ( substr($first, 0, 2) == 'ID' && !preg_match('/["\\s,]/', 
+$first) ) {
+                    array_shift($data);
+                    array_shift($line);
+                    if ( empty($line) ) {
+                        fwrite($fp, "\"{$first}\"\r\n");
+                    } else {
+                        fwrite($fp, "\"{$first}\",");
+                        fputcsv($fp, $line);
+                        fseek($fp, -1, SEEK_CUR);
+                        fwrite($fp, "\r\n");
+                    }
+                }
+            }
+        } else {
+            reset($header);
+            $first = current($header);
+            if ( substr($first, 0, 2) == 'ID' && !preg_match('/["\\s,]/', 
+$first) ) {
+                array_shift($header);
+                if ( empty($header) ) {
+                    $show_header = false;
+                    fwrite($fp, "\"{$first}\"\r\n");
+                } else {
+                    fwrite($fp, "\"{$first}\",");
+                }
+            }
+        }
+        if ( $show_header ) {
+            fputcsv($fp, $header);
+            fseek($fp, -1, SEEK_CUR);
+            fwrite($fp, "\r\n");
+        }
+        foreach ( $data as $line ) {
+            fputcsv($fp, $line);
+            fseek($fp, -1, SEEK_CUR);
+            fwrite($fp, "\r\n");
+        }
+        fclose($fp);
+    } else {
+        return false;
+    }
+    return true;
+}
+
+?>
+===============================================================================
+
+Alright, after playing a while, I'm confident the following replacement
+function works in all cases, including the ones for which the native fputcsv
+function fails. If fputcsv fails to work for you (particularly with mysql csv
+imports), try this function as a drop-in replacement instead.
+
+Arguments to pass in are exactly the same as for fputcsv, though I have added
+an additional $mysql_null boolean which allows one to turn php null's into
+mysql-insertable nulls (by default, this add-on is disabled, thus working
+identically to fputcsv [except this one works!]).
+
+<?php
+
+function fputcsv2 ($fh, array $fields, $delimiter = ',', $enclosure = '"', 
+$mysql_null = false) {
+    $delimiter_esc = preg_quote($delimiter, '/');
+    $enclosure_esc = preg_quote($enclosure, '/');
+
+    $output = array();
+    foreach ($fields as $field) {
+        if ($field === null && $mysql_null) {
+            $output[] = 'NULL';
+            continue;
+        }
+
+        $output[] = preg_match("/(?:${delimiter_esc}|${enclosure_esc}|\s)/", 
+$field) ? (
+            $enclosure . str_replace($enclosure, $enclosure . $enclosure, 
+$field) . $enclosure
+        ) : $field;
+    }
+
+    fwrite($fh, join($delimiter, $output) . "\n");
+}
+
+// the _EXACT_ LOAD DATA INFILE command to use
+// (if you pass in something different for $delimiter
+// and/or $enclosure above, change them here too;
+// but _LEAVE ESCAPED BY EMPTY!_).
+/*
+LOAD DATA INFILE
+    '/path/to/file.csv'
+
+INTO TABLE
+    my_table
+
+FIELDS TERMINATED BY
+    ','
+
+OPTIONALLY ENCLOSED BY
+    '"'
+
+ESCAPED BY
+    ''
+
+LINES TERMINATED BY
+    '\n'
+*/
+
+?>
+===============================================================================
+
+Utility function to output a mysql query to csv with the option to write to
+file or send back to the browser as a csv attachment.
+
+<?php
+    function query_to_csv($db_conn, $query, $filename, $attachment = false, 
+$headers = true) {
+       
+        if($attachment) {
+            // send response headers to the browser
+            header( 'Content-Type: text/csv' );
+            header( 'Content-Disposition: attachment;filename='.$filename);
+            $fp = fopen('php://output', 'w');
+        } else {
+            $fp = fopen($filename, 'w');
+        }
+       
+        $result = mysql_query($query, $db_conn) or die( mysql_error( $db_conn )
+);
+       
+        if($headers) {
+            // output header row (if at least one row exists)
+            $row = mysql_fetch_assoc($result);
+            if($row) {
+                fputcsv($fp, array_keys($row));
+                // reset pointer back to beginning
+                mysql_data_seek($result, 0);
+            }
+        }
+       
+        while($row = mysql_fetch_assoc($result)) {
+            fputcsv($fp, $row);
+        }
+       
+        fclose($fp);
+    }
+
+    // Using the function
+    $sql = "SELECT * FROM table";
+    // $db_conn should be a valid db handle
+
+    // output as an attachment
+    query_to_csv($db_conn, $sql, "test.csv", true);
+
+    // output to file system
+    query_to_csv($db_conn, $sql, "test.csv", false);
+?>
+===============================================================================
+
+A event simpler way:
+
+<?php
+    function fputcsv($hFile, $aRow, $sSeparator=',', $sEnclosure='"')
+    {
+       foreach ($aRow as $iIdx=>$sCell)
+          $aRow[$iIdx] = str_replace($sEnclosure, $sEnclosure.$sEnclosure, 
+$sCell);
+
+       fwrite($hFile, join($aRow, $sSeparator)."\n");
+    }
+?>
+===============================================================================
+
+Unexpected (to me) behaviour: the enclosure characters inside the strings are
+doubled *unless* they're preceded by a backslash. If the enclosure is preceded
+by a backslash it's considered to be already escaped.
+
+<?php
+
+$data = array(
+    'Doubled: -> " <-',
+    'NOT doubled: -> \" <-',
+);
+
+$buffer = fopen('php://temp', 'r+');
+fputcsv($buffer, $data);
+rewind($buffer);
+$csv = fgets($buffer);
+fclose($buffer);
+
+echo $csv; // "Doubled: -> "" <-","NOT doubled: -> \" <-"
+
+?>
+
+As a result, the CSV file generated by my application was not correctly opened
+by OpenOffice.org. The offending row and all the subsequent rows were missing
+from the spreadsheet.
+
+PHP: 5.3.2-1ubuntu4.9
+OpenOffice.org: 3.2.0
+===============================================================================
+
+I converted this from the PHP source code. This replicates PHP5 functionality
+exactly, whereas the other examples here do not.
+
+<?php
+
+if (!function_exists('fputcsv')) {
+ 
+  function fputcsv(&$handle, $fields = array(), $delimiter = ',', $enclosure = 
+'"') {
+    $str = '';
+    $escape_char = '\\';
+    foreach ($fields as $value) {
+      if (strpos($value, $delimiter) !== false ||
+          strpos($value, $enclosure) !== false ||
+          strpos($value, "\n") !== false ||
+          strpos($value, "\r") !== false ||
+          strpos($value, "\t") !== false ||
+          strpos($value, ' ') !== false) {
+        $str2 = $enclosure;
+        $escaped = 0;
+        $len = strlen($value);
+        for ($i=0;$i<$len;$i++) {
+          if ($value[$i] == $escape_char) {
+            $escaped = 1;
+          } else if (!$escaped && $value[$i] == $enclosure) {
+            $str2 .= $enclosure;
+          } else {
+            $escaped = 0;
+          }
+          $str2 .= $value[$i];
+        }
+        $str2 .= $enclosure;
+        $str .= $str2.$delimiter;
+      } else {
+        $str .= $value.$delimiter;
+      }
+    }
+    $str = substr($str,0,-1);
+    $str .= "\n";
+    return fwrite($handle, $str);
+  }
+ 
+}
+
+?>
+===============================================================================
+
+if you want make UTF-8 file for excel, use this:
+
+$fp = fopen($filename, 'w');
+//add BOM to fix UTF-8 in Excel
+fputs($fp, $bom =( chr(0xEF) . chr(0xBB) . chr(0xBF) ));
+===============================================================================
+
+If you need to save the output to a variable (e.g. for use within a framework)
+you can write to a temporary memory-wrapper and retrieve it's contents:
+
+<?php
+// output up to 5MB is kept in memory, if it becomes bigger it will
+automatically be written to a temporary file
+$csv = fopen('php://temp/maxmemory:'. (5*1024*1024), 'r+');
+
+fputcsv($csv, array('blah','blah'));
+
+rewind($csv);
+
+// put it all in a variable
+$output = stream_get_contents($csv);
+?>
+===============================================================================
+
+Here is an adaption of the above code that adds support for double quotes
+inside a field. (One double quote is replaced with a pair of double quotes per
+the CSV format).
+
+<?php
+function fputcsv($filePointer,$dataArray,$delimiter,$enclosure)
+  {
+  // Write a line to a file
+  // $filePointer = the file resource to write to
+  // $dataArray = the data to write out
+  // $delimeter = the field separator
+ 
+  // Build the string
+  $string = "";
+ 
+  // No leading delimiter
+  $writeDelimiter = FALSE;
+  foreach($dataArray as $dataElement)
+   {
+    // Replaces a double quote with two double quotes
+    $dataElement=str_replace("\"", "\"\"", $dataElement);
+   
+    // Adds a delimiter before each field (except the first)
+    if($writeDelimiter) $string .= $delimiter;
+   
+    // Encloses each field with $enclosure and adds it to the string
+    $string .= $enclosure . $dataElement . $enclosure;
+   
+    // Delimiters are used every time except the first.
+    $writeDelimiter = TRUE;
+   } // end foreach($dataArray as $dataElement)
+ 
+  // Append new line
+  $string .= "\n";
+ 
+  // Write the string to the file
+  fwrite($filePointer,$string);
+  }
+?>
+===============================================================================
+
+Inspired by boonerunner's function, I wrote a smaller, faster, and more
+flexible one, which also uses less memory.
+I also renamed it to avoid collision or overwriting the PHP function, and gave
+the 3rd and 4th parameter default values like fputcsv() uses.
+
+This function puts all text values in $enclosure's while doubling the
+$enclosure in the value, and leaves numeric values as they are.
+But if the $delimiter exists in the numeric value, this value will also be put
+in $enclosure's (may happen if you use a dot as the $delimiter).
+
+function fwritecsv($handle, $fields, $delimiter = ',', $enclosure = '"') {
+    # Check if $fields is an array
+    if (!is_array($fields)) {
+        return false;
+    }
+    # Walk through the data array
+    for ($i = 0, $n = count($fields); $i < $n; $i ++) {
+        # Only 'correct' non-numeric values
+        if (!is_numeric($fields[$i])) {
+            # Duplicate in-value $enclusure's and put the value in $enclosure's
+            $fields[$i] = $enclosure . str_replace($enclosure, $enclosure .
+$enclosure, $fields[$i]) . $enclosure;
+        }
+        # If $delimiter is a dot (.), also correct numeric values
+        if (($delimiter == '.') && (is_numeric($fields[$i]))) {
+            # Put the value in $enclosure's
+            $fields[$i] = $enclosure . $fields[$i] . $enclosure;
+        }
+    }
+    # Combine the data array with $delimiter and write it to the file
+    $line = implode($delimiter, $fields) . "\n";
+    fwrite($handle, $line);
+    # Return the length of the written data
+    return strlen($line);
+}
+===============================================================================
+
+Output XML string as CSV with first row as column headers:
+
+<?php
+
+    // In this case XML is
+    // <records>
+    //  <record>...</record>
+    //  <record>...</record>
+    // </records>
+
+  if($xml = simplexml_load_string($string)){
+    // Keep up to 12MB in memory, if becomes bigger write to temp file
+    $file = fopen('php://temp/maxmemory:'. (12*1024*1024), 'r+');
+    if($row = get_object_vars($xml->record[0])){ // First record
+      // First row contains column header values
+      foreach($row as $key => $value){
+        $header[] = $key;
+      }
+      fputcsv($file, $header,',','"');
+      foreach ($xml->record as $record) {
+        fputcsv($file, get_object_vars($record),',','"');
+      }
+      rewind($file);
+      $output = stream_get_contents($file);
+      fclose($file);
+      return $output;
+    }else{
+      return '';
+    }
+  }
+
+?>
+===============================================================================
+
+In general I found myself wanting to get the result as a string rather than
+writing it to a file, and in particular I wanted to produce a CSV using an EOL
+that might not be the same as that on the server where I generated it.  This is
+how I solved the problem without rewriting  fputcsv.
+
+<?php
+function sputcsv($row, $delimiter = ',', $enclosure = '"', $eol = "\n")
+{
+    static $fp = false;
+    if ($fp === false)
+    {
+        $fp = fopen('php://temp', 'r+'); // see http://php.net/manual/en/
+wrappers.php.php - yes there are 2 '.php's on the end.
+        // NB: anything you read/write to/from 'php://temp' is specific to this
+filehandle
+    }
+    else
+    {
+        rewind($fp);
+    }
+   
+    if (fputcsv($fp, $row, $delimiter, $enclosure) === false)
+    {
+        return false;
+    }
+   
+    rewind($fp);
+    $csv = fgets($fp);
+   
+    if ($eol != PHP_EOL)
+    {
+        $csv = substr($csv, 0, (0 - strlen(PHP_EOL))) . $eol;
+    }
+   
+    return $csv;
+}
+
+// test
+$rows = array
+(
+    array('blue, sky', 'green, lime', 'red', 'black'),
+    array('white', 'gold', 'purple, imperial', 'grey, slate'),
+    array('orange, burnt', 'pink, hot', 'violet', 'indigo'),
+);
+
+if (PHP_EOL == "\r\n")
+{
+    $eol = "\n";
+}
+else
+{
+    $eol = "\r\n";
+}
+
+foreach($rows as $row)
+{
+    echo nl2br(sputcsv($row, ',', '"', $eol));
+}
+?>
+
+The test should produce something like the following:
+
+"blue, sky","green, lime",red,black
+white,gold,"purple, imperial","grey, slate"
+"orange, burnt","pink, hot",violet,indigo
+===============================================================================
+
+Note that an empty string is not a valid delimiter!
+
+<?php
+$csv->fputcsv( $data, '' );
+?>
+will just save an empty file!
+===============================================================================
+
+the solution for how to solve the encoding problem while converting an array to
+csv file is below.
+
+$fp = fopen('php://memory', 'w');
+    //add BOM to fix UTF-8 in Excel
+    fputs($fp, $bom =( chr(0xEF) . chr(0xBB) . chr(0xBF) ));
+    // output the column headings
+    //fputcsv($fp, array('Topic', 'Title', 'URL', 'Keywords', 'Score',
+'FB_count', 'TW_count', '|'));
+    if(isset($trend)){
+        foreach ( $trend as $myField ){
+        fputcsv($fp, $myField, '|');
+        }
+    }
+===============================================================================
+
+I found that the fputcsv examples for PHP 4 missed one thing, that was proper
+handling of the $enclosure value when it is a quote (if a quote is passed in a
+field, and it is delimited by a slash, it will be improperly handled by the
+functions submitted here).
+
+My modified function was built using the actual PHP5 source for fputcsv, with
+the addition of properly reacting to the existence of a delimited quote in the
+field being processed.
+
+<?php
+if (!function_exists('fputcsv')) {
+    function fputcsv(&$handle, $fields = array(), $delimiter = ',', $enclosure 
+= '"') {
+
+        // Sanity Check
+        if (!is_resource($handle)) {
+            trigger_error('fputcsv() expects parameter 1 to be resource, ' .
+                gettype($handle) . ' given', E_USER_WARNING);
+            return false;
+        }
+
+        if ($delimiter!=NULL) {
+            if( strlen($delimiter) < 1 ) {
+                trigger_error('delimiter must be a character', E_USER_WARNING);
+                return false;
+            }elseif( strlen($delimiter) > 1 ) {
+                trigger_error('delimiter must be a single character', 
+E_USER_NOTICE);
+            }
+
+            /* use first character from string */
+            $delimiter = $delimiter[0];
+        }
+
+        if( $enclosure!=NULL ) {
+             if( strlen($enclosure) < 1 ) {
+                trigger_error('enclosure must be a character', E_USER_WARNING);
+                return false;
+            }elseif( strlen($enclosure) > 1 ) {
+                trigger_error('enclosure must be a single character', 
+E_USER_NOTICE);
+            }
+
+            /* use first character from string */
+            $enclosure = $enclosure[0];
+       }
+
+        $i = 0;
+        $csvline = '';
+        $escape_char = '\\';
+        $field_cnt = count($fields);
+        $enc_is_quote = in_array($enclosure, array('"',"'"));
+        reset($fields);
+
+        foreach( $fields AS $field ) {
+
+            /* enclose a field that contains a delimiter, an enclosure
+character, or a newline */
+            if( is_string($field) && (
+                strpos($field, $delimiter)!==false ||
+                strpos($field, $enclosure)!==false ||
+                strpos($field, $escape_char)!==false ||
+                strpos($field, "\n")!==false ||
+                strpos($field, "\r")!==false ||
+                strpos($field, "\t")!==false ||
+                strpos($field, ' ')!==false ) ) {
+
+                $field_len = strlen($field);
+                $escaped = 0;
+
+                $csvline .= $enclosure;
+                for( $ch = 0; $ch < $field_len; $ch++ )    {
+                    if( $field[$ch] == $escape_char && $field[$ch+1] == 
+$enclosure && $enc_is_quote ) {
+                        continue;
+                    }elseif( $field[$ch] == $escape_char ) {
+                        $escaped = 1;
+                    }elseif( !$escaped && $field[$ch] == $enclosure ) {
+                        $csvline .= $enclosure;
+                    }else{
+                        $escaped = 0;
+                    }
+                    $csvline .= $field[$ch];
+                }
+                $csvline .= $enclosure;
+            } else {
+                $csvline .= $field;
+            }
+
+            if( $i++ != $field_cnt ) {
+                $csvline .= $delimiter;
+            }
+        }
+
+        $csvline .= "\n";
+
+        return fwrite($handle, $csvline);
+    }
+}
+?>
+===============================================================================
+
+[EDIT BY danbrown AT php DOT net: This is a revised function with a few
+bugfixes and improvements done by this author.  The original function example
+was written by arthur AT mclean DOT ws, and rewritten between by arthur AT korn
+DOT ch.]
+
+- when calling str_replace(), you must assign $cell the return value or nothing
+gets saved
+
+- when using strchr(), you should explicitly check !== FALSE, or it'll treat a
+return value of 0 (found the character at string position 0) as FALSE
+
+- Excel seems to quote not only fields containing commas, but fields containing
+quotes as well, so I've added another strchr() for quotes; I'm not saying
+Microsoft knows the correct way for sure, but it seems reasonable to me
+
+- the original function put a space after each comma; that might be legal, I
+don't know, but I've never seen it (and I don't think it is, because then how
+would you indicate you wanted a field to start with a space other than by
+quoting it?)
+
+- the original function didn't correctly return the length of the data
+outputted
+
+Here's the function, fixed up a bit:
+
+<?php
+function fputcsv($handle, $row, $fd=',', $quot='"')
+{
+   $str='';
+   foreach ($row as $cell) {
+       $cell=str_replace(Array($quot,        "\n"),
+                         Array($quot.$quot,  ''),
+                         $cell);
+       if (strchr($cell, $fd)!==FALSE || strchr($cell, $quot)!==FALSE) {
+           $str.=$quot.$cell.$quot.$fd;
+       } else {
+           $str.=$cell.$fd;
+       }
+   }
+
+   fputs($handle, substr($str, 0, -1)."\n");
+
+   return strlen($str);
+}
+?>
+
+Drew
+===============================================================================
+
+So this is something I wrote to generically generate CSV exports from 2 arrays
+and a name.
+
+You need to provide it with e single dimension array for the headings. A
+multidimensional array with the actual body . And lastly the filename you would
+like to get minus the .csv and viola.
+
+<?php
+
+    # We will use this function to generate a CSV
+    function exportCSV($headings=false, $rows=false, $filename=false)
+    {
+        # Ensure that we have data to be able to export the CSV
+        if ((!empty($headings)) AND (!empty($rows)))
+        {
+            # modify the name somewhat
+            $name = ($filename !== false) ? $filename . ".csv" : "export.csv";
+
+            # Set the headers we need for this to work
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename=' . $name);
+
+            # Start the ouput
+            $output = fopen('php://output', 'w');
+
+            # Create the headers
+            fputcsv($output, $headings);
+
+            # Then loop through the rows
+            foreach($rows as $row)
+            {
+                # Add the rows to the body
+                fputcsv($output, $row);
+            }
+
+            # Exit to close the stream off
+            exit();
+        }
+
+        # Default to a failure
+        return false;
+    }
+?>
+===============================================================================
+
+Here is a way to send csv like echo does :
+<?php
+function outputCSV($data) {
+
+    $outstream = fopen("php://output", 'w');
+
+    function __outputCSV(&$vals, $key, $filehandler) {
+        fputcsv($filehandler, $vals, ';', '"');
+    }
+    array_walk($data, '__outputCSV', $outstream);
+
+    fclose($outstream);
+}
+
+$mydata = array(
+array('data11', 'data12', 'data13'),
+array('data21', 'data22', 'data23'),
+array('data31', 'data32', 'data23'));
+
+outputCSV($mydata);
+/* Output sent :
+data11;data12;data13
+data21;data22;data23
+data31;data32;data23
+*/
+?>
+
+Moreover, this can be nicer with PHP5.3+ closures
+===============================================================================
+
+To get the mssafe_csv function below to work using PHP5, I had to change line
+50 from:
+fputcsv($fp, $line);
+
+to:
+fputcsv($fp, split(',', $line));
+
+Otherwise works great! Thanks for the function.
+===============================================================================
+
+When you output csv by fputcsv, if there are any Chinese character, you may get
+messy code. Then you need to set the encoding properly:
+
+fprintf($fp, chr(0xEF).chr(0xBB).chr(0xBF));  // just add this line
+fputcsv($fp, ...);
+===============================================================================
+
+There is an even easier solution to get the result of fputcsv into a variable:
+
+<?php
+$output = fopen('php://output', 'w');
+ob_start();
+fputcsv($output, $data);
+fclose($output);
+$csv = ob_get_clean();
+?>
+===============================================================================
+
+fputcsv doesn't have an $escape option like fgetscv. You'll have to roll your
+own support in userspace.
+
+/**
+* int fputcsv ( resource $handle , array $fields [, string $delimiter = "," [,
+string $enclosure = '"', [, string $escape = "\\" ]]] )
+*/
+function not_broken_fputcsv($handle, array $fields, $delimiter=',', $enclosure=
+'"', $escape='\\')
+{
+    foreach($fields as &$sField)
+        $sField = str_replace($escape, $escape . $escape, $sField);
+
+    return fputcsv($handle, $fields, $delimiter, $enclosure, $escape);
+}
+===============================================================================
+
+I feel as though it should be more complicated than this, but...
+
+function str_putcsv($fields, $delimiter = ',', $enclosure = '"', $escape_char =
+'\\' ) {
+    foreach ($fields as &$field) {
+        $field = str_replace($enclosure, $escape_char.$enclosure, $field);
+        $field = $enclosure . $field . $enclosure;
+    }
+    return implode($delimiter, $fields) . "\n";
+}
+===============================================================================
+
+Unlike fgetcsv, fputcsv doesn't provide an $escape parameter. This can lead to
+trouble if you write files using fputcsv, later to be read by fgetcsv. For
+example if you're using the default backslash escape character from fgetcsv and
+you've written it to a file using fputcsv, the file will not be correctly read
+by fgetcsv. Here's a wrapper for fputcsv that adds an $escape parameter.
+
+/**
+* int fputcsv ( resource $handle , array $fields [, string $delimiter = "," [,
+string $enclosure = '"', [, string $escape = "\\" ]]] )
+*/
+function not_broken_fputcsv($handle, array $fields, $delimiter=',', $enclosure=
+'"', $escape='\\')
+{
+    foreach($fields as &$sField)
+        $sField = str_replace($escape, $escape . $escape, $sField);
+
+    return fputcsv($handle, $fields, $delimiter, $enclosure, $escape);
+}
+===============================================================================
+
+Here is an adaptation to boonerunner's function for fputcsv.
+It uses a 2-dimensional array.
+Each sub-array is a line in the csv file which then ends up being seperated by
+commas.
+
+<?php
+function fputcsv($filePointer,$dataArray,$delimiter=",",$enclosure="\""){
+    // Write a line to a file
+    // $filePointer = the file resource to write to
+    // $dataArray = the data to write out
+    // $delimeter = the field separator
+    
+    // Build the string
+    $string = "";
+ 
+    // for each array element, which represents a line in the csv file...
+    foreach($dataArray as $line){
+
+        // No leading delimiter
+        $writeDelimiter = FALSE;
+       
+        foreach($line as $dataElement){
+            // Replaces a double quote with two double quotes
+            $dataElement=str_replace("\"", "\"\"", $dataElement);
+           
+            // Adds a delimiter before each field (except the first)
+            if($writeDelimiter) $string .= $delimiter;
+           
+            // Encloses each field with $enclosure and adds it to the string
+            $string .= $enclosure . $dataElement . $enclosure;
+           
+            // Delimiters are used every time except the first.
+            $writeDelimiter = TRUE;
+        }
+        // Append new line
+        $string .= "\n";
+
+    } // end foreach($dataArray as $line)
+
+    // Write the string to the file
+    fwrite($filePointer,$string);
+}
+?>
+===============================================================================
+
+These two handy functions allow you to use fgetcsv with a string instead of a
+file handle and fputcsv to convert an array to a string instead of writing to a
+file handle. Hopefully this functionality will exist natively soon. Props to
+prior notes on these functions that led me to these.
+<?php
+    function array_to_CSV($data)
+    {
+        $outstream = fopen("php://temp", 'r+');
+        fputcsv($outstream, $data, ',', '"');
+        rewind($outstream);
+        $csv = fgets($outstream);
+        fclose($outstream);
+        return $csv;
+    }
+
+    function CSV_to_array($data)
+    {
+        $instream = fopen("php://temp", 'r+');
+        fwrite($instream, $data);
+        rewind($instream);
+        $csv = fgetcsv($instream, 9999999, ',', '"');
+        fclose($instream);
+        return($csv);
+    }
+?>
+===============================================================================
+
+We had a function that wrote a single line CSV.  I noticed that with enabling
+auto_detect_line_endings, fputcsv would not write a newline at the end of the
+file.
+
+Enabling auto_detect_line_endings changed the fputcsv behavior to include a
+newline.

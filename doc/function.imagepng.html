@@ -1,0 +1,850 @@
+
+imagepng
+
+(PHP 4, PHP 5, PHP 7)
+
+imagepng — 以 PNG 格式将图像输出到浏览器或文件
+
+说明
+
+bool imagepng ( resource $image [, string $filename ] )
+
+imagepng() 将 GD 图像流（image）以 PNG 格式输出到标准输出（通常为浏览器），或者
+如果用 filename 给出了文件名则将其输出到该文件。
+<?php
+$im = imagecreatefrompng("test.png");
+imagepng($im);
+?>
+
+参见 imagegif()，imagewbmp()，imagejpeg() 和 imagetypes()。
+
+
+User Contributed Notes 33 notes
+
+===============================================================================
+
+The name "quality" for the compression parameter is quite misleading, as png
+compression is always lossless. The trade off is between speed and filesize, it
+cannot affect quality.
+
+Here's something I found at stackoverflow; I haven't checked it, but if it is
+correct it should definitely included in the documentation:
+
+---
+from php source (gd.h):
+
+/* 2.0.12: Compression level: 0-9 or -1, where 0 is NO COMPRESSION at all,
+* 1 is FASTEST but produces larger files, 9 provides the best
+* compression (smallest files) but takes a long time to compress, and
+* -1 selects the default compiled into the zlib library.
+*/
+Conclusion: Based on the Zlib manual (http://www.zlib.net/manual.html) the
+default compression level is set to 6.
+---
+
+Regarding suggestions to rescale the 0-99 quality range of jpeg into the 0-9
+range of png, note that for jpeg 99 is minimum compression (maximum quality)
+while for png 9 is maximum compression (quality doesn't change).
+===============================================================================
+
+Be careful when using a variable for the file name.
+PHP behavior with $filename differs when switching to PHP5.4 : PHP5.3 will use
+$filename='' the same way as $filename=NULL (e.g. no warning)
+<?php
+$im = imagecreatetruecolor(10,10);
+imagepng($im,'',9); # Warning: imagepng(): Filename cannot be empty
+imagepng($im,NULL,9); # works as expected
+imagedestroy($im);
+?>
+===============================================================================
+
+"Tip: As with anything that outputs its result directly to the browser, you can
+use the output-control functions (http://www.php.net/manual/en/
+ref.outcontrol.php) to capture the output of this function, and save it in a
+string (for example)."
+
+ob_start();
+imagepng($image);
+$image_data = ob_get_contents();
+ob_end_clean();
+
+And now you can save $image_data to a database, for example, instead of first
+writing it to file and then reading the data from it. Just don't forget to use
+mysql_escape_string...
+===============================================================================
+
+If you're generating an image dynamically based on post data and don't want to
+save it to the server, sending it to be displayed can cause problems as when
+the person tries to save it, the browser will request it again from the server
+(causing any post data to be lost and probably a corrupted png).
+
+The easiest way to get around this is to force it to download using the content
+disposition header, for example:
+
+<?php
+header('Content-Disposition: Attachment;filename=image.png');
+header('Content-type: image/png');
+?>
+===============================================================================
+
+Trying to resize a png 256 colors image and save it in 256 colors with a
+correct color palette ? (if you'll save a 256 color image in truecolor palette
+the result image will have a big size).
+I spent some hours trying various function to get a good quality 256 color png
+image, but because of color palette the result image quality was awful.
+But thank to the comment of zmorris at zsculpt dot com from
+imagetruecolortopalette function page, i figured out how to get a properly
+image!
+
+<?php
+function resize_png($src,$dst,$dstw,$dsth) {
+    list($width, $height, $type, $attr) = getimagesize($src);
+    $im = imagecreatefrompng($src);
+    $tim = imagecreatetruecolor($dstw,$dsth);
+    imagecopyresampled($tim,$im,0,0,0,0,$dstw,$dsth,$width,$height);
+    $tim = ImageTrueColorToPalette2($tim,false,255);
+    imagepng($tim,$dst);
+}
+//zmorris at zsculpt dot com function, a bit completed
+function ImageTrueColorToPalette2($image, $dither, $ncolors) {
+    $width = imagesx( $image );
+    $height = imagesy( $image );
+    $colors_handle = ImageCreateTrueColor( $width, $height );
+    ImageCopyMerge( $colors_handle, $image, 0, 0, 0, 0, $width, $height, 100 );
+    ImageTrueColorToPalette( $image, $dither, $ncolors );
+    ImageColorMatch( $colors_handle, $image );
+    ImageDestroy($colors_handle);
+    return $image;
+}
+?>
+
+Good luck,
+Namolovan Nicolae, Moldova
+===============================================================================
+
+I ran across the following WRT sessions and image creation.
+
+In main.php:
+<?php
+  (...session in progress...)
+  $_SESSION['text']='some text...';
+  $imgSrc='http://foo.com/createImage.php?sid='.session_id();
+  echo('<img src="'.$imgSrc.'"/>');
+  unset($_SESSION['text']);
+...
+?>
+
+In createImage.php:
+<?php
+  header('image/png');
+  session_id($_REQUEST['sid']);
+  session_start();
+  $img=imagecreatetruecolor(200, 30); 
+  $text_color=imagecolorallocate($img, 200, 200, 200);
+  imagestring($img, 5, 5, 5,  $_SESSION['text'], $text_color);
+  imagepng($img);
+  imagedestroy($img);
+?>
+
+Problem: main.php execution ends before createImage.php writing the text to
+image, thus the unset($_SESSION['text']) destroys the text and you end up with
+empty image.
+Solution: move call to unset() as last statement of createImage.php
+===============================================================================
+
+<?php
+
+    // aid of the highlighted Alliance
+    $marked_aid = 2403;
+    
+    // Preferences
+    $mysqlhost = 'localhost';
+    $mysqluser = 'user';
+    $mysqlpass = 'password';
+    $mysqldb = 'database';
+    
+    // Create database connection and select database
+    $db = @mysql_connect($mysqlhost, $mysqluser, $mysqlpass) OR die('Can not
+connect to DB-Server!');
+    $db_select = @mysql_select_db($mysqldb) OR die('Can not select DB!');
+    
+    // Create image: Map goes from -400 to 400
+    // -> sums up tp 2*400+1 (+1 due to the 0 in the center)
+    $image = imagecreate(801, 801);
+    
+    // Choose the colors of background, normal village and highlighted alliance
+    $color_background = imagecolorallocate($image, 255, 255, 255);
+    $color_normal = imagecolorallocate($image, 200, 200, 200);
+    $color_marked = imagecolorallocate($image, 255, 0, 0);
+
+    // Fill images background with chosen color
+    imagefill($image, 0, 0, $color_background);
+
+    // Select ALL villages from the DB and order by ascending ID
+    // (Fields are numbered from top left to bottom right)
+    $query = 'SELECT x, y, aid FROM x_world ORDER BY id ASC';
+    $result = @mysql_query($query) OR die('Can not select villages from table
+x_world!');
+    
+    // Check whether there any villages at all
+    if (mysql_num_rows($result)) {
+        
+        // Select first village
+        $row = @mysql_fetch_assoc($result);
+        
+        // These variables save the location on which we are currently drawing
+        $x_pointer = 0;
+        $y_pointer = 0;
+        
+        // Outer loop for the Y-coordinates
+        for($y=400; $y >= -400; $y--) {
+        
+            // Inner loop for the X-coordinates
+            for ($x=-400; $x <= 400; $x++) {
+                
+                // Once we reached the coordinates matching the current record
+selected from the DB:
+                if ($row['x'] == $x AND $row['y'] == $y) {
+                    
+                    // Selecting the village color depending on the aid
+                    if ($row['aid'] == $marked_aid) {
+                        $color = $color_marked;
+                    } else {
+                        $color = $color_normal;
+                    }
+                    
+                    // Drawing the village with the selected color
+                    imagefilledrectangle($image, $x_pointer, $y_pointer, (
+$x_pointer + 1), ($y_pointer + 1), $color);
+                    
+                    // Select next record
+                    $row = @mysql_fetch_assoc($result);
+                }
+                
+                // Increase pointer for X-coordinate
+                $x_pointer++;
+            }
+            
+            // Increase pointer for Y-coordinate
+            $y_pointer++;
+            
+            // We reached the end of a line and have to set the X-pointer to 0
+again
+            $x_pointer = 0;
+        }    
+    }
+    
+    // Select the HTTP-Header for the selected filetype
+    header("Content-Type: image/png");
+    
+    // Generate image and print it
+    imagepng($image);
+
+?>
+===============================================================================
+
+If you want to open a png image with alpha blending, you need to do something
+like this:
+
+<?php
+$file = 'semitransparent.png'; // path to png image
+$img = imagecreatefrompng($file); // open image
+imagealphablending($img, true); // setting alpha blending on
+imagesavealpha($img, true); // save alphablending setting (important)
+?>
+
+I spent almost a day to find out why alpha blending doesn't work. I hope this
+is usefull to others too :)
+===============================================================================
+
+My webserver, running 5.14 didn't like the header that was generated using
+imagepng(). It works find on my local test server and on 4.x from another host.
+
+The generated image displays in the browser (IE, firefox) but when saved to a
+file or inserted into an RTF file, the image was corrupted. As a test, when
+attempting to right-click to save as, the image format was not recognized.
+
+The only work-around appears to be adding the additional paramaters.
+
+So instead of just
+imagepng($image); //DIDNT WORK--CORUPT IMAGE
+
+This worked
+imagepng($image,NULL,0,NULL);
+
+and saving to disk, this worked:
+imagepng($image,$file_location,0,NULL);
+
+Jeff
+===============================================================================
+
+barts code below does not work at least with gd 2
+
+Only returns a blank image with alpha not the source resized
+
+        $im = ImageCreateFromPNG($sourcefile);
+        $im_dest = imagecreatetruecolor ($forcedwidth, $forcedheight);
+        imagealphablending($im_dest, false);
+        imagecopyresampled($im_dest, $im, 0, 0, 0, 0, $wm_width, $wm_height,
+$forcedwidth, $forcedheight);
+        imagesavealpha($im_dest, true);
+        imagepng($im_dest, $destfile);
+        imagedestroy($img_dest);
+
+ps you also forgot image destroy and you had a random var in imagepng undefined
+in your post
+===============================================================================
+
+I just lost about 4 hours on a really stupid problem. My images on the local
+server were somehow broken and therefore did not display in the browsers. After
+much looking around and testing, including re-installing apache on my computer
+a couple of times, I traced the problem to an included file.
+No the problem was not a whitespace, but the UTF BOM encoding character at the
+begining of one of my inluded files...
+So beware of your included files!
+Make sure they are not encoded in UTF or otherwise in UTF without BOM.
+Hope it save someone's time.
+===============================================================================
+
+If you are outputting a PNG directly in response to a client request it is
+important to check your web server configuration.
+
+Some clients may request your images with a <a href="http://www.w3.org/
+Protocols/rfc2616/rfc2616-sec14.html">accept header</a> of image/*. Default
+configurations of Apache and possibly other servers will by default NOT allow
+your script to run in response to this request.
+
+Apache is specifically discussed at http://stackoverflow.com/q/19169337 but
+other server have been documented to have issue too.
+
+In other words, when testing your application don't just use the web browser,
+consider a phone's browser and networking libraries which could send different
+headers.
+===============================================================================
+
+My script was unable to complete: Fatal error: Allowed memory size of XX bytes
+exhausted (tried to allocate XX+n bytes).
+
+I found out that PHP handles images in uncompressed format: my input image was
+8768x4282@32 bit => ~150 MB per single in-memory copy.
+
+As a solution, you can either check the dimensions and reject anything too big
+or, as I did, use ini_set('memory_limit','1024M'); on the page start (if your
+server has enough on board memory).
+===============================================================================
+
+Better than a chmod 777 to any '/dir/pic.png' you should :
+- test if dir is writable (is_writable func.)
+- use chmod 700 (more secure because let only the webserver ID have access)
+
+In any case you should program a (crontab) script to change the owner ID of any
+images created.
+===============================================================================
+
+When you allow multiple output formats, (jpg/png) but want to use the 1-100
+quality scale (like jpg), you will have to format the number:
+
+<?php
+$pngQuality = ($quality - 100) / 11.111111;
+$pngQuality = round(abs($pngQuality));
+imagepng($resource, $path, $pngQuality);
+?>
+===============================================================================
+
+Creating a transparent image filled with tranparent color only
+
+I had some hard times putting up this one:
+
+<?php
+// Set the image
+$img = imagecreatetruecolor(100,100);
+imagesavealpha($img, true);
+
+// Fill the image with transparent color
+$color = imagecolorallocatealpha($img,0x00,0x00,0x00,127);
+imagefill($img, 0, 0, $color);
+
+// Save the image to file.png
+imagepng($img, "file.png");
+
+// Destroy image
+imagedestroy($img);
+?>
+===============================================================================
+
+in reply to: cbrasho at yahoo dot com
+
+if you use Apache as a webserver, you could do the following:
+
+You could set up a 'img' directory in your webspace.
+In that directory there will be two files: a .htaccess file and a img.php file
+the .htaccess file contains the following code:
+ErrorDocument 404 /img/img.php
+
+the img.php file looks something like this:
+
+<?php
+  $file = $_SERVER['REDIRECT_URL'];
+
+  $result = mysql_query('select img_blob from images where filename=\\'' .
+$file . '\\');
+  list($blob) = mysql_fetch_row($result);
+
+  header('HTTP/1.0 200 Ok');
+  header("Content-type: image/jpeg");
+ 
+  print $blob; # or whatever works, I don't use this
+?>
+
+if you use a url for your image like http://test.com/img/image1.jpeg, which
+doesn't exist, normally you would get a 404-page. in this case, the 404 is
+being handled by img.php, which brings up the required image...
+===============================================================================
+
+Having your pictures stored in a database sounds great but brings you a lot of
+trouble.
+Storing images in a DB you will have a script show.php that will appear in
+<img> tags: <img src='show.php?img_id=$some_id'>
+But if you want to have REGISTER GLOBALS = OFF, you are in trouble and there is
+no way (at leas as far as i know) to solve the problem but to put te img from
+the DB in a file and put the coresponding file name in the <img> tag. But this
+brings another problem: simultaneous accesses to the page. So you will have to
+find a way to give unique names to the picture files for each simultaneous
+access to the page. The solution might be using sessions. This is how you end
+up having a very compleh PHP script for a very simple problem. So, the basic
+ideea is " do not store your pictures in a blob unless you know exactly what
+you are doing".
+===============================================================================
+
+to all the ones, who like having their users fill their profil with an image
+without destroying a fixed design the following should be a great way to handle
+this problem.
+
+this file opens a picture from $imagepath and returns it as a valid picture to
+embed in: <img src="file.php?image=123.jpg[?maxX=200&maxY=150]"> (in [] =
+optional)
+
+but this file does more than this. it also adds black borders to files that are
+smaller than the max. size, so adding borders to the left and right where a
+image is too high :-)
+
+if there is a need for a copyright note this script will also help you. you can
+put in a various text to $copyright. the text length should be in relationship
+to $maxX and $maxY.
+
+Well there are other features of the script, just try'em out and have fun with
+it :-)
+
+bye
+
+<?php
+
+# standard height & weight if not given
+if(!isset($maxX)) $maxX = 100;
+if(!isset($maxY)) $maxY = 75;
+
+# colour- & textvalues
+$picBG = "0,0,0"; # RGB-value !
+$picFG = "104,104,104"; # RGB-value !
+$copyright = "stefan bechtold";
+$font = 1;
+
+# minimal & maximum zoom
+$minZoom = 1; # per cent related on orginal (!=0)
+$maxZoom = 200; # per cent related on orginal (!=0)
+
+# paths
+$imgpath = "userimages/"; # ending with "/" !
+$nopicurl = "../images/nopic.jpg"; # starting in $imagepath!!!
+$nofileurl = "../images/nofile.jpg"; # starting in $imagepath!!!
+
+if(!isset($image) || empty($image))
+    $imageurl = $imgpath . $nopicurl;
+elseif(! file_exists($imgpath . trim($image)))
+    $imageurl = $imgpath . $nofileurl;
+else
+    $imageurl = $imgpath . trim($image);
+
+# reading image
+$image = getImageSize($imageurl, $info); # $info, only to handle problems with
+earlier php versions...
+switch($image[2]) {
+      case 1:
+       # GIF image
+        $timg = imageCreateFromGIF($imageurl);
+        break;
+    case 2:
+       # JPEG image
+        $timg = imageCreateFromJPEG($imageurl);
+        break;
+    case 3:
+       # PNG image
+        $timg = imageCreateFromPNG($imageurl);
+        break;
+}
+
+# reading image sizes
+$imgX = $image[0];
+$imgY = $image[1];
+
+# calculation zoom factor
+$_X = $imgX/$maxX * 100;
+$_Y = $imgY/$maxY * 100;
+
+# selecting correct zoom factor, so that the image always keeps in the given
+format
+# no matter if it is more higher than wider or the other way around
+if((100-$_X) < (100-$_Y)) $_K = $_X;
+else $_K = $_Y;
+
+# zoom check to the original
+if($_K > 10000/$minZoom) $_K = 10000/$minZoom;
+if($_K < 10000/$maxZoom) $_K = 10000/$maxZoom;
+
+# calculate new image sizes
+$newX = $imgX/$_K * 100;
+$newY = $imgY/$_K * 100;
+
+# set start positoin of the image
+# always centered
+$posX = ($maxX-$newX) / 2;
+$posY = ($maxY-$newY) / 2;
+
+# creating new image with given sizes
+$imgh = imageCreateTrueColor($maxX, $maxY);
+
+# setting colours
+$cols = explode(",", $picBG);
+$bgcol = imageColorallocate($imgh, trim($cols[0]), trim($cols[1]), trim($cols[2
+]));
+$cols = explode(",", $picFG);
+$fgcol = imageColorallocate($imgh, trim($cols[0]), trim($cols[1]), trim($cols[2
+]));
+
+# fill background
+imageFill($imgh, 0, 0, $bgcol);
+
+# create small copy of the image
+imageCopyResampled($imgh, $timg, $posX, $posY, 0, 0, $newX, $newY, $image[0], 
+$image[1]);
+
+# writing copyright note
+imageStringUp($imgh, $font, $maxX-9, $maxY-3, $copyright, $fgcol);
+
+# output
+switch($image[2]) {
+      case 1:
+    # GIF image
+        header("Content-type: image/gif");
+        imageGIF($imgh);
+    case 2:
+    # JPEG image
+        header("Content-type: image/jpeg");
+        imageJPEG($imgh);
+    case 3:
+    # PNG image
+        header("Content-type: image/png");
+        imagePNG($imgh);
+}
+
+# cleaning cache
+imageDestroy($timg);
+imageDestroy($imgh);
+
+?>
+===============================================================================
+
+PNG files are already compressed. They use a lossless compression algorithm. If
+you are using HighColour images, the compression only does so much. For low
+colour images (16 or 256) the compression is much better.
+
+It is pointless trying to compress the images further before sending to a
+browser.
+===============================================================================
+
+I have experienced segfaults and bus errors with the following configuration:
+FreeBSD4.4, Apache 1.3.26, PHP 4.2.2, GD-1.8.4, PDFlib 4.0.1. The apache
+process crashed when calling the imagepng function, but it didn't crash when
+calling the imagejpg function, or imagecreatefrompng...
+
+Some wasted hours (lots) later, in which I have tried to recompile gd, libpng,
+php, libjpeg, what-not, I have found the following advices:
+http://bugs.php.net/bug.php?id=16841
+
+So the problem was not with the png library, but rather with the PDFlib. Even
+though all the threads led to a png-problem... so I have simply upgraded to
+PDFlib 4.0.3 (w/o any special configure arguments; --with-libpng didn't work
+anyways), recompiled PHP, and now everything works (imagepng, pdf creation,
+etc.).
+
+Hope this helps,
+bogdan
+===============================================================================
+
+PNG images (as any image) can be stored in a MySQL blob field, but if you want
+to do this, you'll want to serialize the image stream into a better form. I
+would recommend base64_encode() and base64_decode(). (Just fopen() the file,
+fread() the contents in, base64_encode() the string, and fire off your SQL
+query (use addslashes()/stripslashes() to be more secure)).
+
+This has been posted an innumerable amount of times throughout the site, but
+it's still terrible that a lot of users simply don't understand this and use it
+to its full potential.
+
+I would also recommend that if you are doing images this way, to keep an image
+cache folder somewhere that PHP can access (possibly even somewhere off your
+webroot?). That way if your website is swamped with traffic it won't kill the
+SQL server.
+===============================================================================
+
+You could use the function imagecreatefrompng
+
+(I assume that you already know how to get the text from the url.)
+
+The only thing left to do is put that text on the image using the correct
+colors for you.
+
+<?php
+
+$im = @imagecreatefrompng($imgname);
+
+$text_color = imagecolorallocate ($im, $Red,$Green,$Blue);
+
+imagestring ($im, 3,  5, 15,  $SomeTextFromURL, $text_color);
+
+?>
+
+Regards,
+Peter Berkhout.
+===============================================================================
+
+Presumably it returns true on success and false on failure, although the
+documentation doesn't actually say so.
+===============================================================================
+
+When changeing the PHP version from 4 to 5 I found out, that PHP5 handles
+imagepng() more restrictive than in PHP4. I'd used
+
+imagepng($image,'',90);
+
+to reduce the image quality whithout saving the image as a file. The quality
+parameter is not supported at all, I used imagejpg before and simply changed
+the function to imagepng whithout taking care of the existing parameters. It
+did not matter and there was no error in PHP4. But in PHP5, the image will not
+be shown anymore. So you have to remove it to have the standard:
+
+imagepng($image);
+===============================================================================
+
+If you care about speed, you probably already cache your generated images to a
+file. In that case, DON'T use "createimagefrompng" and "imagepng" to output the
+image. Use fpassthru instead. It is literally hundreds of times faster.
+
+<?php
+  header("Content-Type: image/png");
+ 
+  # Generate cachefile for image, if it doesn't exist
+  if( !file_exists($cachefile) ) {
+    $im = generateimage();     # some code generates an image resource
+    imagepng($im, $cachefile); # store the image to cachefile
+
+    # don't output it like this:
+    /* imagepng($im);*/
+  
+    imagedestroy($im);
+  }
+
+  $fp = fopen($cachefile, 'rb'); # stream the image directly from the cachefile
+  fpassthru($fp);
+  exit;
+?>
+
+I've tested it with a 5120x5120 (1.2Mb) image, that was cached on the harddisk.
+Using imagepng, the transfer took 12 seconds. Using fpassthru, it took only
+32ms!
+===============================================================================
+
+I was curious about the relationship between quality, processing time and
+resulting image size, so I created this little benchmark to test it (The image
+used was originally RGB_24bits_palette_R85.png, found on wikipedia). Results
+are at the bottom.
+<?php
+$sizes = ['32', '64', '128', '256', '512', '1024', '2048'];
+
+foreach ($sizes as $size) {
+    echo "\nSize: {$size}x{$size}px:\n";
+
+    $image = imagecreatefrompng("images/test{$size}.png");
+    for ($quality = 0; $quality < 10; $quality++) {
+        ob_start();
+
+        $start = microtime(true);
+        imagepng($image, null, $quality);
+        $elapsed = microtime(true) - $start;
+
+        $blob = ob_get_contents();
+        ob_end_clean();
+
+        $blobSize = strlen($blob);
+        echo "quality: $quality, size: $blobSize, elapsed: $elapsed\n";
+    }
+
+    imagedestroy($image);
+}
+
+// Results (some omitted for brevity):
+
+// Size: 32x32px:
+// quality: 0, size: 3172, elapsed: 0.00013399124145508
+// quality: 1, size: 266, elapsed: 9.4890594482422E-5
+// quality: 2, size: 264, elapsed: 7.7009201049805E-5
+// quality: 3, size: 223, elapsed: 7.4863433837891E-5
+// quality: 4, size: 225, elapsed: 8.5830688476562E-5
+// quality: 5, size: 209, elapsed: 8.5115432739258E-5
+// quality: 6, size: 208, elapsed: 9.608268737793E-5
+// quality: 7, size: 205, elapsed: 0.0001060962677002
+// quality: 8, size: 186, elapsed: 0.00015091896057129
+// quality: 9, size: 181, elapsed: 0.00022006034851074
+
+// Size: 128x128px:
+// quality: 0, size: 49425, elapsed: 0.0010969638824463
+// quality: 1, size: 976, elapsed: 0.00091886520385742
+// quality: 2, size: 938, elapsed: 0.00088310241699219
+// quality: 3, size: 925, elapsed: 0.00087594985961914
+// quality: 4, size: 608, elapsed: 0.0009760856628418
+// quality: 5, size: 607, elapsed: 0.00098395347595215
+// quality: 6, size: 601, elapsed: 0.0010099411010742
+// quality: 7, size: 602, elapsed: 0.001086950302124
+// quality: 8, size: 521, elapsed: 0.001910924911499
+// quality: 9, size: 491, elapsed: 0.0029060840606689
+
+// Size: 512x512px:
+// quality: 0, size: 788279, elapsed: 0.012928009033203
+// quality: 1, size: 12467, elapsed: 0.013065099716187
+// quality: 2, size: 11885, elapsed: 0.013008117675781
+// quality: 3, size: 11190, elapsed: 0.013030052185059
+// quality: 4, size: 7311, elapsed: 0.016619920730591
+// quality: 5, size: 6994, elapsed: 0.016351222991943
+// quality: 6, size: 6475, elapsed: 0.016234159469604
+// quality: 7, size: 6432, elapsed: 0.016525983810425
+// quality: 8, size: 6094, elapsed: 0.022937774658203
+// quality: 9, size: 5649, elapsed: 0.065664052963257
+
+// Size: 2048x2048px:
+// quality: 0, size: 12605375, elapsed: 0.20983290672302
+// quality: 1, size: 451735, elapsed: 0.19678711891174
+// quality: 2, size: 409375, elapsed: 0.19415307044983
+// quality: 3, size: 366404, elapsed: 0.20460414886475
+// quality: 4, size: 312538, elapsed: 0.22785305976868
+// quality: 5, size: 281671, elapsed: 0.23320484161377
+// quality: 6, size: 244248, elapsed: 0.28935289382935
+// quality: 7, size: 238310, elapsed: 0.33481192588806
+// quality: 8, size: 217038, elapsed: 0.71698379516602
+// quality: 9, size: 208881, elapsed: 1.858146905899
+?>
+===============================================================================
+
+This is my way to store PNG-images in a MySQL database... You cannot directly
+store the PNG-image in a variable, and then parse it in the database, cos if
+you try to define it to a variable, it'll still just output it...
+In my method i use three functions
+to "capture" the output and store it in a variable; ob_start (to start the
+output buffering),    ob_get_contents  (to capture the output),    and 
+ob_end_clean (to erase the cache, and end the output buffering)
+
+<?php
+$imagefile = "changethistogourimage.gif";
+
+$image = imagecreatefromgif($imagefile);
+ob_start();
+imagepng($image);
+$imagevariable = ob_get_contents();
+ob_end_clean();
+
+/*
+HERE YOU CAN MESS WITH THE $imagevariable AS YOU LIKE
+*/
+?>
+===============================================================================
+
+If you need to call imagepng() multiple times (for example, when you want to
+send it to the browser, but also to a disk cache), write your image to a file
+first, THEN call readfile() on it.
+
+PHP internally works with a temporary file when sending the image to the
+browser, so you'll gain nothing by calling imagepng() twice.
+===============================================================================
+
+To change the background of a 24-bit PNG for graceful degradation in IE6, the
+PNG file needs a bKGD chunk:
+
+<?php
+    // insert a BKGD chunk into the PNG file for graceful image degradation in
+IE6
+    $bgColor = array(250, 250, 250);
+    $pngData = bin2hex(file_get_contents($filename));
+   
+    $idatMarker = '200049444154';
+    $bkgdMarker = '624b4744';
+   
+    $bkgdChunk = '0006' . $bkgdMarker;
+    foreach ($bgColor as $bit)
+    {
+        $bkgdChunkData .= '00' . dechex($bit);
+    }
+    $bkgdChunk .= $bkgdChunkData;
+    $bkgdChunk .= dechex(crc32(pack('H*', $bkgdMarker . $bkgdChunkData))) . 
+'0000';
+
+    $parsed = explode($idatMarker, $pngData, 2); // split file by first 'IDAT'
+chunk   
+    $pngData = pack('H*', $parsed[0] . $bkgdChunk . $idatMarker . $parsed[1]);
+    file_put_contents($cachedFilename, $pngData);
+?>
+===============================================================================
+
+@ phpman at texmedia dot de:
+
+The compression range in PNG is in range 0-9, i think if you specified a
+compression level higher than 9, it'll be completely "compressed", or
+suppressed in the other words.
+
+The compression level is originally for JPEG, which is in range 0 - 100, I
+think it'll work fine if you divide it by ten before passing to imagepng(). ;)
+===============================================================================
+
+To send 'Content-Length' header (like in static pictures case) i use "Output
+handler" like this...
+<?php
+//    Output handler
+function output_handler($img) {
+    header('Content-type: image/png');
+    header('Content-Length: ' . strlen($img));
+    return $img;
+}
+
+//    Image output
+ob_start("output_handler");
+imagepng($im);
+ob_end_flush();
+?>
+===============================================================================
+
+If you want to resize a png-24 image and preserve the alpha channel you need to
+set imagealphablending($im_dest, false) on the destination image just after
+creating it with imagecreatetruecolor() and do a imagesavealpha($im_dest, true)
+on it before saving it:
+
+<?php
+
+$im = ImageCreateFromPNG('redfade.png');
+
+$im_dest = imagecreatetruecolor (500, 300);
+imagealphablending($im_dest, false);
+
+imagecopyresampled($im_dest, $im, 0, 0, 0, 0, 300, 300, 500, 300);
+
+imagesavealpha($im_dest, true);
+imagepng($im_re, 'small_redfade.png');
+
+?>

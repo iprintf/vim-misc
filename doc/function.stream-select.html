@@ -1,0 +1,362 @@
+
+stream_select
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+stream_select — Runs the equivalent of the select() system call on the given
+arrays of streams with a timeout specified by tv_sec and tv_usec
+
+说明
+
+int stream_select ( array &$read , array &$write , array &$except , int $tv_sec
+[, int $tv_usec = 0 ] )
+
+The stream_select() function accepts arrays of streams and waits for them to
+change status. Its operation is equivalent to that of the socket_select()
+function except in that it acts on streams.
+
+参数
+
+read
+
+    The streams listed in the read array will be watched to see if characters
+    become available for reading (more precisely, to see if a read will not
+    block - in particular, a stream resource is also ready on end-of-file, in
+    which case an fread() will return a zero length string).
+
+write
+
+    The streams listed in the write array will be watched to see if a write
+    will not block.
+
+except
+
+    The streams listed in the except array will be watched for high priority
+    exceptional ("out-of-band") data arriving.
+
+        Note:
+
+        When stream_select() returns, the arrays read, write and except are
+        modified to indicate which stream resource(s) actually changed status.
+
+    You do not need to pass every array to stream_select(). You can leave it
+    out and use an empty array or NULL instead. Also do not forget that those
+    arrays are passed by reference and will be modified after stream_select()
+    returns.
+tv_sec
+
+    The tv_sec and tv_usec together form the timeout parameter, tv_sec
+    specifies the number of seconds while tv_usec the number of microseconds.
+    The timeout is an upper bound on the amount of time that stream_select()
+    will wait before it returns. If tv_sec and tv_usec are both set to 0, 
+    stream_select() will not wait for data - instead it will return
+    immediately, indicating the current status of the streams.
+
+    If tv_sec is NULL stream_select() can block indefinitely, returning only
+    when an event on one of the watched streams occurs (or if a signal
+    interrupts the system call).
+
+    Warning
+
+    Using a timeout value of 0 allows you to instantaneously poll the status of
+    the streams, however, it is NOT a good idea to use a 0 timeout value in a
+    loop as it will cause your script to consume too much CPU time.
+
+    It is much better to specify a timeout value of a few seconds, although if
+    you need to be checking and running other code concurrently, using a
+    timeout value of at least 200000 microseconds will help reduce the CPU
+    usage of your script.
+
+    Remember that the timeout value is the maximum time that will elapse; 
+    stream_select() will return as soon as the requested streams are ready for
+    use.
+
+tv_usec
+
+    See tv_sec description.
+
+返回值
+
+On success stream_select() returns the number of stream resources contained in
+the modified arrays, which may be zero if the timeout expires before anything
+interesting happens. On error FALSE is returned and a warning raised (this can
+happen if the system call is interrupted by an incoming signal).
+
+范例
+
+Example #1 stream_select() Example
+
+This example checks to see if data has arrived for reading on either $stream1
+or $stream2. Since the timeout value is 0 it will return immediately:
+
+<?php
+/* Prepare the read array */
+$read   = array($stream1, $stream2);
+$write  = NULL;
+$except = NULL;
+if (false === ($num_changed_streams = stream_select($read, $write, $except, 0
+))) {
+    /* Error handling */
+} elseif ($num_changed_streams > 0) {
+    /* At least on one of the streams something interesting happened */
+}
+?>
+
+注释
+
+    Note:
+
+    Due to a limitation in the current Zend Engine it is not possible to pass a
+    constant modifier like NULL directly as a parameter to a function which
+    expects this parameter to be passed by reference. Instead use a temporary
+    variable or an expression with the leftmost member being a temporary
+    variable:
+    <?php
+    $e = NULL;
+    stream_select($r, $w, $e, 0);
+    ?>
+
+    Note:
+
+    Be sure to use the === operator when checking for an error. Since the 
+    stream_select() may return 0 the comparison with == would evaluate to TRUE:
+    <?php
+    $e = NULL;
+    if (false === stream_select($r, $w, $e, 0)) {
+        echo "stream_select() failed\n";
+    }
+    ?>
+
+    Note:
+
+    If you read/write to a stream returned in the arrays be aware that they do
+    not necessarily read/write the full amount of data you have requested. Be
+    prepared to even only be able to read/write a single byte.
+
+    Note:
+
+    Some streams (like zlib) cannot be selected by this function.
+
+    Note:
+
+    Windows compatibility: stream_select() used on a pipe returned from 
+    proc_open() may cause data loss under Windows 98.
+
+    Use of stream_select() on file descriptors returned by proc_open() will
+    fail and return FALSE under Windows.
+
+参见
+
+  • stream_set_blocking() - 为资源流设置阻塞或者阻塞模式
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+@mbaynton at gmail dot com
+
+A handy syntactic trick:
+
+<?php
+$r = Array($stream1, $stream2);
+stream_select($r, $w = null, $x = null, 1337);
+?>
+
+I've seen it recommended elsewhere in the documentation for clarifying magic
+arguments so maintainers don't have to go check the function itself, but it
+also solves your problem here.
+===============================================================================
+
+Note that you should change the calctimeout function below to divide the
+outcome by 1.000.000 otherwise you'll be waiting for two years instead of one
+minute for the socket to timeout...
+
+<?php
+
+// The function to calculate the timeout
+function calctimeout($maxtime, $starttime)
+{
+   return ($maxtime - ((microtime(true) - $starttime) * 1000000))/1000000;
+}
+
+?>
+===============================================================================
+
+If you try to use stream_select() with fread(), you may get bit by a
+combination of bugs (https://bugs.php.net/bug.php?id=52602 and https://
+bugs.php.net/bug.php?id=51056). As of PHP 5.5.10, fread() and stream_select()
+don't reliably play well together.
+
+If you need stream_select() and you don't need an encrypted connection (e.g.
+TLS), use stream_socket_recvfrom() instead of fread().
+
+I can't find a way to reliably handle an encrypted connection with blocking
+functions in PHP; non-blocking might be the only way to do it.
+===============================================================================
+
+Please note that, on return, the key of "read" will be zero based, serially
+numbered according to the streams for which there is read data ready only. In
+other words, if you want to know which of the original streams placed in "read"
+is ready, there is no immediate way of knowing that.
+
+If you want to know which of the original stream is which, you can either use "
+==", or possibly set a reverse map array, in which the stream is the key, and
+the key to the original "read" array is the data.
+===============================================================================
+
+If you want to set an absolute maximum execution time for stream_select in a
+loop, it's important to decrement the max_time value passed to stream_select.
+
+<?php
+// The maximum time for execution in milliseconds
+$maxtime = 200000;
+// The time the loop started
+$starttime = microtime(true);
+// Original array of sockets
+$r = $orig_sockets;
+
+// The function to calculate the timeout
+function calctimeout($maxtime, $starttime)
+{
+    return $maxtime - ((microtime(true) - $starttime) * 1000000);
+}
+
+while (stream_select($r, $w = null, $e = null, 0, calctimeout($maxtime, 
+$starttime)) !== 0)
+{
+    // loop through the sockets that showed activity
+    foreach ($r as $socket) {
+        // $socket talked
+    }
+
+    // stream_select modifies the contents of $r
+    // in a loop we should replace it with the original
+    $r = $orig_sockets;
+}
+
+?>
+===============================================================================
+
+Note: At least one of the input arrays must be non-empty, or you get an
+E_WARNING message:
+PHP Warning:  stream_select(): unable to select [9]: Bad file descriptor
+(max_fd=0) in
+===============================================================================
+
+You can key on file descriptors just fine by casting them to an int or a
+string, which returns what you would expect.
+===============================================================================
+
+If you use stream_select() with a blocking stream, you are doing it wrong!
+
+Just because this function returns something in one or more of the arrays does
+NOT mean that a future read or write operation will not block.
+
+The above sentence is the most important sentence you will ever read regarding
+stream manipulation.  Using stream_select() with blocking streams is a very
+common amateur mistake and causes major headaches when tracking down usage of
+this and similar select() system functions.  PHP (and really the underlying OS)
+should verify that the supplied stream set is not blocking and throw an error/
+exception if any socket is set to block so that people are forced to fix their
+code.  The documentation for stream_select() is, at best, misleading.
+
+If you want a non-blocking stream, then set the stream to not block. 
+Otherwise, live with the blocking stream.  That is, after all, the whole point
+of blocking - to block indefinitely until the operation completes.  select() is
+built for non-blocking streams ONLY.  Any other use will result in very hard to
+track down bugs.
+
+I got the above lecture many years ago after encountering the very bugs I
+mention.  I fixed my code and now correct similar mistakes when I run into the
+issue elsewhere.  Writing code for non-blocking streams is simpler than trying
+to write hacks for blocking streams with select() functions and ending up with
+application bugs.
+===============================================================================
+
+Note that contrary to what the previous poster said, one is not able to use a
+stream resource as a key for an array. Rather, if you want to know which socket
+you are dealing with, consider using code similar to this:
+
+<?php
+$sockets = array("sock_1" => $sock1, "sock_2" => $sock2, "sock_3" => $sock_3);
+
+$read = $write = $error = $sockets;
+$num = stream_select($read, $write, $error, 10);
+if ($n > 0) {
+    foreach ($read as $r) {
+        $key = array_search($r, $sockets);
+        // $key will be "sock_1", "sock_2", "sock_3", etc.
+    }
+}
+?>
+
+Hope that helps someone out there!
+===============================================================================
+
+If you're getting unexplainable problems with nonblocking sockets using
+stream_select, disable the buffers using:
+
+stream_set_read_buffer($socket, 0);
+stream_set_write_buffer($socket, 0);
+
+For some reason when writing (in total) ~256k, sockets start returning FALSE
+when reading, yet always appear in the stream_select arrays. This fixed that
+problem. (for us.)
+===============================================================================
+
+http://bugs.php.net/bug.php?id=42682
+
+This function will not return the number of changed streams under certain
+systems with older versions, but instead it will return '0'. Be careful.
+===============================================================================
+
+Note that reading from a regular file which is on end-of-file will *not* block.
+You'll get a non-blocking, zero-byte read.  However, stream_select *will* block
+if the input is a pipe, and there is no more data to be had.
+===============================================================================
+
+Simple stream_select wrapper.. Returns the first stream in the array, and sets
+parameter 2 to the key (So that it is easy to identify what received data):
+
+<?php
+function select($array, &$vkey, $timeout=0){
+    $select = array();
+    $null = NULL;
+    foreach($array as $key => $sock){
+        $x = count($select);
+        $select[$x] = $sock;
+        $keys[$x] = $key;
+    }
+    if(stream_select($select, $null, $null, $timeout)){
+        foreach($keys as $key){
+            if($array[$key] == $select[0]){
+                $vkey = $key;
+                return($select[0]);
+            }
+        }
+    }
+}
+
+$streams = array("foo" => $stream_one, "bar" => $stream_two); // Create an
+array of two (already existant) streams.
+if($new = select($streams, $key, 60)){ //Sets $new to the resource that next
+gets new data, and $key to either "foo", or "bar", depending which one it is.
+    echo $key.":".stream_get_line($new, 2048)."\n";
+}
+?>
+===============================================================================
+
+Make sure not to pass the same variable in the 3 arguments to stream_select, or
+you'll only get the results from one of them and the others will be
+overwritten.
+===============================================================================
+
+stream_select() looks deceptively like a simple wrapper around POSIX select(2).
+
+But beware: while select(2) allows you to pass no file descriptors and use it
+as a "portable subsecond sleep", PHP will complain with "Warning: stream_select
+(): No stream arrays were passed in ****" if all arrays are empty or null, and
+it WONT sleep, it will return immediately. So... if the number of file
+descriptors you have isn't static, you have to deal with the special case
+yourself.

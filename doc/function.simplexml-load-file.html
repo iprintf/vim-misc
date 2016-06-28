@@ -1,0 +1,783 @@
+
+simplexml_load_file
+
+(PHP 5, PHP 7)
+
+simplexml_load_file — Interprets an XML file into an object
+
+说明
+
+SimpleXMLElement simplexml_load_file ( string $filename [, string $class_name =
+"SimpleXMLElement" [, int $options = 0 [, string $ns = "" [, bool $is_prefix =
+false ]]]] )
+
+Convert the well-formed XML document in the given file to an object.
+
+参数
+
+filename
+
+    Path to the XML file
+
+        Note:
+
+        Libxml 2 unescapes the URI, so if you want to pass e.g. b&c as the URI
+        parameter a, you have to call simplexml_load_file(rawurlencode('http://
+        example.com/?a=' . urlencode('b&c'))). Since PHP 5.1.0 you don't need
+        to do this because PHP will do it for you.
+
+class_name
+
+    You may use this optional parameter so that simplexml_load_file() will
+    return an object of the specified class. That class should extend the 
+    SimpleXMLElement class.
+
+options
+
+    Since PHP 5.1.0 and Libxml 2.6.0, you may also use the options parameter to
+    specify additional Libxml parameters.
+
+ns
+
+    Namespace prefix or URI.
+
+is_prefix
+
+    TRUE if ns is a prefix, FALSE if it's a URI; defaults to FALSE.
+
+返回值
+
+Returns an object of class SimpleXMLElement with properties containing the data
+held within the XML document, 或者在失败时返回 FALSE.
+
+Warning
+
+此函数可能返回布尔值 FALSE，但也可能返回等同于 FALSE 的非布尔值。请阅读布尔类型
+章节以获取更多信息。应使用 === 运算符来测试此函数的返回值。
+
+错误／异常
+
+Produces an E_WARNING error message for each error found in the XML data.
+
+Tip
+
+Use libxml_use_internal_errors() to suppress all XML errors, and 
+libxml_get_errors() to iterate over them afterwards.
+
+范例
+
+Example #1 Interpret an XML document
+
+<?php
+// The file test.xml contains an XML document with a root element
+// and at least an element /[root]/title.
+
+if (file_exists('test.xml')) {
+    $xml = simplexml_load_file('test.xml');
+ 
+    print_r($xml);
+} else {
+    exit('Failed to open test.xml.');
+}
+?>
+
+This script will display, on success:
+
+SimpleXMLElement Object
+(
+  [title] => Example Title
+  ...
+)
+
+At this point, you can go about using $xml->title and any other elements.
+
+参见
+
+  • simplexml_load_string() - Interprets a string of XML into an object
+  • SimpleXMLElement::__construct() - Creates a new SimpleXMLElement object
+  • Dealing with XML errors
+  • libxml_use_internal_errors() - Disable libxml errors and allow user to
+    fetch error information as needed
+  • Basic SimpleXML usage
+
+
+User Contributed Notes 26 notes
+
+===============================================================================
+
+To correctly extract a value from a CDATA just make sure you cast the SimpleXML
+Element to a string value by using the cast operator:
+
+<?php
+$xml = '<?xml version="1.0" encoding="UTF-8" ?>
+<rss>
+    <channel>
+        <item>
+            <title><![CDATA[Tom & Jerry]]></title>
+        </item>
+    </channel>
+</rss>';
+
+$xml = simplexml_load_string($xml);
+
+// echo does the casting for you
+echo $xml->channel->item->title;
+
+// but vardump (or print_r) not!
+var_dump($xml->channel->item->title);
+
+// so cast the SimpleXML Element to 'string' solve this issue
+var_dump((string) $xml->channel->item->title);
+?>
+
+Above will output:
+
+Tom & Jerry
+
+object(SimpleXMLElement)#4 (0) {}
+
+string(11) "Tom & Jerry"
+===============================================================================
+
+Sometimes we have xml's with hyphens nodes, like
+
+<my_xml>
+<some-node>value</some-node>
+</my_xml>
+
+You'll need to use
+<?php
+$simpleXmlObj->{'some-node'}
+?>
+
+instead of
+<?php
+$simpleXmlObj->some-node;
+?>
+===============================================================================
+
+A wrapper around simplexml_load_file to circumvent nasty error messages when
+the xml server times out or gives a 500 error etc.
+
+<?php
+function loadXML2($domain, $path, $timeout = 30) {
+
+    /*
+        Usage:
+       
+        $xml = loadXML2("127.0.0.1", "/path/to/xml/server.php?code=
+do_something");
+        if($xml) {
+            // xml doc loaded
+        } else {
+            // failed. show friendly error message.
+        }
+    */
+
+    $fp = fsockopen($domain, 80, $errno, $errstr, $timeout);
+    if($fp) {
+        // make request
+        $out = "GET $path HTTP/1.1\r\n";
+        $out .= "Host: $domain\r\n";
+        $out .= "Connection: Close\r\n\r\n";
+        fwrite($fp, $out);
+       
+        // get response
+        $resp = "";
+        while (!feof($fp)) {
+            $resp .= fgets($fp, 128);
+        }
+        fclose($fp);
+        // check status is 200
+        $status_regex = "/HTTP\/1\.\d\s(\d+)/";
+        if(preg_match($status_regex, $resp, $matches) && $matches[1] == 200) { 
+ 
+            // load xml as object
+            $parts = explode("\r\n\r\n", $resp);   
+            return simplexml_load_string($parts[1]);               
+        }
+    }
+    return false;
+   
+}
+?>
+===============================================================================
+
+So it seems SimpleXML doesn't support CDATA... I bashed together this little
+regex function to sort out the CDATA before trying to parse XML with the likes
+of simplexml_load_file / simplexml_load_string. Hope it might help somebody and
+would be very interested to hear of better solutions. (Other than *not* using
+SimpleXML of course! ;)
+
+It looks for any <![CDATA [Text and HTML etc in here]]> elements,
+htmlspecialchar()'s the encapsulated data and then strips the "<![CDATA [" and
+"]]>" tags out.
+
+<?php
+function simplexml_unCDATAise($xml) {
+    $new_xml = NULL;
+    preg_match_all("/\<\!\[CDATA \[(.*)\]\]\>/U", $xml, $args);
+
+    if (is_array($args)) {
+        if (isset($args[0]) && isset($args[1])) {
+            $new_xml = $xml;
+            for ($i=0; $i<count($args[0]); $i++) {
+                $old_text = $args[0][$i];
+                $new_text = htmlspecialchars($args[1][$i]);
+                $new_xml = str_replace($old_text, $new_text, $new_xml);
+            }
+        }
+    }
+
+    return $new_xml;
+}
+
+//Usage:
+$xml = 'Your XML with CDATA...';
+$xml = simplexml_unCDATAise($xml);
+$xml_object = simplexml_load_string($xml);
+?>
+===============================================================================
+
+If you want CDATA in your object you should use LIBXML_NOCDATA
+
+<?php
+$xml = simplexml_load_file($file_xml, 'SimpleXMLElement',LIBXML_NOCDATA);
+   
+    print_r($xml);
+?>
+===============================================================================
+
+Be careful if you are using simplexml data directly to feed your MySQL database
+using MYSQLi and bind parameters.
+
+The data coming from simplexml are Objects and the bind parameters functions of
+MySQLi do NOT like that! (it causes some memory leak and can crash Apache/PHP)
+
+In order to do this properly you MUST cast your values to the right type
+(string, integer...) before passing them to the binding methods of MySQLi.
+I did not find that in the documentation and it caused me a lot of headache.
+===============================================================================
+
+Because the encoding of my XML file is UTF-8 and the
+encoding of my web page is iso-8859-1 I was getting strange characters such as
+â€™ instead of a right single quote.
+
+The solution to this turned out to be hard to find, but really easy to
+implement.
+
+http://uk3.php.net/manual/en/function.iconv.php
+
+Using the iconv() function you can convert from one encodign to another, the
+TRANSLIT option seems to work best for what I needed.  Here's my example:
+
+<?php
+// convert string from utf-8 to iso8859-1
+$horoscope = iconv( "UTF-8", "ISO-8859-1//TRANSLIT", $horoscope );
+?>
+
+I found the solution on this page...
+http://tinyurl.com/lm39xc
+Hope this helps
+===============================================================================
+
+If you don't want that the CDATA values get escaped, just load the XML with
+LIBXML_NOCDATA as an 3rd argument.
+
+Note: A PHP version >= 5.1.0 is required for this to work.
+
+Example:
+
+<?php simplexml_load_file('xmldatei.xml', null, LIBXML_NOCDATA); ?>
+===============================================================================
+
+I stumbled on this: a single element with a simple string in it becomes a
+string, but a single element with a *space* in it becomes an Array, with one
+element, the string space.
+
+I'm sure to XML mystics this is wise and wonderful but it really confused me, 
+and I thought it might confuse others.
+
+<?php
+$parsed = simplexml_load_string('<container><space> </space><blank></blank>
+<string>hello</string></container>');
+$content = json_decode(json_encode($parsed),TRUE);
+var_dump($content);
+/* Output is:
+array(3) {
+  'space' => array(1) {           ← did NOT expect this!
+    [0] => string(1) " "
+  }
+  'blank' => array(0) { }
+  'string' => string(5) "hello"
+}
+*/
+===============================================================================
+
+Occasionally you may try to load a file and have it complain about an entity
+and throw a parser error.
+
+If this is the case, check to make sure that the file in question does not
+contain an ampersand (&) without a corresponding entity reference.
+
+If it does, or if you want to err on the side of caution, then instead of using
+simplexml_load_file, try this:
+
+$file = file_get_contents('stuff.xml');
+$temp = preg_replace('/&(?!(quot|amp|pos|lt|gt);)/', '&amp;', $file);
+$xml = simplexml_load_string($temp) or die("xml not loading");
+
+Read the file into a string, add 'amp;' after any '&' that is not part of a
+character entity, then parse the string as xml.
+===============================================================================
+
+If you are loading many files, this may slow down your page load time.
+
+To set a timeout, use file_get_context and then simplexml_load_string
+
+<?php
+
+$fp = fopen('http://www.example.com/rss', false, stream_create_context(array(
+'http' => array('timeout', '1.5'))));
+
+if ($fp) {
+    print_r( simplexml_load_string($fp) );
+} else {
+    echo "The request timed out";
+}
+?>
+===============================================================================
+
+if you want to check when this function fails,make sure to compare the return
+value with ===  instead of == :
+
+<?php
+$url = 'http://www.example.com';
+$xml = simpleXML_load_file($url,"SimpleXMLElement",LIBXML_NOCDATA);
+if($xml ===  FALSE)
+{
+   //deal with error
+}
+else { //do stuff }
+?>
+
+Otherwise you may end up with FALSE all the time even if the document is ok.
+Hope this helps someone ;)
+===============================================================================
+
+In case you have a XML file with a series of equally named elements on one
+level simplexml incorrectly processes them and doesn't allow to walk through
+the array using foreach(). As far as I'm concerned, it is the problem caused by
+PHP xml_parser (see: http://ru2.php.net/manual/ru/
+function.xml-parser-create.php#53188).
+
+To avoid this, just use count() and walk through the array using for().
+
+Example:
+
+<params>
+  <param>
+    <name>version.shell</name>
+    <value>1.0</value>
+  </param>
+  <param>
+      <name>version.core</name>
+      <value>1.0</value>
+  </param>
+  <param>
+      <name>file.lang</name>
+      <value>vc.lang</value>
+  </param>
+  ...
+</params>
+
+<?php
+$filename = '...';
+$xml = simplexml_load_file($filename);
+$p_cnt = count($xml->param);
+for($i = 0; $i < $p_cnt; $i++) {
+  $param = $xml->param[$i];
+  ...;
+}
+?>
+===============================================================================
+
+In regards to Anonymous on 7th April 2006
+
+There is a way to get back HTML tags. For example:
+
+<?xml version="1.0"?>
+<intro>
+    Welcome to <b>Example.com</b>!
+</intro>
+
+<?php
+// I use @ so that it doesn't spit out content of my XML in an error message if
+the load fails. The content could be passwords so this is just to be safe.
+$xml = @simplexml_load_file('content_intro.xml');
+if ($xml) {
+    // asXML() will keep the HTML tags but it will also keep the parent tag
+<intro> so I strip them out with a str_replace. You could obviously also use a
+preg_replace if you have lots of tags.
+    $intro = str_replace(array('<intro>', '</intro>'), '', $xml->asXML());
+} else {
+    $error = "Could not load intro XML file.";
+}
+?>
+
+With this method someone can change the intro in content_intro.xml and ensure
+that the HTML is well formed and not ruin the whole site design.
+===============================================================================
+
+What has been found when using the script is that simplexml_load_file() will
+remove any HTML formating inside the XML file, and will also only load so many
+layers deep. If your XML file is to deap, it will return a boolean false.
+===============================================================================
+
+Sorry there's a mistake in the previous function :
+<?php
+   function &getXMLnode($object, $param) {
+       foreach($object as $key => $value) {
+           if(isset($object->$key->$param)) {
+               return $object->$key->$param;
+           }
+           if(is_object($object->$key)&&!empty($object->$key)) {
+               $new_obj = $object->$key;
+               // Must use getXMLnode function there (recursive)
+               $ret = getXMLnode($new_obj, $param);  
+
+           }
+       }
+       if($ret) return (string) $ret;
+       return false;
+   }
+?>
+===============================================================================
+
+Suppose you have loaded a XML file into $simpleXML_obj.
+The structure is like below :
+
+SimpleXMLElement Object
+(
+
+    [node1] => SimpleXMLElement Object
+        (
+            [subnode1] => value1
+            [subnode2] => value2
+            [subnode3] => value3
+        )
+
+    [node2] => SimpleXMLElement Object
+        (
+            [subnode4] => value4
+            [subnode5] => value5
+            [subnode6] => value6
+        )
+
+)
+
+When searching a specific node in the object, you may use this function :
+       
+<?php
+
+    function &getXMLnode($object, $param) {
+        foreach($object as $key => $value) {
+            if(isset($object->$key->$param)) {
+                return $object->$key->$param;
+            }
+            if(is_object($object->$key)&&!empty($object->$key)) {
+                $new_obj = $object->$key;
+                $ret = getCfgParam($new_obj, $param);   
+            }
+        }
+        if($ret) return (string) $ret;
+        return false;
+    }
+?>
+
+So if you want to get subnode4 value you may use this function like this :
+
+<?php
+$result = getXMLnode($simpleXML_obj, 'subnode4');
+echo $result;
+?>
+
+It display "value4"
+===============================================================================
+
+Micro$oft Word uses non-standard characters and they create problems in using
+simplexml_load_file.
+Many systems include non-standard Word character in their implementation of
+ISO-8859-1. So an XML document containing that characters can appear
+well-formed (i.e.) to many browsers. But if you try to load this kind of
+documents with simplexml_load_file you'll have a little bunch of troubles..
+I believe that this is exactly the same question discussed in htmlentites.
+Following notes to htmlentitles are interesting here too (given in the reverse
+order, to grant the history):
+http://it.php.net/manual/en/function.htmlentities.php#26379
+http://it.php.net/manual/en/function.htmlentities.php#41152
+http://it.php.net/manual/en/function.htmlentities.php#42126
+http://it.php.net/manual/en/function.htmlentities.php#42511
+===============================================================================
+
+If you need to parse the data from SimpleXML into a session variable remember
+to define the data as a string first.
+
+If you don't you will get warnings of "Node no longer exists" pointing to your
+session_start() function.
+
+This will work:
+
+<?php
+
+    $new_version = simplexml_load_file('http://example.com/version.xml');
+    $_SESSION['current_version'] = (string)$new_version->version;
+
+?>
+===============================================================================
+
+Making SimpleXMLElement objects session save.
+
+Besides the effect of not surviving sessions, the SimpleXMLElement object may
+even crash the session_start() function when trying to re-enter the session!
+
+To come up with a solution for this, I used a pattern as follows. The core idea
+is to transform the SimpleXMLElement between session calls to and from a string
+representation which of course is session save.
+
+<?php
+  //
+  // session save handling of SimpleXMLElement objects
+  // (applies to/ tested with PHP 5.1.5 and PHP 5.2.1)
+  // The myClass pattern allows for conveniently accessing
+  // XML structures while being session save
+  //
+  class myClass
+  {
+    private $o_XMLconfig = null;
+    private $s_XMLconfig = '';
+   
+    public function __construct($args_configfile)
+    {
+      $this->o_XMLconfig = simplexml_load_file($args_configfile);
+      $this->s_XMLconfig = $this->o_XMLconfig->asXML();
+    } // __construct()
+   
+    public function __destruct()
+    {
+      $this->s_XMLconfig = $this->o_XMLconfig->asXML();
+      unset($this->o_XMLconfig); // this object would otherwise crash
+                                 // the subsequent call of
+                                 // session_start()!
+    } // __destruct()
+   
+    public function __wakeup()
+    {
+      $this->o_XMLconfig = simplexml_load_string($this->s_XMLconfig);
+    } // __wakeup()
+   
+  } // class myClass
+?>
+===============================================================================
+
+A little function very helpfull in using simplexml_load_file behind a proxy
+
+<?php
+function getXMLfromURL($url) {
+      $Proxy = getenv("HTTP_PROXY");
+
+      if (strlen($Proxy) > 1) {
+        $r_default_context = stream_context_get_default ( array
+                    ('http' => array(
+                        'proxy' => $Proxy,
+                        'request_fulluri' => True,
+                    ),
+                )
+            );
+        libxml_set_streams_context($r_default_context);
+      }
+      $daten = simplexml_load_file($url);
+      return ($daten);
+    }
+?>
+
+where HTTP_PROXY is set to e.g.: tcp://proxy:8080
+===============================================================================
+
+If you have some nodes which are having special characters, it would not load
+properly
+
+for an instance see the nodes below
+<node:number>1538-7445</node:number>
+<node:coverDisplayDate>Sep  1 2012 12:00:00:000AM</node:coverDisplayDate>
+
+either you have to change the : to other special characters like '-' in order
+to convert it properly
+
+Correct Node
+<node-number>1538-7445</node-number>
+<node-coverDisplayDate>Sep  1 2012 12:00:00:000AM</node-coverDisplayDate>
+
+I have wasted my precious time while debugging this. Please aware about this. ?
+===============================================================================
+
+If the property of an object is empty the array is not created. Here is a
+version object2array that transfers properly.
+
+<?php
+function object2array($object)
+{
+    $return = NULL;
+      
+    if(is_array($object))
+    {
+        foreach($object as $key => $value)
+            $return[$key] = object2array($value);
+    }
+    else
+    {
+        $var = get_object_vars($object);
+          
+        if($var)
+        {
+            foreach($var as $key => $value)
+                $return[$key] = ($key && !$value) ? NULL : object2array($value
+);
+        }
+        else return $object;
+    }
+
+    return $return;
+}
+?>
+===============================================================================
+
+If you find that you are receiving 500 errors with simplexml_load_file() but
+you can access the xml/rss feed manually through a browser, your script is
+probably being blocked by a user agent sniffer.
+
+Add this code before your xml call to remedy this issue
+
+<?php
+
+ini_set("user_agent","Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.0)");
+ini_set("max_execution_time", 0);
+ini_set("memory_limit", "10000M");
+
+$rss = simplexml_load_file($feed_url);
+
+?>
+===============================================================================
+
+for nested and same name values i'v made up this little bit for getting and
+displaying multiable values from google's geocode when a exact match is not
+found it returns all close matches in the following format(this is an abriged
+version of there output)
+
+<Response>
+  <Placemark id="1">
+    <address> New York 24, NY, USA</address>
+    <AddressDetails>
+      ..................
+    </AddressDetails>
+    <Point>
+      <coordinates>-73.5850086,40.7207442,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark id="2">
+    <address>New York 27, NY, USA</address>
+    <AddressDetails>
+      ...................
+    </AddressDetails>
+    <Point>
+      <coordinates>-72.8987835,40.8003588,0</coordinates>
+    </Point>
+  </Placemark>
+  <Placemark id="3">
+    <address>Cedar Place School, 20 Cedar Pl, Yonkers, NY 10705, USA</address>
+    <AddressDetails>
+      ..................
+    </AddressDetails>
+    <Point>
+      <coordinates>-73.8966320,40.9256520,0</coordinates>
+    </Point>
+  </Placemark>
+</Response>
+
+<?php
+// get and breakdown the results then store them in $var's
+$Address = "99999 parkplace, new york, NY";
+$urladdress = urlencode($Address);
+$Base_url = "http://maps.google.com/maps/geo?q=";
+$urlParts = "&output=xml";
+$urlrequest = $Base_url . $urladdress . $urlParts;
+$xml = simplexml_load_file($urlrequest);
+$num = "0";
+foreach ($xml->Response->Placemark as $value){
+    $num++;
+    $GeoFindAdd{$num} = $value->address;
+    $GeoFindCords{$num} = $value->Point->coordinates;
+}
+
+// a simple display for the results
+echo "Found ",$num," Possable Geo Data Sets <br>";
+$CountNumResults = "0";
+for ( ; $num > 0; $num--){
+    $CountNumResults++;
+    echo $countnum,"<br> Address = ",$GeoFindAdd{$num},"<br> Coordinates = ",
+$GeoFindCords{$num},"<br>";
+}
+echo "END";
+?>
+===============================================================================
+
+Analyze fully XML.
+
+<?php
+$xml = simplexml_load_file('file.xml');
+
+foreach($xml as $key0 => $value){
+echo "..1..[$key0] => $value";
+foreach($value->attributes() as $attributeskey0 => $attributesvalue1){
+echo "________[$attributeskey0] = $attributesvalue1";
+}
+echo '<br />';
+////////////////////////////////////////////////
+foreach($value as $key => $value2){
+echo "....2.....[$key] => $value2";
+foreach($value2->attributes() as $attributeskey => $attributesvalue2){
+echo "________[$attributeskey] = $attributesvalue2";
+}
+echo '<br />';
+////////////////////////////////////////////////
+foreach($value2 as $key2 => $value3){
+echo ".........3..........[$key2] => $value3";
+foreach($value3->attributes() as $attributeskey2 => $attributesvalue3){
+echo "________[$attributeskey2] = $attributesvalue3";
+}
+echo '<br />';
+////////////////////////////////////////////////
+foreach($value3 as $key3 => $value4){
+echo "...................4....................[$key3] => $value4";
+foreach($value4->attributes() as $attributeskey3 => $attributesvalue4){
+echo "________[$attributeskey3] = $attributesvalue4";
+}
+echo '<br />';
+////////////////////////////////////////////////
+foreach($value4 as $key4 => $value5){
+echo ".....................5......................[$key4] => $value5";
+foreach($value5->attributes() as $attributeskey4 => $attributesvalue5){
+echo "________[$attributeskey4] = $attributesvalue5";
+}
+echo '<br />';
+////////////////////////////////////////////////
+foreach($value5 as $key5 => $value6){
+echo "......................6.......................[$key5] => $value6";
+foreach($value6->attributes() as $attributeskey5 => $attributesvalue6){
+echo "________[$attributeskey5] = $attributesvalue6";
+}
+echo '<br />';
+}}}}}
+echo '<br />';
+}
+?>

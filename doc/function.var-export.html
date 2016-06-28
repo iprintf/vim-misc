@@ -1,0 +1,596 @@
+
+var_export
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+var_export — 输出或返回一个变量的字符串表示
+
+描述
+
+mixed var_export ( mixed $expression [, bool $return ] )
+
+此函数返回关于传递给该函数的变量的结构信息，它和 var_dump() 类似，不同的是其返
+回的表示是合法的 PHP 代码。
+
+您可以通过将函数的第二个参数设置为 TRUE，从而返回变量的表示。
+
+比较 var_export() 和 var_dump().
+
+<pre>
+<?php
+$a = array (1, 2, array ("a", "b", "c"));
+var_export ($a);
+
+/* 输出：
+array (
+  0 => 1,
+  1 => 2,
+  2 => 
+  array (
+    0 => 'a',
+    1 => 'b',
+    2 => 'c',
+  ),
+)
+*/
+
+$b = 3.1;
+$v = var_export($b, TRUE);
+echo $v;
+
+/* 输出：
+3.1
+*/
+?>
+</pre>
+
+
+User Contributed Notes 23 notes
+
+===============================================================================
+
+Looks like since version 5.4.22 var_export uses the serialize_precision ini
+setting, rather than the precision one used for normal output of floating-point
+numbers.
+As a consequence since version 5.4.22 for example var_export(1.1) will output
+1.1000000000000001 (17 is default precision value) and not 1.1 as before.
+
+<?php
+//ouput 1.1000000000000001
+var_export(1.1)
+?>
+===============================================================================
+
+I found that my complex type was exporting with
+  stdClass::__set_state()
+in places. Not only was that strange and messy, it cannot be eval()-ed back in
+at all. Fatal error. Doh!
+
+However a quick string-replace tidy-up of the result rendered it valid again.
+
+    $macro = var_export($data, TRUE);
+    $macro = str_replace("stdClass::__set_state", "(object)", $macro);
+    $macro = '$data = ' . $macro . ';';
+
+And now the string I output *can* be evaluated back in again.
+===============================================================================
+
+Like previously reported, i find var_export() frustrating when dealing with
+recursive structures.  Doing a :
+
+<?php
+var_export($GLOBALS);
+?>
+
+fails.  Interestingly, var_dump() has some logic to avoid recursive
+references.  So :
+
+<?php
+var_dump($GLOBALS);
+?>
+
+works (while being more ugly).  Unlike var_export(), var_dump() has no option
+to return the string, so output buffering logic is required if you want to
+direct the output.
+===============================================================================
+
+<roman at DIESPAM dot feather dot org dot ru>, your function has inefficiencies
+and problems. I probably speak for everyone when I ask you to test code before
+you add to the manual.
+
+Since the issue of whitespace only comes up when exporting arrays, you can use
+the original var_export() for all other variable types. This function does the
+job, and, from the outside, works the same as var_export().
+
+<?php
+
+function var_export_min($var, $return = false) {
+    if (is_array($var)) {
+        $toImplode = array();
+        foreach ($var as $key => $value) {
+            $toImplode[] = var_export($key, true).'=>'.var_export_min($value, 
+true);
+        }
+        $code = 'array('.implode(',', $toImplode).')';
+        if ($return) return $code;
+        else echo $code;
+    } else {
+        return var_export($var, $return);
+    }
+}
+
+?>
+===============================================================================
+
+Try this function instead of var_export($GLOBALS) or var_dump($GLOBALS) when
+all you want to know is the values of the variables you set on the current
+page.
+
+<?php
+function globalvars(){
+    $result=array();
+    $skip=array('GLOBALS','_ENV','HTTP_ENV_VARS',
+                        '_POST','HTTP_POST_VARS','_GET',
+                        'HTTP_GET_VARS',
+                        '_COOKIE',
+                        'HTTP_COOKIE_VARS','_SERVER',
+                        'HTTP_SERVER_VARS',
+                        '_FILES','HTTP_POST_FILES',
+                        '_REQUEST','HTTP_SESSION_VARS',
+                        '_SESSION');
+    foreach($GLOBALS as $k=>$v)
+        if(!in_array($k,$skip))
+            $result[$k]=$v;
+    return $result;
+}//functionglobalvars
+
+var_export(globalvars());
+?>
+===============================================================================
+
+WORKAROUND for error "Nesting level too deep - recursive dependency":
+ob_start();
+var_dump($GLOBALS);
+$dataDump = ob_get_clean();
+echo $dataDump;
+===============================================================================
+
+There is an even simpler way to have clean output from var_export and print_r
+in html pages:
+
+<?php
+function pretty_var($myArray)
+{
+    echo "<pre>";
+    var_export($myArray);
+    echo "</pre>";
+}
+?>
+===============================================================================
+
+When it comes to HTML output (as discussed below), it's all fun and games until
+someone pokes their eye out with a "<".
+
+Surround it with "<pre>", but do remember to wrap it in htmlspecialchars() as
+well.
+===============================================================================
+
+(This replaces my note of 3-July-2009. The original version produced no output
+if a variable contained an empty array, or an array consisting only of empty
+arrays. For example, $bigarray['x'] = array(); Also, I have added a second
+version of the function.)
+
+The output can be difficult to decipher when looking at an array with many
+levels and many elements on each level. For example:
+
+<?php
+print ('$bigarray = ' . var_export($bigarray, true) . "\n");
+?>
+
+will return:
+
+$bigarray = array(
+... (500 lines skipped) ...
+          'mod' => 'charlie',
+
+Whereas the routine below can be called with:
+
+<?php
+recursive_print ('$bigarray', $bigarray);
+?>
+
+and it will return:
+
+$bigarray = array()
+... (500 lines skipped) ...
+$bigarray['foo']['bar']['0']['somethingelse']['mod'] = 'charlie'
+
+Here's the function:
+
+<?php
+function recursive_print ($varname, $varval) {
+  if (! is_array($varval)):
+    print $varname . ' = ' . $varval . "<br>\n";
+  else:
+    print $varname . " = array()<br>\n";
+    foreach ($varval as $key => $val):
+      recursive_print ($varname . "['" . $key . "']", $val);
+    endforeach;
+  endif;
+}
+?>
+
+For those who want a version that produces valid PHP code, use this version:
+
+<?php
+function recursive_print ($varname, $varval) {
+  if (! is_array($varval)):
+    print $varname . ' = ' . var_export($varval, true) . ";<br>\n";
+  else:
+    print $varname . " = array();<br>\n";
+    foreach ($varval as $key => $val):
+      recursive_print ($varname . "[" . var_export($key, true) . "]", $val);
+    endforeach;
+  endif;
+}
+?>
+
+If your output is to a text file and not an HTML page, remove the <br>s.
+===============================================================================
+
+I have been looking for the best method to store data in cache files.
+
+First, I've identified two limitations of var_export verus serialize.  It can't
+store internal references inside of an array and it can't store a nested object
+or an array containing objects before PHP 5.1.0.
+
+However, I could deal with both of those so I created a benchmark.  I used a
+single array containing from 10 to 150 indexes.  I've generate the elements'
+values randomly using booleans, nulls, integers, floats, and some nested arrays
+(the nested arrays are smaller averaging 5 elements but created similarly). 
+The largest percentage of elements are short strings around 10-15 characters. 
+While there is a small number of long strings (around 500 characters).
+
+Benchmarking returned these results for 1000 * [total time] / [iterations (4000
+in this case)]
+
+serialize 3.656, 3.575, 3.68, 3.933, mean of 3.71
+include 7.099, 5.42, 5.185, 6.076, mean of 5.95
+eval 5.514, 5.204, 5.011, 5.788, mean of 5.38
+
+Meaning serialize is around 1 and a half times faster than var_export for a
+single large array.  include and eval were consistently very close but eval was
+usually a few tenths faster (eval did better this particular set of trials than
+usual). An opcode cache like APC might make include faster, but otherwise
+serialize is the best choice.
+===============================================================================
+
+<?php
+$closure = function(){};
+
+var_export($closure);
+
+// output: Closure::__set_state(array())
+?>
+===============================================================================
+
+I learned the hard way that if var_export encounters a resource handle it
+exports it as "NULL", even if it is a valid handle. The documentation states
+that a handle cannot be exported, but it does not describe what happens if you
+try to do so anyway.
+
+I had been using var_export in some debugging code while tracing a problem with
+a resource handle not being generated and ended up thinking that null handles
+were still being generated long after the problem had been fixed.
+===============================================================================
+
+I didn't see this simple little item anywhere in the user notes. Maybe I'm
+blind!
+
+Anyway, var_export and print_r both use spaces and carriage returns for
+formatting.  Sent to an html page, most of the formatting is lost. This simple
+function prints a nicely formatted array to an html screen:
+
+<?php
+function pretty_var($myArray){
+    print str_replace(array("\n"," "),array("<br>","&nbsp;"), var_export(
+$myArray,true))."<br>";
+}
+?>
+===============================================================================
+
+[john holmes]
+True, but that method would require you to open and read the file into a
+variable and then unserialize it into another variable.
+
+Using a file created with var_export() could simply be include()'d, which will
+be less code and faster.
+
+[kaja]
+If you are trying to find a way to temporarily save variables into some other
+file, check out serialize() and unserialize() instead - this one is more useful
+for its readable property, very handy while debugging.
+
+[original post]
+If you're like me, you're wondering why a function that outputs "correct PHP
+syntax" is useful. This function can be useful in implementing a cache system.
+You can var_export() the array into a variable and write it into a file.
+Writing a string such as
+
+<?php
+$string = '<?php $array = ' . $data . '; ?>';
+?>
+
+where $data is the output of var_export() can create a file that can be easily
+include()d back into the script to recreate $array.
+
+The raw output of var_export() could also be eval()d to recreate the array.
+
+---John Holmes...
+===============================================================================
+
+The output can be difficult to decipher when looking at an array with many
+levels and many elements on each level. For example:
+
+<?php
+print ('$bigarray = ' . var_export($bigarray, true) . "\n");
+?>
+
+will return:
+
+$bigarray = array(
+... (500 lines skipped) ...
+          'mod' => 'charlie',
+
+Whereas the routine below can be called with:
+
+<?php
+recursive_print ('$bigarray', $bigarray);
+?>
+
+and it will return:
+
+$bigarray['firstelement'] = 'something'
+... (500 lines skipped) ...
+$bigarray['foo']['bar']['0']['somethingelse']['mod'] = 'charlie'
+
+Here's the function:
+
+<?php
+function recursive_print ($varname, $varval) {
+  if (! is_array($varval)):
+    print $varname . ' = ' . $varval . "<br>\n";
+  else:
+    foreach ($varval as $key => $val):
+      recursive_print ($varname . "['" . $key . "']", $val);
+    endforeach;
+  endif;
+}
+?>
+===============================================================================
+
+When trying to use __set_state() to rebuild a huge, tricky class use the
+following:
+
+class Foo
+{
+    public $a;
+    public $b;
+    public $c;
+    public $d;
+    public $e;
+    public $f;
+    public $g;
+    public $h;
+    public $i;
+
+    public function __set_state($array)
+    {
+        $obj = new ArrayConfig;
+        foreach($array as $k => $v) {
+            eval('$obj->'.$k.' = '.$v.';');
+        }
+        return $obj;
+    }
+}
+
+This will return a reconstructed version of the class without having to
+manually type each individual object in the class manually (as shown in the
+__set_state() example)
+===============================================================================
+
+It doesn't appear to be documented, but the behaviour of `var_export()` changed
+in PHP 7.
+
+Previously, `var_export(3.)` returned "3", now it returns "3.0".
+===============================================================================
+
+If you call var_export() on an instance of stdClass, it attempts to export it
+using ::__set_state(), which, for some reason, is not implemented in stdClass.
+
+However, casting an associative array to an object usually produces the same
+effect (at least, it does in my case). So I wrote an improved_var_export()
+function to convert instances of stdClass to (object) array () calls. If you
+choose to export objects of any other class, I'd advise you to implement
+::__set_state().
+
+<?php
+/**
+* An implementation of var_export() that is compatible with instances
+* of stdClass.
+* @param mixed $variable The variable you want to export
+* @param bool $return If used and set to true, improved_var_export()
+*     will return the variable representation instead of outputting it.
+* @return mixed|null Returns the variable representation when the
+*     return parameter is used and evaluates to TRUE. Otherwise, this
+*     function will return NULL.
+*/
+function improved_var_export ($variable, $return = false) {
+    if ($variable instanceof stdClass) {
+        $result = '(object) '.improved_var_export(get_object_vars($variable), 
+true);
+    } else if (is_array($variable)) {
+        $array = array ();
+        foreach ($variable as $key => $value) {
+            $array[] = var_export($key, true).' => '.improved_var_export($value
+, true);
+        }
+        $result = 'array ('.implode(', ', $array).')';
+    } else {
+        $result = var_export($variable, true);
+    }
+
+    if (!$return) {
+        print $result;
+        return null;
+    } else {
+        return $result;
+    }
+}
+
+// Example usage:
+$obj = new stdClass;
+$obj->test = 'abc';
+$obj->other = 6.2;
+$obj->arr = array (1, 2, 3);
+
+improved_var_export((object) array (
+    'prop1' => true,
+    'prop2' => $obj,
+    'assocArray' => array (
+        'apple' => 'good',
+        'orange' => 'great'
+    )
+));
+
+/* Output:
+(object) array ('prop1' => true, 'prop2' => (object) array ('test' => 'abc',
+'other' => 6.2, 'arr' => array (0 => 1, 1 => 2, 2 => 3)), 'assocArray' => array
+('apple' => 'good', 'orange' => 'great'))
+*/
+?>
+
+Note: This function spits out a single line of code, which is useful to save in
+a cache file to include/eval. It isn't formatted for readability. If you want
+to print a readable version for debugging purposes, then I would suggest
+print_r() or var_dump().
+===============================================================================
+
+NOTE: If an object Foo has __set_state() method, but if that object contains
+another object Bar with no __set_state() method implemented, the resulting PHP
+expression will not be eval()-able.
+
+This is an example (object Test that contains an instance of Exception).
+
+<?php
+
+class Test
+{
+  public $one;
+  public $two;
+  public function __construct($one, $two)
+  {
+    $this->one = $one;
+    $this->two = $two;
+  }
+  public static function __set_state(array $array)
+  {
+    return new self($array['one'], $array['two']);
+  }
+}
+
+$test = new Test('one', new Exception('test'));
+
+$string = var_export($test, true);
+
+/* $string =
+Test::__set_state(array(
+   'one' => 'one',
+   'two' =>
+  Exception::__set_state(array(
+     'message' => 'test',
+     'string' => '',
+     'code' => 0,
+     'file' => 'E:\\xampp\\htdocs\\test.Q.php',
+     'line' => 35,
+     'trace' =>
+    array (
+    ),
+     'previous' => NULL,
+  )),
+))
+*/
+
+eval('$test2 = '.$string.';'); // Fatal error: Call to undefined method
+Exception::__set_state
+
+?>
+
+So avoid using var_export() on a complex array/object that contains other
+objects. Instead, use serialize() and unserialize() functions.
+
+<?php
+
+$string = 'unserialize('.var_export(serialize($test), true).')';
+
+eval('$test2 = '.$string.';');
+
+var_dump($test == $test2); // bool(true)
+
+?>
+===============================================================================
+
+var_export() differs from print_r() for variables that are resources, with
+print_r() being more useful if you are using the function for debugging
+purposes.
+e.g.
+<?php
+$res = mysql_connect($dbhost, $dbuser, $dbpass);
+print_r($res); //output: Resource id #14
+var_export($res); //output: NULL
+?>
+===============================================================================
+
+This function can't export EVERYTHING. Moreover, you can have an error on an
+simple recursive array:
+
+$test = array();
+$test["oops"] = & $test;
+
+echo var_export($test);
+
+=>
+
+Fatal error:  Nesting level too deep - recursive dependency? in ??.php on line
+59
+===============================================================================
+
+to use my_var_export(), it is as beautiful as var_export() and as could deal
+with recursive reference as print_r():
+
+<?php
+function my_var_export($var, $is_str=false)
+         {$rtn=preg_replace(array('/Array\s+\(/', '/\[(\d+)\] => (.*)\n/', '/\
+[([^\d].*)\] => (.*)\n/'), array('array (', '\1 => \'\2\''."\n", '\'\1\' => \'\
+2\''."\n"), substr(print_r($var, true), 0, -1));
+          $rtn=strtr($rtn, array("=> 'array ('"=>'=> array ('));
+          $rtn=strtr($rtn, array(")\n\n"=>")\n"));
+          $rtn=strtr($rtn, array("'\n"=>"',\n", ")\n"=>"),\n"));
+          $rtn=preg_replace(array('/\n +/e'), array('strtr(\'\0\', array(\'   
+\'=>\'  \'))'), $rtn);
+          $rtn=strtr($rtn, array(" Object',"=>" Object'<-"));
+          if ($is_str)
+             {return $rtn;
+             }
+          else
+              {echo $rtn;
+              }
+         }
+
+?>
+===============================================================================
+
+Caution! var_export will add a backslash to single quotes (').
+
+You may want to use stripslashes() to remove the mysteriously added
+backslashes.

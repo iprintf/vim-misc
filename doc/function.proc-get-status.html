@@ -1,0 +1,241 @@
+
+proc_get_status
+
+(PHP 5, PHP 7)
+
+proc_get_status — 获取由 proc_open() 函数打开的进程的信息
+
+说明
+
+array proc_get_status ( resource $process )
+
+proc_get_status() 函数可以获取由 proc_open() 函数打开的进程的信息。
+
+参数
+
+process
+
+    要检查的由 proc_open() 打开的进程 resource。
+
+返回值
+
+如果调用成功，则返回一个包含了进程信息的 array，如果发生错误，返回 FALSE。返回
+的数组包含下列元素：
+
+  元素    类型                               描述
+command  string 传入 proc_open() 函数的命令行字符串。
+pid      int    进程 ID
+running  bool   TRUE 表示进程还在运行中， FALSE 表示进程已经终止
+signaled bool   TRUE 表示子进程被未捕获的信号所终止。在 Windows 平台永远为
+                FALSE。
+stopped  bool   TRUE 表示子进程被信号停止。在 Windows 平台永远为 FALSE。
+exitcode int    进程的退出码（仅在 running 为 FALSE 时有意义）。仅在第一次调用
+                此函数时会返回实际的值，后续的调用将返回 -1。
+termsig  int    导致子进程终止执行的信号值（仅在 signaled 为 TRUE 时有意义）。
+stopsig  int    导致子进程停止执行的信号值（仅在 stopped 为 TRUE 时有意义）。
+
+参见
+
+  • proc_open() - 执行一个命令，并且打开用来输入/输出的文件指针。
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+On Unix/Linux, if you change the command line you pass to proc_open() just
+slightly then proc_get_status() will give you the actual process-id (pid) of
+your child.
+
+Suppose you wish to run the external command /usr/bin/compress to create a BSD
+foo.Z file.  Rather than proc_open("/usr/bin/compress /tmp/foo",...) you may
+invoke proc_open("exec /usr/bin/compress /tmp/foo",...) and then
+proc_get_status()['pid'] will be the actual pid of /usr/bin/compress.
+
+Why?  Because the way proc_open() actually works on Unix/Linux is by starting "
+/bin/sh -c usercmd userargs...", e.g., "/bin/sh -c /usr/bin/compress /tmp/foo".
+[Note 1]  That means normally your command is the child of the shell, so the
+pid you retrieve with proc_get_status() is the pid of the shell (PHP's child),
+and you have to fumble around trying to find the pid of your command (PHP's
+grandchild).  But if you put "exec" in front of your command, you tell the
+shell to *replace itself* with your command without starting another process
+(technically, to exec your command without forking first).  That means your
+command will inherit the pid of the shell, which is the pid that
+proc_get_status() returns.
+
+So if you would like the actual pid of the process running your command, just
+prepend "exec " to  your proc_open() command argument then retrieve the pid
+using proc_get_status().
+
+This also makes proc_terminate() and proc_close() work more like you might
+prefer, since they will affect the actual process running your command (which
+will be a child process rather than a grandchild process).
+
+[Note 1] My guess is that the PHP developers want the shell to expand wildcards
+in path/filenames.
+===============================================================================
+
+It is worth noting that proc_get_status will continue to indicate the process
+that you spawned is running (because it is!) until that process has been able
+to write everything it wants to write to the STDOUT and STDERR streams.
+
+PHP seems to use a buffer for this and so the spawned process can can get it's
+write calls to return immediately.
+
+However, once this buffer is full the write call will block until you read out
+some of the information from the stream/pipe.
+
+This can manifest itself in many ways but generally the called process will
+still be running, but just not doing anything as it is blocking on being able
+to write more to STDERR or STDOUT -- whichever stream buffer is full.
+
+To work around this you should include in your loop of checking
+proc_get_status' running element a "stream_get_contents" on the relevant pipes.
+
+I generally use stream_set_blocking($pipies[2], 0) kind of calls to make sure
+that the stream_get_contents call will not block if there is no data in the
+stream.
+
+This one had me stumped for a while, so hopefully it helps someone!
+===============================================================================
+
+For clarification, the "exitcode" is only valid the FIRST TIME IT IS CALLED
+after the process exits.
+
+If you have a method that polls a spawned process for its status, you *MUST*
+have that same method capture the exitcode: if the method is called a second
+time (after realizing the pid is dead) and it hasn't cached that exitcode, it
+will receive the -1 mentioned.
+===============================================================================
+
+You can NOT rely on pid+1.
+You could prefix exec to the command string, this will replace the /bin/sh
+script with the real thing you want to exec (use only if you don't do 'scary
+things' like pipes, output redirection, multiple commands, however if you know
+how they work, go ahead).
+If you prefix exec, the /bin/sh process will only start your process, and the
+PID will be the same.
+===============================================================================
+
+Alternatively, if you're calling a subsequent php script using proc_open, you
+can have that process echo its own actual PID in the output.
+Also, if you go through the /proc filesystem on linux, you can read through /
+proc/12345 where 12345 is the pid returned by proc_get_status (the pid of the /
+bin/sh instance) and it will list its child processes within.
+===============================================================================
+
+Further to my previous note, I've found out the PID returned is the PID of the
+shell (/bin/sh) that then runs the actual command requested.
+
+I've raised this as bug #41003.
+===============================================================================
+
+The following function takes an array of shell commands and executes them. It
+is able to execute up to $nb_max_process at the same time. As soon as one
+process is terminated, another one is executed. Quite useful if you want to
+batch process commands on a multi-processor or multi-core environment.
+
+The example below tries to convert to PNG a list of SVG files submitted on the
+command line (using Inkscape).
+
+(it's quick and dirty but works very well for me)
+
+#!/usr/bin/php
+<?php
+function pool_execute($commandes,$nb_max_process) {
+  $pool=array();
+  for($i=0;$i<$nb_max_process;$i++) {
+    $pool[$i]=FALSE;
+  }
+
+  while(count($commandes)>0) {
+    $commande=array_shift($commandes);
+
+    $commande_lancee=FALSE;
+    while($commande_lancee==FALSE) {
+      usleep(50000);
+
+      for($i=0;$i<$nb_max_process and $commande_lancee==FALSE;$i++) {
+        if($pool[$i]===FALSE) {
+          $pool[$i]=proc_open($commande,array(),$foo);
+          $commande_lancee=TRUE;
+        } else {
+          $etat=proc_get_status($pool[$i]);
+          if($etat['running']==FALSE) {
+            proc_close($pool[$i]);
+            $pool[$i]=proc_open($commande,array(),$foo);
+            $commande_lancee=TRUE;
+          }
+        }
+      }
+    }
+  }
+}
+
+$fichiers=$argv;
+array_shift($fichiers);
+$commandes=array();
+foreach($fichiers as $fichier) {
+  $entree=$fichier;
+  $sortie=basename($fichier,'.svg').".png";
+  $commandes[]='inkscape --file='.escapeshellarg($entree).'
+--export-area-canvas --export-png='.escapeshellarg($sortie);
+}
+
+pool_execute($commandes,4);
+===============================================================================
+
+To the poster above, same here on FreeBSD 6.1, PHP 5.2.1.
+
+To get the correct PID to use for posix_kill I have to add 1 to the PID
+returned from proc_get_status.
+===============================================================================
+
+I have had lots of problems in the past bit trying to kill external commands
+run by proc_open.
+
+Others have suggested using ps to find the children of the pid returned by
+proc_get_status, but on my system this doesn't work.  I'm using php-5.2.5 and
+apache-2.0.59 on linux kernel 2.6.21, and the processes I start with proc_open
+end up being owned by init (pid 1), not by the pid returned by proc_get_status.
+
+I did notice, however, that the pid's of the processes were always above and
+very close to the proc_get_status pid.  Using that information, I wrote a
+little function that takes the name of a command, the starting pid at which to
+search (which would be the proc_get_status pid), and optionally a search limit
+as arguments.  It will use ps to list processes owned by apache (you may have
+to change this user name for your system), and search for the command
+specified.  The limit tells how far above the starting pid to search.  This
+will help if the command may have already exited, and you don't want to kill a
+process from a different session than the one you're working with.
+
+Here's the code:
+
+<?php
+function findCommandPID($command, $startpid, $limit = 3)
+{
+    $ps = `ps -u apache --sort=pid -o comm= -o pid=`;
+    $ps_lines = explode("\n", $ps);
+
+    $pattern = "/(\S{1,})(\s{1,})(\d{1,})/";
+
+    foreach($ps_lines as $line)
+    {
+        if(preg_match($pattern, $line, $matches))
+        {
+            //this limits us to finding the command within $limit pid's of the
+parent;
+            //eg, if ppid = 245, limit = 3, we won't search past 248
+            if($matches[3] > $startpid + $limit)
+                break;
+
+            //try to match a ps line where the command matches our search
+            //at a higher pid than our parent
+            if($matches[1] == $command && $matches[3] > $startpid)
+                return $matches[3];
+        }
+    }
+
+    return false;
+}
+?>

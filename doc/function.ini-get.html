@@ -1,0 +1,258 @@
+
+ini_get
+
+(PHP 4, PHP 5, PHP 7)
+
+ini_get — 获取一个配置选项的值
+
+说明
+
+string ini_get ( string $varname )
+
+成功时返回配置选项的值。
+
+参数
+
+varname
+
+    配置选项名称。
+
+返回值
+
+成功是返回配置选项值的字符串，null 的值则返回空字符串。如果配置选项不存在，将会
+返回 FALSE。
+
+范例
+
+Example #1 一些 ini_get() 例子
+
+<?php
+/*
+我们的 php.ini 包含了以下的设置：
+
+display_errors = On
+register_globals = Off
+post_max_size = 8M
+*/
+
+echo 'display_errors = ' . ini_get('display_errors') . "\n";
+echo 'register_globals = ' . ini_get('register_globals') . "\n";
+echo 'post_max_size = ' . ini_get('post_max_size') . "\n";
+echo 'post_max_size+1 = ' . (ini_get('post_max_size')+1) . "\n";
+echo 'post_max_size in bytes = ' . return_bytes(ini_get('post_max_size'));
+
+function return_bytes($val) {
+    $val = trim($val);
+    $last = strtolower($val[strlen($val)-1]);
+    switch($last) {
+        // 自 PHP 5.1.0 起可以使用修饰符 'G'
+        case 'g':
+            $val *= 1024;
+        case 'm':
+            $val *= 1024;
+        case 'k':
+            $val *= 1024;
+    }
+
+    return $val;
+}
+
+?>
+
+以上例程的输出类似于：
+
+
+display_errors = 1
+register_globals = 0
+post_max_size = 8M
+post_max_size+1 = 9
+post_max_size in bytes = 8388608
+
+
+注释
+
+    Note: 当查询一个 boolean 值
+
+    一个 off 的 boolean ini 值将会以空字符串或者 "0" 返回；on 的 ini 值会以 "1"
+    返回。此函数也会返回 INI 值的文字字符串。
+
+    Note: 当查询一个内存尺寸的值
+
+    许多内存尺寸的 ini 值，类似 upload_max_filesize 是以简写表示法储存在
+    php.ini 文件里。 ini_get() 会返回 php.ini 文件中储存的确切字符串，而不是它
+    的等量 integer。尝试对这些值使用常规算术运算函数将不会得到预期的结果。以上
+    例子显示了转换简写表示法为字节的一种方式，和 PHP 源码所做的比较像。
+
+更新日志
+
+版本                           说明
+5.3.0 当配置项不存在，之前会返回空字符串，现在会返回 FALSE。
+
+参见
+
+  • get_cfg_var() - 获取 PHP 配置选项的值
+  • ini_get_all() - 获取所有配置选项
+  • ini_restore() - 恢复配置选项的值
+  • ini_set() - 为一个配置选项设置值
+
+
+User Contributed Notes 9 notes
+
+===============================================================================
+
+another version of return_bytes which returns faster and does not use multiple
+multiplications (sorry:). even if it is resolved at compile time it is not a
+good practice;
+no local variables are allocated;
+the trim() is omitted (php already trimmed values when reading php.ini file);
+strtolower() is replaced by second case which wins us one more function call
+for the price of doubling the number of cases to process (may slower the
+worst-case scenario when ariving to default: takes six comparisons instead of
+three comparisons and a function call);
+cases are ordered by most frequent goes first (uppercase M-values being the
+default sizes);
+specs say we must handle integer sizes so float values are converted to
+integers and 0.8G becomes 0;
+'Gb', 'Mb', 'Kb' shorthand byte options are not implemented since are not in
+specs, see
+http://www.php.net/manual/en/faq.using.php#faq.using.shorthandbytes
+
+<?php
+function return_bytes ($size_str)
+{
+    switch (substr ($size_str, -1))
+    {
+        case 'M': case 'm': return (int)$size_str * 1048576;
+        case 'K': case 'k': return (int)$size_str * 1024;
+        case 'G': case 'g': return (int)$size_str * 1073741824;
+        default: return $size_str;
+    }
+}
+?>
+===============================================================================
+
+The above example function called return_bytes() assumes that ini_get
+('upload_max_filesize') delivers only one letter at the end. As I've seen 'Mb'
+and things like that, I'd suggest to change the $last = ... part into $last =
+strtolower(substr($val,strlen($val/1),1)).
+I'd call it $unit then.
+===============================================================================
+
+You can set custom entries in the ini file to provide globals such as database
+details.
+However these must be retrieved with get_cfg_var, ini_get won't work.
+===============================================================================
+
+Concerning the value retourned, it depends on how you set it.
+I had the problem with horde-3 which test the safe_mode value.
+THan :
+- if you set the value with php_admin_value safe_mode Off (or On) ini_get
+returns the string
+- if you set the value with php_admin_flag safe_mode Off (or On) ini_get
+returns the boolean.
+===============================================================================
+
+This version of return_bytes takes care of the MB, GB, KB cases along with the
+M,G,K ones.
+Hope this is helpful!
+
+<?php
+    public static function return_bytes ($val)
+    {
+        if(empty($val))return 0;
+
+        $val = trim($val);
+
+        preg_match('#([0-9]+)[\s]*([a-z]+)#i', $val, $matches);
+
+        $last = '';
+        if(isset($matches[2])){
+            $last = $matches[2];
+        }
+
+        if(isset($matches[1])){
+            $val = (int) $matches[1];
+        }
+
+        switch (strtolower($last))
+        {
+            case 'g':
+            case 'gb':
+                $val *= 1024;
+            case 'm':
+            case 'mb':
+                $val *= 1024;
+            case 'k':
+            case 'kb':
+                $val *= 1024;
+        }
+
+        return (int) $val;
+    }
+?>
+===============================================================================
+
+Here is how to accurately test for boolean php.ini values:
+
+<?php
+
+function ini_get_bool($a)
+{
+    $b = ini_get($a);
+
+    switch (strtolower($b))
+    {
+    case 'on':
+    case 'yes':
+    case 'true':
+        return 'assert.active' !== $a;
+
+    case 'stdout':
+    case 'stderr':
+        return 'display_errors' === $a;
+
+    default:
+        return (bool) (int) $b;
+    }
+}
+
+?>
+===============================================================================
+
+It might be useful for included scripts that include other files to extend the
+'include_path' variable:
+
+<?php ini_set('include_path',ini_get('include_path').':../includes:');  ?>
+
+Sometimes, it may also be useful to store the current 'include_path' in a
+variable, overwrite it, include, and then restore the old 'include_path'.
+===============================================================================
+
+In a similar vein, converting flags to booleans proper:
+
+<?php
+function return_boolean($val)
+{
+    static $map = array ('on' => true, 'true' => true, 'off' => false, 'false' 
+=> false);
+    return @($map[strtolower($val)] ?: (bool)$val);
+}
+?>
+
+If you're using PHP >= 7, consider replacing ?: with ?? and removing the @
+silencer.
+===============================================================================
+
+Yet another implementation of return_bytes:
+
+<?php
+function return_bytes($val)
+{
+    assert('1 === preg_match("/^\d+([kmg])?$/i", $val)');
+    static $map = array ('k' => 1024, 'm' => 1048576, 'g' => 1073741824);
+    return (int)$val * @($map[strtolower(substr($val, -1))] ?: 1);
+}
+?>
+
+If you're using PHP >= 7, you might replace ?: with ?? to avoid the use of the
+@ silencer.

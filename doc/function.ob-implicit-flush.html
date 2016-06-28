@@ -1,0 +1,196 @@
+
+ob_implicit_flush
+
+(PHP 4, PHP 5, PHP 7)
+
+ob_implicit_flush — 打开/关闭绝对刷送
+
+说明
+
+void ob_implicit_flush ([ int $flag = true ] )
+
+ob_implicit_flush()将打开或关闭绝对（隐式）刷送。绝对（隐式）刷送将导致在每次输
+出调用后有一次刷送操作，以便不再需要对 flush() 的显式调用。
+
+参数
+
+flag
+
+    设为TRUE 打开绝对刷送，反之是 FALSE 。
+
+返回值
+
+没有返回值。
+
+参见
+
+  • flush() - 刷新输出缓冲
+  • ob_start() - 打开输出控制缓冲
+  • ob_end_flush() - 冲刷出（送出）输出缓冲区内容并关闭缓冲
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+######### BEWARE ##########
+
+There is a bug (or at least an unexpected feature of ob_implicit_flush) that
+has been already discussed on the PHP bugtracker :
+
+http://bugs.php.net/bug.php?id=23877
+http://bugs.php.net/bug.php?id=16676
+
+Code like this WILL NOT work :
+
+<?
+// This will not work as expected on Linux.
+ob_implicit_flush (1);
+for($i=0;$i<10;$i++) {
+   echo "grrrrrrrrrr\n";
+   sleep(1);
+}
+?>
+
+This feature happens on Linux versions of PHP, in all versions of php4 prior to
+4.3.3 (don't know yet for the next ones) but also in php5 beta1.
+ob_implicit_flush has NO EFFECT on command-line (console, CLI) scripts, no
+flushing at all will be made, all output will be sent at the end of the script.
+
+There is a workaround using ob_end_flush() and ob_flush, here it is :
+
+<?
+// This works !
+ob_end_flush();
+for($i=0;$i<10;$i++) {
+  echo "yeah :-))))\n";
+  @ob_flush();
+  sleep(1);
+}
+?>
+
+hope this will help. It would have helped me...
+===============================================================================
+
+There is another workaround for ob_implicit_flush() in console. Yes, it doesn't
+works as expected, but you can get similar result by specifying chunk_size=2 in
+ob_start():
+
+<?php
+  ob_start('ob_logstdout', 2);
+?>
+
+This will result that every new line (which ends with \n) will flush output
+buffer.
+
+Hope this will help you.
+===============================================================================
+
+Note that the name ob_implicit_flush is misleading. Despite its name, this
+function does NOT work with the user output buffer, i.e. the one that the rest
+of the ob_* functions work with. It will NOT do an automatic ob_flush(). It
+will do an automatic flush(). Different things.
+
+For example, the following script:
+
+<?php
+  ob_implicit_flush();
+  for($i = 0; $i < 10; $i++)
+  {
+    echo "$i\n";
+    sleep(1);
+  }
+?>
+
+will be equivalent to this one:
+
+<?php
+  for ($i = 0; $i < 10; $i++)
+  {
+    echo "$i\n";
+    flush();
+    sleep(1);
+  }
+?>
+
+That script will not output anything until the end, if 'output_buffering' is
+set to 'on' in php.ini. Unfortunately, there is no way to do an implicit
+ob_flush() after each output, that I am aware of.
+
+If you want the output to come out as it is generated, one solution is to
+*also* add ob_end_clean() or ob_end_flush() to the beginning of the script:
+
+<?php
+  ob_end_flush();
+  ob_implicit_flush();
+  for ($i = 0; $i < 10; $i++)
+  {
+    echo "$i\n";
+    sleep(1);
+  }
+?>
+
+This will output as it goes. This is only a problem if you only want one part
+of the output to come out in real time, and want the rest buffered. In that
+case, since there's no function to do an implicit ob_flush() every time, you
+need to call it explicitly. For example, this works:
+
+<?php
+  ob_start(); // not needed if output_buffering is on in php.ini
+  ob_implicit_flush(); // implicitly calls flush() after every ob_flush()
+
+  echo "This output is buffered.\n";
+  echo "As is this.\n";
+
+  for ($i = 0; $i < 10; $i++)
+  {
+    echo "$i\n";
+    ob_flush();
+    sleep(1);
+  }
+?>
+
+Note also that some browsers may wait until they have a certain amount of
+output. See flush [ http://php.net/manual/en/function.flush.php ] for details.
+It was my case with Firefox (Iceweasel 17.0); unless I output 1024 bytes at the
+beginning, it does not begin to output.
+===============================================================================
+
+From experimenting, it looks like using sessions with session.use_trans_sid=1
+will force your output to be buffered regardless of this setting.
+
+My guess is that this is so PHP can hunt for URLs in your output to
+automatically add the Session ID to them.  It must wait until script output is
+complete before it starts that replacement, rather than doing it "on the fly".
+
+When i comment out my session_start() line, i get continuous output to the
+browser.  Put it back in, and i only see the page when it's completely loaded. 
+Change session.use_trans_sid = 0 and i get continuous output again.
+===============================================================================
+
+It seems like some people are using this to workaround output buffering instead
+of simply turning it off. To me, if you have an output buffer, it's there for a
+reason, otherwise you would either do stuff and use ob_flush() or ob_end_flush
+(), do stuff, and maybe ob_start() again.
+Here's how to properly end all output buffers without having to suppress errors
+(due to there not being any buffers). If you do want a single level of output
+buffering, I've included a piece for that as well.
+<?php
+#Get rid of output buffer entirely
+while (ob_get_level()) {ob_end_flush();}
+
+#Make sure we have 1 level of output buffering if this isn't CLI.
+$notcli=(int)(PHP_SAPI!=='cli');
+while (($diff=ob_get_level()-$notcli)!==0) {
+    if ($diff>0) {ob_end_flush();}
+    else {ob_start();}
+}
+===============================================================================
+
+You can also get the unbuffered output with Linux/Apache without having to do
+the implicit flush after each line by calling:
+
+ob_implicit_flush(true);
+ob_end_flush();
+
+...at the start of the script.

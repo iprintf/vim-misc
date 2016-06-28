@@ -1,0 +1,237 @@
+
+Memcache::connect
+
+(PECL memcache >= 0.2.0)
+
+Memcache::connect — 打开一个memcached服务端连接
+
+说明
+
+bool Memcache::connect ( string $host [, int $port [, int $timeout ]] )
+
+Memcache::connect()建立一个到memcached服务端的连接。使用方法 Memcache::connect
+()打开的连接在脚本执行结束后会自动关闭。当然，你也可以使用方法 Memcache::close
+()来主动关闭。同时你也可以使用memcache_connect()函数来获取一个连接。
+
+参数
+
+host
+
+    memcached服务端监听主机地址。这个参数也可以指定为其他传输方式比如unix:///
+    path/to/memcached.sock 来使用Unix域socket，在这种方式下，port参数必须设置为
+    0。
+
+port
+
+    memcached服务端监听端口。当使用Unix域socket的时候要设置此参数为0。
+
+timeout
+
+    连接持续（超时）时间，单位秒。默认值1秒，修改此值之前请三思，过长的连接持续
+    时间可能会导致失去所有的缓存优势。
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Memcache::connect() example
+
+<?php
+
+/* procedural API */
+
+$memcache_obj = memcache_connect('memcache_host', 11211);
+
+/* OO API */
+
+$memcache = new Memcache;
+$memcache->connect('memcache_host', 11211);
+
+?>
+
+参见
+
+  • Memcache::pconnect() - 打开一个到服务器的持久化连接
+  • Memcache::close() - 关闭memcache连接
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+If memcached is working, calling memcache_connect( ) returns an Object
+instance, not a boolean. If memcached is not working, calling memcache_connect(
+) throws a notice AND a warning (and returns false as expected).
+
+<?php
+/* memcache is running */
+$test1 = memcache_connect('127.0.0.1',11211);
+echo gettype($test1);
+// object
+echo get_class($test1);
+// Memcache
+
+/* memcached is stopped */
+$test2 = memcache_connect('127.0.0.1',11211);
+
+/*
+Notice: memcache_connect(): Server 127.0.0.1 (tcp 11211) failed with: A
+connection attempt failed because the connected party did not properly respond
+after a period of time, or established connection failed because connected host
+has failed to respond.
+(10060) in C:\Program Files\Support Tools\- on line 1
+
+Warning: memcache_connect(): Can't connect to 127.0.0.1:11211, A connection
+attempt failed because the connected party did not properly respond after a
+period of time, or established connection failed because connected host has
+failed to respond.
+(10060) in C:\Program Files\Support Tools\- on line 1
+*/
+
+echo gettype($test2);
+// boolean
+echo $test2===false;
+// 1
+?>
+
+There appears to be no way to check whether memcached is actually running
+without resorting to error suppression:
+
+<?php
+$test3 = @memcache_connect('127.0.0.1',11211);
+if( $test3===false ){
+   // memcached is _probably_ not running
+}
+?>
+===============================================================================
+
+In describing the timeout there is a statement that is not completely correct,
+increase the timeout does not necessarily preclude or unfeasible memcache, only
+allows the system to wait for more concurrent connections, which is a large
+minority of the number of connections, this causes several problems and could
+simply be corrected if the timeout was increased and perform some tests.
+To prove the concept and show that the connection does not wait if the server
+goes down:
+
+<?PHP
+
+while ( ++$loop < 10000 ) {
+    try {
+        $memcache = new Memcache;
+        @$memcache->pconnect( "127.0.0.1" , 11211 , 30 );
+        $loopset = 0;
+        $loopget = 0;
+       
+        while ( ++$loopset < 50 ) {
+            if ( @$memcache->set( "foo" , "bar" ) === false ) {
+                echo "Fail!" . PHP_EOL;
+            }
+        }
+       
+        while ( ++$loopget < 500 ) {
+            if ( @$memcache->get( "foo" ) === false ) {
+                echo "Fail!" . PHP_EOL;
+            }
+        }
+       
+        if ( $loop % 100 == 0 ) {
+            echo "Try: " . $loop . PHP_EOL;
+        }
+    } catch ( Exception $e ) {
+        echo "Fail: " . $e->getMessage() . PHP_EOL;
+    }
+}
+
+?>
+
+Replace with an invalid host and test the timeout will not make a difference!
+It serves only for connections to the socket that are occupied.
+
+More detail about troubleshooting timeouts in memcached google code.
+===============================================================================
+
+The behavior of Memcache::connect() is to always reinitialize the pool from
+scratch regardless of any previous calls to addServer().
+
+E.g.
+
+<?php
+$mmc = new Memcache()
+$mmc->addServer('node1', 11211);
+$mmc->addServer('node2', 11211);
+$mmc->addServer('node3', 11211);
+
+$mmc->connect('node1', 11211);
+?>
+
+The last connect() call clears out the pool and then add and connect
+node1:11211 making it the only server.
+
+If you want a pool of memcache servers, do not use the connect() function.
+
+If you only want a single memcache server then there is no need to use the
+addServer() function.
+===============================================================================
+
+To suppress (or handle) the warning and notice thrown by a failed attempt to
+connect, you can use a custom error handler function, like this:
+
+<?php
+function myErrorHandler($errno, $errstr, $errfile, $errline)
+{
+
+    if (E_WARNING === $errno)
+    {
+        Log("PHP Warning: $errstr, $errfile, $errline", Logging::WARN);
+        return true;
+    }
+   
+    if (E_NOTICE === $errno)
+    {
+        Log("PHP Notic: $errstr, $errfile, $errline", Logging::NOTICE);
+        return true;
+    }   
+   
+    return false;
+}
+
+set_error_handler('myErrorHandler');
+?>
+===============================================================================
+
+There is a not-so-obvious way to check whether or not a MemCache-Server is
+available.
+
+Using ($memCache->connect() == false) will wait for a timeout if it can't
+connect. If you got a high-traffic site this may not be an option. So when the
+server is down, you may want to avoid waiting for this timeout on every request
+and instead try to reconnect only once every X seconds.
+
+If so, this code may help:
+
+<?php
+$memCache = new \Memcache();
+$memCache->addServer($host, $port);
+$stats = @$memCache->getExtendedStats();
+$available = (bool) $stats["$host:$port"];
+if ($available && @$memCache->connect($host, $port))
+    // MemCache is there
+else
+    // go on without MemCache
+?>
+
+The result of getExtendedStats() is an array. The information is cached and
+maintained by MemCache itself. If the server is not available, the result will
+be FALSE.
+
+Even if the result is not false, the server may still not be available. Thus
+you need to check for connect() != false too, but only if the first check
+returns TRUE, thus avoiding the 1 second timeout in most cases.
+Both getExtendedStats() and connect() issue notices/warnings if the server is
+not there. Thus you have to mute both calls.
+
+Do NOT use getServerStatus() for this purpose: the result is cached on
+server-start and will not recognize when the connection to the server is lost
+(or reestablished) in between.

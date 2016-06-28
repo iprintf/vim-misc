@@ -1,0 +1,231 @@
+
+Imagick::thumbnailImage
+
+(PECL imagick 2.0.0)
+
+Imagick::thumbnailImage — Changes the size of an image
+
+说明
+
+bool Imagick::thumbnailImage ( int $columns , int $rows [, bool $bestfit =
+false [, bool $fill = false ]] )
+
+Changes the size of an image to the given dimensions and removes any associated
+profiles. The goal is to produce small, low cost thumbnail images suited for
+display on the Web. If TRUE is given as a third parameter then columns and rows
+parameters are used as maximums for each side. Both sides will be scaled down
+until they match or are smaller than the parameter given for the side.
+
+    Note: 参数 bestfit 的特性在 Imagick 3.0.0 中已改变。在此版本以前，当目标尺
+    寸设为 400x400 时，原尺寸为 200x150 的图像将不会被改变。自 Imagick 3.0.0 起
+    ，源图像将会被放大到 400x300 因为这将更好的适合目标尺寸。当使用参数 bestfit
+    时，必须同时给出宽度和高度。
+
+参数
+
+columns
+
+    Image width
+
+rows
+
+    Image height
+
+bestfit
+
+    Whether to force maximum values
+
+返回值
+
+成功时返回 TRUE。
+
+错误／异常
+
+错误时抛出 ImagickException。
+
+范例
+
+Example #1 Imagick::thumbnailImage()
+
+<?php
+function thumbnailImage($imagePath) {
+    $imagick = new \Imagick(realpath($imagePath));
+    $imagick->setbackgroundcolor('rgb(64, 64, 64)');
+    $imagick->thumbnailImage(100, 100, true, true);
+    header("Content-Type: image/jpg");
+    echo $imagick->getImageBlob();
+}
+
+?>
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+If the 3rd parameter is true, the image will be resized in such a way that
+it’ll be contained within the dimensions mentioned.
+It’s like changing the dimensions of the image so that it can be contained in a
+box of given dimension.
+
+Eg: Image’s dimension is 1600*800. If we use thumbnailImage(400, 400, true),
+the new image’s dimension will be 400*200.
+
+Some of the previous notes in this page mentions that the image is resized
+proportionally so that its _smallest_ dimension matches the width or height
+specified, NOT both.
+But this is not the case now. Both width & height of the image will be <= that
+mentioned in thumbnailImage().
+Maybe imagick changed/updated the functionality.
+===============================================================================
+
+Even though thumbnailImage is meant to produce the smallest file size image
+possible, i found it didn't. I put together this code and bordering different
+compression settings, found it produced the smallest file size:
+
+<?php
+// Max vert or horiz resolution
+$maxsize=550;
+
+// create new Imagick object
+$image = new Imagick('input_image_filename_and_location');
+
+// Resizes to whichever is larger, width or height
+if($image->getImageHeight() <= $image->getImageWidth())
+{
+// Resize image using the lanczos resampling algorithm based on width
+$image->resizeImage($maxsize,0,Imagick::FILTER_LANCZOS,1);
+}
+else
+{
+// Resize image using the lanczos resampling algorithm based on height
+$image->resizeImage(0,$maxsize,Imagick::FILTER_LANCZOS,1);
+}
+
+// Set to use jpeg compression
+$image->setImageCompression(Imagick::COMPRESSION_JPEG);
+// Set compression level (1 lowest quality, 100 highest quality)
+$image->setImageCompressionQuality(75);
+// Strip out unneeded meta data
+$image->stripImage();
+// Writes resultant image to output directory
+$image->writeImage('output_image_filename_and_location');
+// Destroys Imagick object, freeing allocated resources in the process
+$image->destroy();
+
+?>
+
+I found setCompression to not function at all and had to use
+setImageCompression. The stripImage call is needed and strips out unneeded meta
+data. You can choose whatever filter you want, but i found lanczos to be the
+best for image reduction, though it is more computationally heavy.
+===============================================================================
+
+When shrinking a jpg you can get more then double the performance if you use <?
+php $image->setOption('jpeg:size', '800x532') ?>, exchanging 800x532 to the
+resolution you want the final image to be. For instance instead of this:
+
+<?php
+$image = new Imagick('foo.jpg');
+?>
+
+You would use this:
+
+<?php
+$image = new Imagick();
+$image->setOption('jpeg:size', '800x532');
+$image->readImage('foo.jpg');
+?>
+===============================================================================
+
+If you want to resize your picture to fit smallest parameter:
+
+$fitbyWidth = (($maxWidth/$w)<($maxHeight/$h)) ?true:false;
+
+if($fitbyWidth){
+    $im->thumbnailImage($maxWidth, 0, false);
+}else{
+    $im->thumbnailImage(0, $maxHeight, false);
+}
+===============================================================================
+
+Here is a function to calculate the new dimensions of a thumbnail, to fit
+within the given dimensions on both sides.
+
+<?php
+/**
+* Calculate new image dimensions to new constraints
+*
+* @param Original X size in pixels
+* @param Original Y size in pixels
+* @return New X maximum size in pixels
+* @return New Y maximum size in pixels
+*/
+function scaleImage($x,$y,$cx,$cy) {
+    //Set the default NEW values to be the old, in case it doesn't even need
+scaling
+    list($nx,$ny)=array($x,$y);
+   
+    //If image is generally smaller, don't even bother
+    if ($x>=$cx || $y>=$cx) {
+           
+        //Work out ratios
+        if ($x>0) $rx=$cx/$x;
+        if ($y>0) $ry=$cy/$y;
+       
+        //Use the lowest ratio, to ensure we don't go over the wanted image
+size
+        if ($rx>$ry) {
+            $r=$ry;
+        } else {
+            $r=$rx;
+        }
+       
+        //Calculate the new size based on the chosen ratio
+        $nx=intval($x*$r);
+        $ny=intval($y*$r);
+    }   
+   
+    //Return the results
+    return array($nx,$ny);
+}
+?>
+
+Use it like this:
+
+<?php
+//Read original image and create Imagick object
+$thumb=new Imagick($originalImageFilename);
+
+//Work out new dimensions
+list($newX,$newY)=scaleImage(
+        $thumb->getImageWidth(),
+        $thumb->getImageHeight(),
+        $newMaximumWidth,
+        $newMaximumHeight);
+
+//Scale the image
+$thumb->thumbnailImage($newX,$newY);
+
+//Write the new image to a file
+$thumb->writeImage($thumbnailFilename);
+?>
+===============================================================================
+
+As noted here
+http://php.net/manual/en/ref.imagick.php
+With either of the params as 0, the aspect ratio is maintained.
+===============================================================================
+
+With $fit == true, the image is resized proportionally so that its _smallest_
+dimension matches the width or height specified, NOT both.
+
+For example, if you say thumbnailImage(400, 400, true), on an image of
+1600x800, it will be resized to 800x400, NOT 400x200 as you might expect.
+
+The solution is to compare the original image's dimensions to the specified
+dimensions, and substitute zero for the smaller dimension, and set $fit =
+false.
+
+i.e.: thumbnailImage(400, 0, false) would resize that 1600x800 image to
+400x200.

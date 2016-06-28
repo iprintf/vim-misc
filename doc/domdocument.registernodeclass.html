@@ -1,0 +1,191 @@
+
+DOMDocument::registerNodeClass
+
+(PHP 5 >= 5.2.0, PHP 7)
+
+DOMDocument::registerNodeClass — Register extended class used to create base
+node type
+
+说明
+
+public bool DOMDocument::registerNodeClass ( string $baseclass , string
+$extendedclass )
+
+This method allows you to register your own extended DOM class to be used
+afterward by the PHP DOM extension.
+
+This method is not part of the DOM standard.
+
+参数
+
+baseclass
+
+    The DOM class that you want to extend. You can find a list of these classes
+    in the chapter introduction.
+
+extendedclass
+
+    Your extended class name. If NULL is provided, any previously registered
+    class extending baseclass will be removed.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+更新日志
+
+版本                                    说明
+      Prior to 5.2.2, a previously registered extendedclass had to be
+5.2.2 unregistered before being able to register a new class extending the same
+      baseclass.
+
+范例
+
+Example #1 Adding a new method to DOMElement to ease our code
+
+<?php
+
+class myElement extends DOMElement {
+   function appendElement($name) { 
+      return $this->appendChild(new myElement($name));
+   }
+}
+
+class myDocument extends DOMDocument {
+   function setRoot($name) { 
+      return $this->appendChild(new myElement($name));
+   }
+}
+
+$doc = new myDocument();
+$doc->registerNodeClass('DOMElement', 'myElement');
+
+// From now on, adding an element to another costs only one method call ! 
+$root = $doc->setRoot('root');
+$child = $root->appendElement('child');
+$child->setAttribute('foo', 'bar');
+
+echo $doc->saveXML();
+
+?>
+
+以上例程会输出：
+
+<?xml version="1.0"?>
+<root><child foo="bar"/></root>
+
+Example #2 Retrieving elements as custom class
+
+<?php
+class myElement extends DOMElement {
+    public function __toString() {
+        return $this->nodeValue;
+    }
+}
+
+$doc = new DOMDocument;
+$doc->loadXML("<root><element><child>text in child</child></element></root>");
+$doc->registerNodeClass("DOMElement", "myElement");
+
+$element = $doc->getElementsByTagName("child")->item(0);
+var_dump(get_class($element));
+
+// And take advantage of the __toString method..
+echo $element;
+?>
+
+以上例程会输出：
+
+string(9) "myElement"
+text in child
+
+Example #3 Retrieving owner document
+
+When instantiating a custom DOMDocument the ownerDocument property will refer
+to the instantiated class, meaning there is no need (and in fact not possible)
+to use DOMDocument::registerNodeClass() with DOMDocument
+
+<?php
+class myDOMDocument extends DOMDocument {
+}
+
+class myOtherDOMDocument extends DOMDocument {
+}
+
+// Create myDOMDocument with some XML
+$doc = new myDOMDocument;
+$doc->loadXML("<root><element><child>text in child</child></element></root>");
+
+$child = $doc->getElementsByTagName("child")->item(0);
+
+// The current owner of the node is myDOMDocument
+var_dump(get_class($child->ownerDocument));
+
+// Import a node from myDOMDocument
+$newdoc = new myOtherDOMDocument;
+$child = $newdoc->importNode($child);
+
+// The new owner of the node has changed to myOtherDOMDocument
+var_dump(get_class($child->ownerDocument));
+?>
+
+以上例程会输出：
+
+string(13) "myDOMDocument"
+string(18) "myOtherDOMDocument"
+
+
+User Contributed Notes 2 notes
+
+===============================================================================
+
+Creating innerHTML and outerHTML
+
+<?php
+
+class DOMHTMLElement extends DOMElement
+{
+    function __construct() { parent::__construct();}
+   
+    public function innerHTML()
+    {
+        $doc = new DOMDocument();
+      foreach ($this->childNodes as $child){
+          $doc->appendChild($doc->importNode($child, true));
+        }
+        $content = $doc->saveHTML();
+        return $content;
+    }
+   
+    public function outerHTML()
+    {
+        $doc = new DOMDocument();
+        $doc->appendChild($doc->importNode($this, true));
+        $content = $doc->saveHTML();
+        return $content;
+    }
+}
+
+$dom = DOMDocument::loadHTMLFile($file);
+$dom->registerNodeClass('DOMElement','DOMHTMLElement');
+           
+if($dom)
+{
+    $xpath = new DOMXpath($dom);   
+    $regions = $xpath->query("//*[contains(@class, 'editable')]");   
+    $content = '';
+   
+    foreach($regions as $region){
+        $content .= $region->outerHTML();
+    }   
+   
+    return $content;
+   
+}else{               
+    throw new Exception('Cannot parse HTML.  Please verify the syntax is
+correct.');
+}
+?>
+===============================================================================
+
+Note than save and saveXML are not affected by __toString().

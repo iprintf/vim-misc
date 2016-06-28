@@ -1,0 +1,202 @@
+
+date_create
+
+(PHP 5 >= 5.2.0, PHP 7)
+
+date_create — 别名 DateTime::__construct()
+
+说明
+
+此函数是该函数的别名： DateTime::__construct()
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+If you are getting an error like this:
+
+Exception: DateTime::__construct(): Failed to parse time string (13/02/2013) at
+position 0 (1): Unexpected character in DateTime->__construct()
+
+Note that when you create a new date object using a format with slashes and
+dashes (eg 02-02-2012 or 02/02/2012) it must be in the mm/dd/yy(yy) or mm-dd-yy
+(yy) format (rather than british format dd/mm/yy)! Months always before years
+(the american style) otherwise you'll get an incorrect date and may get an
+error like the one above (where PHP is crashing on trying to decode a 13th
+month).
+
+Can catch you off guard because everything seems to be working fine and dandy
+until you hit a value over 12.
+===============================================================================
+
+DateTime will recognise any number up to 12 as a [month], and any number up to
+31 as a [day]; it calculates the resulting date to be [day] days after the
+start of [month].  This means that when a datetime object is created with more
+days than are found in that month, the date will be beyond the end of the
+month.
+
+<?php
+  $test = new DateTime('02/31/2011');
+  echo date_format($test, 'Y-m-d H:i:s'); // 2011-03-03 00:00:00
+  $test = new DateTime('06/31/2011');
+  echo date_format($test, 'Y-m-d H:i:s'); // 2011-07-01 00:00:00
+?>
+===============================================================================
+
+@Marton Bodonyi
+This is not exactly true.
+
+The following code:
+[code]
+echo "1\n";
+print_r(date_create('13-02-2013'));
+echo "2\n";
+print_r(date_create('13/02/2013'));
+echo "3\n";
+print_r(new DateTime('13-02-2013'));
+echo "4\n";
+print_r(new DateTime('13/02/2013'));
+[/code]
+
+produces the following output:
+[code]
+1
+DateTime Object
+(
+    [date] => 2013-02-13 00:00:00.000000
+    [timezone_type] => 3
+    [timezone] => Europe/London
+)
+2
+3
+DateTime Object
+(
+    [date] => 2013-02-13 00:00:00.000000
+    [timezone_type] => 3
+    [timezone] => Europe/London
+)
+4
+<br />
+<b>Fatal error</b>:  Uncaught exception 'Exception' with message
+'DateTime::__construct(): Failed to parse time string (13/02/2013) at position
+0 (1): Unexpected character' in /test.php:23
+Stack trace:
+#0 /test.php(23): DateTime-&gt;__construct('13/02/2013')
+#1 {main}
+  thrown in <b>/test.php</b> on line <b>23</b><br />
+[/code]
+
+Which means that only slashes format actually wants you to use American order
+of date parts.
+Hence you should use 'dd-mm-yyyy' or 'mm/dd/yyyy'
+Which is weird, and should not be such.
+
+PHP version is 5.4.40
+===============================================================================
+
+If you want to create the DateTime object directly from a timestamp use this
+
+<?php
+$st = 1170288000 //  a timestamp
+$dt = new DateTime("@$st");
+?>
+
+See also: http://bugs.php.net/bug.php?id=40171
+===============================================================================
+
+Indeed as mentioned above the constructor for DateTime  will allow the day of
+month upto 31 to be accepted for all months of the year. You should use
+checkdate if you wish to check that the day of the month represents a valid
+gregorian calendar date.
+===============================================================================
+
+You should also be aware that DateTime has very lax date validation rules. It
+appears that all months have a maximum of 31 days.
+
+For example, these will work fine:
+
+<?php
+  $test = new DateTime('02/31/2011');
+  $test = new DateTime('06/31/2011');
+?>
+
+We all know that these dates are not real and are invalid so I think a good
+idea is to do some further validation on dates before creating a DateTime
+object with them.
+===============================================================================
+
+See also
+
+date_create_from_format
+http://php.net/manual/en/function.date-create-from-format.php
+===============================================================================
+
+Looks like the DateTime class does not exist in my PHP 5.1.5 installation. The
+only documentation I can find says this class shows up in PHP 5.2
+===============================================================================
+
+"String in a format accepted by strtotime()" is not 100% truth - you cannot
+pass timezone info in the string used as DateTime constructor, while you can do
+it with strtotime(). It may be a problem if you would like to create a date
+from GMT time and then display it in your local timezone, for example:
+
+<?php
+    $timeZone = 'Europe/Warsaw';  // +2 hours
+    date_default_timezone_set($timeZone);
+   
+    $dateSrc = '2007-04-19 12:50 GMT';
+    $dateTime = new DateTime($dateSrc);
+   
+    echo 'date(): '.date('H:i:s', strtotime($dateSrc));
+    // correct! date(): 14:50:00
+   
+    echo 'DateTime::format(): '.$dateTime->format('H:i:s');
+    // INCORRECT! DateTime::format(): 12:50:00
+?>
+
+[red. your claim that "is not 100% truth" is incorrect, you're seeing desired
+behavior here. The timezone passed as 2nd argument is used as a default fall
+back, in case the parsed string doesn't provide TZ information.]
+
+So if you want to convert date between different timezones, you have to create
+two DateTimeZone objects - one for the input and one for output, like this:
+
+<?php
+    $timeZone = 'Europe/Warsaw';  // +2 hours
+    $dateSrc = '2007-04-19 12:50';
+   
+    $dateTime = new DateTime($dateSrc, new DateTimeZone('GMT'));
+    $dateTime->setTimeZone(new DateTimeZone($timeZone));
+    echo 'DateTime::format(): '.$dateTime->format('H:i:s');
+    // CORRECT! DateTime::format(): 14:50:00
+?>
+
+I'm not sure if this is a bug or desired behaviour.
+[red. you don't have to do create two DateTimeZone objects, this works too:
+<?php
+    $timeZone = 'Europe/Warsaw';  // +2 hours
+    $dateSrc = '2007-04-19 12:50 GMT';
+   
+    $dateTime = new DateTime($dateSrc);
+    $dateTime->setTimeZone(new DateTimeZone($timeZone));
+    echo 'DateTime::format(): '.$dateTime->format('H:i:s');
+    // CORRECT! DateTime::format(): 14:50:00
+?>
+]
+===============================================================================
+
+date_create and other DateTime related functions are included by default only
+in PHP versions equal and greater than 5.2.
+
+In PHP 5.1.2 this functionality is marked to be experimental and has to be
+enabled at compile time.
+===============================================================================
+
+The construct have some problem with date validate.
+
+When you set
+$datetime = DateTime::createFromFormat('Y-m-d H:i:s','2009-02-30 00:00:00');
+
+it will be accepted but convert to 2009-03-02 00:00:00, it means the date was
+count on and plus 2 days

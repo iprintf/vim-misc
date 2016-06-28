@@ -1,0 +1,113 @@
+
+PDOStatement::closeCursor
+
+(PHP 5 >= 5.1.0, PHP 7, PECL pdo >= 0.9.0)
+
+PDOStatement::closeCursor — 关闭游标，使语句能再次被执行。
+
+说明
+
+bool PDOStatement::closeCursor ( void )
+
+PDOStatement::closeCursor() 释放到数据库服务的连接，以便发出其他 SQL 语句，但使
+语句处于一个可以被再次执行的状态。
+
+当上一个执行的 PDOStatement 对象仍有未取行时，此方法对那些不支持再执行一个
+PDOStatement 对象的数据库驱动非常有用。如果数据库驱动受此限制，则可能出现失序错
+误的问题。
+
+PDOStatement::closeCursor() 要么是一个可选驱动的特有方法（效率最高）来实现，要
+么是在没有驱动特定的功能时作为一般的PDO 备用来实现。一般的备用语义上与下面的
+PHP 代码相同：
+<?php
+do {
+    while ($stmt->fetch())
+        ;
+    if (!$stmt->nextRowset())
+        break;
+} while (true);
+?>
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 一个 PDOStatement::closeCursor() 的例子
+
+在下面例子中，$stmt PDOStatement 对象返回多行，但应用程序只取第一行，让
+PDOStatement 对象处于一个有未取行的状态。为确保应用程序对所有数据库驱动都能正常
+运行，在执行 $otherStmt PDOStatement 对象前，$stmt 调用一次
+PDOStatement::closeCursor() 。
+
+<?php
+/* 创建一个 PDOStatement 对象 */
+$stmt = $dbh->prepare('SELECT foo FROM bar');
+
+/* 创建第二个 PDOStatement 对象 */
+$otherStmt = $dbh->prepare('SELECT foobaz FROM foobar');
+
+/* 执行第一条语句 */
+$stmt->execute();
+
+/*  从结果集中只取出第一行 */
+$stmt->fetch();
+
+/* The following call to closeCursor() may be required by some drivers */
+$stmt->closeCursor();
+
+/*  现在可以执行第二条语句了 */
+$otherStmt->execute();
+?>
+
+参见
+
+  • PDOStatement::execute() - 执行一条预处理语句
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+In case this is helpful to anybody else who ends-up here after getting the
+following error:
+
+SQLState: 24000 [Microsoft][ODBC SQL Server Driver]Invalid cursor state
+
+PDOStatement :: closeCursor() did not fix the issue for me. However, adding SET
+NOCOUNT ON to the beginning of my stored procedure did.
+===============================================================================
+
+If you ran a SQL statement (vs a query that returns data) such as UPDATE, try
+unsetting your PDOStatement object instead of calling PDOStatement::closeCursor
+().
+===============================================================================
+
+When running multiple queries one after another especially when stored
+procedures are involved one must release all result sets and fetch all rows in
+each result set for a stored procedure before moving onto the next query.  This
+is important because a stored procedure returns an extra (empty) result set as
+a result of having called the procedure itself.
+
+In my case calling PDOStatement :: closeCursor() did not work (on
+php-5.1.3-rc2) and I was presented with the following error message: "SQLSTATE
+[HY000]: General error: 2013 Lost connection to MySQL server during query" upon
+trying to PDO :: prepare() my second query.  So I used the following drop in
+replacement within one of my classes which fixed the issue.
+
+<?php
+/**
+* @param PDOStatement $oStm
+*/
+public static function closeCursor($oStm) {
+    do $oStm->fetchAll();
+    while ($oStm->nextRowSet());
+}
+?>
+===============================================================================
+
+At least with MySQL this function also resets any bound columns, so the fetches
+will go through as expected but you will be getting stale data in the loop.
+
+Redo all the binds before continuing!

@@ -1,0 +1,125 @@
+
+PDO::pgsqlLOBOpen
+
+(PHP 5 >= 5.1.2, PHP 7, PECL pdo_pgsql >= 1.0.2)
+
+PDO::pgsqlLOBOpen — Opens an existing large object stream
+
+说明
+
+public resource PDO::pgsqlLOBOpen ( string $oid [, string $mode = "rb" ] )
+
+PDO::pgsqlLOBOpen() opens a stream to access the data referenced by oid. If
+mode is r, the stream is opened for reading, if mode is w, then the stream will
+be opened for writing. You can use all the usual filesystem functions, such as 
+fread(), fwrite() and fgets() to manipulate the contents of the stream.
+
+    Note: This function, and all manipulations of the large object, must be
+    called and carried out within a transaction.
+
+参数
+
+oid
+
+    A large object identifier.
+
+mode
+
+    If mode is r, open the stream for reading. If mode is w, open the stream
+    for writing.
+
+返回值
+
+Returns a stream resource on success 或者在失败时返回 FALSE.
+
+范例
+
+Example #1 A PDO::pgsqlLOBOpen() example
+
+Following on from the PDO::pgsqlLOBCreate() example, this code snippet
+retrieves the large object from the database and outputs it to the browser.
+
+<?php
+$db = new PDO('pgsql:dbname=test host=localhost', $user, $pass);
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$db->beginTransaction();
+$stmt = $db->prepare("select oid from BLOBS where ident = ?");
+$stmt->execute(array($some_id));
+$stmt->bindColumn('oid', $oid, PDO::PARAM_STR);
+$stmt->fetch(PDO::FETCH_BOUND);
+$stream = $db->pgsqlLOBOpen($oid, 'r');
+header("Content-type: application/octet-stream");
+fpassthru($stream);
+?>
+
+参见
+
+  • PDO::pgsqlLOBCreate() - Creates a new large object
+  • PDO::pgsqlLOBUnlink() - Deletes the large object
+  • pg_lo_open() - 打开一个大型对象
+
+
+User Contributed Notes 3 notes
+
+===============================================================================
+
+This is what worked for me. If you have the oid, then all you need to do is:
+
+<?php
+$pdo = new PDO($dsn, $user, $pass);
+$pdo->beginTransaction();
+$data = $pdo->pgsqlLOBOpen($oid, 'r');
+
+header("Content-Type: $mime");
+// any other headers...
+
+fpassthru($data);  // echo stream_get_contents($data); also works
+?>
+
+The beginTransaction() is required, if you want to $pdo->commit() (it's not
+required) then do it after the fpassthru.
+
+On a side note, those using Zend Framework can call getConnection() on the
+standard PDO database object which will get them the $pdo object as above. Then
+just remember to disableLayout() and setNoRender() as necessary.
+===============================================================================
+
+Also remember that fread() will only parse the first 8192 bytes from the
+stream. Use..
+
+<?php
+$data = stream_get_contents($stream);
+?>
+
+.. if you have a larger output to parse.
+===============================================================================
+
+The above example is missing some data. After spending several hours trying to
+get it to work in vain, Jeff Davis from the PostgreSQL channel on IRC
+(freenode) figured out what was missing.
+
+The below example will work, but you have to insert the MIME type and file size
+of the large object that you are storing, so you can use that data for
+extraction.
+
+<?php
+$db = new PDO('pgsql:dbname=test host=localhost', $user, $pass);
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$db->beginTransaction();
+$stmt = $db->prepare("SELECT oid, blob_type, filesize FROM BLOBS WHERE ident =
+?");
+$stmt->execute(array($some_id));
+$stmt->bindColumn('oid', $lob, PDO::PARAM_LOB);
+$stmt->bindColumn('blob_type', $blob_type, PDO::PARAM_STR);
+$stmt->bindColumn('filesize', $filesize, PDO::PARAM_STR);
+$stmt->fetch(PDO::FETCH_BOUND);
+$stream = $pdo->pgsqlLOBOpen($lob, 'r');
+$data = fread($stream, $filesize);
+header("Content-type: $blob_type");
+echo $data;
+?>
+
+Also fpassthru() will just give this result: Warning: fpassthru(): supplied
+argument is not a valid stream resource in ...
+
+Use echo or print instead.

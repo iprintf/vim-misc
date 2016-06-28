@@ -1,0 +1,158 @@
+
+ssh2_scp_send
+
+(PECL ssh2 >= 0.9.0)
+
+ssh2_scp_send — Send a file via SCP
+
+说明
+
+bool ssh2_scp_send ( resource $session , string $local_file , string
+$remote_file [, int $create_mode = 0644 ] )
+
+Copy a file from the local filesystem to the remote server using the SCP
+protocol.
+
+参数
+
+session
+
+    An SSH connection link identifier, obtained from a call to ssh2_connect().
+
+local_file
+
+    Path to the local file.
+
+remote_file
+
+    Path to the remote file.
+
+create_mode
+
+    The file will be created with the mode specified by create_mode.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+范例
+
+Example #1 Uploading a file via SCP
+
+<?php
+$connection = ssh2_connect('shell.example.com', 22);
+ssh2_auth_password($connection, 'username', 'password');
+
+ssh2_scp_send($connection, '/local/filename', '/remote/filename', 0644);
+?>
+
+参见
+
+  • ssh2_scp_recv() - Request a file via SCP
+  • copy() - 拷贝文件
+
+
+User Contributed Notes 5 notes
+
+===============================================================================
+
+In addition to my previous post, I figured out that sftp->fopen->
+file_get_contents->fwrite has much better performance than ssh2_scp_send.
+
+I've used the following code to test:
+
+<?php
+$srcFile = '/var/tmp/dir1/file_to_send.txt';
+$dstFile = '/var/tmp/dir2/file_received.txt';
+
+// Create connection the the remote host
+$conn = ssh2_connect('my.server.com', 22);
+
+// Create SFTP session
+$sftp = ssh2_sftp($conn);
+
+$sftpStream = @fopen('ssh2.sftp://'.$sftp.$dstFile, 'w');
+
+try {
+
+    if (!$sftpStream) {
+        throw new Exception("Could not open remote file: $dstFile");
+    }
+   
+    $data_to_send = @file_get_contents($srcFile);
+   
+    if ($data_to_send === false) {
+        throw new Exception("Could not open local file: $srcFile.");
+    }
+   
+    if (@fwrite($sftpStream, $data_to_send) === false) {
+        throw new Exception("Could not send data from file: $srcFile.");
+    }
+   
+    fclose($sftpStream);
+                   
+} catch (Exception $e) {
+    error_log('Exception: ' . $e->getMessage());
+    fclose($sftpStream);
+}
+?>
+
+For the test I've sent three files with total size of 6kB, and the times to
+send including connect to the server were:
+
+SFTP -> 15 sec.
+ssh2_scp_send -> 22 sec.
+
+Cheers,
+
+Pimmy
+===============================================================================
+
+solution of uploading dir with space (don't forget " symbols)
+
+<?php
+ssh2_scp_send($connection, '/local/file with space.txt', '"/remote/file with
+space.txt"', 0777);
+?>
+===============================================================================
+
+After some testing I figured out that ssh2_scp_send does not work exactly as
+the standard scp command:
+
+- Works: ssh2_scp_send($conn, '/var/tmp/file_01.txt', /var/tmp/file_02.txt');
+- Wrong: ssh2_scp_send($conn, '/var/tmp/file_01.txt', /var/tmp'); (Creates file
+with name 'tmp')
+- Fails: ssh2_scp_send($conn, '/var/tmp/file_01.txt', /var/tmp/');
+- Fails: ssh2_scp_send($conn, '/dirname', /var/tmp/'); (No recursion)
+- Fails: ssh2_scp_send($conn, '/dirname/*', /var/tmp/'); (Cannot copy more than
+one file.)
+
+Cheers,
+
+Pimmy
+===============================================================================
+
+If the server you are sending to is ubuntu 8 or 9 and you can't send files then
+check that your user has write permissions for /dev/null. Gets me every time.
+Add the line:
+chmod 666 /dev/null
+to /etc/rc.local before the exit 0 line.
+===============================================================================
+
+On Windows, I had trouble using ssh2_scp_send: files copied to a remote server
+where incomplete (truncated) and/or locked (error message : "access denied").
+The back-end is also on Windows, using CopSSH (cygwin-based SSH server).
+
+The SSH session was kept open - and the file were never flushed to disk.
+
+There's a workaround though - make an explicit call to "exit" to close the
+session (flushing file content to disk):
+
+<?php
+  $objConnection = ssh2_connect($strHost, $strPort, $methods, $callbacks);
+  ssh2_auth_password($objConnection, $strUser, $strPassword);
+  ssh2_scp_send($objConnection , $strSource, $strDest);
+
+  // Add this to flush buffers/close session
+  ssh2_exec($objConnection, 'exit');
+?>

@@ -1,0 +1,654 @@
+
+The SimpleXMLElement class
+
+(PHP 5 >= 5.0.1, PHP 7)
+
+简介
+
+Represents an element in an XML document.
+
+类摘要
+
+SimpleXMLElement implements Traversable {
+/* 方法 */
+final public __construct ( string $data [, int $options = 0 [, bool
+$data_is_url = false [, string $ns = "" [, bool $is_prefix = false ]]]] )
+public void addAttribute ( string $name [, string $value [, string $namespace
+]] )
+public SimpleXMLElement addChild ( string $name [, string $value [, string
+$namespace ]] )
+public mixed asXML ([ string $filename ] )
+public SimpleXMLElement attributes ([ string $ns = NULL [, bool $is_prefix =
+false ]] )
+public SimpleXMLElement children ([ string $ns [, bool $is_prefix = false ]] )
+public int count ( void )
+public array getDocNamespaces ([ bool $recursive = false [, bool $from_root =
+true ]] )
+public string getName ( void )
+public array getNamespaces ([ bool $recursive = false ] )
+public bool registerXPathNamespace ( string $prefix , string $ns )
+public string __toString ( void )
+public array xpath ( string $path )
+}
+
+Table of Contents
+
+  • SimpleXMLElement::addAttribute — Adds an attribute to the SimpleXML element
+  • SimpleXMLElement::addChild — Adds a child element to the XML node
+  • SimpleXMLElement::asXML — Return a well-formed XML string based on
+    SimpleXML element
+  • SimpleXMLElement::attributes — Identifies an element's attributes
+  • SimpleXMLElement::children — Finds children of given node
+  • SimpleXMLElement::__construct — Creates a new SimpleXMLElement object
+  • SimpleXMLElement::count — Counts the children of an element
+  • SimpleXMLElement::getDocNamespaces — Returns namespaces declared in
+    document
+  • SimpleXMLElement::getName — Gets the name of the XML element
+  • SimpleXMLElement::getNamespaces — Returns namespaces used in document
+  • SimpleXMLElement::registerXPathNamespace — Creates a prefix/ns context for
+    the next XPath query
+  • SimpleXMLElement::saveXML — 别名 SimpleXMLElement::asXML
+  • SimpleXMLElement::__toString — Returns the string content
+  • SimpleXMLElement::xpath — Runs XPath query on XML data
+
+
+User Contributed Notes 19 notes
+
+===============================================================================
+
+To further previous comments and drive the point home:
+
+What makes SimpleXMLElement tricky to work with is that it feels and behaves
+like an object, but is actually a system RESOURCE,  (specifically a libxml
+resource). 
+
+That's why you can't store a SimpleXMLElement to $_SESSION or perform straight
+comparison operations on node values without first casting them to some type of
+object.  $_SESSION expects to store 'an object' and comparison operators expect
+to compare 2 'objects' and SimpleXMLElements are not objects. 
+
+When you echo or print a node's value, PHP converts the value (a resource) into
+a string object for you.  It's a time saver for sure, but can fool you into
+thinking that your SimpleXMLElement is an object. 
+
+Hope this helps clarify
+===============================================================================
+
+To access the underlying element as a string, it's necessary to make the cast
+$x = (string)$my_xml_element.
+===============================================================================
+
+Warning to anyone trying to parse XML with a key name that includes a hyphen
+ie.)
+<subscribe>
+    <callback-url>example url</callback-url>
+</subscribe>
+
+In order to access the callback-url you will need to do something like the
+following:
+<?php
+$xml = simplexml_load_string($input);
+$callback = $xml->{"callback-url"};
+?>
+If you attempt to do it without the curly braces and quotes you will find out
+that you are returned a 0 instead of what you want.
+===============================================================================
+
+XML to JSON conversion without '@attributes'
+<?php
+function XML2JSON($xml) {
+
+        function normalizeSimpleXML($obj, &$result) {
+            $data = $obj;
+            if (is_object($data)) {
+                $data = get_object_vars($data);
+            }
+            if (is_array($data)) {
+                foreach ($data as $key => $value) {
+                    $res = null;
+                    normalizeSimpleXML($value, $res);
+                    if (($key == '@attributes') && ($key)) {
+                        $result = $res;
+                    } else {
+                        $result[$key] = $res;
+                    }
+                }
+            } else {
+                $result = $data;
+            }
+        }
+        normalizeSimpleXML(simplexml_load_string($xml), $result);
+        return json_encode($result);
+    }
+?>
+===============================================================================
+
+Parsing an invalid XML string through SimpleXML causes the script to crash
+completely (usually) therefore it is best to make sure the XML is valid before
+parsing with something like this:
+
+// Must be tested with ===, as in if(isXML($xml) === true){}
+// Returns the error message on improper XML
+function isXML($xml){
+    libxml_use_internal_errors(true);
+
+    $doc = new DOMDocument('1.0', 'utf-8');
+    $doc->loadXML($xml);
+
+    $errors = libxml_get_errors();
+
+    if(empty($errors)){
+        return true;
+    }
+
+    $error = $errors[0];
+    if($error->level < 3){
+        return true;
+    }
+
+    $explodedxml = explode("r", $xml);
+    $badxml = $explodedxml[($error->line)-1];
+
+    $message = $error->message . ' at line ' . $error->line . '. Bad XML: ' .
+htmlentities($badxml);
+    return $message;
+}
+===============================================================================
+
+Adds a new function for SimpleXMLElement class, in order to output HTML code.
+
+<?php
+class CeiXML extends SimpleXMLElement{
+public function asHTML(){
+$ele=dom_import_simplexml($this);
+$dom = new DOMDocument('1.0', 'utf-8');
+$element=$dom->importNode($ele,true);
+$dom->appendChild($element);
+return $dom->saveHTML();
+}
+}
+?>
+===============================================================================
+
+Note that changing attributes from within a foreach loop, especially namespaced
+attributes, can be very tricky.
+
+For example, when trying to change the value of an existing xlink:href
+attribute:
+<?php
+foreach($xmlelement -> attributes('xlink', true) as $attribute => $attribvalue)
+{
+    $attribvalue[0] = 'value'; // Throws an error
+    $attribvalue = 'value'; // Does not change your XML
+    $xmlelement -> addAttribute($attribute, 'value', 'http://www.w3.org/1999/
+xlink'); // Adds an attribute, does not change existing one.
+    $xmlelement[$attribute] = 'value'; // Adds an attribute, does not change
+existing one.
+}
+?>
+
+Instead, you should access the array returned by the attributes() function
+directly, like this:
+<?php
+    $xmlelement -> attributes('xlink', true) -> href = 'value'; // Works!
+?>
+===============================================================================
+
+Important note I miss here in the documentation:
+
+SimpleXML supports Array/Iteration-Methods. Therefore it is possible to
+
+add attributes
+edit attributes
+remove attributes
+
+add nodes
+edit nodes
+remove nodes
+
+This is the reason why SimpleXML provides only add-methods not deleting- or
+editing-methods. We also need this methods because SimpleXML acts as a normal
+class and
+new member will not converted to a new node.
+
+Deleting a node seems not to be possible within a foreach-loop. The reason is
+simple. To do that we need a valid key, but the Iterator only gives us a
+"understandable feedback" on which node we are working on: the tag name.
+
+So this will not work:
+
+<?php
+foreach($doc->seg as $key => $seg)
+{
+    if((string)$seg['id'] === 'whatever')
+    {
+        unset($seg); // only clears local copy
+        unset($seg[$key]); // wrong index "seg"
+    }
+}
+?>
+
+But this, eg. will work:
+<?php
+unset($doc->seg[2]);
+?>
+
+In case of doubt always do a print_r/var_dump(). It nicely shows the real
+linked indexes.
+===============================================================================
+
+It's occasionally useful to add an XML processing instruction to a
+SimpleXMLElement (treating it as if it were a full document).
+<?php
+class SimpleXMLElement_Plus extends SimpleXMLElement {
+
+    public function addProcessingInstruction( $name, $value )
+    {
+        // Create a DomElement from this simpleXML object
+        $dom_sxe = dom_import_simplexml($this);
+       
+        // Create a handle to the owner doc of this xml
+        $dom_parent = $dom_sxe->ownerDocument;
+       
+        // Find the topmost element of the domDocument
+        $xpath = new DOMXPath($dom_parent);
+        $first_element = $xpath->evaluate('/*[1]')->item(0);
+       
+        // Add the processing instruction before the topmost element           
+        $pi = $dom_parent->createProcessingInstruction($name, $value);
+        $dom_parent->insertBefore($pi, $first_element);
+    }
+}
+?>
+
+For example, if you had a simpleXMLElement_Plus object made out of the xml
+fragment:
+<xml><content /></xml>
+
+And you needed the output to be:
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="xsl/xsl.xsl"?>
+<xml><content/></xml>
+
+you could do (using the class above):
+<?php
+$xml = new SimpleXMLElement_Plus('<xml><content /></xml>');
+$xml->addProcessingInstruction('xml-stylesheet', 'type="text/xsl" href="xsl/
+xsl.xsl"');
+echo $xml->asXML();
+?>
+===============================================================================
+
+Here is a more namespace-aware version of the earlier function for attaching
+one SimpleXMLElement to another.  I'm sure it could still be further improved
+(right now it generates some redundant xmlns definitions), but it seems to be
+working well enough for my purposes so far.
+
+function SimpleXMLElement_append($parent, $child)
+{
+    // get all namespaces for document
+    $namespaces = $child->getNamespaces(true);
+
+    // check if there is a default namespace for the current node
+    $currentNs = $child->getNamespaces();
+    $defaultNs = count($currentNs) > 0 ? current($currentNs) : null;
+    $prefix = (count($currentNs) > 0) ? current(array_keys($currentNs)) : '';
+    $childName = strlen($prefix) > 1
+        ? $prefix . ':' . $child->getName() : $child->getName();
+
+    // check if the value is string value / data
+    if (trim((string) $child) == '') {
+        $element = $parent->addChild($childName, null, $defaultNs);
+    } else {
+        $element = $parent->addChild(
+            $childName, htmlspecialchars((string)$child), $defaultNs
+        );
+    }
+
+    foreach ($child->attributes() as $attKey => $attValue) {
+        $element->addAttribute($attKey, $attValue);
+    }
+    foreach ($namespaces as $nskey => $nsurl) {
+        foreach ($child->attributes($nsurl) as $attKey => $attValue) {
+            $element->addAttribute($nskey . ':' . $attKey, $attValue, $nsurl);
+        }
+    }
+
+    // add children -- try with namespaces first, but default to all children
+    // if no namespaced children are found.
+    $children = 0;
+    foreach ($namespaces as $nskey => $nsurl) {
+        foreach ($child->children($nsurl) as $currChild) {
+            SimpleXMLElement_append($element, $currChild);
+            $children++;
+        }
+    }
+    if ($children == 0) {
+        foreach ($child->children() as $currChild) {
+            SimpleXMLElement_append($element, $currChild);
+        }
+    }
+}
+===============================================================================
+
+Figuring out how to access the properties of a SimpleXmlElement object was a
+little tricky for me. In particular, it took a while to discover that I needed
+to cast my SimpleXmlElement properties to be of type "string" to print them or
+do comparisons on them. For instance, assuming you already have a string of xml
+in $xmlstr...
+
+<?php
+$sxml= new SimpleXmlElement($xmlstr);
+
+if ((string) $sxml->property== "somevalue") {
+    echo (string) $sxml->property;
+}
+?>
+The properties of a SimpleXmlElement object are objects themselves, so you need
+to put "(string)" before them, which casts their values to a string instead of
+an object. I assume if you were doing a numeric comparison you'd want to cast
+to an (int) or something numeric instead.
+===============================================================================
+
+Hello,
+
+here goes my contribution for those whom are struggling to understand how
+SimpleXMLElement works.
+
+After some time trying to figure out how this works, I've came up to this small
+example:
+
+<?php
+    $xmlstr = "<?xml version='1.0' ?>\n".
+              // optionally you can specify a xml-stylesheet for presenting the
+results. just uncoment the following line and change the stylesheet name.
+              /* "<?xml-stylesheet type='text/xsl' href='xml_style.xsl' ?>\n".
+*/
+              "<book></book>";
+
+    // create the SimpleXMLElement object with an empty <book> element
+    $xml = new SimpleXMLElement($xmlstr);
+
+    // add some child nodes
+    $xml->addChild("title", "Title of my book");
+    $xml->addChild("abstract", "My book is about learning to work with
+SimpleXMLElement");
+
+    // add some more child nodes
+    $chapter1 = $xml->addChild("chapter_1");
+    // add an attribute to child chapter_1
+    $chapter1->addAttribute("chapter_title", "Introduction to my book");
+
+    $chapter2 = $xml->addChild("chapter_2");
+    $chapter2->addAttribute("chapter_title", "Development of my book");
+
+    $chapter3 = $xml->addChild("chapter_3");
+    $chapter3->addAttribute("chapter_title", "Another chapter of my book");
+
+    $conclusion = $xml->addChild("conclusion", "The ending of my book");
+
+    // insert the header to tell the browser how to read the document
+    header("Content-type: text/xml");
+    // print the SimpleXMLElement as a XML well-formed string
+    echo $xml->asXML();
+?>
+
+With this script you can just copy-paste and try to understand how it works.
+I hope it can help somebody :)
+===============================================================================
+
+The root node element of your input XML string is not retrievable as a
+property.
+
+<?php
+$xml="<foo>bar</foo>";
+$sxe=new SimpleXMLElement($xml);
+print $sxe->foo;
+?>
+
+prints nothing. You can only get to the root element via the array index method
+($sxe[0]).
+
+Also, you may not have two (or more) root elements -- that is apparently not
+well-formed XML.
+
+<?php
+$xml="<foo/><bar/>";
+$sxe=new SimpleXMLElement($xml);
+?>
+
+throws an exception. A Q&D is to append an arbitraty root node structure to
+both ends of the input:
+
+<?php
+$xml="<foo/><bar/>";
+$sxe=new SimpleXMLElement("<z>".$xml."</z>");
+?>
+
+Doing this also solves the above problem of root node property accessibility.
+(It may not work if your XML string includes a declaration.)
+===============================================================================
+
+Be aware when you trying to cast some attribute to boolean.
+
+(boolean)$xml->attributes()->someAtt;
+
+returns TRUE if attribute is array([0] => 0);
+
+use (boolean)(int) instead.
+===============================================================================
+
+You should cast elements to a float (or even string) if you plan on using them
+in addition, multiplication, etc. If you don't then PHP will incorrectly treat
+the node values as an integer.
+
+<?php
+$obj = new SimpleXMLElement('<root>
+    <a>1.9</a>
+    <b>1.9</b>
+</root>');
+
+var_dump($obj->a + $obj->b);
+var_dump((float)$obj->a + (float)$obj->b);
+var_dump((string)$obj->a + (string)$obj->b);
+?>
+
+The first line gives: int(2)
+The second and third give the expected result: float(3.8)
+===============================================================================
+
+xml to object conversion function :
+<?php
+/**
+    @param:
+        $xml: SimpleXMLElement
+        $force: set to true to always create 'text', 'attribute', and
+'children' even if empty
+    @return
+        object with attributs:
+            (string) name: XML tag name
+            (string) text: text content of the attribut name
+            (array) attributes: array witch keys are attribute key and values
+are attribute value
+            (array) children: array of objects made with xml2obj() on each
+child
+**/
+function xml2obj($xml,$force = false){
+
+    $obj = new StdClass();   
+
+    $obj->name = $xml->getName();
+   
+    $text = trim((string)$xml);
+    $attributes = array();
+    $children = array();
+   
+    foreach($xml->attributes() as $k => $v){
+        $attributes[$k]  = (string)$v;
+    }
+   
+    foreach($xml->children() as $k => $v){
+        $children[] = xml2obj($v,$force);
+    }
+   
+   
+    if($force or $text !== '')
+        $obj->text = $text;
+       
+    if($force or count($attributes) > 0)
+        $obj->attributes = $attributes;
+       
+    if($force or count($children) > 0)
+        $obj->children = $children;
+       
+       
+    return $obj;
+}
+?>
+===============================================================================
+
+I'm using SimpleXML for, ofcourse, it's simplicity, however I did wanted to
+manipulate the xml and combining one SimpleXMLElement with any other, so I
+wrote this function to add a SimpleXMLElement-child.
+
+<?php
+function SimpleXMLElement_append($key, $value) {
+    // check class
+    if ((get_class($key) == 'SimpleXMLElement') && (get_class($value) == 
+'SimpleXMLElement')) {
+        // check if the value is string value / data
+        if (trim((string) $value) == '') {
+            // add element and attributes
+            $element = $key->addChild($value->getName());
+            foreach ($value->attributes() as $attKey => $attValue) {
+                $element->addAttribute($attKey, $attValue);
+            }
+            // add children
+            foreach ($value->children() as $child) {
+                SimpleXMLElement_append($element, $child);
+            }
+        } else {
+            // set the value of this item
+            $element = $key->addChild($value->getName(), trim((string) $value
+));
+        }
+    } else {
+        // throw an error
+        throw new Exception('Wrong type of input parameters, expected
+SimpleXMLElement');
+    }
+}
+?>
+
+I'd recommend SimpleXMLElement to extend it's addChild() function with the
+functionalitity above.
+===============================================================================
+
+Simple recursive function to append XML object into SimpleXMLElement node:
+
+<?php
+// root: parent element - SimpleXMLElement instance
+// append: XML object from simplexml_load_string
+
+function xml_join($root, $append) {
+    if ($append) {
+        if (strlen(trim((string) $append))==0) {
+            $xml = $root->addChild($append->getName());
+            foreach($append->children() as $child) {
+                xml_join($xml, $child);
+            }
+        } else {
+            $xml = $root->addChild($append->getName(), (string) $append);
+        }
+        foreach($append->attributes() as $n => $v) {
+            $xml->addAttribute($n, $v);
+        }
+    }
+}
+
+$xml_append = simplexml_load_string('<data><items><item id="1">value</item></
+items></data>');
+$xml_root = new SimpleXMLElement('<result></result>');
+
+$cxml = $xml_root->addChild('clone');
+xml_join($cxml, $xml_append->items->item[0]);
+
+print $xml_root->asXML();
+?>
+
+Result:
+<?xml version="1.0"?>
+<result>
+    <clone>
+        <item id="1">
+            value
+        </item>
+    </clone>
+</result>
+===============================================================================
+
+I created a little function to parse the simple XML into a structure which is
+easier to iterate(I believe anyways) than the simpleXML node structure.
+
+<?php
+function parseSimpleXML($xmldata)
+    {
+        $childNames = array();
+        $children = array();
+
+        if( $xmldata->count() !== 0 )
+        {
+            foreach( $xmldata->children() AS $child )
+            {
+                $name = $child->getName();
+
+                if( !isset($childNames[$name]) )
+                {
+                    $childNames[$name] = 0;
+                }
+
+                $childNames[$name]++;
+                $children[$name][] = $this->parseSimpleXML($child);
+            }
+        }
+
+        $returndata = new XMLNode();
+        if( $xmldata->attributes()->count() > 0 )
+        {
+            $returndata->{'@attributes'} = new XMLAttribute();
+            foreach( $xmldata->attributes() AS $name => $attrib )
+            {
+                $returndata->{'@attributes'}->{$name} = (string)$attrib;
+            }
+        }
+
+        if( count($childNames) > 0 )
+        {
+            foreach( $childNames AS $name => $count )
+            {
+                if( $count === 1 )
+                {
+                    $returndata->{$name} = $children[$name][0];
+                }
+                else
+                {
+                    $returndata->{$name} = new XMLMultiNode();
+                    $counter = 0;
+                    foreach( $children[$name] AS $data )
+                    {
+                        $returndata->{$name}->{$counter} = $data;
+                        $counter++;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if( (string)$xmldata !== '' )
+            {
+                $returndata->{'@innerXML'} = (string)$xmldata;
+            }
+        }
+        return $returndata;
+    }
+?>

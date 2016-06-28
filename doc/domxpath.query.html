@@ -1,0 +1,652 @@
+
+DOMXPath::query
+
+(PHP 5, PHP 7)
+
+DOMXPath::query — Evaluates the given XPath expression
+
+说明
+
+public DOMNodeList DOMXPath::query ( string $expression [, DOMNode $contextnode
+[, bool $registerNodeNS = true ]] )
+
+Executes the given XPath expression.
+
+参数
+
+expression
+
+    The XPath expression to execute.
+
+contextnode
+
+    The optional contextnode can be specified for doing relative XPath queries.
+    By default, the queries are relative to the root element.
+
+registerNodeNS
+
+    The optional registerNodeNS can be specified to disable automatic
+    registration of the context node.
+
+返回值
+
+Returns a DOMNodeList containing all nodes matching the given XPath expression.
+Any expression which does not return nodes will return an empty DOMNodeList.
+
+If the expression is malformed or the contextnode is invalid, DOMXPath::query()
+returns FALSE.
+
+更新日志
+
+版本                   说明
+5.3.3 The registerNodeNS parameter was added.
+
+范例
+
+Example #1 Getting all the english books
+
+<?php
+
+$doc = new DOMDocument;
+
+// We don't want to bother with white spaces
+$doc->preserveWhiteSpace = false;
+
+$doc->Load('book.xml');
+
+$xpath = new DOMXPath($doc);
+
+// We starts from the root element
+$query = '//book/chapter/para/informaltable/tgroup/tbody/row/entry[. = "en"]';
+
+$entries = $xpath->query($query);
+
+foreach ($entries as $entry) {
+    echo "Found {$entry->previousSibling->previousSibling->nodeValue}," .
+         " by {$entry->previousSibling->nodeValue}\n";
+}
+?>
+
+以上例程会输出：
+
+Found The Grapes of Wrath, by John Steinbeck
+Found The Pearl, by John Steinbeck
+
+We can also use the contextnode parameter to shorten our expression:
+
+<?php
+
+$doc = new DOMDocument;
+$doc->preserveWhiteSpace = false;
+
+$doc->load('book.xml');
+
+$xpath = new DOMXPath($doc);
+
+$tbody = $doc->getElementsByTagName('tbody')->item(0);
+
+// our query is relative to the tbody node
+$query = 'row/entry[. = "en"]';
+
+$entries = $xpath->query($query, $tbody);
+
+foreach ($entries as $entry) {
+    echo "Found {$entry->previousSibling->previousSibling->nodeValue}," .
+         " by {$entry->previousSibling->nodeValue}\n";
+}
+?>
+
+参见
+
+  • DOMXPath::evaluate() - Evaluates the given XPath expression and returns a
+    typed result if possible
+
+
+User Contributed Notes 17 notes
+
+===============================================================================
+
+If the query() function seems to ignore your $contextnode, and instead returns
+all the tags in the document, try to use a relative path (use a . in front of
+the query):
+
+<?php
+    $xml = "<?xml version='1.0' encoding='UTF-8'?>
+        <test>
+            <tag1>
+                <uselesstag>
+                    <tag2>test</tag2>
+                </uselesstag>
+            </tag1>
+            <tag2>test2</tag2>
+        </test>";
+  
+    $dom = new DomDocument();
+    $dom->loadXML($xml);
+    $xpath = new DomXPath($dom);
+  
+    $tag1 = $dom->getElementsByTagName("tag1")->item(0);
+  
+    echo $xpath->query("//tag2")->length; //output 2 -> correct
+    echo $xpath->query("//tag2", $tag1)->length; //output 2 -> wrong, the query
+is not relative
+    echo $xpath->query(".//tag2", $tag1)->length; //output 1 -> correct (note
+the dot in front of //)
+?>
+
+See that i couldn't use $xpath->query("tag2", $tag1) as per the documentation,
+since "tag2" is not a direct child of "tag1".
+I don't know why this note was deleted, i just tested it and it's correct.
+It's not a bug, it's simply not written in the documentation.
+===============================================================================
+
+Note that if your DOMDocument was loaded from HTML, where element and attribute
+names are case-insensitive, the DOM parser converts them all to lower-case, so
+your XPath queries will have to as well; '//A/@HREF' won't find anything even
+if the original HTML contained "<A HREF='example.com'>".
+===============================================================================
+
+Please note that what clochix says is valid for *any* document which has a
+default namespace (as it is the case for XHTML).
+
+This document :
+
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<root xmlns="http://www.exemple.org/namespace">
+
+    <element id="1">
+    ...
+    </element>
+
+    <element id="2">
+    ...
+    </element>
+
+</element>
+
+must be accessed this way :
+
+$document = new DOMDocument();
+$document->load('document.xml');
+
+$xpath = new DOMXPath($document);
+$xpath->registerNameSpace('fakeprefix', 'http://www.exemple.org/namespace');
+
+$elements = $xpath->query('//fakeprefix:element');
+
+Of course, there is no prefix in the original document, but the DOMXPath class
+*needs* one, whatever it is, if you use a default namespace. It *doesn't work*
+if you specify an empty prefix like this :
+
+$xpath->registerNameSpace('', 'http://www.exemple.org/namespace');
+
+Hope this help to spare some time...
+===============================================================================
+
+If you're wondering, like I was, why your XPath queries are not returning any
+of the new DOMElements you create in your (X)HTML documents, and only the ones
+originally loaded in with (for example) loadXML(), this is why; if you're doing
+things right, you have registered the nameSpace 'html' after creating your
+DOMXPath object thus:
+
+<?php
+
+class XPathQueryLength {
+     private $nameSpace = '';
+     function __construct(DOMDocument $doc) {
+          $this->xpath = new DOMXPath($this->doc);
+          $this->xpath->registerNamespace(
+                 'html','http://www.w3.org/1999/xhtml' );
+     }
+     function queryLength($query) {
+          return $this->xpath->query($query)->length;
+     }
+}
+
+?>
+
+...but don't forget that when adding new elements to the above DOMDocument
+$doc, to use createElementNS() instead of createElement(), otherwise you'll
+have this problem:
+
+<?php
+
+//$doc is a previously loaded XHTML document containing a normal html, head and
+body structure
+//$body is the first selected tag using $doc->getElementsByTagName('body');
+
+$pTag = $doc->createElement('p','This is a new paragraph!');
+$body->appendChild($pTag);
+
+$xPath = new XPathQueryLength($doc);
+print $xPath->queryLength('//html:p');
+
+output: 0
+
+print $xPath->queryLength('//p');
+
+output: 1
+
+?>
+
+So do this instead:
+
+<?php
+
+//$doc is a previously loaded XHTML document containing a normal html, head and
+body structure
+//$body is the first selected tag using $doc->getElementsByTagName('body');
+
+$pTag = $doc->createElementNS('http://www.w3.org/1999/xhtml','p','This is a new
+paragraph!');
+$body->appendChild($pTag);
+
+$xPath = new XPathQueryLength($doc);
+print $xPath->queryLength('//html:p');
+
+output: 2
+
+print $xPath->queryLength('//p');
+
+output: 0
+
+?>
+
+The resulting XHTML file from both example scripts looks much like this:
+
+<html>
+  <head></head>
+  <body>
+     <p>This is a hardcoded paragraph.</p>
+     <p>This is a new paragraph!</p>
+  </body>
+</html>
+
+...so you would think that a paragraph is a paragraph is a paragraph, since you
+never see the prefix, as in "<html:p>This is a new paragraph!</html:p>".
+
+This may seem glaringly obvious, but I was writing a class that converts CSS
+queries into XPath queries, and the fact that a namespace had been registered
+was rather buried in the code.
+
+We love the DOM, the DOM is good to us.
+===============================================================================
+
+The order of nodes in the return value is not guaranteed.
+
+When my code was on an old server, the returned DOMNodeList was in document
+order.  On the new server, the returned DOMNodeList is in a consistent order,
+but it is not in document order. 
+
+PHP passes this function call off to the xmlXPathEvalExpression() function in
+libxml.  That function in libxml only accepts two arguments - the same two this
+PHP function accepts.  There must have been a change in the libxml version from
+the old server to the new server, and that libxml behaves differently.
+
+This would be okay if PHP had a way to compare nodes so I can resort the nodes
+manually, but there is not.
+
+So, there is no guaranteed way to get an ordered list of nodes like DOM 3 XPath
+provides.
+===============================================================================
+
+Пример XPath запроса к XML документу. XML документ содержить элементы с именами
+из НЕлатинских символов (кириллица). При использовании в XPath запросе
+предиката, функция DOMXPath::query() выдает предупреждение и запрос не
+работает. Чтобы запрос работал, надо явно указывать ось. Файл этого примера
+должен быть в кодировке WINDOWS-1251. Тестировал в PHP 5.2.9-2 и PHP 5.2.17
+
+Example XPath-query to the XML-document. XML-document contains an elements with
+the names of non-Latin characters (cyrillic). When used predicate in
+XPath-query, function DOMXPath::query() gives a warning and query does not
+work. In order to earned the query, it is necessary to explicitly specify the
+axis. The file of this example is to be in the encoding WINDOWS-1251. Tested in
+PHP 5.2.9-2 and PHP 5.2.17
+<?php
+ini_set("display_errors","on");
+error_reporting(-1);
+function utf8encode($str){return iconv('WINDOWS-1251', 'UTF-8', $str);}
+$xml="<?xml version='1.0' encoding='WINDOWS-1251'?>
+<часть>
+<ссылка href='yandex.com'>Яндекс</ссылка>
+<ссылка href='rik.dn.ua/fotopan.php'>г.Донецк</ссылка>
+</часть>
+";
+$document=new domDocument();
+$document->preserveWhiteSpace=false;
+$document->loadXML($xml);
+$domxpath=new domXpath($document);
+$list=$domxpath->query(utf8encode('/child::часть/child::ссылка'));//Ok
+echo '$list->length='.$list->length."\n<br/>\n";
+$list=$domxpath->query(utf8encode('/часть/ссылка'));//Ok
+echo '$list->length='.$list->length."\n<br/>\n";
+$list=$domxpath->query(utf8encode('/child::часть/child::ссылка[position()=1]'
+));//Ok
+echo '$list->length='.$list->length."\n<br/>\n";
+$list=$domxpath->query(utf8encode('/часть/ссылка[1]'));//Warning:
+DOMXPath::query() [domxpath.query]: Invalid expression in ...
+echo '$list->length='.$list->length."\n<br/>\n";
+$list=$domxpath->query(utf8encode('/часть/ссылка[position()=1]'));//Warning:
+DOMXPath::query() [domxpath.query]: Invalid expression in ...
+echo '$list->length='.$list->length."\n<br/>\n";
+?>
+===============================================================================
+
+I hope it will be helpful for someone:
+
+I spent some time to solve the problem when you query a string with quotes
+inside.
+
+Suppose you have:
+$parameter = "aaa \"bbb\"";
+$domxpath->query("//path[text()=\"".$parameter."\""];
+
+In versions > 5.3.0 there is registerPhpFunctions where you can put an
+addslashes. But in older version you cannot do it in simple way.
+
+So the solution is to use a concat function. So when you have a substring with
+" inside, wrap it with '. And when you have a substring with ', then wrap with
+in ".
+
+The code is:
+
+<?php
+$dom = new DOMDocument;
+$dom->loadXML("<name>'bla' \"bla\" bla</name>");
+$xpath = new DOMXPath($dom);
+$nodeList = $xpath->query("//name[text()=concat(\"'bla' \" ,'\"bla\"' ,\" bla\
+")]");
+?>
+
+Below is the function that receives a string and returns a concat pattern for
+the xpath query.
+
+<?php
+    function getPattern_MQ($pattern) {
+        // initiating an array of substrings
+        $ar = array();
+        // points to the current position in a string
+        $offset = 0;
+        $strlen = strlen($pattern);
+        while (true) {
+            // find a position of quotes
+            $qPos = strpos($pattern, "\"", $offset);
+           
+            if (!$qPos) {
+                // no more quotes
+                $leftOver = $offset - $strlen;
+                if ($leftOver < 0) {
+                    $string = substr($pattern, $leftOver);
+                    $ar[] = "\"" . $string . "\"";
+                }
+                break;
+            }
+            // add the whole substring before the quotes into the array
+            $ar[] = "\"" . substr($pattern, $offset, ($qPos - $offset)) . "\"";
+            // add the quotes wrapped with single quot
+            $ar[] = "'" . substr($pattern, $qPos, 1) . "'";
+            $offset = $qPos + 1;
+        }
+        // join the array to get: concat("aaa",'"',"bbb",'"');
+        $pattern = "concat(''," . join(",", $dynamicPatternsAr) . ")";
+        return $pattern;
+    }
+?>
+===============================================================================
+
+The parameters for $xPath->query() method is case sensitive.
+It matches IDs exact words.
+===============================================================================
+
+To help with the problem where the default namespace is not registered with the
+DOMXPath object, you can use the following replacement to update your paths
+accordingly:
+
+<?php
+
+$xml = <<<EOS
+<root xmlns="urn:test">
+    <foo>bar</foo>
+</root>
+EOS;
+
+$expression = '//foo';
+$prefix = 'fakeprefix';
+
+$doc = new DOMDocument();
+$doc->loadXML($xml);
+
+$context = $doc->documentElement; // or whichever element you choose
+$xpath = new DOMXPath($doc);
+
+// register namespace as below, and apply a regex to the expression
+if (null !== $context->namespaceURI) {
+    $xpath->registerNamespace($prefix, $context->namespaceURI);
+    $expression = preg_replace('#(::|/\s*|\A)(?![/@].+?|[a-z\-]+::)#', '$1' . 
+$prefix . ':$2', $expression);
+    var_dump($expression); // string(16) "//fakeprefix:foo"
+}
+
+$foo = $xpath->query($expression, $context)->item(0);
+var_dump($doc->saveXML($foo)); // string(14) "<foo>bar</foo>"
+
+?>
+===============================================================================
+
+I found this useful for building page templates
+
+<?php
+$xsl = new DOMDocument;
+$xsl->load('layout.xsl');
+
+// Set the <xsl:include> href attribute, the inner stylesheet to include in
+this layout
+$xpath = new DomXPath($xsl);
+$res = $xpath->query('//xsl:include');
+$res->item(0)->setAttribute('href','page.xsl');
+$xsl->save('media/xsl/layout.xsl');
+?>
+===============================================================================
+
+You can transform the result nodes into new DOMDocument objects this way:
+
+<?php
+$result = $xpath->query($query);
+$resultNode = $result->item(0);
+$newDom = new DOMDocument;
+$newDom->appendChild($newDom->importNode($resultNode,1));
+
+print "<pre>" . htmlspecialchars($newDom->saveXML()) . "</pre>";
+?>
+===============================================================================
+
+Two great XPath references follow.
+
+XPath in Five Paragraphs (finally!):
+http://www.rpbourret.com/xml/XPathIn5.htm
+
+The w3c spec actually has a bunch of helpful examples:
+http://www.w3.org/TR/xpath#location-paths
+===============================================================================
+
+For XPath escaping use the following method (of course it could be more
+efficient).
+<?php
+public function xpathescape($string)
+{
+$result = 'concat(';
+
+for($i=0, $j=strlen($string); $i<$j; ++$i)
+{
+if($i > 0)
+$result .= ",";
+
+if($string[$i] == '\'')
+$result .= "\"".$string[$i]."\"";
+else
+$result .= '\''.$string[$i].'\'';
+}
+
+$result .= ')';
+
+return $result;
+}
+?>
+
+Use it this way:
+<php
+$xpath->query('//example[sub='.xpathescape($acomplexstring).']');
+
+?>
+===============================================================================
+
+I've searched the entire web looking for a way to update / modify/ change/
+alter the elements of an xml file and found NOTHING!
+
+So here it is, the defninitive way to "Change XML elements with PHP" rather
+than adding / appending new ones. This uses XPATH:
+
+<?php
+
+// Create a DOMDocument instance
+$xml = new DOMDocument;
+
+// Ignore whitespace between nodes (default: true)
+$xml->preserveWhiteSpace = false;
+
+$file='about.xml';
+
+// Load the XML data source
+$xml->Load($file);
+
+$xpath = new DOMXPath($xml);
+
+$query='/regions/branch';
+
+$entries = $xpath->query($query);
+
+foreach ($entries as $entry)
+{
+  $entry->firstChild->nodeValue="like this!";
+  echo $entry->firstChild->nodeValue; 
+}
+
+$xml->save($file);
+
+?>
+===============================================================================
+
+Unfortunately PHP's DOM extension doesn't support use of:
+<?xml-stylesheet type="text/xsl" ... ?>
+processing instruction.
+Here is an example, how to implement it using XPath query and extending
+DOMDocument by a method output().
+
+<?php
+
+// This simple function adds missing direct usage of anonymous instances
+// in PHP5's reference model
+function a($var) {
+   return $var;
+}
+
+// Extended DOMDocument class
+class MyDOMDocument extends DOMDocument
+{
+
+   public function output()
+   {
+      $stylesheets = array();
+      $PIs = a(new DOMXPath($this))
+                  ->query('/processing-instruction("xml-stylesheet")');
+
+      foreach($PIs as $PI)
+      {
+         // This might be implemented cleaner by regular parsing
+         // of DOMProcessingInstruction::data property
+         if(ereg('type *= *"text/xsl" +href *= *"([^"]+)"', $PI->data, $mem))
+         {
+            // Here should be verified, that XSL file exists.
+            a($stylesheets[] = new DOMDocument())->load($mem[1]);
+         }
+      }
+
+      if($stylesheets)
+      {
+         $processor = new XSLTProcessor();
+         foreach($stylesheets as $stylesheet)
+            $processor->importStylesheet($stylesheet);
+         return $processor->transformToDoc($this);
+      }
+      // If no stylesheet instructions present, return self directly
+      else return $this;
+
+   }
+}
+
+?>
+
+Usage:
+
+<?php
+
+$document = new MyDOMDocument();
+$document->load('my.xml');
+echo $document->output()->saveXML();
+
+?>
+
+With following file my.xml:
+
+<?xml version="1.0" ?>
+<?xml-stylesheet type="text/xsl" href="my.xsl" ?>
+<my-root />
+
+and existing file my.xsl that code will transform the xml file using my.xsl and
+output the result.
+===============================================================================
+
+A warning to all PHP programmer using this function PHP 5.0.0.0: We needed an
+equivalent to upper-case() function (is not available in XPath 1.0).
+
+XML-Document:
+
+<Rec>
+<SourceRef>./c:calendar2</SourceRef>
+<SourceRef>./c:calendar</SourceRef>
+</Rec>
+
+using
+
+query('//DataStore[translate
+(SourceRef,"abcdefghijklmnopqrstuvwxyz","ABCDEFGHIJKLMNOPQRSTUVWXYZ")="./
+C:CALENDAR"]/.')
+
+returns ZERO matches.
+
+If you change XML-Source to
+
+<Rec>
+<SourceRef>./c:calendar</SourceRef>
+<SourceRef>./c:calendar2</SourceRef>
+</Rec>
+
+everything works fine
+===============================================================================
+
+If you want to perform queries on XHTML documents, you must fix a default
+namespace:
+
+<?php
+$doc = new DOMDocument;
+$doc->preserveWhiteSpace = true;
+$doc->resolveExternals = true; // for character entities
+$doc->load("http://www.w3.org/");
+$xpath = new DOMXPath($doc);
+// won't work
+$entries = $xpath->query("//div");
+// you should use :
+$xpath->registerNamespace("html", "http://www.w3.org/1999/xhtml");
+$entries = $xpath->query("//html:div");
+?>

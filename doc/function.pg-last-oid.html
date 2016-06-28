@@ -1,0 +1,121 @@
+
+pg_last_oid
+
+(PHP 4 >= 4.2.0, PHP 5, PHP 7)
+
+pg_last_oid — 返回上一个对象的 oid
+
+说明
+
+int pg_last_oid ( resource $result )
+
+pg_last_oid() 在上一条通过 pg_query() 发送的命令是 SQL INSERT 的情况下用来取得
+分配给所插入记录的 oid。如果存在有效的 oid 则返回一个正整数，如果出错或者上一条
+通过 pg_query() 发送的命令不是 INSERT 或者该 INSERT 失败则返回 FALSE。
+
+从 PostgreSQL 7.2 版开始 OID 字段成为可选项。如果一个表中没有定义 OID 字段，程
+序员必须用 pg_result_status() 函数来检查记录是否被成功插入。
+
+    Note:
+
+    本函数以前的名字为 pg_getlastoid()。
+
+参见 pg_query() 和 pg_result_status()。
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+The way I nuderstand it, each value is emitted by a sequence only ONCE. If you
+retrieve a number (say 12) from a sequence using nextval(), the sequence will
+advance and subsequent calls to nextval() will return further numbers (after
+12) in the sequence.
+
+This means that if you use nextval() to retrieve a value to use as a primary
+key, you can be guaranteed that no other calls to nextval() on that sequence
+will return the same value. No race conditions, no transactions required.
+
+That's what sequences are *for* afaik :^)
+===============================================================================
+
+As pointed out on a busy site some of the above methods might actually give you
+an incorrect answer as another record is inserted inbetween your insert  and
+the select. To combat this put it into a transaction and dont commit till you
+have done all the work
+===============================================================================
+
+You could use this to get the last insert id...
+
+CREATE TABLE test (
+  id serial,
+  something int not null
+);
+
+This creates the sequence test_id_seq. Now do the following after inserting
+something into table test:
+
+INSERT INTO test (something) VALUES (123);
+SELECT currval('test_id_seq') AS lastinsertid;
+
+lastinsertid should contain your last insert id.
+===============================================================================
+
+Simply getting LAST_INSERT_ID;
+
+<?php
+// Note: waiting for "select" part from pg_query below.
+// Note: separating the query parts using semicolons (;).
+
+$qry = pg_query("
+    INSERT INTO users (id,uname,upass,rep) VALUES
+(DEFAULT,'bubu','a981v',0.19);
+    SELECT Currval('users_id_seq') LIMIT 1
+");
+
+// or
+$qry = pg_query("
+    INSERT INTO users (id,uname,upass,rep) VALUES (DEFAULT,'bubu','a981v',0.19)
+RETURNING Currval('users_id_seq')");
+
+$fch = pg_fetch_row($qry);
+print_r($fch);
+?>
+
+Array
+(
+    [0] => 3 -> Gotcha!
+)
+===============================================================================
+
+I'm sharing an elegant solution I found on the web (Vadim Passynkov):
+
+CREATE RULE get_pkey_on_insert AS ON INSERT TO Customers DO SELECT currval
+('customers_customers_id_seq') AS id;
+
+Every time you insert to the Customers table, postgreSQL will return a table
+with the id you just inserted. No need to worry about concurrency, the
+ressource is locked when the rule gets executed.
+
+Note that in cases of multiple inserts:
+INSERT INTO C1 ( ... ) ( SELECT * FROM C2);
+
+we would return the id of the last inserted row.
+
+For more info about PostgreSQL rules:
+http://www.postgresql.org/docs/7.4/interactive/sql-createrule.html
+===============================================================================
+
+This is very useful function :)
+
+function sql_last_inserted_id($connection, $result, $table_name, $column_name)
+{
+   $oid = pg_last_oid ( $result);
+       $query_for_id = "SELECT $column_name FROM $table_name WHERE oid=$oid";
+   $result_for_id = pg_query($connection,$query_for_id);
+   if(pg_num_rows($result_for_id))
+      $id=pg_fetch_array($result_for_id,0,PGSQL_ASSOC);
+   return $id[$column_name];
+}
+
+Call after insert, simply ;)

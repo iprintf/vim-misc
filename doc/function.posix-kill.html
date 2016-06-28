@@ -1,0 +1,261 @@
+
+posix_kill
+
+(PHP 4, PHP 5, PHP 7)
+
+posix_kill — Send a signal to a process
+
+说明
+
+bool posix_kill ( int $pid , int $sig )
+
+Send the signal sig to the process with the process identifier pid.
+
+参数
+
+pid
+
+    The process identifier.
+
+sig
+
+    One of the PCNTL signals constants.
+
+返回值
+
+成功时返回 TRUE，或者在失败时返回 FALSE。
+
+参见
+
+  • The kill(2) manual page of the POSIX system, which contains additional
+    information about negative process identifiers, the special pid 0, the
+    special pid -1, and the signal number 0.
+
+
+User Contributed Notes 11 notes
+
+===============================================================================
+
+Detecting if another copy of a program is running (*NIX specific)
+
+One cute trick, to see if another process is running, is to send it signal 0. 
+Signal 0 does not actually get sent, but kill will check to see if it is
+possible to send the signal.  Note that this only works if you have permission
+to send a signal to that process.
+
+A practical use for this technique is to avoid running multiple copies of the
+same program.  You save the PID to a file in the usual way...   Then during
+start-up you check the value of the PID file and see if that process currently
+exists.
+
+This is not totally fool-proof.  In rare circumstances it is possible for an
+unrelated program to have the same recycled PID.  But that other program would
+most likely not accept signals from your program anyway (unless your program is
+root). 
+
+To make it as reliable as possible, you would want your program to remove it's
+PID file during shutdown (see register_shutdown_function).  That way, only if
+your program crashed AND another program happened to use the same PID AND the
+other program was willing to accept signals from your program, would you get a
+wrong result.  This would be an exceedingly rare occurrence.  This also assumes
+that the PID file has not been tampered with (as do all programs that rely on
+PID files...). 
+
+It's also possible to use 'ps x' to detect this, but using kill is much more
+efficient.
+
+Here is the core routine:
+
+    $PrevPid = file_get_contents($PathToPidFile);
+
+    if(($PrevPid !== FALSE) && posix_kill(rtrim($PrevPid),0)) {
+        echo "Error: Server is already running with PID: $PrevPid\n";
+        exit(-99);
+    } else {
+        echo "Starting Server...";
+    }
+
+Hmmm...  if you want total 100% reliability, plus efficiency.  What you could
+do is to make the initial check using kill.  If it says not running, then you
+are ready to zoom.  But if kill says already running, then you could use:
+
+//You can get the $ProgramName from $argv[0]
+$Result = shell_exec('ps x | grep "' . $PrevPid . '" | grep "' . $ProgramName .
+'" | grep -v "grep"');
+
+Assuming that your program has permissions to do this.  If you execute that and
+get back an empty string, then the other program is an imposter using a
+recycled PID and you are clear to go. 
+
+-- Erik
+===============================================================================
+
+here is a process kill function for windows:
+
+<?php
+function win_kill($pid){
+    $wmi=new COM("winmgmts:{impersonationLevel=impersonate}!\\\\.\\root\\cimv2"
+);
+    $procs=$wmi->ExecQuery("SELECT * FROM Win32_Process WHERE ProcessId='".$pid
+."'");
+    foreach($procs as $proc)
+      $proc->Terminate();
+}
+?>
+===============================================================================
+
+Warning!
+
+The $sig parameter cannot be one of the PCNTL signals constants if you are
+running your script from the browser (ie. as an apache process). Strangely it
+does seem to allow the constants to be used from the command line ("php -r
+...") but if your script is running from within apache then calling posix_kill
+($pid, SIGINT) will return FALSE (and posix_get_last_error() will return 0).
+===============================================================================
+
+In order to check the outcome of posix_kill() you can use posix_get_last_error
+(), which will return 0 (zero) in case of success and a non-zero error code
+otherwise. Use the number returned by posix_get_last_error() as a parameter to
+posix_strerror() to get a human-readable error message corresponding to that
+error code.
+
+Please note that a non-zero code from posix_get_last_error() does NOT mean that
+the pid doesn't exist; it only means that posix_kill() ran into trouble
+signalling that process. For example, the pid may exist but the process is
+owned by a user other than the one you use to run the code, and you're not
+root; in which case you'll get an error saying you're not allowed to signal
+that process (operation not permitted).
+
+Accordingly, the code posted by Jille earlier is WRONG. According to the POSIX
+spec (see errno.h on your system), EPERM means "operation not permitted". This
+should NOT be taken as indication that the pid doesn't exist, it merely means
+that posix_kill() couldn't signal that process. If anything, it should be a
+hint that a process with that pid IS running.
+
+errno.h constant names definitions:
+http://www.opengroup.org/onlinepubs/009695399/basedefs/errno.h.html
+
+Unfortunately, PHP does not currently define constants with these names (such
+as EPERM, ENOENT, ESRCH etc.) A non-complete subset is defined for socket
+operations (SOCKET_EPERM for example), but it doesn't hold all the possible
+POSIX error constants; ESRCH for instance is of particular interest for
+posix_kill(), but SOCKET_ESRCH doesn't exist, because it means "no such
+process" and doesn't make sense for sockets.
+
+Solutions:
+* Have PHP devs define these constants in a future PHP version.
+* Look-up errno.h on your system and define your own constants. You can use a
+script to parse errno.h and either define the constants on the fly or generate,
+once, the PHP code to define them.
+
+Please be advised, however, that relying on a specific errno.h is not portable.
+Different systems may have different numeric values for these constants. That's
+why PHP should be defining the constants at compilation time and the code
+should be able to rely on the constant names; only the names are portable, not
+the actual values.
+===============================================================================
+
+check whether the process is running. windows-linux
+<?php
+function isRunning($pid) {
+        $isRunning = false;
+        if(strncasecmp(PHP_OS, "win", 3) == 0) {
+            $out = [];
+            exec("TASKLIST /FO LIST /FI \"PID eq $pid\"", $out);
+            if(count($out) > 1) {
+                $isRunning = true;
+            }
+        }
+        elseif(posix_kill(intval($prevPid), 0)) {
+            $isRunning = true;
+        }
+        return $isRunning;
+}
+?>
+===============================================================================
+
+Just like the error codes (EPERM, EEXIST, etc), signal numbers are different on
+different platforms.  EG on macos, SIGCONT is 19; on Linux SIGSTOP is 19.  Big
+difference.
+
+If you have PCNTL compiled in, you can use the constants like SIGCONT; i trust
+they're all correct.
+
+If not, look in /usr/include/signal.h; these days its tons of ifdef mumbo jumbo
+but you can go to /usr/include/bits or /usr/include/sys or something and look
+for files named sig*.h; one of them will list them for you.
+===============================================================================
+
+Keep in mind that you can only send kill signals to processes owned by your
+UID.
+
+If you are running your program as root, then you can send kill signals to all
+processes.
+===============================================================================
+
+For those that want to kill everything matching a certain pattern (ala killall
+in for linux), try something like this.  Note that this is a good idea to do
+something like this for cross platform compatilibity, instead of executing
+killall, because killall for other UNIXes does just that, kills EVERYTHING.  :)
+
+function killall($match) {
+    if($match=='') return 'no pattern specified';
+    $match = escapeshellarg($match);
+    exec("ps x|grep $match|grep -v grep|awk '{print $1}'", $output, $ret);
+    if($ret) return 'you need ps, grep, and awk installed for this to work';
+    while(list(,$t) = each($output)) {
+        if(preg_match('/^([0-9]+)/', $t, $r)) {
+            system('kill '. $r[1], $k);
+            if(!$k) $killed = 1;
+        }
+    }
+    if($killed) {
+        return '';
+    } else {
+        return "$match: no process killed";
+    }
+}
+===============================================================================
+
+Posix_kill is not so reliable (it seems it always deliver the signal - even 0
+to a no existing process - and doesn't generate an error).
+I found this way to check the existence of a process, using /proc:
+
+if(!file_exists("/proc/$pid/cmdline"
+
+obviously check the permissions .
+===============================================================================
+
+If you want to test whether processes owned by other users are running, you can
+use:
+
+<?php
+  $running=posix_kill($pid, 0);
+  if(posix_get_last_error()==1) /* EPERM */
+    $running=true;
+?>
+
+If the process is owned by somebody else (and you're not root), you will get an
+EPERM.
+On my system (FreeBSD) this is defined to 1.
+
+You should test what the value of EPERM is on your system.
+===============================================================================
+
+A little recursive function to kill a process and his childs.
+it works fine for me and I don't have find something else to do it.
+It's a mix of various scripts I've found.
+
+<?php
+    function killProcessAndChilds($pid,$signal) {
+        exec("ps -ef| awk '\$3 == '$pid' { print  \$2 }'", $output, $ret);
+        if($ret) return 'you need ps, grep, and awk';
+        while(list(,$t) = each($output)) {
+            if ( $t != $pid ) {
+                killProcessAndChilds($t,$signal);
+            }
+        }
+        //echo "killing ".$pid."\n";
+        posix_kill($pid, 9);
+    }
+?>

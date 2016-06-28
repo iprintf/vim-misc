@@ -1,0 +1,189 @@
+
+mb_decode_numericentity
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+mb_decode_numericentity — 根据 HTML 数字字符串解码成字符
+
+说明
+
+string mb_decode_numericentity ( string $str , array $convmap [, string
+$encoding = mb_internal_encoding() ] )
+
+将数字字符串的引用str 按指定的字符块转换成字符串。
+
+参数
+
+str
+
+    要解码的 string。
+
+convmap
+
+    convmap 是一个 array，指定了要转换的代码区域。
+
+encoding
+
+    encoding 参数为字符编码。如果省略，则使用内部字符编码。
+
+返回值
+
+转换后的字符串。
+
+范例
+
+Example #1 convmap 例子
+
+<?php
+$convmap = array (
+   int start_code1, int end_code1, int offset1, int mask1,
+   int start_code2, int end_code2, int offset2, int mask2,
+   ........
+   int start_codeN, int end_codeN, int offsetN, int maskN );
+// Specify Unicode value for start_codeN and end_codeN
+// Add offsetN to value and take bit-wise 'AND' with maskN, 
+// then convert value to numeric string reference.
+?>
+
+参见
+
+  • mb_encode_numericentity() - Encode character to HTML numeric string
+    reference
+
+
+User Contributed Notes 6 notes
+
+===============================================================================
+
+Just two great functions for daily use:
+
+/* Converts any HTML-entities into characters */
+function my_numeric2character($t)
+{
+    $convmap = array(0x0, 0x2FFFF, 0, 0xFFFF);
+    return mb_decode_numericentity($t, $convmap, 'UTF-8');
+}
+/* Converts any characters into HTML-entities */
+function my_character2numeric($t)
+{
+    $convmap = array(0x0, 0x2FFFF, 0, 0xFFFF);
+    return mb_encode_numericentity($t, $convmap, 'UTF-8');
+}
+print my_numeric2character('&#8217; &#7936; &#226;');
+print my_character2numeric('     ');
+===============================================================================
+
+note that at this time it seems that mb_decode_numericentity() only works with
+decimal entities and not hexadecimal entities.  This fact would have saved me a
+good hour of time in debugging.
+
+For those who need to convert hex entities try first converting them all to
+decimal entities with a combination of the preg_replace() and hexdec()
+functions.
+===============================================================================
+
+Many web browsers will tend upload high order characters as UTF-8 encoded
+entities.
+
+Here is some simple code to convert UTF-8 HTML entities within a block of text
+into proper characters:
+
+<?php
+   //decode decimal HTML entities added by web browser
+  $body = preg_replace('/&#\d{2,5};/ue', "utf8_entity_decode('$0')", $body );
+  //decode hex HTML entities added by web browser
+  $body = preg_replace('/&#x([a-fA-F0-7]{2,8});/ue', "utf8_entity_decode('&#
+'.hexdec('$1').';')", $body );
+
+//callback function for the regex
+function utf8_entity_decode($entity){
+$convmap = array(0x0, 0x10000, 0, 0xfffff);
+return mb_decode_numericentity($entity, $convmap, 'UTF-8');
+}
+?>
+===============================================================================
+
+Here are functions to convert hankaku to zenkaku characters (and vice-versa) in
+Japanese text.
+
+<?php
+
+// Supported characters:
+//    (space)
+//     !#$%&()*+,./0123456789:;<=>?@
+//    ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`
+//    abcdefghijklmnopqrstuvwxyz{|}
+// (Katakana isn't supported.)
+
+function f_han2zen ($string,$encoding = null) {
+  if (is_null($encoding)) $encoding = mb_internal_encoding();
+  $convmap = array(
+     0x20,0x20,0x3000-0x20,0xffff,   // Space
+     0x21,0x7e,0xff01-0x21,0xffff);
+  $temp = mb_encode_numericentity($string,$convmap,$encoding);
+  $convmap = array(0,0xffff,0,0xffff);
+  return mb_decode_numericentity($temp,$convmap,$encoding);
+}
+function f_zen2han ($string,$encoding = null) {
+  if (is_null($encoding)) $encoding = mb_internal_encoding();
+  $convmap = array(
+     0x3000,0x3000,-(0x3000-0x20),0xffff,   // Space
+     0xff01,0xff5e,-(0xff01-0x21),0xffff);
+  $temp = mb_encode_numericentity($string,$convmap,$encoding);
+  $convmap = array(0,0xffff,0,0xffff);
+  return mb_decode_numericentity($temp,$convmap,$encoding);
+}
+
+// Sample usage:
+f_han2zen("test","shift_jis");
+f_han2zen("test","utf-8");
+
+?>
+===============================================================================
+
+Manual entity => utf8 conversion:
+<?php
+        // parse entities
+        $raw = preg_replace_callback
+        (
+            "/&#(\\d+);/u",
+            "_pcreEntityToUtf",
+            $raw
+        );
+
+    function _pcreEntityToUtf($matches)
+    {
+        $char = intval(is_array($matches) ? $matches[1] : $matches);
+
+        if ($char < 0x80)
+        {
+            // to prevent insertion of control characters
+            if ($char >= 0x20) return htmlspecialchars(chr($char));
+            else return "&#$char;";
+        }
+        else if ($char < 0x8000)
+        {
+            return chr(0xc0 | (0x1f & ($char >> 6))) . chr(0x80 | (0x3f & $char
+));
+        }
+        else
+        {
+            return chr(0xe0 | (0x0f & ($char >> 12))) . chr(0x80 | (0x3f & (
+$char >> 6))). chr(0x80 | (0x3f & $char));
+        }
+    }
+?>
+===============================================================================
+
+By use of function utf8_decode you'll get a problem with all extended chars
+above ISO-8859-1 charset. You can solve this problem by using the
+
+function mb_encode_numericentity before:
+
+  // convert $text from UTF-8 to ISO-8859-1
+  $convmap = array(0xFF, 0x2FFFF, 0, 0xFFFF);
+  $text = mb_encode_numericentity($text, $convmap, "UTF-8");
+  $text = utf8_decode($text);
+
+The second line encodes all extended chars below 0xFF, the third line converts
+the rest: 0x80 - 0xFF

@@ -1,0 +1,563 @@
+
+mb_detect_encoding
+
+(PHP 4 >= 4.0.6, PHP 5, PHP 7)
+
+mb_detect_encoding — 检测字符的编码
+
+说明
+
+string mb_detect_encoding ( string $str [, mixed $encoding_list =
+mb_detect_order() [, bool $strict = false ]] )
+
+检测字符串 str 的编码。
+
+参数
+
+str
+
+    待检查的字符串。
+
+encoding_list
+
+    encoding_list 是一个字符编码列表。编码顺序可以由数组或者逗号分隔的列表字符
+    串指定。
+
+    如果省略了 encoding_list 将会使用 detect_order。
+
+strict
+
+    strict 指定了是否严格地检测编码。默认是 FALSE。
+
+返回值
+
+检测到的字符编码，或者无法检测指定字符串的编码时返回 FALSE。
+
+范例
+
+Example #1 mb_detect_encoding() 例子
+
+<?php
+/* 使用当前的 detect_order 来检测字符编码 */
+echo mb_detect_encoding($str);
+
+/* "auto" 将根据 mbstring.language 来扩展 */
+echo mb_detect_encoding($str, "auto");
+
+/* 通过逗号分隔的列表来指定编码列表 encoding_list */
+echo mb_detect_encoding($str, "JIS, eucjp-win, sjis-win");
+
+/* 使用数组来指定编码列表 encoding_list  */
+$ary[] = "ASCII";
+$ary[] = "JIS";
+$ary[] = "EUC-JP";
+echo mb_detect_encoding($str, $ary);
+?>
+
+参见
+
+  • mb_detect_order() - 设置/获取字符编码的检测顺序
+
+
+User Contributed Notes 20 notes
+
+===============================================================================
+
+If you try to use mb_detect_encoding to detect whether a string is valid UTF-8,
+use the strict mode, it is pretty worthless otherwise.
+
+<?php
+    $str = 'áéóú'; // ISO-8859-1
+    mb_detect_encoding($str, 'UTF-8'); // 'UTF-8'
+    mb_detect_encoding($str, 'UTF-8', true); // false
+?>
+===============================================================================
+
+Based upon that snippet below using preg_match() I needed something faster and
+less specific.  That function works and is brilliant but it scans the entire
+strings and checks that it conforms to UTF-8.  I wanted something purely to
+check if a string contains UTF-8 characters so that I could switch character
+encoding from iso-8859-1 to utf-8.
+
+I modified the pattern to only look for non-ascii multibyte sequences in the
+UTF-8 range and also to stop once it finds at least one multibytes string. 
+This is quite a lot faster.
+
+<?php
+
+function detectUTF8($string)
+{
+        return preg_match('%(?:
+        [\xC2-\xDF][\x80-\xBF]        # non-overlong 2-byte
+        |\xE0[\xA0-\xBF][\x80-\xBF]               # excluding overlongs
+        |[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}      # straight 3-byte
+        |\xED[\x80-\x9F][\x80-\xBF]               # excluding surrogates
+        |\xF0[\x90-\xBF][\x80-\xBF]{2}    # planes 1-3
+        |[\xF1-\xF3][\x80-\xBF]{3}                  # planes 4-15
+        |\xF4[\x80-\x8F][\x80-\xBF]{2}    # plane 16
+        )+%xs', $string);
+}
+
+?>
+===============================================================================
+
+A simple way to detect UTF-8/16/32 of file by its BOM (not work with string or
+file without BOM)
+
+<?php
+// Unicode BOM is U+FEFF, but after encoded, it will look like this.
+define ('UTF32_BIG_ENDIAN_BOM'   , chr(0x00) . chr(0x00) . chr(0xFE) . chr(0xFF
+));
+define ('UTF32_LITTLE_ENDIAN_BOM', chr(0xFF) . chr(0xFE) . chr(0x00) . chr(0x00
+));
+define ('UTF16_BIG_ENDIAN_BOM'   , chr(0xFE) . chr(0xFF));
+define ('UTF16_LITTLE_ENDIAN_BOM', chr(0xFF) . chr(0xFE));
+define ('UTF8_BOM'               , chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+function detect_utf_encoding($filename) {
+
+    $text = file_get_contents($filename);
+    $first2 = substr($text, 0, 2);
+    $first3 = substr($text, 0, 3);
+    $first4 = substr($text, 0, 3);
+   
+    if ($first3 == UTF8_BOM) return 'UTF-8';
+    elseif ($first4 == UTF32_BIG_ENDIAN_BOM) return 'UTF-32BE';
+    elseif ($first4 == UTF32_LITTLE_ENDIAN_BOM) return 'UTF-32LE';
+    elseif ($first2 == UTF16_BIG_ENDIAN_BOM) return 'UTF-16BE';
+    elseif ($first2 == UTF16_LITTLE_ENDIAN_BOM) return 'UTF-16LE';
+}
+?>
+===============================================================================
+
+Beware of bug to detect Russian encodings
+http://bugs.php.net/bug.php?id=38138
+===============================================================================
+
+If you need to distinguish between UTF-8 and ISO-8859-1 encoding, list UTF-8
+first in your encoding_list:
+mb_detect_encoding($string, 'UTF-8, ISO-8859-1');
+
+if you list ISO-8859-1 first, mb_detect_encoding() will always return
+ISO-8859-1.
+===============================================================================
+
+if the  function " mb_detect_encoding" does not exist  ...
+
+... try:
+
+<?php
+// ----------------------------------------------------
+if ( !function_exists('mb_detect_encoding') ) {
+
+// ----------------------------------------------------------------
+function mb_detect_encoding ($string, $enc=null, $ret=null) {
+      
+        static $enclist = array(
+            'UTF-8', 'ASCII',
+            'ISO-8859-1', 'ISO-8859-2', 'ISO-8859-3', 'ISO-8859-4', 
+'ISO-8859-5',
+            'ISO-8859-6', 'ISO-8859-7', 'ISO-8859-8', 'ISO-8859-9', 
+'ISO-8859-10',
+            'ISO-8859-13', 'ISO-8859-14', 'ISO-8859-15', 'ISO-8859-16',
+            'Windows-1251', 'Windows-1252', 'Windows-1254',
+            );
+       
+        $result = false;
+       
+        foreach ($enclist as $item) {
+            $sample = iconv($item, $item, $string);
+            if (md5($sample) == md5($string)) {
+                if ($ret === NULL) { $result = $item; } else { $result = true;
+}
+                break;
+            }
+        }
+       
+    return $result;
+}
+// ----------------------------------------------------------------
+
+}
+// ----------------------------------------------------
+?>
+
+example / usage of: mb_detect_encoding()
+
+<?php
+// ------------------------------------------------------
+function str_to_utf8 ($str) {
+   
+    if (mb_detect_encoding($str, 'UTF-8', true) === false) {
+    $str = utf8_encode($str);
+    }
+
+    return $str;
+}
+// ------------------------------------------------------
+?>
+
+$txtstr = str_to_utf8($txtstr);
+===============================================================================
+
+<?php
+/*
+*QQ: 290359552
+* conver to Utf8 if $str is not equals to 'UTF-8'
+*/
+function convToUtf8($str)
+{
+if( mb_detect_encoding($str,"UTF-8, ISO-8859-1, GBK")!="UTF-8" )
+{
+
+return  iconv("gbk","utf-8",$str);
+
+}
+else
+{
+return $str;
+}
+
+}
+?>
+===============================================================================
+
+a) if the FUNCTION mb_detect_encoding is not available:
+
+### mb_detect_encoding ... iconv ###
+
+<?php
+// -------------------------------------------
+
+if(!function_exists('mb_detect_encoding')) {
+function mb_detect_encoding($string, $enc=null) {
+   
+    static $list = array('utf-8', 'iso-8859-1', 'windows-1251');
+   
+    foreach ($list as $item) {
+        $sample = iconv($item, $item, $string);
+        if (md5($sample) == md5($string)) {
+            if ($enc == $item) { return true; }    else { return $item; }
+        }
+    }
+    return null;
+}
+}
+
+// -------------------------------------------
+?>
+
+b) if the FUNCTION mb_convert_encoding is not available:
+
+### mb_convert_encoding ... iconv ###
+
+<?php
+// -------------------------------------------
+
+if(!function_exists('mb_convert_encoding')) {
+function mb_convert_encoding($string, $target_encoding, $source_encoding) {
+    $string = iconv($source_encoding, $target_encoding, $string);
+    return $string;
+}
+}
+
+// -------------------------------------------
+?>
+===============================================================================
+
+// -----------------------------------------------------------
+
+if(!function_exists('mb_detect_encoding')) {
+
+function mb_detect_encoding($string, $enc=null, $ret=true) {
+    $out=$enc;
+    static $list = array('utf-8', 'iso-8859-1', 'iso-8859-15', 'windows-1251');
+        foreach ($list as $item) {
+            $sample = iconv($item, $item, $string);
+            if (md5($sample) == md5($string)) { $out = ($ret !== false) ? true
+: $item; }
+        }
+    return $out;
+}
+
+}
+
+// -----------------------------------------------------------
+===============================================================================
+
+Just a note: Instead of using the often recommended (rather complex) regular
+expression by W3C (http://www.w3.org/International/questions/
+qa-forms-utf-8.en.php), you can simply use the 'u' modifier to test a string
+for UTF-8 validity:
+
+<?php
+  if (preg_match("//u", $string)) {
+      // $string is valid UTF-8
+  }
+===============================================================================
+
+Function to detect UTF-8, when mb_detect_encoding is not available it may be
+useful.
+
+<?php
+function is_utf8($str) {
+    $c=0; $b=0;
+    $bits=0;
+    $len=strlen($str);
+    for($i=0; $i<$len; $i++){
+        $c=ord($str[$i]);
+        if($c > 128){
+            if(($c >= 254)) return false;
+            elseif($c >= 252) $bits=6;
+            elseif($c >= 248) $bits=5;
+            elseif($c >= 240) $bits=4;
+            elseif($c >= 224) $bits=3;
+            elseif($c >= 192) $bits=2;
+            else return false;
+            if(($i+$bits) > $len) return false;
+            while($bits > 1){
+                $i++;
+                $b=ord($str[$i]);
+                if($b < 128 || $b > 191) return false;
+                $bits--;
+            }
+        }
+    }
+    return true;
+}
+?>
+===============================================================================
+
+I used Chris's function "detectUTF8" to detect the need from conversion from
+utf8 to 8859-1, which works fine. I did have a problem with the following
+iconv-conversion.
+
+The problem is that the iconv-conversion to 8859-1 (with //TRANSLIT) replaces
+the euro-sign with EUR, although it is common practice  that \x80 is used as
+the euro-sign in the 8859-1 charset.
+
+I could not use 8859-15 since that mangled some other characters, so I added 2
+str_replace's:
+
+if(detectUTF8($str)){
+  $str=str_replace("\xE2\x82\xAC","&euro;",$str);
+  $str=iconv("UTF-8","ISO-8859-1//TRANSLIT",$str);
+  $str=str_replace("&euro;","\x80",$str);
+}
+
+If html-output is needed the last line is not necessary (and even unwanted).
+===============================================================================
+
+Much simpler UTF-8-ness checker using a regular expression created by the W3C:
+
+<?php
+
+// Returns true if $string is valid UTF-8 and false otherwise.
+function is_utf8($string) {
+   
+    // From http://w3.org/International/questions/qa-forms-utf-8.html
+    return preg_match('%^(?:
+          [\x09\x0A\x0D\x20-\x7E]            # ASCII
+        | [\xC2-\xDF][\x80-\xBF]             # non-overlong 2-byte
+        |  \xE0[\xA0-\xBF][\x80-\xBF]        # excluding overlongs
+        | [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}  # straight 3-byte
+        |  \xED[\x80-\x9F][\x80-\xBF]        # excluding surrogates
+        |  \xF0[\x90-\xBF][\x80-\xBF]{2}     # planes 1-3
+        | [\xF1-\xF3][\x80-\xBF]{3}          # planes 4-15
+        |  \xF4[\x80-\x8F][\x80-\xBF]{2}     # plane 16
+    )*$%xs', $string);
+   
+} // function is_utf8
+
+?>
+===============================================================================
+
+Last example for verifying UTF-8 has one little bug. If 10xxxxxx byte occurs
+alone i.e. not in multibyte char, then it is accepted although it is against
+UTF-8 rules. Make following replacement to repair it.
+
+Replace
+         } // goto next char
+with
+         } else {
+           return false; // 10xxxxxx occuring alone
+         } // goto next char
+===============================================================================
+
+Another light way to detect character encoding:
+<?php
+function detect_encoding($string) { 
+  static $list = array('utf-8', 'windows-1251');
+ 
+  foreach ($list as $item) {
+    $sample = iconv($item, $item, $string);
+    if (md5($sample) == md5($string))
+      return $item;
+  }
+  return null;
+}
+?>
+===============================================================================
+
+I seriously underestimated the importance of setlocale...
+<?php
+$strings = array(
+    "mais coisas a pensar sobre diário ou dois!",
+    "plus de choses à penser à journalier ou à deux !",
+    "¡más cosas a pensar en diario o dos!",
+    "più cose da pensare circa giornaliere o due!",
+    "flere ting å tenke på hver dag eller to!",
+    "Další věcí, přemýšlet o každý den nebo dva!",
+    "mehr über Spaß spät schönen",
+    "më vonë gjatë fun bukur",
+    "több mint szórakozás késő csodálatos kenyér"
+);
+
+$convert = array();
+setlocale(LC_CTYPE, 'de_DE.UTF-8');
+foreach( $strings as $string )
+        $convert[] = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $string);
+?>
+
+Produces the following:
+
+Array
+(
+    [0] => mais coisas a pensar sobre diario ou dois!
+    [1] => plus de choses a penser a journalier ou a deux !
+    [2] => ?mas cosas a pensar en diario o dos!
+    [3] => piu cose da pensare circa giornaliere o due!
+    [4] => flere ting aa tenke paa hver dag eller to!
+    [5] => Dalsi veci, premyslet o kazdy den nebo dva!
+    [6] => mehr ueber Spass spaet schoenen
+    [7] => me vone gjate fun bukur
+    [8] => toebb mint szorakozas keso csodalatos kenyer
+)
+
+whereas
+
+<?php
+$convert = array();
+setlocale(LC_CTYPE, 'nl_NL.UTF-8');
+foreach( $strings as $string )
+        $convert[] = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $string);
+?>
+
+produces:
+Array
+(
+    [0] => mais coisas a pensar sobre di?rio ou dois!
+    [1] => plus de choses ? penser ? journalier ou ? deux !
+    [2] => ?m?s cosas a pensar en diario o dos!
+    [3] => pi? cose da pensare circa giornaliere o due!
+    [4] => flere ting ? tenke p? hver dag eller to!
+    [5] => Dal?? v?c?, p?em??let o ka?d? den nebo dva!
+    [6] => mehr ?ber Spass sp?t sch?nen
+    [7] => m? von? gjat? fun bukur
+    [8] => t?bb mint sz?rakoz?s k?s? csod?latos keny?r
+)
+
+This might be of interest when trying to convert utf-8 strings into ASCII
+suitable for URL's, and such. this was never obvious for me since I've used
+locales for us and nl.
+===============================================================================
+
+from PHPDIG
+
+    function isUTF8($str) {
+        if ($str === mb_convert_encoding(mb_convert_encoding($str, "UTF-32",
+"UTF-8"), "UTF-8", "UTF-32")) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+===============================================================================
+
+Sometimes mb_detect_string is not what you need. When using pdflib for example
+you want to VERIFY the correctness of utf-8. mb_detect_encoding reports some
+iso-8859-1 encoded text as utf-8.
+To verify utf 8 use the following:
+
+//
+//    utf8 encoding validation developed based on Wikipedia entry at:
+//    http://en.wikipedia.org/wiki/UTF-8
+//
+//    Implemented as a recursive descent parser based on a simple state machine
+//    copyright 2005 Maarten Meijer
+//
+//    This cries out for a C-implementation to be included in PHP core
+//
+    function valid_1byte($char) {
+        if(!is_int($char)) return false;
+        return ($char & 0x80) == 0x00;
+    }
+   
+    function valid_2byte($char) {
+        if(!is_int($char)) return false;
+        return ($char & 0xE0) == 0xC0;
+    }
+
+    function valid_3byte($char) {
+        if(!is_int($char)) return false;
+        return ($char & 0xF0) == 0xE0;
+    }
+
+    function valid_4byte($char) {
+        if(!is_int($char)) return false;
+        return ($char & 0xF8) == 0xF0;
+    }
+   
+    function valid_nextbyte($char) {
+        if(!is_int($char)) return false;
+        return ($char & 0xC0) == 0x80;
+    }
+   
+    function valid_utf8($string) {
+        $len = strlen($string);
+        $i = 0;   
+        while( $i < $len ) {
+            $char = ord(substr($string, $i++, 1));
+            if(valid_1byte($char)) {    // continue
+                continue;
+            } else if(valid_2byte($char)) { // check 1 byte
+                if(!valid_nextbyte(ord(substr($string, $i++, 1))))
+                    return false;
+            } else if(valid_3byte($char)) { // check 2 bytes
+                if(!valid_nextbyte(ord(substr($string, $i++, 1))))
+                    return false;
+                if(!valid_nextbyte(ord(substr($string, $i++, 1))))
+                    return false;
+            } else if(valid_4byte($char)) { // check 3 bytes
+                if(!valid_nextbyte(ord(substr($string, $i++, 1))))
+                    return false;
+                if(!valid_nextbyte(ord(substr($string, $i++, 1))))
+                    return false;
+                if(!valid_nextbyte(ord(substr($string, $i++, 1))))
+                    return false;
+            } // goto next char
+        }
+        return true; // done
+    }
+
+for a drawing of the statemachine see: http://www.xs4all.nl/~mjmeijer/
+unicode.png and http://www.xs4all.nl/~mjmeijer/unicode2.png
+===============================================================================
+
+beware : even if you need to distinguish between UTF-8 and ISO-8859-1, and you
+the following detection order (as chrigu suggests)
+
+mb_detect_encoding('accentu e' , 'UTF-8, ISO-8859-1')
+
+returns ISO-8859-1, while
+
+mb_detect_encoding('accentu ' , 'UTF-8, ISO-8859-1')
+
+returns UTF-8
+
+bottom line : an ending ' ' (and probably other accentuated chars) mislead
+mb_detect_encoding
+===============================================================================
+
+if you want to use this function ,you must loadmodule php_mbstring in the
+php.ini.

@@ -1,0 +1,2160 @@
+
+opendir
+
+(PHP 4, PHP 5, PHP 7)
+
+opendir — 打开目录句柄
+
+说明
+
+resource opendir ( string $path [, resource $context ] )
+
+打开一个目录句柄，可用于之后的 closedir()，readdir() 和 rewinddir() 调用中。
+
+参数
+
+path
+
+    要打开的目录路径
+
+context
+
+    context 参数的说明见手册中的 Streams API 一章。
+
+返回值
+
+如果成功则返回目录句柄的 resource，失败则返回 FALSE。
+
+如果 path 不是一个合法的目录或者因为权限限制或文件系统错误而不能打开目录，
+opendir() 返回 FALSE 并产生一个 E_WARNING 级别的 PHP 错误信息。可以在 opendir()
+前面加上“@”符号来抑制错误信息的输出。
+
+更新日志
+
+版本                                    说明
+5.0.0 path 支持 ftp:// URL wrapper
+4.3.0 path 可以是任何支持目录列表的 URL，不过在 PHP 4 中只有 file:// URL
+      wrapper 支持此功能
+
+范例
+
+Example #1 opendir() 例子
+
+<?php
+$dir = "/etc/php5/";
+
+// Open a known directory, and proceed to read its contents
+if (is_dir($dir)) {
+    if ($dh = opendir($dir)) {
+        while (($file = readdir($dh)) !== false) {
+            echo "filename: $file : filetype: " . filetype($dir . $file) . "\n"
+;
+        }
+        closedir($dh);
+    }
+}
+?>
+
+以上例程的输出类似于：
+
+filename: . : filetype: dir
+filename: .. : filetype: dir
+filename: apache : filetype: dir
+filename: cgi : filetype: dir
+filename: cli : filetype: dir
+
+参见
+
+  • is_dir() - 判断给定文件名是否是一个目录
+  • readdir() - 从目录句柄中读取条目
+  • dir() - 返回一个 Directory 类实例
+
+
+User Contributed Notes 53 notes
+
+===============================================================================
+
+Breadth-first-search (BFS) for a file or directory (vs. Depth-first-search)
+http://en.wikipedia.org/wiki/Breadth-first_search
+
+<?php
+
+// Breadth-First Recursive Directory Search, for a File or Directory
+// with optional black-list paths and optional callback function.
+//
+// $root -- is the relative path to the start-of-search directory
+// $file -- is the qualified file name: 'name.ext' EX: 'data.xml'
+//    (or) $file -- is the target directory name EX: 'xml_files'
+// $callback -- is an optional function name and will be passed all
+//    matching paths EX: 'my_func', instead of exiting on first match
+// $omit -- is an optional array of exclude paths -- relative to root
+//    To use $omit but not $callback, pass NULL as the $callback argument
+//
+// TESTING VALUES FOLLOW ...
+
+function my_func ( $path ) {
+  print "<strong>$path</strong><br>\n";
+}
+
+$root = '../public_html';
+$file = 'data.xml';
+$callback = 'my_func';
+$omit = array( 'include/img', 'include/css', 'scripts' );
+
+//print breadth_first_file_search ( $root, $file );
+//print breadth_first_file_search ( $root, $file, $callback );
+//print breadth_first_file_search ( $root, $file, NULL, $omit );
+print breadth_first_file_search ( $root, $file, $callback, $omit );
+
+function breadth_first_file_search ( $root, $file, $callback = NULL, $omit =
+array() ) {
+  $queue = array( rtrim( $root, '/' ).'/' ); // normalize all paths
+  foreach ( $omit as &$path ) { // &$path Req. PHP ver 5.x and later
+    $path = $root.trim( $path, '/' ).'/';
+  }
+  while ( $base = array_shift( $queue ) ) {
+    $file_path = $base.$file;
+    if ( file_exists( $file_path ) ) { // file found
+      if ( is_callable( $callback ) ) {
+        $callback( $file_path ); // callback => CONTINUE
+      } else {
+        return $file_path; // return file-path => EXIT
+      }
+    }
+    if ( ( $handle = opendir( $base ) ) ) {
+      while ( ( $child = readdir( $handle ) ) !== FALSE ) {
+        if ( is_dir( $base.$child ) && $child != '.' && $child != '..' ) {
+          $combined_path = $base.$child.'/';
+          if ( !in_array( $combined_path, $omit ) ) {
+            array_push( $queue, $combined_path);
+          }
+        }
+      }
+      closedir( $handle );
+    } // else unable to open directory => NEXT CHILD
+  }
+  return FALSE; // end of tree, file not found
+}
+
+?>
+===============================================================================
+
+A couple of notes on Matt's posts on Windows Network Drives:
+
+Since the system() command writes the output of the executed shell command
+straight to the output buffer, if you wish to hide the return of the mapping
+command (i.e. "The command completed succesfully" or an error message) from a
+web browser, you need to alter the command that is sent to the shell so that
+the output of that command is hidden.
+
+You probably thinking "why not just use exec()?", and it's a reasonable
+question, but for some reason it doesn't always work - I guess it's another NT
+user permissions issue. If you want to guarantee you app will work with no
+messing around on the host system, use the system() command.
+
+In the Windows command shell, you can hide the output of a command by sending
+both the output (1) and error (2) messages to "nul" using pipes, in other words
+">nul 2>&1" on the end of the command. The username and password order in the
+"net use..." command needs switching in Matt's post.
+
+Here (http://networkm.co.uk/static/drive.html) is a function I wrote to
+dynamically choose which drive letter to use, based on what is currently mapped
+and accessible to PHP.
+
+<?php
+
+// Define the parameters for the shell command
+$location = "\\servername\sharename";
+$user = "USERNAME";
+$pass = "PASSWORD";
+$letter = "Z";
+
+// Map the drive
+system("net use ".$letter.": \"".$location."\" ".$pass." /user:".$user." /
+persistent:no>nul 2>&1");
+
+// Open the directory
+$dir = opendir($letter.":/an/example/path")
+
+...
+
+?>
+===============================================================================
+
+Here are two versions of the same function to list all files in a directory
+tree.
+
+The first one is recursive (calls itself while going through subdirectories) :
+<?php
+function rec_listFiles( $from = '.')
+{
+    if(! is_dir($from))
+        return false;
+   
+    $files = array();
+    if( $dh = opendir($from))
+    {
+        while( false !== ($file = readdir($dh)))
+        {
+            // Skip '.' and '..'
+            if( $file == '.' || $file == '..')
+                continue;
+            $path = $from . '/' . $file;
+            if( is_dir($path) )
+                $files += rec_listFiles($path);
+            else
+                $files[] = $path;
+        }
+        closedir($dh);
+    }
+    return $files;
+}
+?>
+
+The second one is iterative (uses less memory) :
+<?php
+function listFiles( $from = '.')
+{
+    if(! is_dir($from))
+        return false;
+   
+    $files = array();
+    $dirs = array( $from);
+    while( NULL !== ($dir = array_pop( $dirs)))
+    {
+        if( $dh = opendir($dir))
+        {
+            while( false !== ($file = readdir($dh)))
+            {
+                if( $file == '.' || $file == '..')
+                    continue;
+                $path = $dir . '/' . $file;
+                if( is_dir($path))
+                    $dirs[] = $path;
+                else
+                    $files[] = $path;
+            }
+            closedir($dh);
+        }
+    }
+    return $files;
+}
+?>
+The iterative version should be a little faster most of the time, but the big
+difference is in the memory usage.
+
+Here is also a profiling function (works in php5 only) :
+<?php
+function profile( $func, $trydir)
+{
+    $mem1 = memory_get_usage();
+    echo '<pre>-----------------------
+Test run for '.$func.'() ...
+'; flush();
+
+    $time_start = microtime(true);
+    $list = $func( $trydir);
+    $time = microtime(true) - $time_start;
+
+    echo 'Finished : '.count($list).' files</pre>';
+    $mem2 = memory_get_peak_usage();
+
+    printf( '<pre>Max memory for '.$func.'() : %0.2f kbytes
+Running time for '.$func.'() : %0.f s</pre>',
+    ($mem2-$mem1)/1024.0, $time);
+    return $list;
+}
+?>
+===============================================================================
+
+oryan's example is still sub-optimal, even if people using it never ever
+substitute a variable for directory.
+
+Just use PHP's glob() function, which will be faster and more efficient anyway
+since it doesn't have to launch a shell and run the ls program (that's what the
+shell_exec does).
+
+$result = glob("directory/*");
+===============================================================================
+
+A simple piece to open a directory and display any files with a given
+extension. Great for things like newsletters, score sheets or the like where
+you just want to make it easy on the user - they just dump in the file with the
+correct extension and it's done. A link is given to the file which opens up in
+a new window.
+
+<?php
+  $current_dir = "$DOCUMENT_ROOT"."dirname/";    //Put in second part, the
+directory - without a leading slash but with a trailing slash!
+  $dir = opendir($current_dir);        // Open the sucker
+ 
+  echo ("<p><h1>List of available files:</h1></p><hr><br />");
+  while ($file = readdir($dir))            // while loop
+    {
+    $parts = explode(".", $file);                    // pull apart the name and
+dissect by period
+    if (is_array($parts) && count($parts) > 1) {    // does the dissected array
+have more than one part
+        $extension = end($parts);        // set to we can see last file
+extension
+        if ($extension == "ext" OR $extension == "EXT")    // is extension ext
+or EXT ?
+             echo "<a href=\"$file\" target=\"_blank\"> $file </a><br />";    /
+/ If so, echo it out else do nothing cos it's not what we want
+        }
+    }
+  echo "<hr><br />";
+  closedir($dir);        // Close the directory after we are done
+?>
+===============================================================================
+
+Having spent an hour or so trying to get a complete list of files from a
+network share on Windows, I've given up (Apache 2.2 Win32, WinXP, PHP5 ->
+Windows 2000 R2).
+
+Trying to use a mapped drive letter gives me an error and trying to use the UNC
+path works but is dog slow (it takes a couple of minutes to open and readdir()
+a directory with a couple of hundred files).
+
+Using this code is fast and instant (you'll have to chop up the output yourself
+but so be it!)
+
+$out = `dir $dir /B /S`;
+
+If you don't need recursive subdirectories remove the /S from the command - for
+more details run 'dir /?' on Windows.
+
+Hope this helps somebody in a similar fix!
+===============================================================================
+
+I tried it as in the post before described, but it still won't work. Maybe
+cause i'm using an Apache-Server on Windows 2003 Server.
+
+Now, i found a way that it works and i got access to the share. First of all,
+you need to set the run user for Apache to a user that has access to the share
+(see in post before).
+Then map your drive in the php script before you read the dir:
+
+system('net use K: \\servername\sharename /user:username password /
+persistent:no');
+
+$share = opendir('\\\\servername\\sharename');
+....
+===============================================================================
+
+Hopefully this helps someone else. Returns a list of all the files in the
+directory and any subdirectories.
+Excludes files/folders that are in the $exempt array. Can modifiy it so files
+aren't passed by reference fairly easily.
+
+<?php
+
+    function getFiles($directory,$exempt = array('.','..','.ds_store','.svn'),&
+$files = array()) {
+        $handle = opendir($directory);
+        while(false !== ($resource = readdir($handle))) {
+            if(!in_array(strtolower($resource),$exempt)) {
+                if(is_dir($directory.$resource.'/'))
+                    array_merge($files,
+                        self::getFiles($directory.$resource.'/',$exempt,$files
+));
+                else
+                    $files[] = $directory.$resource;
+            }
+        }
+        closedir($handle);
+        return $files;
+    }
+
+?>
+===============================================================================
+
+Read a Windows SMB Directory ;)
+
+<?
+
+function SMBMap($username, $password, $server, $dir) {
+    $command = "mount -t smbfs -o username=$username,password=$password //
+$server/$dir /mnt/tmp";
+    echo system($command);
+}
+
+function SMBRelease() {
+    $command = "umount /mnt/tmp";
+    echo system($command);
+}
+
+function GetFiles($dir) {
+    $files = array();
+    if (is_dir($dir)) {
+        if ($dh = opendir($dir)) {
+            while (($file = readdir($dh)) !== false) {
+                $files[] = $file."{".filetype("$dir/$file")."}";
+            }
+            closedir($dh);
+        }
+    }
+    return $files;               
+}
+
+SMBMap("Daniel", "", "10.0.0.2", "Kram");
+$any = GetFiles("/mnt/tmp");
+SMBRelease();
+print_r($any);
+
+?>
+===============================================================================
+
+An other way to recursively walk a directory and it's content, applying a
+callback to each file.
+
+Exemple: Update the last modification time of each file in a folder
+
+<?php
+
+clearstatcache();
+
+$sourcepath = "C:/WINDOWS/TEMP";
+
+// Replace \ by / and remove the final / if any
+$root = ereg_replace( "/$", "", ereg_replace( "[\\]", "/", $sourcepath ));
+// Touch all the files from the $root directory
+if( false === m_walk_dir( $root, "m_touch_file", true )) {
+    echo "'{$root}' is not a valid directory\n";
+}
+
+// Walk a directory recursivelly, and apply a callback on each file
+function m_walk_dir( $root, $callback, $recursive = true ) {
+    $dh = @opendir( $root );
+    if( false === $dh ) {
+        return false;
+    }
+    while( $file = readdir( $dh )) {
+        if( "." == $file || ".." == $file ){
+            continue;
+        }
+        call_user_func( $callback, "{$root}/{$file}" );
+        if( false !== $recursive && is_dir( "{$root}/{$file}" )) {
+            m_walk_dir( "{$root}/{$file}", $callback, $recursive );
+        }
+    }
+    closedir( $dh );
+    return true;
+}
+
+// if the path indicates a file, run touch() on it
+function m_touch_file( $path ) {
+    echo $path . "\n";
+    if( !is_dir( $path )) {
+        touch( $path );
+    }
+}
+
+?>
+===============================================================================
+
+Sometimes the programmer needs to access folder content which has arabic name
+but the opendir function will return null resources id
+
+for that we must convert the dirname charset from utf-8 to windows-1256 by the
+iconv function just if the preg_match function detect arabic characters and use
+" U " additionality to enable multibyte matching
+
+<?php
+
+$dir = ("./"); // on this file dir
+     
+// detect if the path has arabic characters and use " u "  optional to enable
+function to match multibyte characters
+
+if (preg_match('#[\x{0600}-\x{06FF}]#iu', $dir) ) 
+{
+
+    // convert input ( utf-8 ) to output ( windows-1256 )
+   
+    $dir = iconv("utf-8","windows-1256",$dir);
+   
+}
+
+if( is_dir($dir) )
+{
+    
+    
+     if(  ( $dh = opendir($dir) ) !== null  )
+     {
+   
+        
+         while ( ( $file = readdir($dh) ) !== false  )
+         {
+            
+            
+             echo "filename: ".$file ." filetype : ".filetype($dir.$file)."<br
+/>";
+            
+            
+         }
+       
+     }
+    
+    
+}
+
+?>
+===============================================================================
+
+In reponse to Tozeiler.  Nice short directory dump.  However, that displays the
+"." and "..".  This removes those.  It also makes an ordered list in case I
+needed to be on the phone while looking at the page.  Easy to call out.
+
+<?php
+
+$path = "your path";
+$dh = opendir($path);
+$i=1;
+while (($file = readdir($dh)) !== false) {
+    if($file != "." && $file != "..") {
+        echo "$i. <a href='$path/$file'>$file</a><br />";
+        $i++;
+    }
+}
+closedir($dh);
+?>
+===============================================================================
+
+There might be a bit of truth to that.  If, by chance, the webmaster made a
+form saying "type a random directory name here" and used that in the function,
+there'd be a problem.  So let's eliminate the 'function' part
+
+$files=shell_exec("ls directory");
+$result=explode("\n",$files);
+
+'$result' will now be an array of the directory files.  You can use variables
+in the shell_exec command, but don't use anything that could be user-sent.
+===============================================================================
+
+If you want to iterate through a directory, have a look at the SPL
+DirectoryIterator:
+http://php.net/manual/class.directoryiterator.php
+===============================================================================
+
+The easiest way to get a dir listing and sort it is to exec() out to ls (eg:'ls
+-t'). But, that is considered "unsafe". My hosting company finally caught me
+doing it so here is my fastest solution. (Lucky for me each file is created
+with a Unix Timestamp at the end of the name and no other numbers in it.)
+
+<?php
+#exec('ls -t ./images/motion_detection/', $files); # They outlawed exec, so now
+I have to do it by hand.
+if ($handle = opendir('./images/motion_detection/')) {
+    $files=array();
+    while (false !== ($file = readdir($handle))) {
+        $files[$file] = preg_replace('/[^0-9]/', '', $file); # Timestamps may
+not be unique, file names are.
+    }
+    closedir($handle);
+    arsort($files);
+    $files=array_keys($files);
+}
+?>
+
+Before you go copying someone's bloat kitchen sink function/class, consider
+what you have and what you really need.
+===============================================================================
+
+when you run Apache as a service on your Windows computer, it chooses to run as
+the LocalSystem account by default (usually SYSTEM). The LocalSystem account
+has no network privileges whatsoever which, while no doubt a good thing, makes
+it impossible to access networked resources (such as a shared drive) in your
+Apache service.
+
+First, you have to change the user the Apache service runs as.
+Go to your Services panel (Start -> Run -> "services.msc").
+Find the Service labeled Apache, right-click, and hit Properties.
+Choose the "Log On" tab.
+Presumably you'll see that Apache is set up to run as the Local System Account.
+You'll want to change this to the second option, "This account", and then fill
+in the details of the User account you would like Apache to run under.
+Some sites tell you to create a special Apache-based user account just for this
+occasion. It's not a bad idea, but then you have to make sure it has all of the
+proper permissions that an Apache user would need, such as read/write to to
+htdocs and the .conf and .log files, and permissions to log on as a service,
+etc etc - as well as the permissions to access the network resource you're
+trying to get to in the first place.
+In light of that process, I chose to just run it under my own account instead.
+Once you get it working, you can go back and create that special account.
+Hit "Apply" - it'll pop up a box saying you need to restart Apache to take
+effect, but hold off on that for a moment.
+This is the tricky part: you have to give the user (the one you're running
+Apache as) permissions to act as part of the OS.
+Go to the Local Security Policy panel (Start -> Run -> "secpol.msc").
+Under the navigation section in the left sidebar, choose Local Policies -> User
+Rights Assignments.
+In the right-hand frame, double-click the item "Act as part of the operating
+system" to open up its properties.
+Select "Add User or Group, Enter the appropriate user in the box provided, and
+hit "OK."
+At this point, you are technically complete - Apache can now do the same things
+to the network resource that your user can - read, write, execute, whatever.
+However, in my case, I was trying to create an actual readable resource, so I
+edited my Apache config file to create an alias to my share.
+Open up your Apache configuration file. For most people it's httpd.conf in the
+conf subdirectory of your Apache install directory.
+Add the following text to your config file (obviously substituting your UNC for
+"//servername/sharename" and renaming ALIAS_DIRECTORY to whatever you'd like):
+
+Alias /ALIAS_DIRECTORY "//servername/sharename"
+
+<Directory "//servername/sharename">
+    Options Indexes
+    AllowOverride None
+    Order allow,deny
+    Allow from all
+</Directory
+The other thing that is tricky and caught me up is that unlike Windows UNCs,
+the Apache config file requires forward slashes, not backslashes. So if you're
+copying the UNC directly from Windows, you'll have to turn all those slashes
+around.
+
+Now you can restart your Apache service. Take a swing over to http://
+your.site.name/ALIAS_DIRECTORY and you should be able to view the network
+resource just fine.
+===============================================================================
+
+Would you like to view your directories in your browser this script might come
+in handy.
+
+<?php
+$sub = ($_GET['dir']);
+$path = 'enter/your/directory/here/';
+$path = $path . "$sub";
+$dh = opendir($path);
+$i=1;
+while (($file = readdir($dh)) !== false) {
+    if($file != "." && $file != "..") {
+            if (substr($file, -4, -3) =="."){
+            echo "$i. $file <br />";
+            }else{           
+        echo "$i. <a href='?dir=$sub/$file'>$file</a><br />";
+          }
+        $i++;
+    }
+}
+closedir($dh);
+?>
+===============================================================================
+
+I was trying to access network drives using this opendir function. I read so
+many posts saying that it was almost impossible to access a network drive and
+finally, I found the answer; there are 2 steps to be followed to access a
+network drive with PHP either on the same machine or another machine.
+
+But first of all, here's the error I was getting:
+Warning: opendir(\\server\folder1\sub_folder) [function.opendir]: failed to
+open dir: No error in C:\wamp\www\PMOT\v0.1\REPORT_MENU\index.php on line 17
+
+Firstly, one must make sure that the folder \\server\folder1\sub_folder can be
+accessed by a user, let's say USER_TEST with a password PASS_TEST. By setting
+properties to this folder, one can add this given user with the correct
+password (USER_TEST with PASS_TEST).
+
+Secondly, the APACHE service must be set-up to take this user into account. If
+no user is specified, APACHE uses an anonymous user and this is where the
+problem/error message is coming from. One must go in control panel->
+administrative tools->services. One will see the list of services and must look
+for APACHE with Apache/2.X.X in the description. (For Wampserver, it will be
+called wampapache, and so on!) Right click on that and pop up the properties
+screen. In the tab LOG ON, there are 2 options: local system account and "this
+account" which will be a user specified account. This is where one must specify
+the USER_TEST and PASS_TEST.
+
+Following these steps worked perfectly for me but if either the folder
+privileges or apache log on user is disabled, then I get the initial
+aforementioned error message.
+
+Anyways, I hope this can help out someone!
+
+Cheers!
+
+Marc
+===============================================================================
+
+How to find files in a directory, using regular expressions (case-sensitive or
+not)
+
+<?php
+
+clearstatcache();
+
+$sourcepath = "C:/WINDOWS/TEMP";
+
+// Replace \ by / and remove the final / if any
+$root = ereg_replace( "/$", "", ereg_replace( "[\\]", "/", $sourcepath ));
+
+// Search for text files
+$results = m_find_in_dir( $root, ".*\.txt" );
+if( false === $results ) {
+    echo "'{$sourcepath}' is not a valid directory\n";
+} else {
+    print_r( $results );
+}
+
+/**
+* Search for a file maching a regular expression
+*
+* @param string $root Root path
+* @param string $pattern POSIX regular expression pattern
+* @param boolean $recursive Set to true to walk the subdirectories recursively
+* @param boolean $case_sensitive Set to true for case sensitive search
+* @return array An array of string representing the path of the matching files,
+or false in case of error
+*/
+function m_find_in_dir( $root, $pattern, $recursive = true, $case_sensitive = 
+false ) {
+    $result = array();
+    if( $case_sensitive ) {
+        if( false === m_find_in_dir__( $root, $pattern, $recursive, $result ))
+{
+            return false;
+        }
+    } else {
+        if( false === m_find_in_dir_i__( $root, $pattern, $recursive, $result 
+)) {
+            return false;
+        }
+    }
+   
+    return $result;
+}
+
+/**
+* @access private
+*/
+function m_find_in_dir__( $root, $pattern, $recursive, &$result ) {
+    $dh = @opendir( $root );
+    if( false === $dh ) {
+        return false;
+    }
+    while( $file = readdir( $dh )) {
+        if( "." == $file || ".." == $file ){
+            continue;
+        }
+        if( false !== @ereg( $pattern, "{$root}/{$file}" )) {
+            $result[] = "{$root}/{$file}";
+        }
+        if( false !== $recursive && is_dir( "{$root}/{$file}" )) {
+            m_find_in_dir__( "{$root}/{$file}", $pattern, $recursive, $result 
+);
+        }
+    }
+    closedir( $dh );
+    return true;
+}
+
+/**
+* @access private
+*/
+function m_find_in_dir_i__( $root, $pattern, $recursive, &$result ) {
+    $dh = @opendir( $root );
+    if( false === $dh ) {
+        return false;
+    }
+    while( $file = readdir( $dh )) {
+        if( "." == $file || ".." == $file ){
+            continue;
+        }
+        if( false !== @eregi( $pattern, "{$root}/{$file}" )) {
+            $result[] = "{$root}/{$file}";
+        }
+        if( false !== $recursive && is_dir( "{$root}/{$file}" )) {
+            m_find_in_dir__( "{$root}/{$file}", $pattern, $recursive, $result 
+);
+        }
+    }
+    closedir( $dh );
+    return true;
+}
+
+?>
+===============================================================================
+
+A simple function to count all the files and/or dirs inside a dir.
+With optional extention when counting files.
+
+Index of /
+Some text file.txt
+files/
+num_files.phps
+test.php
+
+<?php
+function num_files($dir, $type, $ext="")
+{
+// type 1: files only
+// type 2: direcories only
+// type 3: files and directories added
+// type 4: files and directories separated with a space
+
+    if (!isset($dir) OR empty($dir))
+    {
+        echo '<b>Syntax error:</b> $dir value empty.';
+        exit;
+    }
+
+    $num_files = 0;
+    $num_dirs = 0;
+    switch($type)
+    {
+        case 1: // count only files, not dirs
+            if ($dir = @opendir($dir))
+            {
+                while (($file = readdir($dir)) !== false)
+                {
+                    if(is_file($file) AND $file != "." AND $file != "..")
+                    {
+                        if (isset($ext) AND !empty($ext))
+                        {
+                            $extension = end(explode(".", $file));
+                            if ($ext == $extension)
+                            {
+                                $num_files++;
+                            }
+                        }
+                        else
+                        {
+                            $num_files++;
+                        }
+                    }
+                } 
+                closedir($dir);
+                $total = $num_files;
+            }
+        break;
+
+        case 2: // count only dirs, not files
+            if ($dir = @opendir($dir))
+            {
+                while (($file = readdir($dir)) !== false)
+                {
+                    if(is_dir($file) AND $file != "." AND $file != "..")
+                    {
+                        $num_dirs++;
+                    }
+                } 
+                closedir($dir);   
+                $total = $num_dirs;
+            }
+        break;
+
+        case 3: // count files PLUS dirs in once variable
+            if ($dir = @opendir($dir))
+            {
+                while (($file = readdir($dir)) !== false)
+                {
+                    if(is_dir($file) OR is_dir($file))
+                    {
+                        if ($file != "." AND $file != "..")
+                        {
+                            $num_files++;
+                        }
+                    }
+                } 
+                closedir($dir);
+                $total = $num_files;
+            }
+        break;
+
+        case 4: // count files AND dirs separately
+            if ($dir = @opendir($dir))
+            {
+                while (($file = readdir($dir)) !== false)
+                {
+                    if(is_file($file) AND $file != "." AND $file != "..")
+                    {
+                        $num_files++;
+                    }
+
+                    if(is_dir($file) AND $file != "." AND $file != "..")
+                    {
+                        $num_dirs++;
+                    }
+                } 
+                closedir($dir);
+                $total = $num_files." ".$num_dirs;
+            }
+        break;
+
+        default:
+            echo '<b>Syntax error:</b> $type value empty.';
+        break;
+    }
+
+    return $total;
+}
+
+echo num_files($_SERVER['DOCUMENT_ROOT'], 1, "php"). " file(s) met php
+extention<br /> ";
+echo num_files($_SERVER['DOCUMENT_ROOT'], 1). " file(s)<br />";
+echo num_files($_SERVER['DOCUMENT_ROOT'], 2). " dir(s)<br />";
+echo num_files($_SERVER['DOCUMENT_ROOT'], 3). " file(s) + dir(s)<br />";
+$nummers = explode(" ", num_files($_SERVER['DOCUMENT_ROOT'], 4));
+echo reset($nummers) ." file(s) en ". end($nummers) ." dir(s)";
+?>
+
+will output:
+1 file(s) with php extention
+3 file(s)
+1 dir(s)
+1 file(s) + dir(s)
+3 file(s) en 1 dir(s)
+===============================================================================
+
+I sometimes find this useful. Hope you will too.
+
+<?php
+//list_by_ext: returns an array containing an alphabetic list of files in the
+specified directory ($path) with a file extension that matches $extension
+
+function list_by_ext($extension, $path){
+    $list = array(); //initialise a variable
+    $dir_handle = @opendir($path) or die("Unable to open $path"); //attempt to
+open path
+    while($file = readdir($dir_handle)){ //loop through all the files in the
+path
+        if($file == "." || $file == ".."){continue;} //ignore these
+        $filename = explode(".",$file); //seperate filename from extenstion
+        $cnt = count($filename); $cnt--; $ext = $filename[$cnt]; //as above
+        if(strtolower($ext) == strtolower($extension)){ //if the extension of
+the file matches the extension we are looking for...
+            array_push($list, $file); //...then stick it onto the end of the
+list array
+        }
+    }
+    if($list[0]){ //...if matches were found...
+    return $list; //...return the array
+    } else {//otherwise...
+    return false;
+    }
+}
+
+//example usage
+if($win32_exectuables = list_by_ext("exe", "C:\WINDOWS")){
+    var_dump($win32_exectuables);
+} else {
+    echo "No windows executables found :(\n";
+}
+
+?>
+===============================================================================
+
+# simple directory walk with callback function
+
+<?php
+function callbackDir($dir)
+{
+   # do whatever you want here
+   echo "$dir\n";
+}
+
+function walkDir($dir,$fx)
+{
+  $arStack = array();
+  $fx($dir);
+  if( ($dh=opendir($dir)) )
+  { while( ($file=readdir($dh))!==false )
+    { if( $file=='.' || $file=='..' ) continue;
+      if( is_dir("$dir/$file") )
+      { if( !in_array("$dir/$file",$arStack) ) $arStack[]="$dir/$file";
+      }
+    }
+    closedir($dh);
+  }
+  if( count($arStack) )
+  { foreach( $arStack as $subdir )
+    { walkDir($subdir,$fx);
+    }
+  }
+}
+
+walkDir($root,callBackDir);
+?>
+===============================================================================
+
+Here's a function that will recrusively turn a directory into a hash of
+directory hashes and file arrays, automatically ignoring "dot" files.
+
+<?php
+function hashify_directory($topdir, &$list, $ignoredDirectories=array()) {
+    if (is_dir($topdir)) {
+        if ($dh = opendir($topdir)) {
+            while (($file = readdir($dh)) !== false) {
+                if (!(array_search($file,$ignoredDirectories) > -1) && 
+preg_match('/^\./', $file) == 0) {
+                    if (is_dir("$topdir$file")) {
+                        if(!isset($list[$file])) {
+                            $list[$file] = array();
+                        }
+                        ksort($list);
+                        hashify_directory("$topdir$file/", $list[$file]);
+                    } else {
+                        array_push($list, $file);
+                    }
+                }
+            }
+            closedir($dh);
+        }
+    }
+}
+?>
+
+e.g.
+<?php
+$public_html["StudentFiles"] = array();
+hashify_directory("StudentFiles/", $public_html["StudentFiles"]);
+?>
+on the directory structure:
+./StudentFiles/tutorial_01/case1/file1.html
+./StudentFiles/tutorial_01/case1/file2.html
+./StudentFiles/tutorial_02/case1/file1.html
+./StudentFiles/tutorial_02/case2/file2.html
+./StudentFiles/tutorial_03/case1/file2.html
+etc...
+becomes:
+<?php
+print_r($public_html);
+/*
+outputs:
+array(
+  "StudentFiles" => array (
+        "tutorial_01" => array (
+              "case1" => array( "file1.html", "file2.html")
+        ),
+        "tutorial_02" => array (
+              "case1" => array( "file1.html"),
+              "case2" => array( "file2.html")
+        ),
+       "tutorial_03" => array (
+              "case1" => array( "file2.html")
+       )
+  )
+)
+*/
+?>
+I'm using it to create a tree view of a directory.
+===============================================================================
+
+Hello,
+
+A friend of mine is running a webhost, I think i found a security leak with
+this script:
+
+<?php
+function select_files($dir, $label = "", $select_name, $curr_val = "", 
+$char_length = 30) {
+    $teller = 0;
+    if ($handle = opendir($dir)) {
+        $mydir = ($label != "") ? "<label for=\"".$select_name."\">".$label."</
+label>\n" : "";
+        $mydir .= "<select name=\"".$select_name."\">\n";
+        $curr_val = (isset($_REQUEST[$select_name])) ? $_REQUEST[$select_name]
+: $curr_val;
+        $mydir .= ($curr_val == "") ? "  <option value=\"\" selected>...\n" : "
+<option value=\"\">...\n";
+        while (false !== ($file = readdir($handle))) {
+            $files[] = $file;
+        }
+        closedir($handle);
+        sort($files);
+        foreach ($files as $val) {
+            if (is_file($dir.$val)) { // show only real files (ver. 1.01)
+                $mydir .= "    <option value=\"".$val."\"";
+                $mydir .= ($val == $curr_val) ? " selected>" : ">";
+                $mydir .= (strlen($val) > $char_length) ? substr($val, 0, 
+$char_length)."...\n" : $val."\n";
+                $teller++;   
+            }
+        }
+        $mydir .= "</select>";
+    }
+    if ($teller == 0) {
+        $mydir = "No files!";
+    } else {
+        return $mydir;
+    }
+}
+
+echo select_files("C:/winnt/", "", "", "", "60");
+?>
+
+Now i can see hist files in his windows dir. Is this a leak? and is it fixable?
+I'll report this as bug too!
+
+Tim2005
+===============================================================================
+
+"opendir" said:
+------------------------------------------------------------------
+
+23-Jan-2006 08:04
+I Just wanted a directory list and a clickable link to download the files
+
+<snip>
+------
+<?
+echo ("<h1>Directory Overzicht:</h1>");
+
+function getFiles($path) {
+
+<snip complicated function contents>
+
+------------------------------------------------------------------
+Here's a more straightforward way to linkify $path/files:
+
+<?php
+
+echo "<h1>Directory Overzicht:</h1>";
+
+$dh = opendir($path);
+while (($file = readdir($dh)) !== false) {
+    echo "<a href='$path/$file'>$file</a><br />";
+}
+closedir($dh);
+
+?>
+===============================================================================
+
+I Just wanted a directory list and a clickable link to download the files
+because my plesk server does not give me this function. I edited the script a
+little bit.
+
+Many thanks from a script-noob
+
+------
+<?
+echo ("<h1>Directory Overzicht:</h1>");
+
+function getFiles($path) {
+   //Function takes a path, and returns a numerically indexed array of
+associative arrays containing file information,
+   //sorted by the file name (case insensitive).  If two files are identical
+when compared without case, they will sort
+   //relative to each other in the order presented by readdir()
+   $files = array();
+   $fileNames = array();
+   $i = 0;
+  
+   if (is_dir($path)) {
+       if ($dh = opendir($path)) {
+           while (($file = readdir($dh)) !== false) {
+               if ($file == "." || $file == "..") continue;
+               $fullpath = $path . "/" . $file;
+               $fkey = strtolower($file);
+               while (array_key_exists($fkey,$fileNames)) $fkey .= " ";
+               $a = stat($fullpath);
+               $files[$fkey]['size'] = $a['size'];
+               if ($a['size'] == 0) $files[$fkey]['sizetext'] = "-";
+               else if ($a['size'] > 1024) $files[$fkey]['sizetext'] = (ceil($a
+['size']/1024*100)/100) . " K";
+               else if ($a['size'] > 1024*1024) $files[$fkey]['sizetext'] =
+(ceil($a['size']/(1024*1024)*100)/100) . " Mb";
+               else $files[$fkey]['sizetext'] = $a['size'] . " bytes";
+               $files[$fkey]['name'] = $file;
+               $files[$fkey]['type'] = filetype($fullpath);
+               $fileNames[$i++] = $fkey;
+           }
+           closedir($dh);
+       } else die ("Cannot open directory:  $path");
+   } else die ("Path is not a directory:  $path");
+   sort($fileNames,SORT_STRING);
+   $sortedFiles = array();
+   $i = 0;
+   foreach($fileNames as $f) $sortedFiles[$i++] = $files[$f];
+  
+   return $sortedFiles;
+}
+
+$files = getFiles("./");
+foreach ($files as $file) print "&nbsp;&nbsp;&nbsp;&nbsp;<b><a href=\"$file
+[name]\">$file[name]</a></b><br>\n";
+?>
+===============================================================================
+
+In my previous post I ran into a problem with the "global" definition of
+$directorylist.  If I called the function more than once on the same page it
+would combine the file lists. I looked at Lasse Dalegaard's example and used
+the following solution.
+
+remove global definition
+     global $directorylist;
+
+REPLACE
+<?
+if ((($maxlevel) == "all") or ($maxlevel > $level)) {
+   filelist($startdir . $file . "/", $searchSubdirs, $directoriesonly,
+$maxlevel, $level + 1);
+}
+?>
+WITH
+<?
+if ((($maxlevel) == "all") or ($maxlevel > $level)) {
+    $list2 = filelist($startdir . $file . "/", $searchSubdirs,
+$directoriesonly, $maxlevel, $level + 1);
+    if(is_array($list2)) {
+        $directorylist = array_merge($directorylist, $list2);
+    }
+}
+?>
+===============================================================================
+
+<?php
+/* The below function will list all folders and files within a directory
+It is a recursive function that uses a global array.  The global array was the
+easiest
+way for me to work with an array in a recursive function
+*This function has no limit on the number of levels down you can search.
+*The array structure was one that worked for me.
+ARGUMENTS:
+$startdir => specify the directory to start from; format: must end in a "/"
+$searchSubdirs => True/false; True if you want to search subdirectories
+$directoriesonly => True/false; True if you want to only return directories
+$maxlevel => "all" or a number; specifes the number of directories down that
+you want to search
+$level => integer; directory level that the function is currently searching
+*/
+function filelist ($startdir="./", $searchSubdirs=1, $directoriesonly=0, 
+$maxlevel="all", $level=1) {
+    //list the directory/file names that you want to ignore
+    $ignoredDirectory[] = ".";
+    $ignoredDirectory[] = "..";
+    $ignoredDirectory[] = "_vti_cnf";
+    global $directorylist;    //initialize global array
+    if (is_dir($startdir)) {
+        if ($dh = opendir($startdir)) {
+            while (($file = readdir($dh)) !== false) {
+                if (!(array_search($file,$ignoredDirectory) > -1)) {
+                 if (filetype($startdir . $file) == "dir") {
+                       //build your directory array however you choose;
+                       //add other file details that you want.
+                       $directorylist[$startdir . $file]['level'] = $level;
+                       $directorylist[$startdir . $file]['dir'] = 1;
+                       $directorylist[$startdir . $file]['name'] = $file;
+                       $directorylist[$startdir . $file]['path'] = $startdir;
+                       if ($searchSubdirs) {
+                           if ((($maxlevel) == "all") or ($maxlevel > $level))
+{
+                               filelist($startdir . $file . "/", $searchSubdirs
+, $directoriesonly, $maxlevel, $level + 1);
+                           }
+                       }
+                   } else {
+                       if (!$directoriesonly) {
+                           //if you want to include files; build your file
+array 
+                           //however you choose; add other file details that
+you want.
+                         $directorylist[$startdir . $file]['level'] = $level;
+                         $directorylist[$startdir . $file]['dir'] = 0;
+                         $directorylist[$startdir . $file]['name'] = $file;
+                         $directorylist[$startdir . $file]['path'] = $startdir;
+      }}}}
+           closedir($dh);
+}}
+return($directorylist);
+}
+$files = filelist("./",1,1); // call the function
+foreach ($files as $list) {//print array
+    echo "Directory: " . $list['dir'] . " => Level: " . $list['level'] . " =>
+Name: " . $list['name'] . " => Path: " . $list['path'] ."<br>";
+}?>
+===============================================================================
+
+I wrote a function to recursively delete files from a starting directory.  I
+had to do this because my server doesn't allow me to delete files that apache
+writes because I don't have permissions, so... I let apache do the work.
+
+<?php
+$dir = "/path/to/base/dir";
+
+recursive_delete($dir);
+
+function recursive_delete( $dir )
+{
+        if (is_dir($dir)) {
+           if ($dh = opendir($dir)) {
+               while (($file = readdir($dh)) !== false ) {
+                        if( $file != "." && $file != ".." )
+                        {
+                                if( is_dir( $dir . $file ) )
+                                {
+                                        echo "Entering Directory: $dir$file<br
+/>";
+                                        recursive_delete( $dir . $file . "/" );
+                                        echo "Removing Directory: $dir$file<br
+/><br/>";
+                                        rmdir( $dir . $file );
+                                }
+                                else
+                                {
+                                        echo "Deleting file: $dir$file<br/>";
+                                        unlink( $dir . $file );
+                                }
+                        }
+               }
+               closedir($dh);
+           }
+        }
+}
+?>
+===============================================================================
+
+The example given by oryan at zareste dot com may also be a "simpler faster
+way" of creating security holes in your code. The function listed above
+prevents risking execution of abitrary shell commands listed after a semicolon
+(;) in your directory name.
+Example: $directory = '.;rm -rf /';
+Result: List this directory, erase contents of filesystem.
+===============================================================================
+
+There's a simpler faster way to get a whole directory if you're using PHP 4. 
+This function uses shell_exec - http://us3.php.net/shell_exec - and assumes
+you're using Unix/Linux and have shell access -
+
+function dir($directory){
+   $files=shell_exec("ls ".$directory);
+   return explode("\n",$files);
+}
+
+This returns an array with all the files.
+This way, you can use modifiers like -t, which shows files in order of
+modification time ($files=shell_exec("ls -t ".$directory);).  Enough tweaking
+and you can use it on Windows, though I can't say how since I don't have a
+Windows server to try it on
+===============================================================================
+
+//this is a function I wrote to sort out the contents of the directory date
+wise for display.
+
+$content_array = array();
+
+//set current working directory
+$dirname = "C:\temp";
+
+//Load Directory Into Array
+$handle=opendir($dirname);
+$i=0;
+while ($file = readdir($handle))
+if ($file != "." && $file != "..")
+{
+       $content_array[$i][0] = $file;
+       $content_array[$i][1] = date ("Y m d", filemtime($dirname."/".$file));
+        $i++;
+}
+//close the directory handle
+closedir($handle);
+
+//these lines sort the contents of the directory by the date
+    foreach($content_array as $res)
+       $sortAux[] = $res[1];
+    array_multisort($sortAux, SORT_ASC, $content_array);
+===============================================================================
+
+This function sorts files by name as strings, but without regard to case.  It
+also does some handy string formatting of the file size information.
+
+<?
+function getFiles($path) {
+    //Function takes a path, and returns a numerically indexed array of
+associative arrays containing file information,
+    //sorted by the file name (case insensitive).  If two files are identical
+when compared without case, they will sort
+    //relative to each other in the order presented by readdir()
+    $files = array();
+    $fileNames = array();
+    $i = 0;
+   
+    if (is_dir($path)) {
+        if ($dh = opendir($path)) {
+            while (($file = readdir($dh)) !== false) {
+                if ($file == "." || $file == "..") continue;
+                $fullpath = $path . "/" . $file;
+                $fkey = strtolower($file);
+                while (array_key_exists($fkey,$fileNames)) $fkey .= " ";
+                $a = stat($fullpath);
+                $files[$fkey]['size'] = $a['size'];
+                if ($a['size'] == 0) $files[$fkey]['sizetext'] = "-";
+                else if ($a['size'] > 1024) $files[$fkey]['sizetext'] = (ceil
+($a['size']/1024*100)/100) . " K";
+                else if ($a['size'] > 1024*1024) $files[$fkey]['sizetext'] =
+(ceil($a['size']/(1024*1024)*100)/100) . " Mb";
+                else $files[$fkey]['sizetext'] = $a['size'] . " bytes";
+                $files[$fkey]['name'] = $file;
+                $files[$fkey]['type'] = filetype($fullpath);
+                $fileNames[$i++] = $fkey;
+            }
+            closedir($dh);
+        } else die ("Cannot open directory:  $path");
+    } else die ("Path is not a directory:  $path");
+    sort($fileNames,SORT_STRING);
+    $sortedFiles = array();
+    $i = 0;
+    foreach($fileNames as $f) $sortedFiles[$i++] = $files[$f];
+   
+    return $sortedFiles;
+}
+
+$files = getFiles("C:");
+foreach ($files as $file) print "$file[name]<br>\n";
+?>
+===============================================================================
+
+I made a function for finding all files in a specified directory and all
+subdirectories. It can be quite usefull when searching in alot of files in alot
+subdirectories. The function returns an array with the path of all the files
+found.
+
+<?
+function getFiles($directory) {
+    // Try to open the directory
+    if($dir = opendir($directory)) {
+        // Create an array for all files found
+        $tmp = Array();
+
+        // Add the files
+        while($file = readdir($dir)) {
+            // Make sure the file exists
+            if($file != "." && $file != ".." && $file[0] != '.') {
+                // If it's a directiry, list all files within it
+                if(is_dir($directory . "/" . $file)) {
+                    $tmp2 = getFiles($directory . "/" . $file);
+                    if(is_array($tmp2)) {
+                        $tmp = array_merge($tmp, $tmp2);
+                    }
+                } else {
+                    array_push($tmp, $directory . "/" . $file);
+                }
+            }
+        }
+
+        // Finish off the function
+        closedir($dir);
+        return $tmp;
+    }
+}
+
+// Example of use
+print_r(getFiles('.')); // This will find all files in the current directory
+and all subdirectories
+?>
+===============================================================================
+
+Here is a snippet of the code that I created to search for a file..recursively
+open the directories and search for a match..
+
+<?php
+function search($target, $directory){
+    
+    if(is_dir($directory)){
+        $direc = opendir($directory);
+        while(false !== ($file = readdir($direc))){
+           
+            if($file !="." && $file != ".."){
+
+                if(is_file($directory."/".$file)){
+                    if(preg_match("/$target/i", $file)){
+                                            echo "<a href=\"$directory/$file\">
+$file</a><br>";
+                                        }
+                }else if(is_dir($directory."/".$file)){
+                    search($target,$directory."/".$file);
+                   
+                }
+
+            }
+        }
+        closedir($direc);
+    }
+
+    return ;
+}
+?>
+===============================================================================
+
+Here's another version of directory listing, since I had some problems using
+the examples below. It will display the content of the current directory,
+sorted by directories and files.
+You can also search subdirectories by setting $maxDepth > 0. There's a link to
+other directories, so you can easily switch to the parent directory or to other
+directories in the current directory.
+Hope it helps!
+
+<?php
+// show directory content
+function showDir($dir, $i, $maxDepth){
+    $i++;
+    if($checkDir = opendir($dir)){
+        $cDir = 0;
+        $cFile = 0;
+        // check all files in $dir, add to array listDir or listFile
+        while($file = readdir($checkDir)){
+            if($file != "." && $file != ".."){
+                if(is_dir($dir . "/" . $file)){
+                    $listDir[$cDir] = $file;
+                    $cDir++;
+                }
+                else{
+                    $listFile[$cFile] = $file;
+                    $cFile++;
+                }
+            }
+        }
+       
+        // show directories
+        if(count($listDir) > 0){
+            sort($listDir);
+            for($j = 0; $j < count($listDir); $j++){
+                echo "
+                <tr>";
+                    $spacer = "";
+                    for($l = 0; $l < $i; $l++) $spacer .= "&emsp;";
+                    // create link
+                    $link = "<a href=\"" . $_SERVER["PHP_SELF"] . "?dir=" . 
+$dir . "/" . $listDir[$j] . "\">$listDir[$j]</a>";
+                    echo "<td>" . $spacer . $link . "</td>
+                </tr>";
+                // list all subdirectories up to maxDepth
+                if($i < $maxDepth) showDir($dir . "/" . $listDir[$j], $i, 
+$maxDepth);
+            }
+        }
+       
+        // show files
+        if(count($listFile) > 0){
+            sort($listFile);
+            for($k = 0; $k < count($listFile); $k++){
+                $spacer = "";
+                for($l = 0; $l < $i; $l++) $spacer .= "&emsp;";
+                echo "
+                <tr>
+                    <td>" . $spacer . $listFile[$k] . "</td>
+                </tr>";   
+            }
+        }       
+        closedir($checkDir);
+    }
+}
+
+if($_GET["dir"] == "" || !is_dir($_GET["dir"])) $dir = getcwd();
+else $dir = $_GET["dir"];
+// replace backslashes, not necessary, but better to look at
+$dir = str_replace("\\", "/", $dir);
+
+// show parent path
+$pDir = pathinfo($dir);
+$parentDir = $pDir["dirname"];
+
+echo "<a href=\"" . $_SERVER["PHP_SELF"] . "\"><h3>Home</h3></a>";
+echo "Current directory: " . $dir;
+echo "<a href=\"" . $_SERVER["PHP_SELF"] . "?dir=$parentDir\"><h4>Parent
+directory: $parentDir</h4></a>";
+
+// Display directory content
+echo"<table border=1 cellspacing=0 cellpadding=2>
+<tr><th align=left>File / Dir</th>";
+
+// specifies the maxDepth of included subdirectories
+// set maxDepth to 0 if u want to display the current directory
+$maxDepth = 0;
+showDir($dir, -1, $maxDepth); 
+?>
+===============================================================================
+
+<?php
+/*
+** This recursive file lister only slurps in one page at time,
+** so it doesn't take forever to load when operating over
+** a large system.....comes with an "Up" link for every page too.
+*/
+
+$PHP_SELF = $_SERVER['PHP_SELF'];
+$DOCUMENT_ROOT = $_SERVER['DOCUMENT_ROOT'];
+# activate the next line (and deactivate the last) to
+# use this script in a $DOCUMENT_ROOT/~anybody
+# environment.
+#$DOCUMENT_ROOT="/home/sandy/public_html/";
+
+$tdir = $_GET['dir'];
+echo "tdir==$tdir<br>";
+$tparent_path = $_GET['parent_path'];
+$dbg = $_GET['dbg'];
+
+if(!strstr($tdir, $DOCUMENT_ROOT))
+  $tdir = getcwd();
+if(!strstr($tparent_path, $DOCUMENT_ROOT))
+  $tparent_path = $tdir;
+
+if (!isset ($tdir))
+  {
+    $dir = getcwd ();
+  }
+else
+  $dir = $tdir;
+
+if (!isset ($tparent_path))
+  {
+    $parent_path = $dir;
+  }
+else
+  $parent_path = $tparent_path;
+
+echo "<br>";
+if (!isset ($tdir))
+  {
+    $upurl = $PHP_SELF;
+  }
+else
+  {
+    if ($parent_path == $DOCUMENT_ROOT)
+      $parent_parent_path = $parent_path;
+    else
+      $parent_parent_path = dirname ($parent_path);
+    $upurl = $PHP_SELF."?dir=".$parent_path."&parent_path=".
+                  $parent_parent_path;
+  }
+
+if($dbg==1)
+{
+  echo "PHP_SELF: $PHP_SELF<br>\n";
+  echo "DOCUMENT_ROOT: $DOCUMENT_ROOT<br>\n";
+  echo "dir: $dir<br>\n";
+  echo "parent_path: $parent_path<br>\n";
+  echo "upurl: $upurl<br>\n";
+}
+
+echo "<a href=\"$upurl\"> <h3>Up</h3> </a>\n";
+echo "<h2>$dir</h2>\n";
+
+create_tree ($dir, $parent_path);
+
+function
+urlFromPath ($path)
+{
+  global $PHP_SELF;
+  global $DOCUMENT_ROOT;
+  $prefix = "";
+  if (substr ($path, 0, 1) != "/")
+    $prefix = "/";
+  $url = $prefix.ereg_replace ($DOCUMENT_ROOT, "", $path);
+  return $url;
+}
+
+function
+create_tree ($dir, $parent_path)
+{
+  if ($handle = opendir ($dir))
+    {
+      $i = 0;
+      while (false !== ($file = @readdir ($handle)))
+    {
+      if ($file != "." && $file != "..")
+        {
+          $list[$i] = $file;
+          $i++;
+        }
+    }
+      $dir_length = count ($list);
+      echo "<ul>";
+      for ($i = 0; $i < $dir_length; $i++)
+    {
+      global $PHP_SELF;
+      global $DOCUMENT_ROOT;
+      $label = $list[$i];
+      $test = $dir."/".$label;
+      $alink = $dir."/".ereg_replace(" ","%20",$label);
+      if (!strstr ($PHP_SELF, $label))
+        {
+          if (is_dir ($test))
+        {
+          $tmp = $PHP_SELF. "?dir=".$alink."&parent_path=".$dir;
+          $url = ereg_replace(" ", "%20", $tmp);
+                  echo "$url<br>\n";
+          echo "<a href=\"$url\"><b>$label</b>/</a><br>\n";
+        }
+          else
+        {
+          $link = urlFromPath ($alink);
+
+          $label = $list[$i];
+          echo
+            "<a href=\"$link\">".$label."</a><br>\n";
+        }
+        }
+    }
+      echo "</ul>";
+      closedir ($handle);
+    }
+}
+
+?>
+===============================================================================
+
+Here's another recursive function that prints out everything from the starting
+path to the end. It doesn't have any search function, but just another example.
+I wrote it for getting a quick hierarchial view of websites (even through
+Dreamweaver will show it to me, it'd be a chore to go through each folder and
+expand it).
+
+<?php
+
+// map_dirs(path,level)
+// path, level to start (start at 0)
+
+map_dirs("/var/ww/html/",0);
+
+function map_dirs($path,$level) {
+        if(is_dir($path)) {
+                if($contents = opendir($path)) {
+                        while(($node = readdir($contents)) !== false) {
+                                if($node!="." && $node!="..") {
+                                        for($i=0;$i<$level;$i++) echo "  ";
+                                        if(is_dir($path."/".$node)) echo "+";
+else echo " ";
+                                        echo $node."\n";
+                                        map_dirs("$path/$node",$level+1);
+                                }
+                        }
+                }
+        }
+}
+
+?>
+===============================================================================
+
+I had problems getting it to work because I'm not the best at PHP, but there IS
+a way to use opendir to list things in alphabetical order. I'm using it for my
+university project. All you have to do is read the filenames into an array,
+sort the array and then do what you want with the filenames.... like this....
+
+So that you know what all my variables mean in this - $stats is the folder that
+it looks in for the files - for example
+?stats=images
+would look in the images folder
+
+Obviously you will want to modify it so it fits your needs, but I thought you
+guys would want this - especially if your server doesnt have the latest version
+of php.
+
+===========================
+
+<?php
+$i = 0;
+$arraycount = 0;
+$home="/home/cabal/public_html/b146/admin/$stats";
+
+if ($stats)
+{
+    $dircheck="/home/cabal/public_html/b146/admin/$stats";
+    if (is_dir($dircheck))
+    {
+        if ($handle = opendir($home))
+        {
+            while (false !== ($file = readdir($handle)))
+            {
+                   if ($file != "." && $file != "..")
+            {
+            $path = "$home/$file";
+            $extension = array_pop(explode('.', basename($path)));
+            $filearray[$i] = $file;
+            $i++;
+            }
+            }
+           }
+           closedir($handle);
+       
+    }
+    else
+    {
+    echo "INCORRECT SELECTION";
+    }
+
+}
+
+else
+
+{
+echo "NOTHING SELECTED";
+}
+echo "&nbsp;";
+
+echo("<table width='100%' border='1'><tr><td><b><font color='#ff0000'>");
+echo("$stats : Log File");
+echo("</b></font></td><td><font color='#FF0000'><b>Page Views</b></font></td></
+tr>");
+sort($filearray);
+reset($filearray);
+while (list($key, $val) = each($filearray))
+{
+    $includearray = "$home/$filearray[$key]";
+    echo("<tr><td>");
+    echo("$val");
+    echo("</td><td>");
+    include($includearray);
+    echo("</td></tr>");
+   
+}
+echo("</table>");
+
+?>
+===============================================================================
+
+I ran into a little snag in example 1. opendir() lists files by the last time
+the file was accessed. I was trying to print the files numerically in a
+directory.
+
+Solution: Use scandir() instead (php5) or store the files in an array and sort
+it.
+
+Hope this helps someone.
+
+- Mick
+
+(o> Web / software developer
+( )     UNIX Systems Admin
+---   ~ www.mickweiss.com ~
+===============================================================================
+
+In addition to notes above about IIS & PHP reading network shares, here's one
+solution that works better for me.
+
+in the management console I created a folder where my "read_dir" script runs.
+click on properties then select the security tab. here you can set the
+anonymous account to the standard IUSR_$computername% , BUT.. in this case I
+chose another account that I set up for reading my shares. (make sure login
+name and password match the credantials you set on the remote machin ;-))
+
+I use this to read a dir and it's contents into a searchable database. and it
+works like a charm...
+===============================================================================
+
+Thought I could help clarify something with accessing network shares on a
+Windows network (2000 in this case), running PHP 4.3.2 under Apache 2.0.44.
+
+However you are logged into the Windows box, your Apache service must be
+running under an account which has access to the share.  The easiest (and
+probably least safe) way for me was to change the user for the Apache service
+to the computer administrator (do this in the service properties, under the
+"Log On" tab).  After restarting Apache, I could access mapped drives by their
+assigned drive letter ("z:\\") or regular shares by their UNC path ("\\\\
+shareDrive\\shareDir").
+===============================================================================
+
+Correction on the previous function. Was missing full path on recursive line.
+
+<? function file_array($path, $exclude = ".|..", $recursive = true) {
+    $path = rtrim($path, "/") . "/";
+    $folder_handle = opendir($path);
+    $exclude_array = explode("|", $exclude);
+    $result = array();
+    while(false !== ($filename = readdir($folder_handle))) {
+        if(!in_array(strtolower($filename), $exclude_array)) {
+            if(is_dir($path . $filename . "/")) {
+                                // Need to include full "path" or it's an
+infinite loop
+                if($recursive) $result[] = file_array($path . $filename . "/",
+$exclude, true);
+            } else {
+                $result[] = $filename;
+            }
+        }
+    }
+    return $result;
+}
+?>
+===============================================================================
+
+Here is a snippet to create a site map of all html files in a folder:
+
+<?php
+    // read all html file in the current directory
+    if ($dh = opendir('./')) {
+        $files = array();
+        while (($file = readdir($dh)) !== false) {
+            if (substr($file, strlen($file) - 5) == '.html') {
+                array_push($files, $file);
+            }
+        }
+        closedir($dh);
+    }
+   
+    // Sort the files and display
+    sort($files);
+    echo "<ul>\n";
+    foreach ($files as $file) {
+        $title = Title($file);
+        echo "<li><a href=\"$file\" title=\"$title\">$title</a></li>\n";
+    }
+    echo "</ul>\n";
+   
+    // Function to get a human readable title from the filename
+    function Title($filename) {
+        $title = substr($filename, 0, strlen($filename) - 5);
+        $title = str_replace('-', ' ', $title);
+        $title = ucwords($title);
+        return $title;
+    }
+?>
+===============================================================================
+
+An issue that I ran into is that opendir() could care less if you've got server
+authentication set on sub directories and so any such authentication is
+bypassed completely when accesses in this way. I did solve it for my
+application of a pretty file manager, by redirecting to all sub directories
+thusly:
+$fdir = "./subdirectory_I_want_to_visit/";
+if ($fdir != './') { //basically where we are or the parent
+    //redirect the browser to force authentication check on any subdirectories
+    header("Location: http://my.domain.com".dirname($_SERVER
+["PHP_SELF"]).substr($fdir,2));
+    exit;
+} else {
+    $dir = opendir($fdir);
+}
+===============================================================================
+
+Note that the opendir() function will use ISO8859-1 characterset under
+windows...
+
+If you have korean, japanese, etc.. filenames, you won't be able to open them.
+I still didn't find any solution to workaround that.
+===============================================================================
+
+Pointing on the previous post, I'd like to say the following.
+
+You can use opendir on all valid (existant and reachable) folders.
+This counts not only for windows but also for linux.
+Under linux, you can also read root folders etc.
+
+To avoid access to non-public data, you should check the given parameter for
+opendir before executing opendir.
+
+Let's say you have this:
+
+/home/users/mrsmith/
+/home/users/mrsmith/info.txt
+/home/users/mrsmith/test/photo.jpg
+/home/users/mradmin/private.txt
+
+Now you don't want mrsmith to access mradmin's folders/files.
+In that case you could/should define the path where the data MUST be inside.
+
+Attention:
+Don't check the data with substr though, it's not a secure solution.
+Exploit example: /home/users/mrsmith/../mradmin/
+Exploit example2: /home/users/mrsmith/../../../../../../../../../../../../../
+dev/
+
+I'd do a case sensitive regex match.
+So after the first folder there may not be a subfolder named ".." because that
+would jump one folder back.
+
+I hope this isn't too offtopic or so but I think it's important to think of
+that when creating file systems.
+===============================================================================
+
+If you have problems like "failed to open dir: Invalid argument"
+when using IIS and trying to access windows/smb network shares, try
+//servername/share/directory
+instead of
+\\servername\share
+===============================================================================
+
+If you search for a comfortable way to include javascript code from other
+javascript code, here is a useful tool based on opendir():
+
+<?php
+
+class JSIncluder {
+    private static $included = array();
+
+    private static function ext($filename) {
+        return pathinfo($filename, PATHINFO_EXTENSION);
+    }
+
+    public static function includeFile($file) {
+        if (isset(JSIncluder::$included[$file]))
+            return;
+        JSIncluder::$included[$file] = true;
+
+        $contents = file_get_contents($file);
+        preg_match_all('/\/\*include:([^*]+)\*\//', $contents, $deps);
+
+        foreach ($deps[1] as $dep) {
+            if (is_file($dep)) {
+                JSIncluder::includeFile($dep);
+            } else
+                JSIncluder::includeAll($dep);
+        }
+
+        echo '<script type="text/javascript">' . $file . '</script>' . PHP_EOL;
+    }
+
+    private static function includeAll($dir) {
+        if (($handle = opendir($dir))) {
+            while ($file = readdir($handle)) {
+                clearstatcache();
+                if (is_file($dir . '/' . $file)) {
+                    if (JSIncluder::ext($file) == 'js') {
+                        JSIncluder::includeFile($dir . '/' . $file);
+                    }
+                } elseif ($file != '..' && $file != '.')
+                    JSIncluder::includeAll($dir . '/' . $file);
+            }
+            closedir($handle);
+        }
+    }
+
+}
+
+?>
+
+Now, you can just write <?php JSIncluder::includeFile('path/to/script/main.js')
+?> in your <head> section and then you can include files directly from your
+javascript files by typing /*include:path/to/other/script/foo.js*/ anywhere!
+For example:
+
+/*include:scripts/lib*/ //it will include the whole lib dir and its
+subdirectories
+/*include:scripts/helloworld.js*/ //it will include only one file
+
+$(function() {
+    $(body).html('Hello world!');
+});
+
+and in your html code:
+<head>
+<?php JSIncluder::includeFile('scripts/main.js') ?>
+</head>
+
+The JSIncluder should be safe, because all the work is done server-side and
+clients just can't affect anything. They could write /*include:/foo/bar*/ but
+nothing will happen, because the code does nothing but automatically generates
+<script> tags in specific order in your <head> section.
+
+Feel free to modify my code. I believe that it will be useful!
+===============================================================================
+
+You can't rely on is_dir() and a permissions check to know whether opendir()
+will succeed.
+
+I'm working on a Windows system and accessing files on an OSX share. There are
+file/folder names with unsupported characters in them, (such as ">"), so
+opendir() fails with "the volume label syntax is incorrect." However, is_dir()
+will report - correctly - that it these are valid directories!
+
+Though for what it's worth, Windows can't get in there either. The ">"
+character existing in the folder name is a problem for both.
+
+Bottom line: you may need to test the result of opendir() before you go on to
+process it, even if you've checked permissions and is_dir() beforehand.
+===============================================================================
+
+To extend the examples already given into something more flexible and complete.
+-c!
+
+<?php
+/**
+* directory_list
+* return an array containing optionally all files, only directiories or only
+files at a file system path
+* @author     cgray The Metamedia Corporation www.metamedia.us
+*
+* @param    $base_path         string    either absolute or relative path
+* @param    $filter_dir        boolean    Filter directories from result
+(ignored except in last directory if $recursive is true)
+* @param    $filter_files    boolean    Filter files from result
+* @param    $exclude        string    Pipe delimited string of files to always
+ignore
+* @param    $recursive        boolean    Descend directory to the bottom?
+* @return    $result_list    array    Nested array or false
+* @access public
+* @license    GPL v3
+*/
+function directory_list($directory_base_path, $filter_dir = false, 
+$filter_files = false, $exclude = ".|..|.DS_Store|.svn", $recursive = true){
+    $directory_base_path = rtrim($directory_base_path, "/") . "/";
+
+    if (!is_dir($directory_base_path)){
+        error_log(__FUNCTION__ . "File at: $directory_base_path is not a
+directory.");
+        return false;
+    }
+
+    $result_list = array();
+    $exclude_array = explode("|", $exclude);
+
+    if (!$folder_handle = opendir($directory_base_path)) {
+        error_log(__FUNCTION__ . "Could not open directory at: 
+$directory_base_path");
+        return false;
+    }else{
+        while(false !== ($filename = readdir($folder_handle))) {
+            if(!in_array($filename, $exclude_array)) {
+                if(is_dir($directory_base_path . $filename . "/")) {
+                    if($recursive && strcmp($filename, ".")!=0 && strcmp(
+$filename, "..")!=0 ){ // prevent infinite recursion
+                        error_log($directory_base_path . $filename . "/");
+                        $result_list[$filename] = directory_list("
+$directory_base_path$filename/", $filter_dir, $filter_files, $exclude, 
+$recursive);
+                    }elseif(!$filter_dir){
+                        $result_list[] = $filename;
+                    }
+                }elseif(!$filter_files){
+                    $result_list[] = $filename;
+                }
+            }
+        }
+        closedir($folder_handle);
+        return $result_list;
+    }
+}
+?>
+===============================================================================
+
+Re: Accessing network directories on W32
+
+In reply to the previous comments, to enable opendir() to open directories like
+"\\SOMEHOST\shareddir", with PHP+IIS:
+
+Follow the instructions here: http://support.microsoft.com/default.aspx?scid=
+kb;en-us;Q189408
+
+Check that the file share allows reads to IUSR_[HOSTNAME] user.
+===============================================================================
+
+About
+// Define the parameters for the shell command
+$location = "\\servername\sharename";
+$user = "USERNAME";
+$pass = "PASSWORD";
+$letter = "Z";
+
+// Map the drive
+system("net use ".$letter.": \"".$location."\" ".$pass." /user:".$user." /
+persistent:no>nul 2>&1");
+
+// Open the directory
+$dir = opendir($letter.":/an/example/path")
+
+With apache in windows this is not working is needed to double all backslashes
+to work.
+
+$location = "\\\\servername\\sharename";
+$user = "USERNAME";
+$pass = "PASSWORD";
+$letter = "Z";
+
+// Map the drive
+system("net use ".$letter.":  ".$location." ".$pass." /user:".$user." /
+persistent:no>nul 2>&1");
+$dir = $letter.":/";
+$dh = opendir($dir);
+This worked for me.

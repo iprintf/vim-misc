@@ -1,0 +1,1994 @@
+
+imagerotate
+
+(PHP 4 >= 4.3.0, PHP 5, PHP 7)
+
+imagerotate — 用给定角度旋转图像
+
+说明
+
+resource imagerotate ( resource $image , float $angle , int $bgd_color [, int
+$ignore_transparent = 0 ] )
+
+将 src_im 图像用给定的 angle 角度旋转。bgd_color 指定了旋转后没有覆盖到的部分的
+颜色。
+
+旋转的中心是图像的中心，旋转后的图像会按比例缩小以适合目标图像的大小——边缘不会
+被剪去。
+
+参数
+
+image
+
+    由图象创建函数(例如imagecreatetruecolor())返回的图象资源。
+
+angle
+
+    Rotation angle, in degrees. The rotation angle is interpreted as the number
+    of degrees to rotate the image anticlockwise.
+
+bgd_color
+
+    Specifies the color of the uncovered zone after the rotation
+
+ignore_transparent
+
+    如果被设为非零值，则透明色会被忽略（否则会被保留）。
+
+返回值
+
+返回旋转后的图像资源，或者在失败时返回 FALSE。
+
+更新日志
+
+版本              说明
+5.1.0 新增： ignore_transparent 。
+
+范例
+
+Example #1 将图像旋转 180 度
+
+本例将把一幅图像旋转 180 度——上下颠倒。
+
+<?php
+// File and rotation
+$filename = 'test.jpg';
+$degrees = 180;
+
+// Content type
+header('Content-type: image/jpeg');
+
+// Load
+$source = imagecreatefromjpeg($filename);
+
+// Rotate
+$rotate = imagerotate($source, $degrees, 0);
+
+// Output
+imagejpeg($rotate);
+?>
+
+以上例程的输出类似于：
+
+例子的输出：将图像旋转 180 度
+
+注释
+
+    Note: 此函数仅在与 GD 库捆绑编译的 PHP 版本中可用。
+
+
+User Contributed Notes 43 notes
+
+===============================================================================
+
+After some INet searches and personal try-and-failures I succeed to rotate PNG
+images with preserving alpha channel transparency (semi transparency).
+
+<?php
+    $filename = 'YourFile.png';
+    $rotang = 20; // Rotation angle
+    $source = imagecreatefrompng($filename) or die('Error opening file '.
+$filename);
+    imagealphablending($source, false);
+    imagesavealpha($source, true);
+
+    $rotation = imagerotate($source, $rotang, imageColorAllocateAlpha($source, 
+0, 0, 0, 127));
+    imagealphablending($rotation, false);
+    imagesavealpha($rotation, true);
+
+    header('Content-type: image/png');
+    imagepng($rotation);
+    imagedestroy($source);
+    imagedestroy($rotation);
+?>
+===============================================================================
+
+An issue with imagerotate() is it might need more memory than what is
+available. It was failing in my script so I tried to increase it with ini_set
+('memory_limit', '256M')
+and everything works fine now.
+===============================================================================
+
+I've benchmarked three methods described here for rotating an image.
+
+I used a 1600 x 1200 jpeg picture that was duplicated ten times on the disk. I
+looped through them to apply a CW rotation using either method.
+
+First algorithm (the "imagesetpixel" algorithm):
+<?php
+function CWRotation($image)
+{
+    $w = imagesx($image);
+    $h = imagesy($image);
+    $result = @imagecreatetruecolor($h, $w);
+    if($result)
+    {
+        for ($i = 0; $i < $w; $i++)
+            for ($j = 0; $j < $h; $j++)
+            {
+                $ref = imagecolorat($image, $i, $j);
+                imagesetpixel($result, ($h - 1) - $j, $i, $ref);
+            }
+    }
+    return $result;
+}
+?>
+
+Second algorithm (the "imagecopy" algorithm):
+<?php
+function CWRotation($image)
+{
+    $w = imagesx($image);
+    $h = imagesy($image);
+    $result = @imagecreatetruecolor($h, $w);
+    if($result)
+    {
+        for ($i = 0; $i < $w; $i++)
+            for ($j = 0; $j < $h; $j++)
+                imagecopy($result, $image, ($h - 1) - $j, $i, $i, $j, 1, 1);
+    }
+    return $result;
+}
+?>
+
+Third algorithm (the "imagerotate" algorithm):
+<?php
+function CWRotation($image)
+{
+    return imagerotate($image, 270, 0);
+}
+?>
+
+In each step of the loop, the image is loaded, rotated then a copy is written
+on the disk.
+
+Here are the results:
+imagesetpixel algorithm: the 10 pictures were processed in 29 seconds
+imagecopy algorithm: the 10 pictures were processed in 26 seconds
+imagerotate algorithm: the 10 pictures were processed in 2 seconds (no typo
+here)
+
+Writing the pictures on the disk allowed me to control the results. Every
+resulting picture was the same (tested with winmerge).
+
+Conclusion: imagerotate is way faster than other "home-made" algorithms.
+I ran the tests several times to see if the difference between imagesetpixel
+and imagecopy was introduced by my computer's independent activity, but I
+always got that 10% difference.
+
+Note: the picture I used was taken from a camera, so no transparency was
+involved.
+I ran the tests on Windows XP using PHP Version 5.3.0
+===============================================================================
+
+Keep in mind this function rotates counterclockwise.  if you want to go 90
+degrees clockwise, you have to tell imagerotate to go 270 degrees
+counter-clockwise.
+
+$angle = 360-$angle;
+===============================================================================
+
+I was quite surprised to see that no one had done any working rotate function.
+And since I needed one for my web hotel, I whipped this one up. Someone might
+want to expand it so that it matches imagerotate.
+
+Also, does imagerotate really rotate things counter clockwise? Otherwise this
+should also be changed.
+
+<?php
+if(!function_exists("imagerotate")) {
+    function imagerotate(&$srcImg, $angle, $bgcolor, $ignore_transparent = 0) {
+        return imagerotateEquivalent(&$srcImg, $angle, $bgcolor, 
+$ignore_transparent);
+    }
+}
+
+/*
+    Unfinished imagerotate replacement. ignore_transparent is, well, ignored.
+:)
+    Also, should have some standard functions for 90, 180 and 270 degrees,
+since they are quite
+    easy to implement faster.
+*/
+function imagerotateEquivalent(&$srcImg, $angle, $bgcolor, $ignore_transparent 
+= 0)
+{
+    function rotateX($x, $y, $theta){
+        return $x * cos($theta) - $y * sin($theta);
+    }
+    function rotateY($x, $y, $theta){
+        return $x * sin($theta) + $y * cos($theta);
+    }
+   
+    $srcw = imagesx($srcImg);
+    $srch = imagesy($srcImg);
+ 
+    if($angle == 0) return $srcImg;
+   
+    // Convert the angle to radians
+    $theta = deg2rad ($angle);
+
+   
+    // Calculate the width of the destination image.
+    $temp = array (    rotateX(0,     0, 0-$theta),
+                    rotateX($srcw, 0, 0-$theta),
+                    rotateX(0,     $srch, 0-$theta),
+                    rotateX($srcw, $srch, 0-$theta)
+                );
+    $minX = floor(min($temp));
+    $maxX = ceil(max($temp));
+    $width = $maxX - $minX;
+   
+    // Calculate the height of the destination image.
+    $temp = array (    rotateY(0,     0, 0-$theta),
+                    rotateY($srcw, 0, 0-$theta),
+                    rotateY(0,     $srch, 0-$theta),
+                    rotateY($srcw, $srch, 0-$theta)
+                );
+    $minY = floor(min($temp));
+    $maxY = ceil(max($temp));
+    $height = $maxY - $minY;
+   
+    $destimg = imagecreatetruecolor($width, $height);
+    imagefill($destimg, 0, 0, imagecolorallocate($destimg, 0,255, 0));
+
+    // sets all pixels in the new image
+    for($x=$minX;$x<$maxX;$x++) {
+        for($y=$minY;$y<$maxY;$y++)
+        {
+            // fetch corresponding pixel from the source image
+            $srcX = round(rotateX($x, $y, $theta));
+            $srcY = round(rotateY($x, $y, $theta));
+            if($srcX >= 0 && $srcX < $srcw && $srcY >= 0 && $srcY < $srch)
+            {
+                $color = imagecolorat($srcImg, $srcX, $srcY );
+            }
+            else
+            {
+                $color = $bgcolor;
+            }
+            imagesetpixel($destimg, $x-$minX, $y-$minY, $color);
+        }
+    }
+   
+    return $destimg;
+}
+?>
+===============================================================================
+
+I modified cbl25's function to allow it to rotate an image either clock wise or
+counter clock wise.
+
+<?php
+function rotateImage($image, $direction) {
+    $direction = strtolower($direction);
+    $degrees = $direction == 'cw' ? 270 : ($direction == 'ccw' ? 90 : NULL);
+    if(!$degrees)
+        return $image;
+    $width = imagesx($image);
+    $height = imagesy($image);
+    $side = $width > $height ? $width : $height;
+    $imageSquare = imagecreatetruecolor($side, $side);
+    imagecopy($imageSquare, $image, 0, 0, 0, 0, $width, $height);
+    imagedestroy($image);
+    $imageSquare = imagerotate($imageSquare, $degrees, 0, -1);
+    $image = imagecreatetruecolor($height, $width);
+    $x = $degrees == 90 ? 0 : ($height > $width ? 0 : ($side - $height));
+    $y = $degrees == 270 ? 0 : ($height < $width ? 0 : ($side - $width));
+    imagecopy($image, $imageSquare, 0, 0, $x, $y, $height, $width);
+    imagedestroy($imageSquare);
+    return $image;
+}
+
+//Usage
+$image = rotateImage($image, 'cw');
+$image = rotateImage($image, 'ccw');
+?>
+===============================================================================
+
+This function apparently contains a memory leak. Because of this, it was kept
+out of the GD library that comes with Ubuntu (and I assume other OS'es, too).
+
+So, If you are running Ubuntu and wonder why you get "Call to undefined
+function imagerotate()" even though you seemingly have the correct GD lib
+installed, this is why. Use the alternative supplied by beau at
+dragonflydevelopment dot com instead. It works flawlessly (for angles in steps
+of 90 degrees).
+
+On a side-note, some other GD image functions (unfortunately, the more
+interesting ones) suffer from the same problem and are kept out of the Ubuntu
+distribution as well.
+===============================================================================
+
+As an alternative to the GD rotateImage() function, this is an easy way to
+rotate images by 90 degrees ccw *without* loosing transparency:
+
+<?php
+
+  function rotateImage($image) {
+      $width = imagesx($image);
+      $height = imagesy($image);
+      $newImage= imagecreatetruecolor($height, $width);
+      imagealphablending($newImage, false);
+      imagesavealpha($newImage, true);
+      for($w=0; $w<$width; $w++)
+          for($h=0; $h<$height; $h++) {
+              $ref = imagecolorat($image, $w, $h);
+              imagesetpixel($newImage, $h, ($width-1)-$w, $ref);
+          }
+      return $newImage;
+  }
+
+?>
+===============================================================================
+
+Note that the image resource returned from the imagerotate() function is an
+entirely different image resource from your original one.
+
+<?php
+
+$res = imagecreatetruecolor(100, 200);
+$res2 = imagerotate($res, 90, 0);
+var_dump($res, $res2);
+
+?>
+
+This will output:
+
+resource(2, gd)
+resource(3, gd)
+===============================================================================
+
+I had a problem with a png image containing transparent colors, but found a
+solution that works for me.
+So i thought i might share it:
+
+<?php
+$angle=45;
+$im=imagerotate($im, $angle, -1);
+imagealphablending($im, true);
+imagesavealpha($im, true);
+?>
+===============================================================================
+
+I believe the rotateImage function below is incorrect. The 180 rotation was
+actually doing a vertical mirror instead of rotating 180 degrees. The change
+was $i to $width - $i.
+
+<?php
+function rotateImage($img, $rotation) {
+  $width = imagesx($img);
+  $height = imagesy($img);
+  switch($rotation) {
+    case 90: $newimg= @imagecreatetruecolor($height , $width );break;
+    case 180: $newimg= @imagecreatetruecolor($width , $height );break;
+    case 270: $newimg= @imagecreatetruecolor($height , $width );break;
+    case 0: return $img;break;
+    case 360: return $img;break;
+  }
+  if($newimg) {
+    for($i = 0;$i < $width ; $i++) {
+      for($j = 0;$j < $height ; $j++) {
+        $reference = imagecolorat($img,$i,$j);
+        switch($rotation) {
+          case 90: if(!@imagesetpixel($newimg, ($height - 1) - $j, $i, 
+$reference )){return false;}break;
+          case 180: if(!@imagesetpixel($newimg, $width - $i, ($height - 1) - $j
+, $reference )){return false;}break;
+          case 270: if(!@imagesetpixel($newimg, $j, $width - $i, $reference ))
+{return false;}break;
+        }
+      }
+    } return $newimg;
+  }
+  return false;
+}
+?>
+
+you can call it this way:
+<?php
+$img = rotateImage($imagetorotate,"degrees");
+?>
+===============================================================================
+
+I wanted to draw a transparent GIF-image and show it on a page, at an angle
+specified in the URL:
+<img src="image.php?angle=90" type="image/gif">
+
+I used the native imagerotate() but at angles of 90, 180, etc. the old
+background colour would become non-transparent. Apparently, there's a bug
+somewhere in GD, and has been for ages.
+
+My solution below:
+
+<?php
+$height = 100;
+$width = 100;
+$lsize= $width/2;
+$angle= $_GET["angle"];
+
+// avoid the bug:
+if(($angle%90)==0)
+  $angle+= 0.001;
+
+$image_p = imagecreatetruecolor($width, $height);
+$trans = imagecolorallocate($image_p, 254, 0, 0);
+imagefill($image_p, 0, 0, $trans);
+imagecolortransparent($image_p, $trans);
+
+$black = imagecolorallocate($image_p, 1, 1, 1);
+$red = imagecolorallocate($image_p, 255, 0, 0);
+$white = imagecolorallocate($image_p, 255, 255, 255);
+
+// draw something here
+imageline($image_p, 3, $lsize, $lsize/2, $lsize, $black);
+
+$image_r= imagerotate($image_p, -$angle, $trans, 0);
+$w= imagesx($image_r);
+$h= imagesy($image_r);
+$image_s = imagecreatetruecolor($width, $height);
+imagecopyresized($image_s, $image_r, 0, 0, ($w-$width)/2, ($h-$height)/2, 
+$width, $height, $width, $height);
+$trans = imagecolorallocate($image_s, 254, 0, 0);
+imagecolortransparent($image_s, $trans);
+imagegif($image_s);
+?>
+===============================================================================
+
+Don't be tricked into thinking this function will rotate the image resource
+handle in-place. While the documentation currently doesn't specify and return
+values, I've found the following return values to be true:
+
+"Returns an image resource identifier on success, FALSE on errors. "
+
+Simply make sure you're doing something like...
+<?php
+$rotated_img = imagerotate($src_img, 45, $color)
+?>
+
+-Mike
+===============================================================================
+
+Hi, I've rewrote function to class with static methods. Advantage of this
+solution is ability to be called several times during script execution.
+
+<?php
+/*
+    Unfinished imagerotate replacement. ignore_transparent is, well, ignored.
+:)
+    Also, should have some standard functions for 90, 180 and 270 degrees,
+since they are quite
+    easy to implement faster.
+*/
+
+if(!function_exists("imagerotate")) {
+    function imagerotate(&$srcImg, $angle, $bgcolor, $ignore_transparent = 0) {
+        return imagerotateEquivalent::rotate(&$srcImg, $angle, $bgcolor, 
+$ignore_transparent);
+    }
+}
+
+class imagerotateEquivalent {
+
+    static private function rotateX($x, $y, $theta){
+        return $x * cos($theta) - $y * sin($theta);
+    }
+
+    static private function rotateY($x, $y, $theta){
+        return $x * sin($theta) + $y * cos($theta);
+    }
+
+    public static function rotate(&$srcImg, $angle, $bgcolor, 
+$ignore_transparent = 0) {
+       
+        $srcw = imagesx($srcImg);
+        $srch = imagesy($srcImg);
+
+        if($angle == 0) return $srcImg;
+
+        // Convert the angle to radians
+        $theta = deg2rad ($angle);
+
+        // Calculate the width of the destination image.
+        $temp = array (    self::rotateX(0,     0, 0-$theta),
+                        self::rotateX($srcw, 0, 0-$theta),
+                        self::rotateX(0,     $srch, 0-$theta),
+                        self::rotateX($srcw, $srch, 0-$theta)
+                    );
+        $minX = floor(min($temp));
+        $maxX = ceil(max($temp));
+        $width = $maxX - $minX;
+
+        // Calculate the height of the destination image.
+        $temp = array (    self::rotateY(0,     0, 0-$theta),
+                        self::rotateY($srcw, 0, 0-$theta),
+                        self::rotateY(0,     $srch, 0-$theta),
+                        self::rotateY($srcw, $srch, 0-$theta)
+                    );
+        $minY = floor(min($temp));
+        $maxY = ceil(max($temp));
+        $height = $maxY - $minY;
+
+        $destimg = imagecreatetruecolor($width, $height);
+        imagefill($destimg, 0, 0, imagecolorallocate($destimg, 0,255, 0));
+
+        // sets all pixels in the new image
+        for($x=$minX;$x<$maxX;$x++) {
+            for($y=$minY;$y<$maxY;$y++)
+            {
+                // fetch corresponding pixel from the source image
+                $srcX = round(self::rotateX($x, $y, $theta));
+                $srcY = round(self::rotateY($x, $y, $theta));
+                if($srcX >= 0 && $srcX < $srcw && $srcY >= 0 && $srcY < $srch)
+                {
+                    $color = imagecolorat($srcImg, $srcX, $srcY );
+                }
+                else
+                {
+                    $color = $bgcolor;
+                }
+                imagesetpixel($destimg, $x-$minX, $y-$minY, $color);
+            }
+        }
+        return $destimg;
+    }
+}
+
+?>
+===============================================================================
+
+There is a slight mistake in the previous post by Kae Cyphet.
+
+When setting the pixels of the new image the co-ordinates have to occasionally
+use the width ($wid) and height ($hei). These values must be reduced by 1 as
+the co-ordinates start at 0 (Not 1) so they only go up to $wid - 1 and $hei - 1
+(Not $wid and $hei).
+
+Here's an example of the first function to show this:
+
+<?php
+function rotate_right90($im)
+{
+$wid = imagesx($im);
+$hei = imagesy($im);
+$im2 = imagecreatetruecolor($hei,$wid);
+
+for($i = 0;$i < $wid; $i++)
+{
+  for($j = 0;$j < $hei; $j++)
+  {
+   $ref = imagecolorat($im,$i,$j);
+   imagesetpixel($im2,($hei - 1) - $j,$i,$ref);
+  }
+}
+return $im2;
+}
+?>
+
+Other than that very useful functions!
+===============================================================================
+
+To solve that annoying problem of having to install a pre-compiled version of
+GD just to get imagerotate working.
+
+here is an open source solution.
+uses the standard stuff included in php when you uncomment 'extension=
+php_gd2.dll' in the php.ini file and there ya go!
+
+Useage:
+<?php
+$im = imagecreatefromjpeg('test.jpg');
+
+header('Content-type: image/jpg');
+imagejpeg(rotate_right90($im));
+
+imagedestroy($im);
+?>
+
+'=================================
+
+<?php
+function rotate_right90($im)
+{
+$wid = imagesx($im);
+$hei = imagesy($im);
+$im2 = imagecreatetruecolor($hei,$wid);
+
+for($i = 0;$i < $wid; $i++)
+{
+  for($j = 0;$j < $hei; $j++)
+  {
+   $ref = imagecolorat($im,$i,$j);
+   imagesetpixel($im2,$hei - $j,$i,$ref);
+  }
+}
+return $im2;
+}
+
+function rotate_left90($im)
+{
+$wid = imagesx($im);
+$hei = imagesy($im);
+$im2 = imagecreatetruecolor($hei,$wid);
+
+for($i = 0;$i < $wid; $i++)
+{
+  for($j = 0;$j < $hei; $j++)
+  {
+   $ref = imagecolorat($im,$i,$j);
+   imagesetpixel($im2,$j, $wid - $i,$ref);
+  }
+}
+return $im2;
+}
+
+function mirror($im)
+{
+$wid = imagesx($im);
+$hei = imagesy($im);
+$im2 = imagecreatetruecolor($wid,$hei);
+
+for($i = 0;$i < $wid; $i++)
+{
+  for($j = 0;$j < $hei; $j++)
+  {
+   $ref = imagecolorat($im,$i,$j);
+   imagesetpixel($im2,$wid - $i,$j,$ref);
+  }
+}
+return $im2;
+}
+
+function flip($im)
+{
+$wid = imagesx($im);
+$hei = imagesy($im);
+$im2 = imagecreatetruecolor($wid,$hei);
+
+for($i = 0;$i < $wid; $i++)
+{
+  for($j = 0;$j < $hei; $j++)
+  {
+   $ref = imagecolorat($im,$i,$j);
+   imagesetpixel($im2,$i,$hei - $j,$ref);
+  }
+}
+return $im2;
+}
+?>
+===============================================================================
+
+About that rotating function by david at horizon-nigh not working, I found the
+bug.
+I noticed that the x1 and y1 where not used, so, in the loop through every
+pixel and transform it, change
+
+$x2 = $x * cos($theta) - $y * sin($theta);
+$y2 = $x * sin($theta) + $y * cos($theta);
+
+to:
+          
+$x2 = $x1 * cos($theta) - $y1 * sin($theta);
+$y2 = $x1 * sin($theta) + $y1 * cos($theta);
+===============================================================================
+
+<?php
+$urlImage = "images/image.png";
+$urlNewImage = "images/imageNew.png";
+   
+$src_img = imagecreatefrompng($urlImage);
+$originalX = imagesx($src_img);
+$originalY = imagesy($src_img);
+$dst_img = imagecreatetruecolor(640,480);
+
+   
+$imageRotate = imagerotate($src_img,20,-1);
+       
+imagepng($imageRotate,$urlNewImage);
+imagedestroy($dst_img);
+imagedestroy($src_img);
+?>
+===============================================================================
+
+For those who are looking for the GD library for Ubuntu, I let a copy on my
+server:  http://www.cartefoi.net/compl_compl_2.php
+It was pretty hard to find, somebody gaveme his. Thanks a lot to him (message
+up).
+===============================================================================
+
+I'm now using david's code with these changes to get a transparent effect.
+
+I exec convert 2 times:
+
+<?php
+exec( $imagick . ' -background \'#555555\' -rotate ' . $angle . ' ' . $file1 . 
+' ' . $file2 );
+exec( $imagick . ' -transparent \'#555555\' -transparent-color \'#555555\' ' . 
+$file2 . ' ' . $file3 );
+?>
+
+and then use this after I rotated $output:
+<?php imagecolortransparent($output, imagecolorallocatealpha($output, 85, 85, 
+85, 127)); ?>
+===============================================================================
+
+I couldn't get the replacements from 'the dot thawk' or 'pilot' to work for
+some reason, so here's my own replacement. It uses ImageMagick; binary must be
+installed, and you may need to modify the search path. (I didn't use PHP's
+ImageMagick support for my own reasons.)
+
+<?php
+    /**
+     * imagerotate()
+     * Debian php5-gd packages do not include imagerotate() due to some
+convoluted reason.
+     *
+     * @param int $angle - same as PHP builtin function
+     * @param $bgd_color - not implemented, apparently always #FFFFFF
+     *
+     * @return same as PHP builtin function
+     */
+    if ( !function_exists( 'imagerotate' ) ) {
+
+        function imagerotate( $source_image, $angle, $bgd_color ) {
+
+            $angle = 360-$angle; // GD rotates CCW, imagick rotates CW
+
+            foreach ( array( '/usr/bin', '/usr/local/bin', '/opt/local/bin', '/
+sw/bin' ) as $path ) {
+
+                if ( file_exists( $path . '/convert' ) ) {
+                    $imagick = $path . '/convert';
+                    if ( $path == '/opt/local/bin' ) {
+                        $imagick = 'DYLD_LIBRARY_PATH="" ' . $imagick; // some
+kind of conflict with MacPorts and MAMP
+                    }
+                    break;
+                }
+
+            }
+
+            if ( !isset( $imagick ) ) {
+
+                //trigger_error( 'imagerotate(): could not find imagemagick
+binary, original image returned', E_USER_WARNING );
+                return $source_image;
+
+            }
+
+            $file1 = '/tmp/imagick_' . rand( 10000,99999 ) . '.png';
+            $file2 = '/tmp/imagick_' . rand( 10000,99999 ) . '.png';
+
+            if ( @imagepng( $source_image, $file1 ) ) {
+
+                exec( $imagick . ' -rotate ' . $angle . ' ' . $file1 . ' ' . 
+$file2 );
+
+                if ( file_exists( $file2 ) ) {
+
+                    $new_image = imagecreatefrompng( $file2 );
+                    unlink( $file1 );
+                    unlink( $file2 );
+                    return $new_image;
+
+                } else {
+
+                    //trigger_error( 'imagerotate(): imagemagick conversion
+failed, original image returned', E_USER_WARNING );
+                    return $source_image;
+
+                }
+
+            } else {
+
+                //trigger_error( 'imagerotate(): could not write to ' . $file1
+. ', original image returned', E_USER_WARNING );
+                return $source_image;
+
+            }
+
+        }
+
+    }
+?>
+===============================================================================
+
+Here is a simple function to rotate a non-square image 90 degrees clockwise.
+
+<?php
+function rotateImage($imageResource)
+{
+    $width = imagesx($imageResource);
+    $height = imagesy($imageResource);
+    $side = $width > $height ? $width : $height;
+    $squareImage = imagecreatetruecolor($side, $side);
+    imagecopy($squareImage,$imageResource,0,0,0,0,$width,$height);
+    $squareImage = imagerotate($squareImage,270,0,-1);
+    $imageResource = imagecreatetruecolor($height, $width);
+    $x = $height > $width ? 0 : $side - $height;
+    imagecopy($imageResource,$squareImage,0,0,$x,0,$height,$width);
+    return $imageResource;
+}
+?>
+===============================================================================
+
+In response to pilot at myupb dot com on 31-May-2008 02:23
+---
+
+I am not sure why you would be defining your own PI, instead of using the
+built-in constant, and why you do the degrees to radian conversion manually.
+There might be a speed issue, however here is the exact same code with that
+small difference.
+
+<?php
+if(!function_exists("imagerotate")) {
+    function imagerotate(&$srcImg, $angle, $transparentColor = null) {
+        $srcw = imagesx($srcImg);
+        $srch = imagesy($srcImg);
+      
+        if($angle == 0) return $srcImg;
+      
+        // Convert the angle to radians
+        $theta = deg2rad ($angle);
+      
+        // Get the origin (center) of the image
+        $originx = $srcw / 2;
+        $originy = $srch / 2;
+      
+        // The pixels array for the new image
+        $pixels = array();
+        $minx = 0;
+        $maxx = 0;
+        $miny = 0;
+        $maxy = 0;
+        $dstw = 0;
+        $dsth = 0;
+      
+        // Loop through every pixel and transform it
+        for($x=0;$x<$srcw;$x++) {
+            for($y=0;$y<$srch;$y++) {
+                list($x1, $y1) = translateCoordinate($originx, $originy, $x, $y
+, false);
+              
+                $x2 = $x * cos($theta) - $y * sin($theta);
+                $y2 = $x * sin($theta) + $y * cos($theta);
+              
+                // Store the pixel color
+                $pixels[] = array($x2, $y2, imagecolorat($srcImg, $x, $y));
+              
+                // Check our boundaries
+                if($x2 > $maxx) $maxx = $x2;
+                if($x2 < $minx) $minx = $x2;
+                if($y2 > $maxy) $maxy = $y2;
+                if($y2 < $miny) $miny = $y2;
+            }
+        }
+      
+        // Determine the new image size
+        $dstw = $maxx - $minx + 1;
+        $dsth = $maxy - $miny + 1;
+      
+        // Create our new image
+        $dstImg = imagecreatetruecolor($dstw, $dsth);
+      
+        // Fill the background with our transparent color
+        if($transparentColor == null) $transparentColor = imagecolorallocate(
+$dstImg, 1, 2, 3);
+        imagecolortransparent($dstImg, $transparentColor);
+        imagefilledrectangle($dstImg, 0, 0, $dstw + 1, $dsth + 1, 
+$transparentColor);
+      
+        // Get the new origin
+        $neworiginx = -$minx;
+        $neworiginy = -$miny;
+      
+        // Fill in the pixels
+        foreach($pixels as $data) {
+            list($x, $y, $color) = $data;
+            list($newx, $newy) = translateCoordinate($neworiginx, $neworiginy, 
+$x, $y);
+            imagesetpixel($dstImg, $newx, $newy, $color);
+        }
+      
+        return $dstImg;
+    }
+  
+    /**
+     * Translates from mathematical coordinate system to computer coordinate
+system using
+     * origin coordinates from the computer system or visa versa
+     *
+     * @param int $originx
+     * @param int $originy
+     * @param int $x
+     * @param int $y
+     * @param bool $toComp
+     * @return array(int $x, int $y)
+     */
+    function translateCoordinate($originx, $originy, $x, $y, $toComp=true) {
+        if($toComp) {
+            $newx = $originx + $x;
+            $newy = $originy - $y;
+        } else {
+            $newx = $x - $originx;
+            $newy = $originy - $y;
+        }
+      
+        return array($newx, $newy);
+    }
+}
+?>
+===============================================================================
+
+Shortly after posting I was informed about a very nice algorithm for
+calculating the new pixel position for a rotation and thought it would be a
+nice improvement. Hopes this helps anyone needing a full implementation.
+
+Note: I tested the function on a 3Mb photo and it seemed to work perfectly with
+no quality loss.
+
+<?php
+if(!function_exists("imagerotate")) {
+    function imagerotate(&$srcImg, $angle, $transparentColor = null) {
+        $srcw = imagesx($srcImg);
+        $srch = imagesy($srcImg);
+       
+        if($angle == 0) return $srcImg;
+       
+        // Convert the angle to radians
+        $pi = 3.141592654;
+        $theta = $angle * $pi / 180;
+       
+        // Get the origin (center) of the image
+        $originx = $srcw / 2;
+        $originy = $srch / 2;
+       
+        // The pixels array for the new image
+        $pixels = array();
+        $minx = 0;
+        $maxx = 0;
+        $miny = 0;
+        $maxy = 0;
+        $dstw = 0;
+        $dsth = 0;
+       
+        // Loop through every pixel and transform it
+        for($x=0;$x<$srcw;$x++) {
+            for($y=0;$y<$srch;$y++) {
+                list($x1, $y1) = translateCoordinate($originx, $originy, $x, $y
+, false);
+               
+                $x2 = $x * cos($theta) - $y * sin($theta);
+                $y2 = $x * sin($theta) + $y * cos($theta);
+               
+                // Store the pixel color
+                $pixels[] = array($x2, $y2, imagecolorat($srcImg, $x, $y));
+               
+                // Check our boundaries
+                if($x2 > $maxx) $maxx = $x2;
+                if($x2 < $minx) $minx = $x2;
+                if($y2 > $maxy) $maxy = $y2;
+                if($y2 < $miny) $miny = $y2;
+            }
+        }
+       
+        // Determine the new image size
+        $dstw = $maxx - $minx + 1;
+        $dsth = $maxy - $miny + 1;
+       
+        // Create our new image
+        $dstImg = imagecreatetruecolor($dstw, $dsth);
+       
+        // Fill the background with our transparent color
+        if($transparentColor == null) $transparentColor = imagecolorallocate(
+$dstImg, 1, 2, 3);
+        imagecolortransparent($dstImg, $transparentColor);
+        imagefilledrectangle($dstImg, 0, 0, $dstw + 1, $dsth + 1, 
+$transparentColor);
+       
+        // Get the new origin
+        $neworiginx = -$minx;
+        $neworiginy = -$miny;
+       
+        // Fill in the pixels
+        foreach($pixels as $data) {
+            list($x, $y, $color) = $data;
+            list($newx, $newy) = translateCoordinate($neworiginx, $neworiginy, 
+$x, $y);
+            imagesetpixel($dstImg, $newx, $newy, $color);
+        }
+       
+        return $dstImg;
+    }
+   
+    /**
+     * Translates from mathematical coordinate system to computer coordinate
+system using
+     * origin coordinates from the computer system or visa versa
+     *
+     * @param int $originx
+     * @param int $originy
+     * @param int $x
+     * @param int $y
+     * @param bool $toComp
+     * @return array(int $x, int $y)
+     */
+    function translateCoordinate($originx, $originy, $x, $y, $toComp=true) {
+        if($toComp) {
+            $newx = $originx + $x;
+            $newy = $originy - $y;
+        } else {
+            $newx = $x - $originx;
+            $newy = $originy - $y;
+        }
+       
+        return array($newx, $newy);
+    }
+}
+?>
+===============================================================================
+
+Thanks to the people who contributed the code for the 90 180 and 270 rotations.
+I needed a full implementation however so I wrote one. By no mean do I think
+this is the best way of doing it, I just whipped this together for myself.
+Seems to work good for me.
+
+Note: I didn't want the image to be shrunk when rotating so this implementation
+will keep the size of the original image but just rotate it.
+
+<?php
+if(!function_exists("imagerotate")) {
+    function imagerotate(&$srcImg, $angle, $transparentColor = null) {
+        $srcw = imagesx($srcImg);
+        $srch = imagesy($srcImg);
+       
+        if($angle == 0) return $srcImg;
+       
+        // Convert the angle to radians
+        $pi = 3.141592654;
+        $theta = $angle * $pi / 180;
+       
+        // Get the origin (center) of the image
+        $originx = $srcw / 2;
+        $originy = $srch / 2;
+       
+        // The pixels array for the new image
+        $pixels = array();
+        $minx = 0;
+        $maxx = 0;
+        $miny = 0;
+        $maxy = 0;
+        $dstw = 0;
+        $dsth = 0;
+       
+        // Loop through every pixel and transform it
+        for($x=0;$x<$srcw;$x++) {
+            for($y=0;$y<$srch;$y++) {
+                list($x1, $y1) = translateCoordinate($originx, $originy, $x, $y
+, false);
+               
+                $theta1 = 0;
+                $noTranslate = false;
+               
+                // Determine the angle of original point
+                if($x1 > 0 && $y1 > 0) {
+                    // Quadrant 1
+                    $theta1 = atan($y1/$x1);
+                } elseif($x1 < 0 && $y1 > 0) {
+                    // Quadrant 2
+                    $theta1 = $pi - atan($y1/abs($x1));
+                } elseif($x1 < 0 && $y1 < 0) {
+                    // Quadrant 3
+                    $theta1 = $pi + atan($y1/$x1);
+                } elseif($x1 > 0 && $y1 < 0) {
+                    // Quadrant 4
+                    $theta1 = 2 * $pi - atan(abs($y1)/$x1);
+                } elseif($x1 == 0 && $y1 > 0) {
+                    $theta1 = $pi / 2;
+                } elseif($x1 == 0 && $y1 < 0) {
+                    $theta1 = 3 * $pi / 2;
+                } elseif($x1 > 0 && $y1 == 0) {
+                    $theta1 = 0;
+                } elseif($x1 < 0 && $y1 == 0) {
+                    $theta1 = $pi;
+                } else {
+                    // Only case left should be $x1 == 0 && $y1 == 0
+                    $noTranslate = true;
+                }
+               
+                // Translate the position
+                if(!$noTranslate) {
+                    // Calculate the new angle
+                    $theta2 = $theta1 + $theta;
+                   
+                    // Make sure theta2 is in between 0 - 2pi
+                    while($theta2 < 0) $theta2 += 2 * $pi;
+                    while($theta2 > (2 * $pi)) $theta2 -= 2 * $pi;
+                   
+                    $radius = sqrt($x1*$x1 + $y1*$y1);
+                   
+                    $x2 = ($radius * cos($theta2));
+                    $y2 = ($radius * sin($theta2));
+                } else {
+                    $x2 = $x1;
+                    $y2 = $y1;
+                }
+               
+                // Store the pixel color
+                $pixels[] = array($x2, $y2, imagecolorat($srcImg, $x, $y));
+               
+                // Check our boundaries
+                if($x2 > $maxx) $maxx = $x2;
+                if($x2 < $minx) $minx = $x2;
+                if($y2 > $maxy) $maxy = $y2;
+                if($y2 < $miny) $miny = $y2;
+            }
+        }
+       
+        // Determine the new image size
+        $dstw = $maxx - $minx + 1;
+        $dsth = $maxy - $miny + 1;
+       
+        // Create our new image
+        $dstImg = imagecreatetruecolor($dstw, $dsth);
+       
+        // Fill the background with our transparent color
+        if($transparentColor == null) $transparentColor = imagecolorallocate(
+$dstImg, 1, 2, 3);
+        imagecolortransparent($dstImg, $transparentColor);
+        imagefilledrectangle($dstImg, 0, 0, $dstw + 1, $dsth + 1, 
+$transparentColor);
+       
+        // Get the new origin
+        $neworiginx = -$minx;
+        $neworiginy = -$miny;
+       
+        // Fill in the pixels
+        foreach($pixels as $data) {
+            list($x, $y, $color) = $data;
+            list($newx, $newy) = translateCoordinate($neworiginx, $neworiginy, 
+$x, $y);
+            imagesetpixel($dstImg, $newx, $newy, $color);
+        }
+       
+        return $dstImg;
+    }
+   
+    /**
+     * Translates from mathematical coordinate system to computer coordinate
+system using
+     * origin coordinates from the computer system or visa versa
+     *
+     * @param int $originx
+     * @param int $originy
+     * @param int $x
+     * @param int $y
+     * @param bool $toComp
+     * @return array(int $x, int $y)
+     */
+    function translateCoordinate($originx, $originy, $x, $y, $toComp=true) {
+        if($toComp) {
+            $newx = $originx + $x;
+            $newy = $originy - $y;
+        } else {
+            $newx = $x - $originx;
+            $newy = $originy - $y;
+        }
+       
+        return array($newx, $newy);
+    }
+}
+?>
+===============================================================================
+
+otimized integration from 23-Feb-2007 04:21
+just put it anywhere you like to use imagerotate with 90, 180, 270 degrees.
+<?php
+if(!function_exists("imagerotate")) {
+    function imagerotate($src_img, $angle) {
+        $src_x = imagesx($src_img);
+        $src_y = imagesy($src_img);
+        if ($angle == 180) {
+            $dest_x = $src_x;
+            $dest_y = $src_y; }
+        elseif ($src_x <= $src_y) {
+            $dest_x = $src_y;
+            $dest_y = $src_x; }
+        elseif ($src_x >= $src_y) {
+            $dest_x = $src_y;
+            $dest_y = $src_x; }
+       
+        $rotate=imagecreatetruecolor($dest_x,$dest_y);
+        imagealphablending($rotate, false);
+              
+        switch ($angle) {
+            case 270:
+                for ($y = 0; $y < ($src_y); $y++) {
+                    for ($x = 0; $x < ($src_x); $x++) {
+                        $color = imagecolorat($src_img, $x, $y);
+                        imagesetpixel($rotate, $dest_x - $y - 1, $x, $color);
+}}
+                break;
+            case 90:
+                for ($y = 0; $y < ($src_y); $y++) {
+                    for ($x = 0; $x < ($src_x); $x++) {
+                        $color = imagecolorat($src_img, $x, $y);
+                        imagesetpixel($rotate, $y, $dest_y - $x - 1, $color);
+}}
+                break;
+            case 180:
+                for ($y = 0; $y < ($src_y); $y++) {
+                    for ($x = 0; $x < ($src_x); $x++) {
+                        $color = imagecolorat($src_img, $x, $y);
+                        imagesetpixel($rotate, $dest_x - $x - 1, $dest_y - $y -
+1, $color); }}
+                break;
+            default: $rotate = $src_img; }
+        return $rotate; }}
+?>
+===============================================================================
+
+imagerotate seems to be very fussy about handling transparency when copymerging
+onto another image. You can use the GD library's other transparency features to
+cover up the fact imagerotate gets it wrong HOWEVER it will only work if the
+top-left corner of the image is transparent at all rotations, so make the image
+a little bigger than it needs to be. This has been tested with png32 but does
+not work entirely for png8, as a phenomena creates noise around the rotated
+image.
+
+<?php
+
+$imgImage = imagecreatefrompng("image.png");
+$colBlack = imagecolorallocate($imgImage, 0, 0, 0);
+$imgImage = imagerotate($imgImage, 360 - $intHeading, 0);
+imagefill($imgImage, 0, 0, $colBlack);
+imagecolortransparent($imgImage, $colBlack);
+imagecopymerge($imgOriginalImage , $imgImage, $intX, $intY, 0, 0, $intHeight, 
+$intWidth, 100);
+imagedestroy($imgImage);
+
+?>
+
+Note. $intHeading is in degrees clockwise :)
+===============================================================================
+
+<?php
+function rotate($degrees)
+    {
+        if(function_exists("imagerotate"))
+            $this->image = imagerotate($this->image, $degrees, 0);
+        else
+        {
+            function imagerotate($src_img, $angle)
+            {
+                $src_x = imagesx($src_img);
+                $src_y = imagesy($src_img);
+                if ($angle == 180)
+                {
+                    $dest_x = $src_x;
+                    $dest_y = $src_y;
+                }
+                elseif ($src_x <= $src_y)
+                {
+                    $dest_x = $src_y;
+                    $dest_y = $src_x;
+                }
+                elseif ($src_x >= $src_y) 
+                {
+                    $dest_x = $src_y;
+                    $dest_y = $src_x;
+                }
+               
+                $rotate=imagecreatetruecolor($dest_x,$dest_y);
+                imagealphablending($rotate, false);
+               
+                switch ($angle)
+                {
+                    case 270:
+                        for ($y = 0; $y < ($src_y); $y++)
+                        {
+                            for ($x = 0; $x < ($src_x); $x++)
+                            {
+                                $color = imagecolorat($src_img, $x, $y);
+                                imagesetpixel($rotate, $dest_x - $y - 1, $x, 
+$color);
+                            }
+                        }
+                        break;
+                    case 90:
+                        for ($y = 0; $y < ($src_y); $y++)
+                        {
+                            for ($x = 0; $x < ($src_x); $x++)
+                            {
+                                $color = imagecolorat($src_img, $x, $y);
+                                imagesetpixel($rotate, $y, $dest_y - $x - 1, 
+$color);
+                            }
+                        }
+                        break;
+                    case 180:
+                        for ($y = 0; $y < ($src_y); $y++)
+                        {
+                            for ($x = 0; $x < ($src_x); $x++)
+                            {
+                                $color = imagecolorat($src_img, $x, $y);
+                                imagesetpixel($rotate, $dest_x - $x - 1, 
+$dest_y - $y - 1, $color);
+                            }
+                        }
+                        break;
+                    default: $rotate = $src_img;
+                };
+                return $rotate;
+            }
+            $this->image = imagerotate($this->image, $degrees);
+        }
+    }
+?>
+===============================================================================
+
+with large file, where imagerotate is missing, you can use, when possible
+"convert" command from ImageMagick. Here is a sample script.
+
+<?php
+
+error_reporting(E_ALL);
+
+header("Content-type: image/png");
+
+$file = 'images/test/imgp2498.jpg';
+
+image_rotate_with_convert($file, 90);
+
+function image_rotate_with_convert($file, $angle){
+    passthru("convert -rotate $angle $file -");
+}
+
+?>
+===============================================================================
+
+I liked the rotateImageBicubic function implemented by darren at lucidtone dot
+com. But it just snipped off the parts of the image that were outside the
+original image.
+
+I fixed this, even though I admit that my solution is a bit naive. But it might
+come in handy for somebody.
+
+Also his bicubic implementation was broken on my machine so I left it out, if
+you need it just copy and paste it from above.
+
+<?php
+
+// $src_img - a GD image resource
+// $angle - degrees to rotate clockwise, in degrees
+// returns a GD image resource
+// USAGE:
+// $im = imagecreatefrompng('test.png');
+// $im = imagerotate($im, 15);
+// header('Content-type: image/png');
+// imagepng($im);
+function imageRotate($src_img, $angle, $bicubic=false) {
+ 
+   // convert degrees to radians
+   $angle = $angle + 180;
+   $angle = deg2rad($angle);
+ 
+   $src_x = imagesx($src_img);
+   $src_y = imagesy($src_img);
+ 
+   $center_x = floor($src_x/2);
+   $center_y = floor($src_y/2);
+
+   $cosangle = cos($angle);
+   $sinangle = sin($angle);
+
+   $corners=array(array(0,0), array($src_x,0), array($src_x,$src_y), array(0,
+$src_y));
+
+   foreach($corners as $key=>$value) {
+     $value[0]-=$center_x;        //Translate coords to center for rotation
+     $value[1]-=$center_y;
+     $temp=array();
+     $temp[0]=$value[0]*$cosangle+$value[1]*$sinangle;
+     $temp[1]=$value[1]*$cosangle-$value[0]*$sinangle;
+     $corners[$key]=$temp;   
+   }
+  
+   $min_x=1000000000000000;
+   $max_x=-1000000000000000;
+   $min_y=1000000000000000;
+   $max_y=-1000000000000000;
+  
+   foreach($corners as $key => $value) {
+     if($value[0]<$min_x)
+       $min_x=$value[0];
+     if($value[0]>$max_x)
+       $max_x=$value[0];
+  
+     if($value[1]<$min_y)
+       $min_y=$value[1];
+     if($value[1]>$max_y)
+       $max_y=$value[1];
+   }
+
+   $rotate_width=round($max_x-$min_x);
+   $rotate_height=round($max_y-$min_y);
+
+   $rotate=imagecreatetruecolor($rotate_width,$rotate_height);
+   imagealphablending($rotate, false);
+   imagesavealpha($rotate, true);
+
+   //Reset center to center of our image
+   $newcenter_x = ($rotate_width)/2;
+   $newcenter_y = ($rotate_height)/2;
+
+   for ($y = 0; $y < ($rotate_height); $y++) {
+     for ($x = 0; $x < ($rotate_width); $x++) {
+       // rotate...
+       $old_x = round((($newcenter_x-$x) * $cosangle + ($newcenter_y-$y) * 
+$sinangle))
+         + $center_x;
+       $old_y = round((($newcenter_y-$y) * $cosangle - ($newcenter_x-$x) * 
+$sinangle))
+         + $center_y;
+     
+       if ( $old_x >= 0 && $old_x < $src_x
+             && $old_y >= 0 && $old_y < $src_y ) {
+
+           $color = imagecolorat($src_img, $old_x, $old_y);
+       } else {
+         // this line sets the background colour
+         $color = imagecolorallocatealpha($src_img, 255, 255, 255, 127);
+       }
+       imagesetpixel($rotate, $x, $y, $color);
+     }
+   }
+  
+  return($rotate);
+}
+
+?>
+===============================================================================
+
+Here's a function that implements right angle (multiplicity of 90 degs - 90,
+180, 270) rotation if you need one but lacks native imagerotate() or you don't
+want non-square images to be scaled down as with imagerotate(). As you probably
+noticed it's not self contained function, as 180 rotation is handled by
+ImageFlip() function to gain the performance. The ImageFlip() function used is
+published here: http://php.net/imagecopy in the comment of mine placed on 
+05-Jan-2005 04:30
+
+Please note: that in case of 0 degrees rotation handle to imgSrc is returned
+which may lead to problems if you imagedestroy() it undonditionaly. To solve
+that you shall add imagecopy($imgDest, $imgSrc, 0,0, 0,0,$srcX, $srcY)  in
+proper place which I have intentionally ommited to save memory resources
+
+<?php
+
+// $imgSrc - GD image handle of source image
+// $angle - angle of rotation. Needs to be positive integer
+// angle shall be 0,90,180,270, but if you give other it
+// will be rouned to nearest right angle (i.e. 52->90 degs,
+// 96->90 degs)
+// returns GD image handle of rotated image.
+function ImageRotateRightAngle( $imgSrc, $angle )
+{
+    // ensuring we got really RightAngle (if not we choose the closest one)
+    $angle = min( ( (int)(($angle+45) / 90) * 90), 270 );
+
+    // no need to fight
+    if( $angle == 0 )
+        return( $imgSrc );
+
+    // dimenstion of source image
+    $srcX = imagesx( $imgSrc );
+    $srcY = imagesy( $imgSrc );
+
+    switch( $angle )
+        {
+        case 90:
+            $imgDest = imagecreatetruecolor( $srcY, $srcX );
+            for( $x=0; $x<$srcX; $x++ )
+                for( $y=0; $y<$srcY; $y++ )
+                    imagecopy($imgDest, $imgSrc, $srcY-$y-1, $x, $x, $y, 1, 1);
+            break;
+
+        case 180:
+            $imgDest = ImageFlip( $imgSrc, IMAGE_FLIP_BOTH );
+            break;
+
+        case 270:
+            $imgDest = imagecreatetruecolor( $srcY, $srcX );
+            for( $x=0; $x<$srcX; $x++ )
+                for( $y=0; $y<$srcY; $y++ )
+                    imagecopy($imgDest, $imgSrc, $y, $srcX-$x-1, $x, $y, 1, 1);
+            break;
+        }
+
+    return( $imgDest );
+}
+?>
+===============================================================================
+
+Here's a neat function for those of us who don't have imagerotate() on our
+servers.  It's based on a comment from ron at korving dot demon dot nl on the
+manual page for imagecopyresampled.
+
+I'm still not 100% on coping with transparency, but this function seems to cope
+okay.  It doesn't resize to fit within bounds, it just rotates and you lose
+anything outside the image box. 
+
+The bicubic mode is slooow.
+
+If you want to be able to change the background colour, pass in a colour and
+use it where indicated.  The line I used just sets it transparent.
+
+<?php
+// $src_img - a GD image resource
+// $angle - degrees to rotate clockwise, in degrees
+// returns a GD image resource
+// USAGE:
+// $im = imagecreatefrompng('test.png');
+// $im = imagerotate($im, 15);
+// header('Content-type: image/png');
+// imagepng($im);
+function imageRotateBicubic($src_img, $angle, $bicubic=false) {
+   
+    // convert degrees to radians
+    $angle = $angle + 180;
+    $angle = deg2rad($angle);
+   
+    $src_x = imagesx($src_img);
+    $src_y = imagesy($src_img);
+   
+    $center_x = floor($src_x/2);
+    $center_y = floor($src_y/2);
+   
+    $rotate = imagecreatetruecolor($src_x, $src_y);
+    imagealphablending($rotate, false);
+    imagesavealpha($rotate, true);
+
+    $cosangle = cos($angle);
+    $sinangle = sin($angle);
+   
+    for ($y = 0; $y < $src_y; $y++) {
+      for ($x = 0; $x < $src_x; $x++) {
+    // rotate...
+    $old_x = (($center_x-$x) * $cosangle + ($center_y-$y) * $sinangle)
+      + $center_x;
+    $old_y = (($center_y-$y) * $cosangle - ($center_x-$x) * $sinangle)
+      + $center_y;
+   
+    if ( $old_x >= 0 && $old_x < $src_x
+         && $old_y >= 0 && $old_y < $src_y ) {
+      if ($bicubic == true) {
+        $sY  = $old_y + 1;
+        $siY  = $old_y;
+        $siY2 = $old_y - 1;
+        $sX  = $old_x + 1;
+        $siX  = $old_x;
+        $siX2 = $old_x - 1;
+       
+        $c1 = imagecolorsforindex($src_img, imagecolorat($src_img, $siX, $siY2
+));
+        $c2 = imagecolorsforindex($src_img, imagecolorat($src_img, $siX, $siY
+));
+        $c3 = imagecolorsforindex($src_img, imagecolorat($src_img, $siX2, $siY2
+));
+        $c4 = imagecolorsforindex($src_img, imagecolorat($src_img, $siX2, $siY
+));
+       
+        $r = ($c1['red']  + $c2['red']  + $c3['red']  + $c4['red']  ) << 14;
+        $g = ($c1['green'] + $c2['green'] + $c3['green'] + $c4['green']) << 6;
+        $b = ($c1['blue']  + $c2['blue']  + $c3['blue']  + $c4['blue'] ) >> 2;
+        $a = ($c1['alpha']  + $c2['alpha']  + $c3['alpha']  + $c4['alpha'] ) >>
+2;
+        $color = imagecolorallocatealpha($src_img, $r,$g,$b,$a);
+      } else {
+        $color = imagecolorat($src_img, $old_x, $old_y);
+      }
+    } else {
+          // this line sets the background colour
+      $color = imagecolorallocatealpha($src_img, 255, 255, 255, 127);
+    }
+    imagesetpixel($rotate, $x, $y, $color);
+      }
+    }
+    return $rotate;
+}
+?>
+===============================================================================
+
+imagerotate does not preserve the alpha channel, so if you want to rotate a PNG
+you need to get
+creative. I don't see any command to retrieve the alpha information from an
+image (as far as
+I could see,) so you'll have to do a bit of manual labor before hand. In my
+case I created a
+second PNG file with the alpha saved as RGB data and manually "copied" the data
+from source
+to destination:
+
+<?php
+    function alpha_rotate($dst,$src,$rotate,$offsetX,$offsetY){
+
+        $top = imagecreatefrompng("image_processing/shadow.png");
+        $top_alpha = imagecreatefrompng("image_processing/shadow_alpha.png");
+               
+        imagecopyresampled($top,$src,0,0,0,0,100,100,100,100);
+               
+        $top = imagerotate($top,$rotate,0x000000);
+        $top_alpha = imagerotate($top_alpha,$rotate,0x000000);
+   
+   
+        for ($theX=0;$theX<imagesx($top);$theX++){
+            for ($theY=0;$theY<imagesy($top);$theY++){
+   
+                $rgb = imagecolorat($top,$theX,$theY);
+                $r = ($rgb >> 16) & 0xFF;
+                $g = ($rgb >> 8) & 0xFF;
+                $b = $rgb & 0xFF;
+               
+                $rgb = imagecolorat($top_alpha,$theX,$theY);
+                $a = $rgb & 0xFF;
+                $a = 127-floor($a/2);
+
+                $myColor = imagecolorallocatealpha($top,$r,$g,$b,$a);
+                imagesetpixel($dst,($theX+$offsetX),($theY+$offsetY),$myColor);
+   
+            }
+        }
+    }
+?>
+===============================================================================
+
+The default direction of imageRotate() is counter clockwise. Heres a little
+function which solves the problem.
+
+<?php
+
+    function rotate(&$image_source, $rotate_value, $rotate_clockwise = true) {
+        if($rotate_clockwise == true) {
+            $rotate_value = 360 - $rotate_value;
+        }
+        $image_source = imageRotate($image_source, $rotate_value, 0);
+    }
+   
+?>
+===============================================================================
+
+// angle in degrees, clockwise, allowed values from 0 to 360 degrees
+    function rotateImage ($image, $angle)
+    {
+        if ( ($angle < 0) || ($angle > 360) )
+        {
+            exit ("Error, angle passed out of range: [0,360]");
+        }
+       
+        $width    = imagesx ($image);
+        $height    = imagesy ($image);
+       
+        $dstImage = imagecreatetruecolor ($width, $height);
+       
+        if ( ($angle == 0) || ($angle == 360) )
+        {
+            // Just copy image to output:
+            imagecopy ($dstImage, $image, 0, 0, 0, 0, $width, $height);
+        }
+        else
+        {
+            $centerX = floor ($width / 2);
+            $centerY = floor ($height / 2);
+           
+            // Run on all pixels of the destination image and fill them:
+            for ($dstImageX = 0; $dstImageX < $width; $dstImageX++)
+            {
+                for ($dstImageY = 0; $dstImageY < $height; $dstImageY++)
+                {
+                    // Calculate pixel coordinate in coordinate system centered
+at the image center:
+                    $x = $dstImageX - $centerX;
+                    $y = $centerY - $dstImageY;
+                   
+                    if ( ($x == 0) && ($y == 0) )
+                    {
+                        // We are in the image center, this pixel should be
+copied as is:
+                        $srcImageX = $x;
+                        $srcImageY = $y;
+                    }
+                    else
+                    {
+                        $r = sqrt ($x * $x + $y * $y); // radius - absolute
+distance of the current point from image center
+
+                        $curAngle = asin ($y / $r); // angle of the current
+point [rad]
+                       
+                        if ($x < 0)
+                        {
+                            $curAngle = pi () - $curAngle;
+                        }
+                       
+                        $newAngle = $curAngle + $angle * pi () / 180; // new
+angle [rad]
+
+                        // Calculate new point coordinates (after rotation) in
+coordinate system at image center
+                        $newXRel = floor ($r * cos ($newAngle));
+                        $newYRel = floor ($r * sin ($newAngle));
+                       
+                        // Convert to image absolute coordinates
+                        $srcImageX = $newXRel + $centerX;
+                        $srcImageY = $centerY - $newYRel;
+                    }
+                   
+                    $pixelColor = imagecolorat  ($image, $srcImageX,
+$srcImageY); // get source pixel color
+                   
+                    imagesetpixel ($dstImage, $dstImageX, $dstImageY,
+$pixelColor); // write destination pixel
+                }
+            }
+        }
+       
+        return $dstImage;
+    }
+===============================================================================
+
+Note, of the rotate functions below, only beau's worked for me. Not sure if it
+is because of my source image, but upon rotating, the background became blue.
+
+The code snippet below is what I used to prepare UPS shipping labels. The UPS
+xml api will return a base64 encoded gif, but it is sideways, so as to print on
+the top half of a 8.5x11 "letter" page. We are saving it in a database and
+sending it to a label printer, so needed it rotated...
+
+The other code further down didn't make the background blue, however it did
+make the image leave the canvas by about 50%. Additionally, the
+imagecolorallocate() function has an example describing how to set the
+background color. That didn't work for me. Even though the blue BG is #0000ff,
+using that code didn't work, I had to use the transparent trick below.
+
+The GD image functions may be in their infancy, however are a great reminder to
+me how powerful php is! Also, ubuntu apache users will need to apt-get install
+php5-gd to get the gd functions.
+
+<?php
+        $image=imagecreatefromgif( 'data://text/plain;base64,'.$this->
+shipmentLabelGraphicImage );
+        $image=$this->rotateImage($image, 90); // Note: rotateImage turns our
+background to blue!
+        $blue = imagecolorallocate($image, 0, 0, 255);
+        imagecolortransparent($image, $blue);    // make blue transparent, so
+image isn't goofy
+        imagepng($image,$this->shipmentTrackingNumber.".png");
+        echo '<P><img src="'.$this->shipmentTrackingNumber.'.png"></P>';
+        imagedestroy($image);
+?>
+===============================================================================
+
+This function will rotate the image. The image will be resampled completely.
+
+<?php
+function rotateImage($img, $rotation) {
+  $width = imagesx($img);
+  $height = imagesy($img);
+  switch($rotation) {
+    case 90: $newimg= @imagecreatetruecolor($height , $width );break;
+    case 180: $newimg= @imagecreatetruecolor($width , $height );break;
+    case 270: $newimg= @imagecreatetruecolor($height , $width );break;
+    case 0: return $img;break;
+    case 360: return $img;break;
+  }
+  if($newimg) {
+    for($i = 0;$i < $width ; $i++) {
+      for($j = 0;$j < $height ; $j++) {
+        $reference = imagecolorat($img,$i,$j);
+        switch($rotation) {
+          case 90: if(!@imagesetpixel($newimg, ($height - 1) - $j, $i, 
+$reference )){return false;}break;
+          case 180: if(!@imagesetpixel($newimg, $i, ($height - 1) - $j, 
+$reference )){return false;}break;
+          case 270: if(!@imagesetpixel($newimg, $j, $width - $i, $reference ))
+{return false;}break;
+        }
+      }
+    } return $newimg;
+  }
+  return false;
+}
+?>
+
+you can call it this way:
+<?php
+$img = rotateImage($imagetorotate,"degrees");
+?>
+===============================================================================
+
+And you can add a transparent background to you png image by change the
+<?php
+    if ($ignore_transparent == 0) {
+        imagefill($destimg, 0, 0, imagecolorallocatealpha($destimg, 255,255, 
+255, 127));
+        imagesavealpha($destimg, true);
+    }
+?>
+to
+<?php
+    if ($ignore_transparent == 0) {
+        $temp = imagecolorallocatealpha($destimg, 255,255, 255, 127);
+        imagefill($destimg, 0, 0, $temp);
+        //if set the default color or white or magic pink then use transparent
+color
+        if ( ($bgcolor == 0) || ($bgcolor == 16777215) || ($bgcolor == 16711935
+) )  {
+            $bgcolor = $temp;
+        }
+        imagesavealpha($destimg, true);
+    }
+?>
+===============================================================================
+
+If you're going to do a rotation by hand instead of using the imagerotate
+function, you can use the imagecopy function to copy a single pixel instead of
+determining the pixel color and setting the pixel.  Not only is this shorter
+and cleaner, but it also works with images that are not truecolor (on my
+system, imagecolorat fails with an image that is not truecolor).
+===============================================================================
+
+hi,
+if you have a image with transparent color in previous function "function
+rotateImage($img1, $rec)"
+just before "return $img2;" you have to do:
+imagecolortransparent($img2, imagecolorallocate($img2, 0, 0, 0));
+Best regards
+===============================================================================
+
+Sorry, the previous class contains an error, the original image after the
+rotation 1px move on and get the unwanted "border".
+
+After a careful reading of the local debate, I am using the tip from Dave
+Richards wrote a new function. With its images can be rotated only 90 °
+(default), 180 ° and 270 °, but one rarely needs more ...
+
+The function returns False, or rotated image
+<?php
+if(!function_exists("imagerotate")) {
+    function imagerotate($srcImg, $angle, $bgcolor, $ignore_transparent = 0) {
+        return rotateImage($srcImg, $angle);
+    }
+}
+
+function rotateImage($img1, $rec) {
+    $wid = imagesx($img1);
+    $hei = imagesy($img1);
+    switch($rec) {
+        case 270:
+            $img2 = @imagecreatetruecolor($hei, $wid);
+        break;
+        case 180:
+            $img2 = @imagecreatetruecolor($wid, $hei);
+        break;
+        default :
+            $img2 = @imagecreatetruecolor($hei, $wid);
+    }
+    if($img2) {
+        for($i = 0;$i < $wid; $i++) {
+            for($j = 0;$j < $hei; $j++) {
+                $ref = imagecolorat($img1,$i,$j);
+                switch($rec) {
+                    case 270:
+                        if(!@imagesetpixel($img2, ($hei - 1) - $j, $i, $ref)){
+                            return false;
+                        }
+                    break;
+                    case 180:
+                        if(!@imagesetpixel($img2, $i, ($hei - 1) - $j, $ref)) {
+                            return false;
+                        }
+                    break;
+                    default:
+                        if(!@imagesetpixel($img2, $j, ($wid - 1) - $i, $ref)) {
+                            return false;
+                        }
+                }
+            }
+        }
+        return $img2;
+    }
+    return false;
+}
+?>
+
+Petr
+===============================================================================
+
+The following is potentially useful. It extracts the central largest circle of
+an image into a square of specified size, and optionally rotates it. The rest
+of the square is made transparent, so useful for drawing over other images.
+I've named it after binocular effect because on some old TV shows whenever they
+show someone looking through binoculars the screen shows a big circular image
+with black edges.
+
+<?php
+
+function image_binocular_effect($src, $bearing, $out_square) {
+// the source image is resampled to fit within the specified square, and
+rotated clockwise by bearing.
+// the largest circle within the image is retained, the rest made transparent.
+$out = imagecreatetruecolor($out_square, $out_square);
+$width=imagesx($src);
+$height=imagesy($src);
+$square=min($width, $height);
+imagecopyresampled($out, $src, 0, 0, ($width - $square)/2 , ($height - $square)
+/2, $out_square, $out_square, $square, $square);
+
+$mask = imagecreatetruecolor($out_square, $out_square);
+$black = ImageColorAllocate ($mask, 0, 0, 0);
+$white = ImageColorAllocate ($mask, 255, 255, 255);
+imagefilledrectangle($mask , 0, 0, $out_square, $out_square, $white);
+$centrexy=$out_square / 2;
+imagefilledellipse($mask, $centrexy, $centrexy, $out_square, $out_square, 
+$black);
+ImageColorTransparent($mask, $black);
+imagecopymerge($out, $mask,  0, 0, 0, 0, $out_square, $out_square, 100);
+if ($bearing != 0) {
+  $rotated_img=imagerotate($out , 360-$bearing, $white);
+  // take off only the rotated width
+  $rotated_map_width = imagesx($rotated_img);
+  $rotated_map_height = imagesy($rotated_img);
+  imagecopy($out, $rotated_img, 0, 0, ($rotated_map_width - $out_square) / 2, (
+$rotated_map_height - $out_square) / 2, $out_square, $out_square);
+  }
+ImageColorTransparent($out, $white);
+return $out;
+}
+
+// Create a sample image to demonstrate the effect, but looks much better on
+real photos.
+
+$src = imagecreatetruecolor(200, 50);
+imagefilledrectangle($src, 0, 0, 200, 50, imagecolorallocate($src, 255, 255, 
+255));
+ImageString($src, 3, 10, 10, "This is a sample image to illustrate the
+binocular effect", imagecolorallocate($im, 192, 0, 0));
+$img=image_binocular_effect($src, 72, 50);
+ImagePNG($img,"test.png");
+
+?>
+===============================================================================
+
+If you're having trouble rotating images through this function, please note
+that you can rotate images through CSS. As imagerotate() seems to remove image
+transparency, I resorted to CSS rotate. Here is an example of CSS code that
+should work across most browsers:
+
+img.rotated90 {
+    /* CSS3 then proprietary code */
+    rotation: 90deg;
+    -webkit-transform: rotate(90deg);
+    -moz-transform: rotate(90deg);
+    filter: progid:DXImageTransform.Microsoft.BasicImage(rotation=1);
+}

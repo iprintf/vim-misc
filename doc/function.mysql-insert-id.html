@@ -1,0 +1,686 @@
+
+mysql_insert_id
+
+(PHP 4, PHP 5)
+
+mysql_insert_id — 取得上一步 INSERT 操作产生的 ID
+
+说明
+
+int mysql_insert_id ([ resource $link_identifier ] )
+
+mysql_insert_id() 返回给定的 link_identifier 中上一步 INSERT 查询中产生的
+AUTO_INCREMENT 的 ID 号。如果没有指定 link_identifier，则使用上一个打开的连接。
+
+如果上一查询没有产生 AUTO_INCREMENT 的值，则 mysql_insert_id() 返回 0。如果需要
+保存该值以后使用，要确保在产生了值的查询之后立即调用 mysql_insert_id()。
+
+    Note:
+
+    MySQL 中的 SQL 函数 LAST_INSERT_ID() 总是保存着最新产生的 AUTO_INCREMENT 值
+    ，并且不会在查询语句之间被重置。
+
+Warning
+
+mysql_insert_id() 将 MySQL 内部的 C API 函数 mysql_insert_id() 的返回值转换成
+long（PHP 中命名为 int）。如果 AUTO_INCREMENT 的列的类型是 BIGINT，则 
+mysql_insert_id() 返回的值将不正确。可以在 SQL 查询中用 MySQL 内部的 SQL 函数
+LAST_INSERT_ID() 来替代。
+
+Example #1 mysql_insert_id() 例子
+
+<?php
+    mysql_connect("localhost", "mysql_user", "mysql_password") or
+        die("Could not connect: " . mysql_error());
+    mysql_select_db("mydb");
+
+    mysql_query("INSERT INTO mytable (product) values ('kossu')");
+    printf ("Last inserted record has id %d\n", mysql_insert_id());
+?>
+
+参见 mysql_query()。
+
+
+User Contributed Notes 40 notes
+
+===============================================================================
+
+If you insert a data row by using the ON DUPLICATE KEY UPDATE clause in an
+INSERT-statement, the mysql_insert_id() function will return not the same
+results as if you directly use LAST_INSERT_ID() in MySQL.
+
+See the following example:
+
+<?
+   // insert a datarow, primary key is auto_increment
+   // value is a unique key
+   $query = "INSERT INTO test (value) VALUES ('test')";
+   mysql_query( $query );
+
+   echo 'LAST_INSERT_ID: ',
+          mysql_query( "SELECT LAST_INSERT_ID()" ),
+          '<br>mysql_insert_id: ',
+          mysql_insert_id();
+
+?>
+
+This will print:
+
+LAST_INSERT_ID: 1
+mysql_insert_id: 1
+
+In this case the function returns the same as the MySQL-Statement.
+But see the insert on an existing key:
+
+<?
+   $query = "INSERT INTO test (value)
+                  VALUES ('test')
+                  ON DUPLICATE KEY UPDATE value = 'test2'";
+   mysql_query( $query );
+
+   echo 'LAST_INSERT_ID: ',
+          mysql_query( "SELECT LAST_INSERT_ID()" ),
+          '<br>mysql_insert_id: ',
+          mysql_insert_id();
+
+?>
+
+This will print:
+
+LAST_INSERT_ID: 2
+mysql_insert_id: 1
+
+By using the ON DUPLICATE KEY UPDATE clause, only the old datarow will be
+modified, if the INSERT statement causes a duplicate entry, but the
+LAST_INSERT_ID() function returns the next auto_increment value for the primary
+key, which is by the way not set as the next auto_increment value in the
+database.
+
+The mysql_insert_id() function returns the primary key of the old (and changed)
+data row. For me this is the right operation method, because the LAST_INSERT_ID
+() function returns a value which is not referenced to a data row at all.
+
+Greets from Munich.
+
+heiligkind
+===============================================================================
+
+I thought this would be relevant to all the people using mysqli and looking for
+the ID after INSERT command :
+
+<?php
+function insert_join($catid, $disc_id) {
+// insert a new item into the database
+   $conn = db_connect();
+   // insert new item
+   $demande = "insert into categories_disc values ('', '".$catid."', '".
+$disc_id."')";
+   $resultat = $conn->query($demande);
+   if (!$resultat) {
+     return false;
+   } else {
+    return $conn->insert_id; // function will now return the ID instead of
+true.
+}
+
+}
+?>
+
+Then, on the other side, let us call this function as follows :
+
+<?php
+$cat_id = insert_join($catid, $disc_id);
+if($cat_id !== false) {
+   
+        echo "<p>Category stuff was added to the database as follows : <br>";
+        echo "<hr>ID de la category : ".$cat_id."</p><hr>";
+
+        }
+?>
+===============================================================================
+
+How to get ID of the last updated row in MySQL?
+
+75
+down vote
+I've found an answer to this problem :)
+
+by Pomyk
+
+SET @update_id := 0;
+UPDATE some_table SET row = 'value', id = (SELECT @update_id := id)
+WHERE some_other_row = 'blah' LIMIT 1;
+SELECT @update_id;
+EDIT by aefxx
+
+This technique can be further expanded to retrieve the ID of every row affected
+by an update statement:
+
+SET @uids := null;
+UPDATE footable
+   SET foo = 'bar'
+WHERE fooid > 5
+   AND ( SELECT @uids := CONCAT_WS(',', fooid, @uids) );
+SELECT @uids;
+This will return a string with all the IDs concatenated by a colon.
+
+(questions: 1388025  form stackoverflow)
+===============================================================================
+
+Get current AUTO_INCREMENT value for any table
+
+example:
+
+$table=$db->prepare("SHOW TABLE STATUS FROM -DatabaseName-");
+$table->execute();
+$sonuc = $table->get_result();
+while ($satir=$sonuc->fetch_assoc()){
+      if (isset($satir["Name"])== "-TableName-"){
+          $ai[$satir["Name"]]=$satir["Auto_increment"];
+    }
+}       
+echo $ai["-TableName-"];
+===============================================================================
+
+I don't get all the fuss around this.
+
+I read:
+"The value of mysql_insert_id() is affected only by statements issued within
+the current client connection. It is not affected by statements issued by other
+clients."
+
+See: http://dev.mysql.com/doc/refman/5.0/es/mysql-insert-id.html
+
+I can't really see what's inaccurate about that.
+
+"In the case of a multiple-row INSERT statement, mysql_insert_id() returns the
+first automatically generated AUTO_INCREMENT value; if no such value is
+generated, it returns the last last explicit value inserted into the
+AUTO_INCREMENT column."
+
+I must be missing something here but why would you insert multiple rows and
+then only handle the last one with some favoured behaviour? You could just as
+well insert them one at a time and then handle each row separately with the
+latest id.
+
+I can't see what's wrong with that.
+
+However I can see what's wrong with simply using max(my_table.id_column)
+because of the concurrent access issues this would imply.
+===============================================================================
+
+Just a quick note. mysql_insert_id() does work with REPLACE.
+===============================================================================
+
+There's nothing inherently wrong with using auto-increment fields. There's also
+nothing wrong with the main competetive idea, which is for the database to
+supply a primitive sequence of non-repeating identifiers, typically integers.
+This is rather like which side of the road you drive on.
+
+The bigger problem is when people don't understand what they are doing with
+database access. It's like driving a car without really knowing the rules of
+the road. Such people wind up making bad decisions without realizing it, and
+then, eventually, something breaks.
+
+Databases are complex beasts, and worth taking the time to really understand.
+Learn about the implications and limitations of different approaches to solving
+problems. Then, you will be prepared to pick a solution based on what has to
+work.
+===============================================================================
+
+Why on earth are you all arguing about the best way to get the next
+auto_increment value? The whole point is that it increments automatically. The
+name should be a give away.
+
+Don't calculate the next id, just leave the field blank and let the database
+issue the id itself.
+===============================================================================
+
+Just wanted to re-iterate previous comment on receiving NULL or 0 return
+statement from calling mysql_insert_id() after insert statement.
+
+If you have multiple mysql connections (i.e. mysql_connect() or mysqli_connect
+()) on the page you will need to specify the the connection you are using when
+calling this function!
+
+I.e.
+mysql_insert_id($MY_CONN);
+===============================================================================
+
+Forget about using MAX to get the last inserted id. Race conditions like other
+users inserting between your SELECT MAX(.. and your INSERT may render your id
+unusable.
+
+The WAY to get the id is by using mysql_insert_id() or the mysql SQL function
+LAST_INSERT_ID().
+
+Take care, if using mysql_insert_id() you should provide the resource returned
+by the mysql_connect, not the resultset returned by mysql_query.
+===============================================================================
+
+Other methods seem to have problems with missing records in auto increment
+sometimes you will have records 1 2 5 6 most functions would return the value
+of 5 for next auto increment when indeed it would be 7. This is the only way I
+found to make this work so I can use my customer number and the record number
+to provide a truly unique customer number that is also useful.
+
+$next_increment = 0;
+$qShowStatus = "SHOW TABLE STATUS LIKE 'your_table'";
+$qShowStatusResult = mysql_query($qShowStatus) or die(mysql_error());
+$row = mysql_fetch_assoc($qShowStatusResult);
+$next_increment = $row['Auto_increment'];
+echo $next_increment;
+
+then you can do something like this
+echo  $next_increment ."-". rand();
+
+My first post: I hope this is useful to someone
+===============================================================================
+
+You can't do an INSERT DELAYED and expect to get anything but zero, for it runs
+in a separate thread, and mysql_insert_id() is tied to the current thread.
+Vlad
+===============================================================================
+
+Using 'SELECT MAX(id)+1...' will not return the next auto_increment id. This
+function is totaly unreliable by two reasons.
+1. In race conditions there is no guarantee that other user will not insert new
+record while your function have done its work. This will render your
+"generated" last_id obsolete. It is rare case but it happens.
+2. Most of all, if the last record(s) in the table is deleted the max id will
+no longer match the auto_increment value, because auto_increment never repeats
+numbers, it increases whenever an insert statement is completed and does not
+decrease if you erase the last record!!!
+
+e.g. If you have this table with the last record deleted:
+id name
+1. car
+2. plane
+3. truck - [erased]
+
+auto_increment is 4
+but MAX(id) is 2!!!
+===============================================================================
+
+In reply to: sly at noiretblanc dot org:
+
+Make sure that auto_increment has an capital A as the first letter, otherwise
+it WON'T work! So you have to spell it as Auto_increment... And then it works
+fine.
+===============================================================================
+
+In response to treylane at example dot com.
+
+It is very very very important that you put in an "or die" or some other form
+of error handling.
+
+Some scripts can fail invisibly and insert invalid data throughout your whole
+database because of mysql_insert_id
+inserting the last successful insertid rather than reporting that the last
+attempt failed.
+
+example of an or die statement.
+
+$result = mysql_query($sql)
+or die("Invalid query: " . mysql_error());
+$EventID = mysql_insert_id();
+===============================================================================
+
+It's not true that mysql_insert_id() only returns the ID generated for an
+AUTO_INCREMENT column by the previous INSERT query.
+
+We can use LAST_INSERT_ID() statement that will return value for
+mysql_insert_id().
+
+Example:
+
+$sql = "UPDATE `mytable` SET `mytable_id`= LAST_INSERT_ID(`mytable_id` + 1)
+WHERE ...;
+
+@mysql_query($sql);
+$last_id = mysql_insert_id();
+
+LAST_INSERT_ID() statement will affect mysql_insert_id().
+
+Regards,
+Buana
+===============================================================================
+
+and the primary reason to use neither of those last two solutions is both could
+result in race conditions when there is more than a single user with access to
+the database. when you use MAX or ORDER BY DESC LIMIT 1 you will retrieve the
+maximum value from the table, at that moment. That doesn't mean another user
+doesn't do an insertion in the primary and secondary table BEFORE you do your
+insertion in the secondary table. You have thus inserted a row with a correct
+id into the second table. Always use last_insert_id()
+===============================================================================
+
+If mysql_insert_id() returns 0 or null, check your auto increment field is not
+being set by your sql query, also if you have multiple db connections like I
+did, the solution is to create a seperate db connection for this query.
+===============================================================================
+
+My apologies for the error below (that was modified out of a class) - as you
+cannot define a constant as an array.
+
+replace the line:
+
+<?
+
+define("ID",...);
+
+?>
+
+with
+
+<?
+
+$mysql_id = mysql_query("...");
+
+?>
+
+$mysql_id is now an array in which the first element $mysql_id[0] holds the
+last inserted id.
+
+Apologies if anyone struggled over that one... esp. the noobs.
+===============================================================================
+
+Take care of setting an empty value for the AUTO_INCREMENT Field else you never
+get a value except zero returned from mysq_insert_id() ....
+
+Ciao Ephraim
+===============================================================================
+
+I believe the "resource link" being referred to is not what is returned from
+mysql_query() but the $link returned from mysql_connect(). mysql_insert_id()
+will just use the most recent connection if there is no explicit $link being
+used.
+
+So the above example in the manual page itself should behave the same with
+mysql_insert_id($link) at the end instead of the mysql_insert_id() they used.
+If you had multiple connections, the $link might come in handy.
+
+Also in reading the mysql manual itself, there is some enlightening information
+on the fact that this does appear to be totally safe to use because it is on a
+per-connection basis.
+
+Here's the relevant quote from the manual on LAST_INSERT_ID() which is located
+here: http://dev.mysql.com/doc/mysql/en/Information_functions.html
+
+"The last ID that was generated is maintained in the server on a per-connection
+basis. This means the value the function returns to a given client is the most
+recent AUTO_INCREMENT value generated by that client. The value cannot be
+affected by other clients, even if they generate AUTO_INCREMENT values of their
+own. This behavior ensures that you can retrieve your own ID without concern
+for the activity of other clients, and without the need for locks or
+transactions."
+
+Sounds safe to me. I couldn't imagine this would be done any other way *but* on
+a per-connection basis, otherwise chaos would ensue. The only way to test it
+would be to perform a multi-thread type test. Perhaps someone is up for it and
+wants to post their results somewhere? :)
+===============================================================================
+
+Apparently the value returned by mysql_insert_id() may be correct for BIGINT
+auto_increment keys below the value of INT, but it may wrap to negative when
+the BIGINT auto_increment passes the largest signed value of INT.  A timebomb
+for very large tables...
+
+PHP 5.2.10, MySQL 5.0.81, assume the connection and selection...
+
+<?php
+// CREATE A TABLE AND ALTER IT TO A HIGH INDEX NUMBER
+$sql = "CREATE TEMPORARY TABLE noise ( id BIGINT NOT NULL AUTO_INCREMENT
+PRIMARY KEY ) ENGINE=MEMORY";
+if (!$res = mysql_query($sql)) die(mysql_error());
+
+$sql = "ALTER TABLE noise AUTO_INCREMENT = 2147483646";
+if (!$res = mysql_query($sql)) die(mysql_error());
+
+// INSERT DATA TO ADD TO THE AUTO_INCREMENT INDEX
+$kount = 0;
+while ($kount < 3)
+{
+   $sql = "INSERT INTO noise () VALUES ()";
+   if (!$res = mysql_query($sql)) die(mysql_error());
+   $nid = mysql_insert_id($dbcx);
+   var_dump($nid);
+   $kount++;
+}
+
+// PRODUCES THIS
+// int(2147483646)
+// int(2147483647)
+// int(-2147483648)
+?>
+===============================================================================
+
+It seems that, in case of a very first INSERT, mysql_insert_id() returns 0. My
+guess is that MySQL does not trigger auto increment if the table is empty. Once
+an entry is present, it works as expected.
+===============================================================================
+
+A bit more on return values:
+mysql_insert_id() returns 0 if you haven't actually manipulated anything yet.
+
+Also, it returns 0 even if the DB connection is lost[0] between inserting and
+calling mysql_insert_id() - so you can always count on getting an integer.
+
+[0] By 'lost' I mean e.g. a DB crash. Actually closing the open link and then
+trying to communicate with the DB will of course result in an error.
+===============================================================================
+
+You can create a extra collum like with name "key" and generate this "key"
+using date() function:
+
+$key = date("Y-m-d H:i:s:u");
+
+Then do the INSERT
+
+"INSERT into 'table' ('col_1', 'col_2', 'key') values ('value 1', 'value 2',
+'$key')";
+
+And now, you can SELECT the last ID
+
+"SELECT ID from 'table' where key = '$key'";
+===============================================================================
+
+If i can't get a good increment.
+I use this function
+
+<?php
+function get_new_id($table){
+$select = 'select max(`id`) +1as `id` from `'.$table.'`  where `id` != <some
+big id>';
+$query = mysql_query($select);
+$obj = mysql_fetch_object($query);
+return $obj->id;
+}
+?>
+===============================================================================
+
+Just a reminder, mysql_insert_id() should be called after 'mysql_affected_rows
+()', but BEFORE 'mysql_query("COMMIT")'.
+===============================================================================
+
+Here's an elegant way to INSERT using UPDATE syntax.
+
+<?php
+function insert_update($table,$fields,$id=NULL)
+{
+    if($id===NULL)
+    {
+        $sql="INSERT INTO $table (id) VALUES(NULL);UPDATE $table SET $fields
+WHERE id = LAST_INSERT_ID()";
+    }else{
+        $sql="UPDATE $table SET $fields WHERE id = $id";
+    }
+    return $sql;
+}
+?>
+
+Usage:
+
+<?php
+$table="`members`";
+$fields="`username` = 'Ultimater',`userlevel` = 'member'";
+if(!$profile_exists)
+{
+//insert a record
+    $sql=insert_update($table,$fields);
+    mysql_query($sql);
+}else{
+//update a record
+    $sql=insert_update($table,$fields,5);
+    mysql_query($sql);
+}
+?>
+===============================================================================
+
+Be careful, because this operates on the last performed query, it includes
+UPDATEs and SELECTs as 'queries'. For example, this is what I set up.
+
+INSERT post into database
+UPDATE child forums with insert ID (insert ID is correct)
+Insert ID = 0 because of last query
+Send the user to their post - but fail because the insert ID is zero.
+
+So store it in a variable like $insert_id instead of querying it every time.
+===============================================================================
+
+Be careful when using "insert ignore". If the unique index already exists, the
+record will not be added, but it WILL give you the id of the next
+auto_increment value even though it didn't create it.
+
+<?php
+$sql = "insert ignore into sometable set num=10";
+mysql_query($sql) or die();
+echo mysql_affected_rows()."<br>";
+echo mysql_insert_id()."<br><br>";
+
+// same record, database is unique on 'num'
+$sql = "insert ignore into sometable set num=10";
+mysql_query($sql) or die();
+echo mysql_affected_rows()."<br>";
+echo mysql_insert_id()."<br><br>";
+?>
+
+would give:
+1
+116372
+
+0
+116373
+===============================================================================
+
+This might be obvious, but it tripped me up - be careful when using
+last_insert_id() with persistent connections - running last_insert_id() after a
+failed update/insert/etc will return the last insert id of the last successful
+update/insert made by that CONNECTION rather than 0 for the number of rows
+updated by the previous non-working query, and who knows what the last query
+run on that connection was.
+===============================================================================
+
+If you want to use the ID that was generated for one table and insert it into a
+second table, you can use SQL statements like this:
+
+INSERT INTO foo (auto,text)
+    VALUES(NULL,'text');              # generate ID by inserting NULL
+INSERT INTO foo2 (id,text)
+    VALUES(LAST_INSERT_ID(),'text');  # use ID in second table
+
+...found here:
+http://www.mysql.com/doc/en/Getting_unique_ID.html
+
+It works even without inserting the NULL value for some reason ;)
+The following is great for monitoring:
+    $new_id = mysql_insert_id();
+    print "New id: $new_id\n";
+
+Hope it helps you all, cheers.
+===============================================================================
+
+"Why on earth are you all arguing about the best way to get the next
+auto_increment value? The whole point is that it increments automatically. The
+name should be a give away."
+
+Because you need the same last id value in another table. So you need a way to
+identify it, in order to use it in the next query. This way its easier than
+using a new query to get the id like ORDER BY id DESC LIMIT 1
+===============================================================================
+
+If you use this function after doing an INSERT ... SELECT to insert multiple
+rows at once, you get the autonumber ID of the *first* row added by the INSERT.
+
+e.g. if there are 4 records in table 'init' that have column 'type' = 2
+I want to add these 4 records to table 'game'
+Table game has an autonumber column 'game_id' that is currently at 32.
+
+If I do this query:
+
+INSERT INTO game (type, players, rounds)
+SELECT type, players, rounds FROM init
+WHERE type = 2
+
+Then mysql_insert_id() will return 33, not 36.
+===============================================================================
+
+any zerofills on your id get chopped off on this function because it returns an
+int.
+===============================================================================
+
+When used in transactions, mysql_insert_id() MUST be called before committing.
+Otherwise, it will return unpredictable results.
+===============================================================================
+
+As mentioned by frumler at the-beach dot no_spam dot net
+
+the LAST_INSERT_ID works like a charm when inserting values into tables.
+
+I'm not sure why anyone would need mysql_insert_id() when LAST_INSERT_ID is
+readily available.
+
+example:
+
+Say you have a table called "transaction" and a table called "accounts". 
+Obviously each account must be created using a transaction, so every time a
+record is created in the accounts table, a record must be created in the
+transaction table containing the same account_id(auto_increment) that was just
+created by mysql.
+
+Here's a simple way to do this:
+
+<?php
+$account_query="INSERT INTO accounts (account_id,type) VALUES (NULL,'saving')";
+$transaction_query="INSERT INTO transactions(transaction_id,account_id) VALUES
+(NULL,LAST_INSERT_ID)";
+
+$a_query=mysql_query($account_query);
+$t_query=mysql_query($transaction_query);
+
+?>
+===============================================================================
+
+It's possible to do the same with M$ Server.
+
+function odbc_insert_id()
+{
+  $query = "SELECT @@IDENTITY AS ID;";
+  $result = odbc_exec($this->m_rConnectionID, $query);
+  $row = odbc_fetch_object($result);
+  return $row->ID;
+}
+===============================================================================
+
+Beware, mysql_insert_id() only returns the value of the last syntaxically
+correct insert statement.
+
+If your code has a problem and the insert is not understood by the server then
+the value of the last working insert command is returned.
+
+Put something else in place such as "select count( id ) from table" before and
+after the mysql_insert_id() call to ensure that a row was inserted.
+===============================================================================
+
+To get the NEXT insert id use the mysql query SHOW TABLE STATUS LIKE
+'tablename' and get the field auto_increment...

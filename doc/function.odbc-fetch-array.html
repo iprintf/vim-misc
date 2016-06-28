@@ -1,0 +1,621 @@
+
+odbc_fetch_array
+
+(PHP 4 >= 4.0.2, PHP 5, PHP 7)
+
+odbc_fetch_array — Fetch a result row as an associative array
+
+说明
+
+array odbc_fetch_array ( resource $result [, int $rownumber ] )
+
+Fetch an associative array from an ODBC query.
+
+参数
+
+result
+
+    The result resource from odbc_exec().
+
+rownumber
+
+    Optionally choose which row number to retrieve.
+
+返回值
+
+Returns an array that corresponds to the fetched row, or FALSE if there are no
+more rows.
+
+注释
+
+    Note: This function exists when compiled with DBMaker, IBM DB2 or UnixODBC
+    support.
+
+参见
+
+  • odbc_fetch_row() - Fetch a row
+  • odbc_fetch_object() - Fetch a result row as an object
+  • odbc_num_rows() - Number of rows in a result
+
+
+User Contributed Notes 15 notes
+
+===============================================================================
+
+I really liked Ryan's example so I took it another step and added a recordset
+class to work with the connection class.  I made slight alterations to the
+original code as well.  Also note the recordset class takes advantage of php5's
+__get property function...
+
+<%
+class odbcRecordset {
+   var $recordcount;
+   var $currentrow;
+   var $eof;
+
+   var $recorddata;
+   var $query;
+
+   function odbcConnection(){
+      $this->recordcount = 0;
+      $this->recorddata = 0;
+   }
+
+   function SetData( $newdata, $num_records, $query ) {
+      $this->recorddata = $newdata;
+      $this->recordcount = $num_records;
+      $this->query = $query;
+      $this->currentrow = 0;
+      $this->set_eof();
+   }
+
+   function set_eof() {
+      $this->eof = $this->currentrow >= $this->recordcount;
+   }
+
+   function movenext()  { if ($this->currentrow < $this->recordcount) { $this->
+currentrow++; $this->set_eof(); } }
+   function moveprev()  { if ($this->currentrow > 0)                  { $this->
+currentrow--; $this->set_eof(); } }
+   function movefirst() { $this->currentrow = 0; set_eof();                   
+                           }
+   function movelast()  { $this->currentrow = $this->recordcount - 1;  set_eof
+();                         }
+
+   function data($field_name) {
+      if (isset($this->recorddata[$this->currentrow][$field_name])) {
+         $thisVal = $this->recorddata[$this->currentrow][$field_name];
+      } else if ($this->eof) {
+         die("<B>Error!</B> eof of recordset was reached");
+      } else {
+         die("<B>Error!</B> Field <B>" . $field_name . "</B> was not found in
+the current recordset from query:<br><br>$this->query");
+      }
+
+      return $thisVal;
+   }
+
+   function __get($field_name) {
+      return $this->data($field_name);
+   }
+}
+
+class odbcConnection {
+   var $user;  //Username for the database
+   var $pass; //Password
+
+   var $conn_handle; //Connection handle
+   var $temp_fieldnames; //Tempory array used to store the fieldnames, makes
+parsing returned data easier.
+  
+   function odbcConnection(){
+      $this->user = "";
+      $this->pass = "";
+   }
+  
+   function open($dsn,$user,$pass){
+      $handle = @odbc_connect($dsn,$user,$pass,SQL_CUR_USE_ODBC) or
+         die("<B>Error!</B> Couldn't Connect To Database. Error Code: 
+".odbc_error());
+      $this->conn_handle = $handle;
+      return true;
+   }
+  
+   function &execute($query){
+      //Create a temp recordset
+      $newRS = new odbcRecordset;
+      $thisData = "";
+
+      $res = @odbc_exec($this->conn_handle,$query) or
+         die("<B>Error!</B> Couldn't Run Query:<br><br>" . $query . "<br><br>
+Error Code:  ".odbc_error());
+      unset($this->temp_fieldnames);
+
+      $i = 0;
+      $j = 0;
+      $num_rows = 0;
+
+      // only populate select queries
+      if (stripos($query, 'select ') !== false) {
+         while(odbc_fetch_row($res)) {
+            $num_rows++;
+  
+            //Build tempory
+            for ($j = 1; $j <= odbc_num_fields($res); $j++) {
+               $field_name = odbc_field_name($res, $j);
+               $this->temp_fieldnames[$j] = $field_name;
+               $ar[$field_name] = odbc_result($res, $field_name) . "";
+            }
+  
+            $thisData[$i] = $ar;
+            $i++;
+         }
+      }
+     
+      //populate the recordset and return it
+      $newRS->SetData( $thisData, $num_rows, $query );
+      return $newRS;
+   }
+}
+%>
+
+usage is pretty simple:
+
+<%
+  $con = new odbcConnection
+  $con->open("dsn","user","pass")
+
+  $sql = "select bar from foo";
+  $rs = $con->execute($sql);
+
+  if (!$rs->eof) {
+    print $rs->data("bar");
+      // or //
+    print $rs->bar;
+  }
+
+  while (!$rs->eof) {
+    // blah blah code
+    $rs->movenext();
+  }
+%>
+
+Works pretty well, but I haven't thoughly tested it yet.
+Code can be dl'd here:
+
+http://www.russprince.com/odbc_functions.zip
+
+Cheers,
+Russ
+===============================================================================
+
+Some interesting behavior was discovered while attempting simultaneous queries
+to a MS SQL server through the ODBC/freeTDS layer on SUSE on a persistent
+connection with ODBC cursors enabled. Stepping through the first resource with
+odbc_fetch_array() in a while loop works as expected, but calls to subsequently
+created resources within that loop were failing to return data where MySQL
+equivalents to the script were working just fine.
+
+I found that adding a num_rows function call [custom function that simply steps
+through the result set... the misbehavior of odbc_num_rows() is another matter]
+immediately following each odbc_exec() then resetting the cursor seemed to
+cache the results for proper performance of the multiple active result sets. 
+It may be slightly slower than the MySQL equivalent, but at least it works.
+===============================================================================
+
+This function requires one of the following to exist: Windows, DB2, or
+UNIXODBC.
+===============================================================================
+
+Heya,
+
+After much fiddling around with the odbc_num_rows() function, and trying to get
+odbc_fetch_array() to play nice with it, I decided to write this little
+function which will return a 2-dimensional array, in the format [rownumber]
+[field].
+
+The 'rownumber' array index is obviously the number of the row stored in the
+array.
+The 'field' index is keyed to the field name on that row.
+
+--Function--
+<?
+
+function fetch2DArray($res){   
+    $i = 0;
+    $j = 0;
+    $toReturn = "";
+   
+    while(odbc_fetch_row($res))
+    {
+        for ($j = 1; $j <= odbc_num_fields($res); $j++)
+        {       
+             $field_name = odbc_field_name($res, $j);
+             $ar[$field_name] = odbc_result($res, $field_name);
+        }
+       
+        $toReturn[$i] = $ar;
+        $i++;
+    }
+    return $toReturn;   
+}
+?>
+
+I then took this one stage further.. and wrote a whole class to deal with the
+odbc connection... it's a bit slap-happy, but it does work well enough.
+
+-- Class --
+<?
+class odbcConnection{
+   var $user;  //Username for the database
+   var $pass; //Password
+   var $conn_handle; //Connection handle
+   var $temp_fieldnames; //Tempory array used to store the fieldnames, makes
+parsing returned data easier.
+
+   function odbcConnection(){
+       $this->user = "";
+       $this->pass = "";
+   }
+  
+       function connectDatabase($dsn_link,$user,$pass){
+        $handle = @odbc_connect($dsn_link,$user,$pass,SQL_CUR_USE_DRIVER) or
+die("<B>Error!</B> Couldn't Connect To Database. Error Code:  ".odbc_error());
+        $this->conn_handle = $handle;
+        return true;
+    }
+   
+    function runStoredQuery($query, $returns_results){
+   
+    if($returns_results == false){
+            return false;
+        }
+   
+    $toReturn = "";
+        $res = @odbc_exec($this->conn_handle, "exec ".$query."") or die("<B>
+Error!</B> Couldn't Run Stored Query. Error Code:  ".odbc_error());
+        unset($this->temp_fieldnames);
+            $i = 0;
+            $j = 0;
+           
+            while(odbc_fetch_row($res))
+            {
+                  //Build tempory
+                for ($j = 1; $j <= odbc_num_fields($res); $j++)
+                   {       
+                     $field_name = odbc_field_name($res, $j);
+                     $this->temp_fieldnames[$j] = $field_name;
+                      $this->temp_fieldnames[$j];
+                     $ar[$field_name] = odbc_result($res, $field_name);
+                   }
+               
+                $toReturn[$i] = $ar;
+                $i++;
+             }
+   
+     return $toReturn;
+    }
+   
+    function runSQL($query,$returns_results){
+    $toReturn = "";
+   
+        $res = @odbc_exec($this->conn_handle,$query) or die("<B>Error!</B>
+Couldn't Run Query. Error Code:  ".odbc_error());
+           unset($this->temp_fieldnames);
+        if($returns_results == false){
+            return false;
+        }
+       
+            $i = 0;
+            $j = 0;
+           
+            while(odbc_fetch_row($res))
+            {
+                //Build tempory
+                for ($j = 1; $j <= odbc_num_fields($res); $j++)
+                   {       
+                     $field_name = odbc_field_name($res, $j);
+                     $this->temp_fieldnames[$j] = $field_name;
+                     $ar[$field_name] = odbc_result($res, $field_name);
+                   }
+               
+                $toReturn[$i] = $ar;
+                $i++;
+             }
+           
+     return $toReturn;
+    }
+   
+
+}
+
+//And an example of how to use the class:
+
+include("dbClass.inc");  //Where dbClass.inc is the name of the file holding
+the class
+
+//Declare a new instance of the class
+$dbConnection = new odbcConnection;
+
+$dsn = "GroupWork";   //Your System DSN name to point to your database
+$dbConnection->connectDatabase($dsn,"","");  //No username and password - read
+only access
+
+echo"<BR><HR><B>Testing SQL</b><BR><BR>";
+$query_result = $dbConnection->runSQL("SELECT * FROM Event WHERE Type = 'Sport'
+ORDER BY EDate ASC",true);
+
+    if(!$query_result)
+    {
+        //No Results - Your Error Code Here
+    }else{
+        //Get the results
+        $key = $dbConnection->temp_fieldnames;
+        $rows = count($query_result);
+        $keys = count($key);
+        $i = 0;
+       
+       
+        while($i < $rows){
+            $j = 1;
+            echo "Echoing Row $i:<BR>";
+           
+                while($j < $keys - 1){
+                   
+                    //$query_result[row][field];
+                    $result = $query_result[$i][$key[$j]];
+                    $field = $key[$j];
+                    echo("Field <b>'".$field."'</b> : ".$result." <BR>");
+                   
+                    $j++;
+                }
+            echo "<BR>----<BR><BR>";
+            $i++;
+        }
+    }
+?>
+
+Hope this was of some help. If anyone has any improvments to the class, please
+drop them by me.
+===============================================================================
+
+On IBM DB2 for iSeries I have to specify a specific row number to retrieve. If
+I don't specify the row number, the behavior is erratic.
+
+This seems to work:
+
+<?php
+for($i=1;$row=odbc_fetch_row($result,$i);$i++) {
+  //use $row
+}
+?>
+
+The row count MUST start at 1 or else the behavior seems undefined; i.e., when
+I start from 0 some rows might be returned two or more times or not at all.
+===============================================================================
+
+I am using MS SQL Server 2005, and using odbc_connect with SQL_CUR_USE_ODBC.
+
+I had a problem with odbc_fetch_array when getting results from a stored
+procedure that returns a text column. The misleading error I got was:
+
+odbc_fetch_array() [function.odbc-fetch-array]: SQL error: [Microsoft][ODBC
+Cursor Library] Result set was not generated by a SELECT statement, SQL state
+SL004 in SQLGetData
+
+Eventually I found that by converting the text column in my database to varchar
+(8000), it worked fine. Perhaps using CONVERT or CAST might have worked too. I
+also found that varchar(max) columns were scrambled.
+===============================================================================
+
+Depending on the odbc driver/operating system you are using,  odbc_fetch_array
+might not be defined. (ie if you used --with-custom-odbc you may be out of
+luck).   The following can be safely added to define the odbc_fetch_array
+function if doesn't exist already.  Unlike some of the other examples
+contributed here, this one will create the numeric keys and the text keys.  
+This function is definitely not very optimal because it has to check the number
+of fields and field names each time a row is pulled.  Often you will be looping
+through a result set and there is no need to pull this information each time. 
+It could probably be improved by caching the result of these functions but I'll
+leave that as an exercise for someone else... :)
+
+if(!function_exists("odbc_fetch_array"))
+{
+   
+    function odbc_fetch_array($res)
+    {
+        // make sure to pass back the false if we are out of rows
+        if(!odbc_fetch_row($res)) return false;
+       
+        $row=array();
+
+        // populate the row array
+        $numfields=odbc_num_fields($res);
+        for($i=1; $i<=$numfields; $i++)
+        {
+            //odbc starts its indice at 1 but since I am
+            // trying to emulate the functionality of *_fetch_array
+            // for other dbs (ie mysql)  I'm going to decrement my
+            // my numeric indice by 1.  This might not be what
+            // you are after in which case get rid of the -1 
+            $row[odbc_field_name($res,$i)]=$row[$i-1]=odbc_result($res,$i);
+           
+        }
+        return $row;
+    }
+   
+   
+}
+===============================================================================
+
+This function is badly implemented, because the fetch_array versions for all
+other databases are storing the values as associative AND numeric key.
+This one only stores as associative key :(
+Someone should really cleanup the complete database api design!
+===============================================================================
+
+I use an odbc connection to a mssql2000 db. As long as I had set ansi_warnings
+on, I occasionnally got the last record twice when retrieving them with
+odbc_fetch_array or odbc_fetch_row and odbc_result.
+===============================================================================
+
+This is a quick and dirty way to accomplish the same thing:
+
+<?
+while(odbc_fetch_row($result)) {
+$var1 = odbc_result($result, "NAMEOFFIELD1");
+$var2 = odbc_result($result, "NAMEOFFIELD2");
+..... //as many vars as you have fields with data to capture
+
+$array_of_results[] = compact('var1', 'var2','var3', etc, etc)
+}
+?>
+
+Just turn each returned row's data into variables then use the compact(). 
+Turns each variable name into a key and the vars value into the array value. 
+Makes a wonderful 2d array that you can walk easily and still use key values to
+get at data.
+===============================================================================
+
+In response to Sena's post, odbc_num_rows does not always return a row count. 
+When executing a query on MS Access it seems to return a row count of -1.
+
+<?php
+
+while(odbc_num_rows($myodbcexec)){
+       $myarray[] = odbc_fetch_array($myodbcexec);
+}
+
+?>
+
+Just something to watch out for when attempting to execute this code.
+
+Miles Phillips
+e-Clipse Consulting
+===============================================================================
+
+Be careful while using this function with MSSQL for fetching results of SQL
+queries like following: "SELECT * FROM table". In this case array will NOT
+contain named indexes!
+
+I.e.:
+Table:
+------------------------
+| col1 | col2 | col3  |
+------------------------
+|   1   |   2   |   3   |
+------------------------
+|   4   |   5   |   6   |
+------------------------
+
+Code:
+---------------------
+<?php
+$query = "SELECT * FROM table";
+$res = odbc_exec($query);
+
+while( $row = odbc_fetch_array($res) ) {
+    print_r($row);
+}
+?>
+---------------------
+
+Output will be:
+---------------------
+Array(
+[0] => 1,
+[1] => 2,
+[2] => 3
+)
+Array(
+[0] => 4,
+[1] => 5,
+[2] => 6
+)
+---------------------
+
+No field names here!
+===============================================================================
+
+I've found an issue while working with php ODBC functions. odbc_fetch_array and
+odbc_fetch_object fail when query has a join with a table that has the same
+column name, even when that certain field is excluded from the field selection
+(With SQL SERVER):
+
+THIS ONLY HAPPENS WHEN USING SQL_CUR_USE_ODBC
+
+for example
+
+$con = odbc_connect("Driver={SQL Server Native Client 11.0};Server=$serverName;
+Database=$db;", 'user', 'pass',SQL_CUR_USE_ODBC);
+
+$query="SELECT table1.field1, table1.field2 from table1 JOIN table2 ON 
+table1.field1=table2.field1";
+
+$result = odbc_exec($con,$query);
+
+$a=odbc_fetch_array($result);
+the code above generates a warning:
+
+Warning: odbc_fetch_array() [function.odbc-fetch-array]: SQL error: [Microsoft]
+[SQL Server Native Client 10.0][SQL Server]the column name '' is ambiguous.,
+SQL state 37000 in SQLGetData
+
+The error would be okay if i had selected field1 without specifying from which
+table, but even when it is explicit it doesn't work. the only "workaround" i've
+found so far is to remove the field from the selected fields or changinf the
+field name from the second table
+
+I tried with: both SQL Server Native Client 10.0 and SQL Server Native Client
+11.0 SQL server 2008 Php 5.3.2 over Windows
+
+PD: If someone has any aideas without using sqlsrv or mssqL extension it will
+be great
+===============================================================================
+
+I found the function submitted by jezndiatyahoodotcodotuk to be very helpful. 
+I'm using PHP 5.2.5 and this function isn't defined, so it may depend on the
+ODBC driver being used.
+
+The only problem with the solution already posted is that the return values
+don't match the ones specified by the documentation.  I made the following
+modification so that the function will work the same whether it exists
+internally or not:
+
+<?php
+if (!function_exists('odbc_fetch_array')) {
+    function odbc_fetch_array($result, $rownumber=null) {
+        $array = array();
+        if (!($cols = odbc_fetch_into($result, $result_array, $rownumber))) {
+            return false;
+        }
+        for ($i = 1; $i <= $cols; $i++) {
+            $array[odbc_field_name($result, $i)] = $result_array[$i - 1];
+        }
+        return $array;
+    }
+}
+
+?>
+===============================================================================
+
+I use this function to get my recordset in an array, and it's very easy to use.
+
+function dbquery($sql) {
+  $arr    = array();
+  $conn = odbc_connect('dsn','user','pass');
+  $rs     = odbc_exec($conn,$sql);
+  $x      = 1;
+  while (odbc_fetch_row($rs)) {
+    for ($y = 1; $y <= odbc_num_fields($rs); $y++)
+      $arr[$x][$y] = odbc_result($rs,$y);
+    $x++;
+  }
+  if ($x > 1)
+    return $arr;
+}
+
+usage:
+
+$arr=dbquery("SELECT * FROM tblTable");
+echo $arr[1][1] //echo's first column of the first row

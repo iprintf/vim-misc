@@ -1,0 +1,1624 @@
+
+array_merge_recursive
+
+(PHP 4 >= 4.0.1, PHP 5, PHP 7)
+
+array_merge_recursive — 递归地合并一个或多个数组
+
+说明
+
+array array_merge_recursive ( array $array1 [, array $... ] )
+
+array_merge_recursive() 将一个或多个数组的单元合并起来，一个数组中的值附加在前
+一个数组的后面。返回作为结果的数组。
+
+如果输入的数组中有相同的字符串键名，则这些值会被合并到一个数组中去，这将递归下
+去，因此如果一个值本身是一个数组，本函数将按照相应的条目把它合并为另一个数组。
+然而，如果数组具有相同的数组键名，后一个值将不会覆盖原来的值，而是附加到后面。
+
+参数
+
+array1
+
+    要合并的初始数组。
+
+...
+
+    数组变量列表，进行递归合并。
+
+返回值
+
+一个结果数组，其中的值合并自附加的参数。
+
+范例
+
+Example #1 array_merge_recursive() 例子
+
+<?php
+$ar1 = array("color" => array("favorite" => "red"), 5);
+$ar2 = array(10, "color" => array("favorite" => "green", "blue"));
+$result = array_merge_recursive($ar1, $ar2);
+print_r($result);
+?>
+
+以上例程会输出：
+
+Array
+(
+    [color] => Array
+        (
+            [favorite] => Array
+                (
+                    [0] => red
+                    [1] => green
+                )
+
+            [0] => blue
+        )
+
+    [0] => 5
+    [1] => 10
+)
+
+参见
+
+  • array_merge() - 合并一个或多个数组
+
+
+User Contributed Notes 31 notes
+
+===============================================================================
+
+I refactored the Daniel's function and I got it:
+
+<?php
+/**
+* array_merge_recursive does indeed merge arrays, but it converts values with
+duplicate
+* keys to arrays rather than overwriting the value in the first array with the
+duplicate
+* value in the second array, as array_merge does. I.e., with
+array_merge_recursive,
+* this happens (documented behavior):
+*
+* array_merge_recursive(array('key' => 'org value'), array('key' => 'new
+value'));
+*     => array('key' => array('org value', 'new value'));
+*
+* array_merge_recursive_distinct does not change the datatypes of the values in
+the arrays.
+* Matching keys' values in the second array overwrite those in the first array,
+as is the
+* case with array_merge, i.e.:
+*
+* array_merge_recursive_distinct(array('key' => 'org value'), array('key' =>
+'new value'));
+*     => array('key' => array('new value'));
+*
+* Parameters are passed by reference, though only for performance reasons.
+They're not
+* altered by this function.
+*
+* @param array $array1
+* @param array $array2
+* @return array
+* @author Daniel <daniel (at) danielsmedegaardbuus (dot) dk>
+* @author Gabriel Sobrinho <gabriel (dot) sobrinho (at) gmail (dot) com>
+*/
+function array_merge_recursive_distinct ( array &$array1, array &$array2 )
+{
+  $merged = $array1;
+
+  foreach ( $array2 as $key => &$value )
+  {
+    if ( is_array ( $value ) && isset ( $merged [$key] ) && is_array ( $merged 
+[$key] ) )
+    {
+      $merged [$key] = array_merge_recursive_distinct ( $merged [$key], $value 
+);
+    }
+    else
+    {
+      $merged [$key] = $value;
+    }
+  }
+
+  return $merged;
+}
+?>
+
+This fix the E_NOTICE when the the first array doesn't have the key and the
+second array have a value which is a array.
+===============================================================================
+
+The presence of NULLs; here is an example of the issue and a fix. Although it
+may not be apparent, if using array_merge_recursive in a loop to combine
+results from a database query or some other function, you can corrupt your
+result when NULLs are present in the data. I discovered this when migrating
+from an Oracle DB to a MySQL DB. I had to match the array structure returned
+from the PHP function calling the DB and got bit. The array_walk call fixed
+this for me.
+This is a simple example that lacks any DB calls and looping. Assume your array
+had the DB column names (first, last, and age) and you needed to combine the
+data in a multi-dimensional array in which the column name is an array key with
+all rows beneath it. The corruption occurs in $a3. If using element position 2,
+one could create the fictitious 'pete johnson' because of the collapsing of
+elements.
+
+<?php
+print "<pre>Show corruption\\n";
+$a1 = array('first'=>'bob', 'last'=>'jones', 'age'=>'48');
+$a2 = array('first'=>'sam', 'last'=>'smith', 'age'=>'41');
+$a3 = array('first'=>'pete', 'last'=>null, 'age'=>'3');
+$a4 = array('first'=>'joe', 'last'=>'johnson', 'age'=>'33');
+$a5 = array_merge_recursive($a1,$a2,$a3,$a4);
+print_r($a5);
+
+print "Show Fix\\n";
+$a1 = array('first'=>'bob', 'last'=>'jones', 'age'=>'48');
+$a2 = array('first'=>'sam', 'last'=>'smith', 'age'=>'41');
+$a3 = array('first'=>'pete', 'last'=>null, 'age'=>'3');
+array_walk($a3, 'null_to_empty');
+$a4 = array('first'=>'joe', 'last'=>'johnson', 'age'=>'33');
+$a5 = array_merge_recursive($a1,$a2,$a3,$a4);
+print_r($a5);
+print "</pre>\\n";
+
+function null_to_empty(&$item) {
+
+  $item = is_null($item) ? '' : $item;
+}
+?>
+===============================================================================
+
+I little bit improved daniel's and gabriel's contribution to behave more like
+original array_merge function to append numeric keys instead of overwriting
+them and added usefull option of specifying which elements to merge as you more
+often than not need to merge only specific part of array tree, and some parts
+of array just need  to let overwrite previous. By specifying helper element
+mergeWithParent=true, that section of array  will be merged, otherwise latter
+array part will override former. First level of array behave as classic
+array_merge.
+
+        function array_merge_recursive_distinct ( array &$array1, array &
+$array2 )
+    {
+        static $level=0;
+        $merged = [];
+        if (!empty($array2["mergeWithParent"]) || $level == 0) {
+            $merged = $array1;
+        }
+
+        foreach ( $array2 as $key => &$value )
+        {
+            if (is_numeric($key)) {
+                $merged [] = $value;
+            } else {
+                $merged[$key] = $value;
+            }
+
+            if ( is_array ( $value ) && isset ( $array1 [$key] ) && is_array (
+$array1 [$key] )
+            ) {
+                $level++;
+                $merged [$key] = array_merge_recursive_distinct($array1 [$key],
+$value);
+                $level--;
+            }
+        }
+        unset($merged["mergeWithParent"]);
+        return $merged;
+    }
+===============================================================================
+
+Here's my function to recursively merge two arrays with overwrites. Nice for
+merging configurations.
+
+<?php
+
+function MergeArrays($Arr1, $Arr2)
+{
+  foreach($Arr2 as $key => $Value)
+  {
+    if(array_key_exists($key, $Arr1) && is_array($Value))
+      $Arr1[$key] = MergeArrays($Arr1[$key], $Arr2[$key]);
+
+    else
+      $Arr1[$key] = $Value;
+
+  }
+
+  return $Arr1;
+
+}
+
+?>
+===============================================================================
+
+There are a lot of examples here for recursion that are meant to behave more
+like array_merge() but they don't get it quite right or are fairly customised.
+I think this version is most similar, takes more than 2 arguments and can be
+renamed in one place:
+
+<?php
+
+function array_merge_recursive_simple() {
+
+    if (func_num_args() < 2) {
+        trigger_error(__FUNCTION__ .' needs two or more array arguments', 
+E_USER_WARNING);
+        return;
+    }
+    $arrays = func_get_args();
+    $merged = array();
+    while ($arrays) {
+        $array = array_shift($arrays);
+        if (!is_array($array)) {
+            trigger_error(__FUNCTION__ .' encountered a non array argument', 
+E_USER_WARNING);
+            return;
+        }
+        if (!$array)
+            continue;
+        foreach ($array as $key => $value)
+            if (is_string($key))
+                if (is_array($value) && array_key_exists($key, $merged) && 
+is_array($merged[$key]))
+                    $merged[$key] = call_user_func(__FUNCTION__, $merged[$key],
+$value);
+                else
+                    $merged[$key] = $value;
+            else
+                $merged[] = $value;
+    }
+    return $merged;
+}
+
+$a1 = array(
+    88 => 1,
+    'foo' => 2,
+    'bar' => array(4),
+    'x' => 5,
+    'z' => array(
+        6,
+        'm' => 'hi',
+    ),
+);
+$a2 = array(
+    99 => 7,
+    'foo' => array(8),
+    'bar' => 9,
+    'y' => 10,
+    'z' => array(
+        'm' => 'bye',
+        11,
+    ),
+);
+$a3 = array(
+    'z' => array(
+        'm' => 'ciao',
+    ),
+);
+var_dump(array_merge($a1, $a2, $a3));
+var_dump(array_merge_recursive_simple($a1, $a2, $a3));
+var_dump(array_merge_recursive($a1, $a2, $a3));
+?>
+
+gives:
+
+array(7) {              array(7) {              array(7) {
+  int(1)                  int(1)                  int(1)
+  ["foo"]=>               ["foo"]=>               ["foo"]=>
+  array(1) {              array(1) {              array(2) {
+    [0]=>                   [0]=>                   [0]=>
+    int(8)                  int(8)                  int(2)
+  }                       }                         [1]=>
+  ["bar"]=>               ["bar"]=>                 int(8)
+  int(9)                  int(9)                  }
+  ["x"]=>                 ["x"]=>                 ["bar"]=>
+  int(5)                  int(5)                  array(2) {
+  ["z"]=>                 ["z"]=>                   [0]=>
+  array(1) {              array(3) {                int(4)
+    ["m"]=>                 [0]=>                   [1]=>
+    string(4) "ciao"        int(6)                  int(9)
+  }                         ["m"]=>               }
+  [1]=>                     string(4) "ciao"      ["x"]=>
+  int(7)                    [1]=>                 int(5)
+  ["y"]=>                   int(11)               ["z"]=>
+  int(10)                 }                       array(3) {
+}                         [1]=>                     [0]=>
+                          int(7)                    int(6)
+                          ["y"]=>                   ["m"]=>
+                          int(10)                   array(3) {
+                        }                             [0]=>
+                                                      string(2) "hi"
+                                                      [1]=>
+                                                      string(3) "bye"
+                                                      [2]=>
+                                                      string(4) "ciao"
+                                                    }
+                                                    [1]=>
+                                                    int(11)
+                                                  }
+                                                  [1]=>
+                                                  int(7)
+                                                  ["y"]=>
+                                                  int(10)
+                                                }
+===============================================================================
+
+This is my version of array_merge_recursive without overwriting numeric keys:
+<?php
+function array_merge_recursive_new() {
+
+        $arrays = func_get_args();
+        $base = array_shift($arrays);
+
+        foreach ($arrays as $array) {
+            reset($base); //important
+            while (list($key, $value) = @each($array)) {
+                if (is_array($value) && @is_array($base[$key])) {
+                    $base[$key] = array_merge_recursive_new($base[$key], $value
+);
+                } else {
+                    $base[$key] = $value;
+                }
+            }
+        }
+
+        return $base;
+    }
+?>
+===============================================================================
+
+Here is a fairly simple function that replaces while recursing.
+
+<?php
+/**
+* array_merge_recursive2()
+*
+* Similar to array_merge_recursive but keyed-valued are always overwritten.
+* Priority goes to the 2nd array.
+*
+* @static yes
+* @public yes
+* @param $paArray1 array
+* @param $paArray2 array
+* @return array
+*/
+function array_merge_recursive2($paArray1, $paArray2)
+{
+    if (!is_array($paArray1) or !is_array($paArray2)) { return $paArray2; }
+    foreach ($paArray2 AS $sKey2 => $sValue2)
+    {
+        $paArray1[$sKey2] = array_merge_recursive2(@$paArray1[$sKey2], $sValue2
+);
+    }
+    return $paArray1;
+}
+
+?>
+
+Examples:
+<?php
+
+$array1 = array(
+    'liquids' => array(
+        'water' => array('cold', 'fizzy', 'clean')
+        ,'beer' => 'warm'
+    )
+);
+
+$array2 = array(
+    'liquids' => array(
+        'water' => 'hot'
+        ,'milk' => 'wet'
+    )
+);
+
+$result1 = array_merge_recursive2($array1, $array2);
+$result2 = array_merge_recursive2($array2, $array1);
+?>
+
+Result 1 is:
+Array
+(
+    [liquids] => Array
+        (
+            [water] => hot
+            [beer] => warm
+            [milk] => wet
+        )
+)
+
+Result 2 is:
+Array
+(
+    [liquids] => Array
+        (
+            [water] => Array
+                (
+                    [0] => cold
+                    [1] => fizzy
+                    [2] => clean
+                )
+
+            [milk] => wet
+            [beer] => warm
+        )
+)
+===============================================================================
+
+This is a simple, three line approach.
+
+Short description: If one of the Arguments isn't an Array, first Argument is
+returned. If an Element is an Array in both Arrays, Arrays are merged
+recursively, otherwise the element in $ins will overwrite the element in $arr
+(regardless if key is numeric or not). This also applys to Arrays in $arr, if
+the Element is scalar in $ins (in difference to the previous approach).
+
+  function array_insert($arr,$ins) {
+    # Loop through all Elements in $ins:
+    if (is_array($arr) && is_array($ins)) foreach ($ins as $k => $v) {
+      # Key exists in $arr and both Elemente are Arrays: Merge recursively.
+      if (isset($arr[$k]) && is_array($v) && is_array($arr[$k])) $arr[$k] =
+array_insert($arr[$k],$v);
+      # Place more Conditions here (see below)
+      # ...
+      # Otherwise replace Element in $arr with Element in $ins:
+      else $arr[$k] = $v;
+    }
+    # Return merged Arrays:
+    return($arr);
+  }
+
+In Addition to felix dot ospald at gmx dot de in my opinion there is no need to
+compare keys with type-casting, as a key always is changed into an integer if
+it could be an integer. Just try
+
+$a = array('1'=>'1');
+echo gettype(key($a));
+
+It will echo 'integer'. So for having Integer-Keys simply appended instead of
+replaced, add the Line:
+
+  elseif (is_int($k)) $arr[] = $v;
+
+A Condition I used is:
+
+  elseif (is_null($v)) unset($arr[$k]);
+
+So a NULL-Value in $ins will unset the correspondig Element in $arr (which is
+different to setting it to NULL!). This may be another Addition to felix dot
+ospald at gmx dot de: The absolute correct way to check for a Key existing in
+an Array is using array_key_exists() (not needed in the current context, as
+isset() is combined with is_array()). array_key_exists() will return TRUE even
+if the Value of the Element is NULL.
+
+And the last one: If you want to use this approach for more than 2 Arrays,
+simply use this:
+
+  function array_insert_mult($arr) {
+    # More than 1 Argument: Append all Arguments.
+    if (func_num_args() > 1) foreach (array_slice(func_get_args(),1) as $ins)
+$arr = array_insert($arr,$ins);
+    # Return merged Arrays:
+    return($arr);
+  }
+
+And if you worry about maintaining References: Simply use $ins[$k] instead of
+$v when assigning a Value/using a Value as Argument.
+===============================================================================
+
+I've edit this version even a little bit more, so that the function does not
+override any values, but inserts them at a free key in the array:
+
+function my_array_merge ($arr,$ins) {
+    if(is_array($arr))
+    {
+        if(is_array($ins)) foreach($ins as $k=>$v)
+        {
+            if(isset($arr[$k])&&is_array($v)&&is_array($arr[$k]))
+            {
+                $arr[$k] = my_array_merge($arr[$k],$v);
+            }
+            else {
+                // This is the new loop :)
+                while (isset($arr[$k]))
+                    $k++;
+                $arr[$k] = $v;
+            }
+        }
+    }
+    elseif(!is_array($arr)&&(strlen($arr)==0||$arr==0))
+    {
+        $arr=$ins;
+    }
+    return($arr);
+}
+
+Example:
+
+$array1 = array(
+    100 => array(30),
+    200 => array(20, 30)
+);
+
+$array2 = array(
+    100 => array(40),
+    201 => array(60, 30)
+);
+
+print_r(my_array_merge($array1,$array2));
+
+Output with array_merge_recursive:
+Array
+(
+    [0] => Array
+        (
+            [0] => 30
+        )
+
+    [1] => Array
+        (
+            [0] => 20
+            [1] => 30
+        )
+
+    [2] => Array
+        (
+            [0] => 40
+        )
+
+)
+This is not the result, I expect from a MERGE-Routine...
+
+Output with the current function:
+
+Array
+(
+    [100] => Array
+        (
+            [0] => 30
+            [1] => 40
+        )
+
+    [200] => Array
+        (
+            [0] => 20
+            [1] => 30
+        )
+
+)
+
+This is what I want :)
+===============================================================================
+
+I would merge 2 arrays but keep the values unique in the result array.
+I hope this will help...
+<?php
+
+function array_merge_recursive_unique($array1, $array2) {
+   
+    foreach($array2 AS $k => $v) {
+        if(!isset($array1[$k]))
+        {
+            $array1[$k] = $v;
+        }
+        else
+        {
+            if(!is_array($v)){
+                if(is_array($array1[$k]))
+                {
+                    if(!in_array($v,$array1[$k]))
+                    {
+                        $array1[$k][] = $v;
+                    }
+                }
+                else
+                {
+                    if($array1[$k] != $v)
+                        $array1[$k] = array($array1[$k], $v);
+                 }
+            }
+            else
+            {
+                $array1[$k] =    array_merge_recursive_unique($array1,$array2[
+$k]);
+            }
+           
+        }
+   
+    }
+      unset($k, $v);
+      return $array1;
+}
+
+?>
+===============================================================================
+
+<?php
+
+//  this function merges an array with the $_SESSION
+//  if you omit second parameter it merges to the root
+//  if you give one 'path' array it is merged deeply
+
+function arr2sess($arr, $path=array()){
+   if (!is_array($arr)) return false;
+   foreach($arr as $k => $v){
+      if(is_array($arr[$k])) {
+          $path[] = $k;
+          arr2sess($arr[$k], $path);
+      }else{
+          $ref = &$_SESSION;
+          if($path){
+              foreach($path as $val){
+                  if(!$ref[$val]) $ref[$val] = array();
+                  $ref = &$ref[$val];
+              }
+          }
+          $ref[$k] = $v;
+      }
+   }
+}
+
+session_start();
+$x = array(k1=>12, k2=>array(kxx=>'forget me', kyy=>'I was allways here'));    
+// do you have any of this on $_SESSION
+$rpl = array(k2=>array(kxx=>'I am a replaced value',kzz=>'I am a new value'));
+arr2sess($x, array('deep','deep','in_session'));                               
+// you can use this way
+arr2sess($x);                                                                  
+// or this
+arr2sess($rpl);                                                                
+// to merge parts with the $_SESSION
+
+$w = array(120, q=>array(199,100));                                            
+// works the same way on numeric keys
+arr2sess($w, array('one','two'));
+arr2sess($w);
+
+echo '<pre>';
+print_r($_SESSION);
+
+?>
+===============================================================================
+
+<?php
+/**
+* Merges any number of arrays / parameters recursively, replacing
+* entries with string keys with values from latter arrays.
+* If the entry or the next value to be assigned is an array, then it
+* automagically treats both arguments as an array.
+* Numeric entries are appended, not replaced, but only if they are
+* unique
+*
+* calling: result = array_merge_recursive_distinct(a1, a2, ... aN)
+**/
+
+function array_merge_recursive_distinct () {
+  $arrays = func_get_args();
+  $base = array_shift($arrays);
+  if(!is_array($base)) $base = empty($base) ? array() : array($base);
+  foreach($arrays as $append) {
+    if(!is_array($append)) $append = array($append);
+    foreach($append as $key => $value) {
+      if(!array_key_exists($key, $base) and !is_numeric($key)) {
+        $base[$key] = $append[$key];
+        continue;
+      }
+      if(is_array($value) or is_array($base[$key])) {
+        $base[$key] = array_merge_recursive_distinct($base[$key], $append[$key
+]);
+      } else if(is_numeric($key)) {
+        if(!in_array($value, $base)) $base[] = $value;
+      } else {
+        $base[$key] = $value;
+      }
+    }
+  }
+  return $base;
+}
+?>
+===============================================================================
+
+In this version the values are overwritten only if they are not an array.  If
+the value is an array, its elements will be merged/overwritten:
+
+// array_merge_recursive which override value with next value.
+// based on: http://www.php.net/manual/hu/function.array-merge-recursive.php
+09-Dec-2006 03:38
+function array_merge_recursive_unique($array0, $array1)
+{
+    $arrays = func_get_args();
+    $remains = $arrays;
+
+    // We walk through each arrays and put value in the results (without
+    // considering previous value).
+    $result = array();
+
+    // loop available array
+    foreach($arrays as $array) {
+
+        // The first remaining array is $array. We are processing it. So
+        // we remove it from remaing arrays.
+        array_shift($remains);
+
+        // We don't care non array param, like array_merge since PHP 5.0.
+        if(is_array($array)) {
+            // Loop values
+            foreach($array as $key => $value) {
+                if(is_array($value)) {
+                    // we gather all remaining arrays that have such key
+available
+                    $args = array();
+                    foreach($remains as $remain) {
+                        if(array_key_exists($key, $remain)) {
+                            array_push($args, $remain[$key]);
+                        }
+                    }
+
+                    if(count($args) > 2) {
+                        // put the recursion
+                        $result[$key] = call_user_func_array(__FUNCTION__,
+$args);
+                    } else {
+                        foreach($value as $vkey => $vval) {
+                            $result[$key][$vkey] = $vval;
+                        }
+                    }
+                } else {
+                    // simply put the value
+                    $result[$key] = $value;
+                }
+            }
+        }
+    }
+    return $result;
+}
+===============================================================================
+
+Proper simplistic example:
+
+<?php
+
+$Array1 = [1, 2];
+$Array2 = [3, 4];
+
+echo implode("<br>", array_merge_recursive($Array1, $Array2));
+
+?>
+
+Output:
+1
+2
+3
+4
+===============================================================================
+
+Attention.
+(used PHP 5.4. XAMPP)
+
+Values with numeric keys are always appended.   The index of the merge array is
+determined by the startindex of the first array. Value4s with numeric keys
+seems always appended.
+If a key looks like an integer, array_merge_recursive will interpret the string
+as an number.
+
+In the example  $arr['farbe']['22'] = 'grün' wil be found after
+array_merge_recursive in $res['farbe'][33]
+
+$ar1 = array("farbe" => array (31 => 'holla', "rot", "favorit" => "gelb2"),
+"favorit" => "gelb1", 5);
+$ar2 = array(10, "farbe" => array ('22' => "grün",  "favorit" => 2, "blau"));
+$result = array_merge_recursive ($ar1, $ar2);
+var_dump($result);
+echo('<hr>');
+
+// var_dump
+array(4) {
+  ["farbe"]=>
+  array(5) {
+    [31]=>
+    string(5) "holla"
+    [32]=>
+    string(3) "rot"
+    ["favorit"]=>
+    array(2) {
+      [0]=>
+      string(5) "gelb2"
+      [1]=>
+      int(2)
+    }
+    [33]=>
+    string(5) "grün"
+    [34]=>
+    string(4) "blau"
+  }
+  ["favorit"]=>
+  string(5) "gelb1"
+  [0]=>
+  int(5)
+  [1]=>
+  int(10)
+}
+===============================================================================
+
+Sometimes you need to modify an array with another one here is my approach to
+replace an array's content recursively with delete opiton. Here i used
+"::delete::" as reserved word to delete items.
+
+<?php
+$person= array(
+    "name" => "Metehan",
+    "surname"=>"Arslan",
+    "age"=>27,
+    "mail"=>"hidden",
+    "favs" => array(
+        "language"=>"php",
+        "planet"=>"mercury",
+        "city"=>"istanbul")
+);
+
+$newdata = array(
+    "age"=>28,
+    "mail"=>"::delete::",
+    "favs" => array(
+        "language"=>"js",
+        "planet"=>"mercury",
+        "city"=>"shanghai")
+);
+
+print_r(array_overlay($person,$newdata));
+// result: Array ( [name] => Metehan [surname] => Arslan [age] => 28 [favs] =>
+Array ( [language] => js [planet] => mercury [city] => shanghai ) )
+
+function array_overlay($a1,$a2)
+{
+    foreach($a1 as $k => $v) {
+        if ($a2[$k]=="::delete::"){
+            unset($a1[$k]);
+            continue;
+        };
+        if(!array_key_exists($k,$a2)) continue;
+        if(is_array($v) && is_array($a2[$k])){
+            $a1[$k] = array_overlay($v,$a2[$k]);
+        }else{
+            $a1[$k] = $a2[$k];
+        }
+       
+    }
+    return $a1;
+}
+?>
+===============================================================================
+
+Merging arrays recursively some problem about existing keys, so that i wrote
+the function above like this:
+
+function merge($array0, $array1) {
+  // Result
+  $merged = array();
+
+  foreach (func_get_args() as $array) {
+   // Check incoming argument is array
+   if (is_array($array)) {
+    foreach ($array as $key => $value) {
+     // Check there is an array with the key: $key
+     if (isset($merged[$key])) {
+      // Check the value is array
+      if (is_array($value)) {
+       // So we must merge current value with the existing array
+       $merged[$key] = call_user_func_array(__FUNCTION__, $merged[$key],
+$value);
+      } else {
+       if (!is_array($merged[$key])) {
+        // If the existing array with the key: $key not an array
+        // We make it an array
+        $merged[$key] = array($merged[$key]);
+       }
+
+       // And add the current value
+       $merged[$key][] = $value;
+      }
+     } else {
+      // If not exists make the array
+      $merged[$key] = $value;
+     }
+    }
+   }
+  }
+
+  return $merged;
+}
+===============================================================================
+
+This function didn't work for me - or it didn't do what I thought it would. So
+I wrote the below function, which merges two arrays, and returns the resulting
+array. The base array is the left one ($a1), and if a key is set in both
+arrays, the right value has precedence. If a value in the left one is an array
+and also an array in the right one, the function calls itself (recursion). If
+the left one is an array and the right one exists but is not an array, then the
+right non-array-value will be used.
+
+*Any key only appearing in the right one will be ignored*
+- as I didn't need values appearing only in the right in my implementation, but
+if you want that you could make some fast fix.
+
+function array_merge_recursive_leftsource(&$a1, &$a2) {
+    $newArray = array();
+    foreach ($a1 as $key => $v) {
+        if (!isset($a2[$key])) {
+            $newArray[$key] = $v;
+            continue;
+        }
+
+        if (is_array($v)) {
+            if (!is_array($a2[$key])) {
+                $newArray[$key] = $a2[$key];
+                continue;
+            }
+            $newArray[$key] = array_merge_recursive_leftsource($a1[$key], $a2
+[$key]);
+            continue;
+        }
+
+        $newArray[$key] = $a2[$key];
+    }
+    return $newArray;
+}
+===============================================================================
+
+If what you want is merge all values of your array that are arrays themselves
+to get a resulting array of depth one, then you're more looking for
+array_flatten function.
+
+Unfortunately I did not find such native function in php, here is the one I
+wrote:
+
+<?php
+/**
+* Flatten an array so that resulting array is of depth 1.
+* If any value is an array itself, it is merged by parent array, and so on.
+*
+* @param array $array
+* @param bool $preserver_keys OPTIONAL When true, keys are preserved when
+mergin nested arrays (=> values with same key get overwritten)
+* @return array
+*/
+function array_flatten($array, $preserve_keys = false)
+{
+    if (!$preserve_keys) {
+        // ensure keys are numeric values to avoid overwritting when
+array_merge gets called
+        $array = array_values($array);
+    }
+   
+    $flattened_array = array();
+    foreach ($array as $k => $v) {
+        if (is_array($v)) {
+            $flattened_array = array_merge($flattened_array, call_user_func(
+__FUNCTION__, $v, $preserve_keys));
+        } elseif ($preserve_keys) {
+            $flattened_array[$k] = $v;
+        } else {
+            $flattened_array[] = $v;
+        }
+    }
+    return $flattened_array;
+}
+
+// example
+$a = array ('k1' => 'a', 'k2' => array('k1' => 'b', 'k4' => array('k3' => 'c'
+)));
+var_export(array_flatten($a)); // output: array(0 => 'a', 1 => 'b', 2 => 'c')
+var_export(array_flatten($a, true)); // output: array('k1' => 'b', 'k3' => 'c')
+// first 'k1' value gets overwritten by nested 'k1' value
+?>
+===============================================================================
+
+I've tried these array_merge_recursive functions without much success. Maybe
+it's just me but they don't seem to actually go more than one level deep? As
+with all things, its usually easier to write your own, which I did and it seems
+to work just the way I wanted. Anyways, my function hasn't been tested
+extensively, but it's a simple function, so in hopes that this might be useful
+to someone else I'm sharing.
+
+Also, the PHP function array_merge_recursive() didn't work for my purposes
+because it didn't overwrite the values like I needed it to. You know how it
+works, it just turns it into an array with multiple values... not helpful if
+your code is expecting one string.
+
+function array_merge_recursive_unique($array1, $array2) {
+   
+    // STRATEGY
+    /*
+    Merge array1 and array2, overwriting 1st array values with 2nd array
+    values where they overlap. Use array1 as the base array and then add
+    in values from array2 as they exist.
+   
+    Walk through each value in array2 and see if a value corresponds
+    in array1. If it does, overwrite with second array value. If it's an
+    array, recursively execute this function and return the value. If it's
+    a string, overwrite the value from array1 with the value from array2.
+   
+    If a value exists in array2 that is not found in array1, add it to array1.
+    */
+
+    // LOOP THROUGH $array2
+    foreach($array2 AS $k => $v) {
+       
+        // CHECK IF VALUE EXISTS IN $array1
+        if(!empty($array1[$k])) {
+            // IF VALUE EXISTS CHECK IF IT'S AN ARRAY OR A STRING
+            if(!is_array($array2[$k])) {
+                // OVERWRITE IF IT'S A STRING
+                $array1[$k]=$array2[$k];
+            } else {
+                // RECURSE IF IT'S AN ARRAY
+                $array1[$k] = array_merge_recursive_unique($array1[$k], $array2
+[$k]);
+            }
+        } else {
+            // IF VALUE DOESN'T EXIST IN $array1 USE $array2 VALUE
+            $array1[$k]=$v;
+        }
+    }
+    unset($k, $v);
+   
+   
+    return $array1;
+}
+===============================================================================
+
+<?php
+/**
+* Merges any number of arrays of any dimensions, the later overwriting
+* previous keys, unless the key is numeric, in whitch case, duplicated
+* values will not be added.
+*
+* The arrays to be merged are passed as arguments to the function.
+*
+* @access public
+* @return array Resulting array, once all have been merged
+*/
+function array_merge_replace_recursive() {
+    // Holds all the arrays passed
+    $params = & func_get_args ();
+   
+    // First array is used as the base, everything else overwrites on it
+    $return = array_shift ( $params );
+   
+    // Merge all arrays on the first array
+    foreach ( $params as $array ) {
+        foreach ( $array as $key => $value ) {
+            // Numeric keyed values are added (unless already there)
+            if (is_numeric ( $key ) && (! in_array ( $value, $return ))) {
+                if (is_array ( $value )) {
+                    $return [] = $this->array_merge_replace_recursive ( $return
+[$$key], $value );
+                } else {
+                    $return [] = $value;
+                }
+               
+            // String keyed values are replaced
+            } else {
+                if (isset ( $return [$key] ) && is_array ( $value ) && is_array
+( $return [$key] )) {
+                    $return [$key] = $this->array_merge_replace_recursive ( 
+$return [$$key], $value );
+                } else {
+                    $return [$key] = $value;
+                }
+            }
+        }
+    }
+   
+    return $return;
+}
+
+$a = array (
+    "a" => 1,
+    "b" => 2,
+    'foo',
+    'bar'
+);
+$b = array (
+    "a" => 2,
+    "c" => 3,
+    'foo'
+);
+
+$c = array_merge_replace_recursive ( $a, $b );
+print_r ( $a );
+print_r ( $b );
+print_r ( $c );
+?>
+
+Output:
+Array
+(
+    [a] => 1
+    [b] => 2
+    [0] => foo
+    [1] => bar
+)
+Array
+(
+    [a] => 2
+    [c] => 3
+    [0] => foo
+)
+Array
+(
+    [a] => 2
+    [b] => 2
+    [0] => foo
+    [1] => bar
+    [c] => 3
+)
+===============================================================================
+
+A small improvement upon the previously posted array_merge_recursive_distinct
+functions (based on daniel's version). This implementation preserves the
+parameter input from the original, you can pass an infinite amount of array's
+to merge.
+
+<?php
+function &array_merge_recursive_distinct()
+{
+    $aArrays = func_get_args();
+    $aMerged = $aArrays[0];
+   
+    for($i = 1; $i < count($aArrays); $i++)
+    {
+        if (is_array($aArrays[$i]))
+        {
+            foreach ($aArrays[$i] as $key => $val)
+            {
+                if (is_array($aArrays[$i][$key]))
+                {
+                    $aMerged[$key] = is_array($aMerged[$key]) ? PR::
+array_merge_recursive_distinct($aMerged[$key], $aArrays[$i][$key]) : $aArrays[
+$i][$key];
+                }
+                else
+                {
+                    $aMerged[$key] = $val;
+                }
+            }
+        }
+    }
+   
+    return $aMerged;
+}
+?>
+===============================================================================
+
+<?php
+/**
+* array_merge_recursive does indeed merge arrays, but it converts values with
+duplicate
+* keys to arrays rather than overwriting the value in the first array with the
+duplicate
+* value in the second array, as array_merge does. I.e., with
+array_merge_recursive,
+* this happens (documented behavior):
+*
+* array_merge_recursive(array('key' => 'org value'), array('key' => 'new
+value'));
+*     => array('key' => array('org value', 'new value'));
+*
+* array_merge_recursive_distinct does not change the datatypes of the values in
+the arrays.
+* Matching keys' values in the second array overwrite those in the first array,
+as is the
+* case with array_merge, i.e.:
+*
+* array_merge_recursive_distinct(array('key' => 'org value'), array('key' =>
+'new value'));
+*     => array('key' => array('new value'));
+*
+* Parameters are passed by reference, though only for performance reasons.
+They're not
+* altered by this function.
+*
+* @param array $array1
+* @param mixed $array2
+* @return array
+* @author daniel@danielsmedegaardbuus.dk
+*/
+function &array_merge_recursive_distinct(array &$array1, &$array2 = null)
+{
+  $merged = $array1;
+ 
+  if (is_array($array2))
+    foreach ($array2 as $key => $val)
+      if (is_array($array2[$key]))
+        $merged[$key] = is_array($merged[$key]) ? 
+array_merge_recursive_distinct($merged[$key], $array2[$key]) : $array2[$key];
+      else
+        $merged[$key] = $val;
+ 
+  return $merged;
+}
+?>
+===============================================================================
+
+Needed some way to fuse two arrays together and found a function here (below
+from thomas) and decided to update it even further to be a little more smart.
+
+<?php
+function my_array_merge ($arr,$ins)
+    {
+        if(is_array($arr))
+            {
+                if(is_array($ins)) foreach($ins as $k=>$v)
+                    {
+                        if(isset($arr[$k])&&is_array($v)&&is_array($arr[$k]))
+                            {
+                                $arr[$k] = my_array_merge($arr[$k],$v);
+                            }
+                        else $arr[$k] = $v;
+                    }
+            }
+        elseif(!is_array($arr)&&(strlen($arr)==0||$arr==0))
+            {
+                $arr=$ins;
+            }
+        return($arr);
+    }
+?>
+===============================================================================
+
+If you desire correct and performant behaviour (in contrast to the other
+postings) use this code. It works as documented above.
+If you want that keys are always perserved and not appended or renumbered if
+they are numeric comment out the "if (((string) $key) === ((string) intval
+($key)))" case.
+@spambegone at cratemedia dot com: using empty is not right way to check if an
+item is in the array use isset!
+
+<?php
+
+function array_merge_recursive2($array1, $array2)
+{
+    $arrays = func_get_args();
+    $narrays = count($arrays);
+   
+    // check arguments
+    // comment out if more performance is necessary (in this case the foreach
+loop will trigger a warning if the argument is not an array)
+    for ($i = 0; $i < $narrays; $i ++) {
+        if (!is_array($arrays[$i])) {
+            // also array_merge_recursive returns nothing in this case
+            trigger_error('Argument #' . ($i+1) . ' is not an array - trying to
+merge array with scalar! Returning null!', E_USER_WARNING);
+            return;
+        }
+    }
+   
+    // the first array is in the output set in every case
+    $ret = $arrays[0];
+   
+    // merege $ret with the remaining arrays
+    for ($i = 1; $i < $narrays; $i ++) {
+        foreach ($arrays[$i] as $key => $value) {
+            if (((string) $key) === ((string) intval($key))) { // integer or
+string as integer key - append
+                $ret[] = $value;
+            }
+            else { // string key - megre
+                if (is_array($value) && isset($ret[$key])) {
+                    // if $ret[$key] is not an array you try to merge an scalar
+value with an array - the result is not defined (incompatible arrays)
+                    // in this case the call will trigger an E_USER_WARNING and
+the $ret[$key] will be null.
+                    $ret[$key] = array_merge_recursive2($ret[$key], $value);
+                }
+                else {
+                    $ret[$key] = $value;
+                }
+            }
+        }   
+    }
+   
+    return $ret;
+}
+
+// Examples:
+
+print_r(array_merge_recursive2(array('A','B','C' => array(1,2,3)), array('D',
+'C' => array(1,4))));
+/*
+Array
+(
+    [0] => A
+    [1] => B
+    [C] => Array
+        (
+            [0] => 1
+            [1] => 2
+            [2] => 3
+            [3] => 1
+            [4] => 4
+        )
+    [2] => D
+)*/
+
+print_r(array_merge_recursive2(array('A','B','0' => array(1,2,3)), array('D',
+'0' => array(1,array(4)))));
+/*
+Array
+(
+    [0] => Array
+        (
+            [0] => 1
+            [1] => 2
+            [2] => 3
+        )
+    [1] => B
+    [2] => Array
+        (
+            [0] => 1
+            [1] => Array
+                (
+                    [0] => 4
+                )
+        )
+)*/
+
+print_r(array_merge_recursive2(array('A' => array('A' => 1)), array('A' =>
+array('A' => array(2)))));
+/*
+Warning: Argument #1 is not an array - trying to merge array with scalar!
+Returning null! in ... on line ...
+*/
+
+var_dump(array_merge_recursive2(array('A' => array('A' => 2)), array('A' =>
+array('A' => null))));
+/*
+array(1) { ["A"]=>  array(1) { ["A"]=>  NULL } }
+*/
+
+?>
+===============================================================================
+
+I wrote the following for merging arrays, in my project mainly for
+configuration... Thought someone else might find it usefull.
+
+function array_merge_recursive_keys( $first, $second, $greedy=false) {
+   $inter = array_intersect_assoc(array_keys($first), array_keys($second)); #
+shaired keys
+# the idea next, is to strip and append from $second into $first
+   foreach ( $inter as $key ) {
+   # recursion if both are arrays
+      if ( is_array($first[$key]) && is_array($second[$key]) ) {
+         $first[$key] = array_merge_recursive_keys($first[$key], $second
+[$key]);
+      }
+   # non-greedy array merging:
+      else if ( is_array($first[$key] && !$greedy ) ) {
+         $first[$key][] = $second[$key];
+      }
+      else if ( is_array($second[$key]) && !$greedy ) {
+         $second[$key][] = $first[$key];
+         $first[$key] = $second[$key];
+      }
+   # overwrite...
+      else {
+         $first[$key] = $second[$key];
+      }
+      unset($second[$key]);
+   }
+# merge the unmatching keys onto first
+   return array_merge($first, $second);
+}
+===============================================================================
+
+<?php
+    function array_merge_recursive_keep_keys( $arrElement1 , $arrElement2 , 
+$intCount = 0 )
+    {
+
+        $arrNew = array();
+       
+        $arrElement1Keys = array_keys( $arrElement1 );
+        $arrElement2Keys = array_keys( $arrElement2 );
+       
+        $arrDifKeys1 = array_diff( $arrElement1Keys, $arrElement2Keys );
+        $arrDifKeys2 = array_diff( $arrElement2Keys, $arrElement1Keys );
+        $arrInter     = array_intersect( $arrElement1Keys , $arrElement2Keys );
+
+        foreach( $arrDifKeys1 as $strKey1)
+        {
+            $arrNew[ $strKey1 ] = $arrElement1[ $strKey1 ];
+        }
+        foreach( $arrDifKeys2 as $strKey2)
+        {
+            $arrNew[ $strKey2 ] = $arrElement2[ $strKey2 ];
+        }
+        foreach( $arrInter as $strInterKey )
+        {
+            if( is_array( $arrElement1[ $strInterKey ] ) && is_array( 
+$arrElement2[ $strInterKey ] ) )
+            {
+                $intCount++;
+                $arrNew[ $strInterKey ] = array_merge_recursive_keep_keys( 
+$arrElement1[ $strInterKey ] , $arrElement2[ $strInterKey ] , $intCount );
+            }
+            elseif( is_array( $arrElement1[ $strInterKey ] ) || is_array( 
+$arrElement2[ $strInterKey ] ) )
+            {
+                $arrNew[ $strInterKey ][]    =  $arrElement1[ $strInterKey ];
+                $arrNew[ $strInterKey ][]    =  $arrElement2[ $strInterKey ];
+            }
+            else
+            {
+                $arrNew[ $strInterKey ] = array();
+                $arrNew[ $strInterKey ][] = $arrElement1[ $strInterKey ];
+                $arrNew[ $strInterKey ][] = $arrElement2[ $strInterKey ];
+            }
+        }
+        return $arrNew;
+    }   
+?>
+===============================================================================
+
+This function tends to reindex arrays, which is not  mentioned in the function
+description.
+
+I just tried to run that function on a three dimensional array, containing
+errormessages.
+The first dim. contains the severity of the error ('warn', 'crit') the second
+dim the linenumber (numerical) and the third one consists of errormessages
+
+<?php
+# Array printout:
+Array
+(
+   [warn] => Array  // severity (associative)
+    (
+      [2] => Array  // linenumber (numerical)
+       (
+         [0] => "Category does not exist"
+         [1] => "Manufacturer does not exist"
+       )
+    )
+)
+
+?>
+
+If i now merge two or more of those arrays using array_merge_recursive(), the
+linenumbers are not conserved. Instead of, they are all renumbered, starting
+with 0.
+
+Just thought anyone may want to know about that. :)
+regards, smilingrasta
+===============================================================================
+
+This emulates replace of $_REQUEST according to variable_order=GPC.
+<?
+    function array_merge_replace($array, $newValues) {
+        foreach ($newValues as $key => $value ) {
+            if (is_array($value)) {
+                if (!isset($array[$key])) {
+                    $array[$key] = array();
+                }
+                $array[$key] = array_merge_replace($array[$key], $value);
+            } else {
+                $array[$key] = $value;
+            }
+        }
+        return $array;
+    }
+
+    $_REQUEST = array_merge_replace($_REQUEST, $_GET);
+    $_REQUEST = array_merge_replace($_REQUEST, $_POST);
+    $_REQUEST = array_merge_replace($_REQUEST, $_COOKIE);
+?>
+
+Useful with stripping backslashes at beginning of main include file:
+<?
+if (get_magic_quotes_gpc() == 1) {
+
+    function stripMagicSlashes($element) {
+        if (is_array($element)) {
+            return array_map("stripMagicSlashes", $element);
+        } else {
+            return stripslashes($element);
+        }
+    }
+
+    function array_merge_replace($array, $newValues) {
+        foreach ($newValues as $key => $value ) {
+            if (is_array($value)) {
+                if (!isset($array[$key])) {
+                    $array[$key] = array();
+                }
+                $array[$key] = array_merge_replace($array[$key], $value);
+            } else {
+                $array[$key] = $value;
+            }
+        }
+        return $array;
+    }
+
+    $_GET    = array_map("stripMagicSlashes", $_GET);
+    $_POST   = array_map("stripMagicSlashes", $_POST);
+    $_COOKIE = array_map("stripMagicSlashes", $_COOKIE);
+
+    $_REQUEST = array_merge_replace($_REQUEST, $_GET);
+    $_REQUEST = array_merge_replace($_REQUEST, $_POST);
+    $_REQUEST = array_merge_replace($_REQUEST, $_COOKIE);
+
+}
+
+$GLOBALS['stripped'] = true;
+?>
+
+Based on examples from users from this site.
+===============================================================================
+
+Please be aware that under circumstances where you have
+both the key and value common between the two arrays at a given node,
+array_merge_recursive() will behave differently if that value is NULL,
+as opposed to a non-null value.
+
+i.e., I expected the results of the first two sections below to
+have the same structure, but they don't. 
+If this might apply to you, please see for yourself.
+
+<pre><?php
+
+$a1 = array('a'=>'b');
+$a2 = array('a'=>'b');
+$a3 = array_merge_recursive($a1,$a2);
+var_export($a3);
+echo "\n\n";
+
+$a1 = array('a'=>NULL);
+$a2 = array('a'=>NULL);
+$a3 = array_merge_recursive($a1,$a2);
+var_export($a3);
+echo "\n\n";
+
+$a1 = array('a'=>'b');
+$a2 = array('a'=>NULL);
+$a3 = array_merge_recursive($a1,$a2);
+var_export($a3);
+echo "\n\n";
+
+?></pre>
+
+This behavior also occurs if the value is the empty array.
+In fact, in the above example, interchanging the empty array with
+any and all occurences of NULL will yield the same result.
+
+    code till dawn!  -mark
+===============================================================================
+
+An updated version of  array_merge_recursive without overwriting numeric keys
+from martyniuk :
+function array_merge_recursive_new()
+{
+    $arrays = func_get_args();
+        $base = array_shift($arrays);
+
+        foreach ($arrays as $array) {
+            reset($base); //important
+            while (list($key, $value) = @each($array)) {
+                if (is_array($value) && @is_array($base[$key])) {
+                    $base[$key] = array_merge_recursive_new($base[$key],
+$value);
+                } else {
+                    if(isset($base[$key]) && is_int($key)) {
+                      $key++;
+                    }
+                    $base[$key] = $value;
+                }
+            }
+        }
+
+    return $base;
+  }

@@ -1,0 +1,682 @@
+
+ldap_connect
+
+(PHP 4, PHP 5, PHP 7)
+
+ldap_connect — Connect to an LDAP server
+
+说明
+
+resource ldap_connect ([ string $host = NULL [, int $port = 389 ]] )
+
+Creates an LDAP link identifier and checks whether the given host and port are
+plausible.
+
+Note: This function does not open a connection. It checks whether the given
+parameters are plausibe and can be used to open a connection as soon as one is
+needed.
+
+参数
+
+host
+
+    This field supports using a hostname or, with OpenLDAP 2.x.x and later, a
+    full LDAP URI of the form ldap://hostname:port or ldaps://hostname:port for
+    SSL encryption.
+
+    You can also provide multiple LDAP-URIs separated by a space as one string
+
+    Note that hostname:port is not a supported LDAP URI as the schema is
+    missing.
+
+port
+
+    The port to connect to. Not used when using LDAP URIs.
+
+返回值
+
+Returns a positive LDAP link identifier when the provided hostname/port
+combination or LDAP URI seems plausible. It's a syntactic check of the provided
+parameters but the server(s) will not be contacted! If the syntactic check
+fails it returns FALSE. When OpenLDAP 2.x.x is used, ldap_connect() will always
+return a resource as it does not actually connect but just initializes the
+connecting parameters. The actual connect happens with the next calls to ldap_*
+funcs, usually with ldap_bind().
+
+If no arguments are specified then the link identifier of the already opened
+link will be returned.
+
+范例
+
+Example #1 Example of connecting to LDAP server.
+
+<?php
+
+// LDAP variables
+$ldaphost = "ldap.example.com";  // your ldap servers
+$ldapport = 389;                 // your ldap server's port number
+
+// Connecting to LDAP
+$ldapconn = ldap_connect($ldaphost, $ldapport)
+          or die("Could not connect to $ldaphost");
+
+?>
+
+Example #2 Example of connecting securely to LDAP server.
+
+<?php
+
+// make sure your host is the correct one
+// that you issued your secure certificate to
+$ldaphost = "ldaps://ldap.example.com/";
+
+// Connecting to LDAP
+$ldapconn = ldap_connect($ldaphost)
+          or die("Could not connect to {$ldaphost}");
+
+?>
+
+参见
+
+  • ldap_bind() - 绑定 LDAP 目录
+
+
+User Contributed Notes 26 notes
+
+===============================================================================
+
+If you don't want your PHP program to wait XXX seconds before giving up in a
+case when one of your corporate DC have failed, and since ldap_connect() does
+not have a mechanism to timeout on a user specified time, this is my workaround
+which shows excellent practical results.
+
+===========================================================
+function serviceping($host, $port=389, $timeout=1)
+{
+        $op = fsockopen($host, $port, $errno, $errstr, $timeout);
+        if (!$op) return 0; //DC is N/A
+    else {
+    fclose($opanak); //explicitly close open socket connection
+    return 1; //DC is up & running, we can safely connect with ldap_connect
+    }
+}
+
+// ##### STATIC DC LIST, if your DNS round robin is not setup
+//$dclist = array('10.111.222.111', '10.111.222.100', '10.111.222.200');
+
+// ##### DYNAMIC DC LIST, reverse DNS lookup sorted by round-robin result
+$dclist = gethostbynamel('domain.name');
+
+foreach ($dclist as $k => $dc) if (serviceping($dc) == true) break; else $dc =
+0;
+//after this loop, either there will be at least one DC which is available at
+present, or $dc would return bool false while the next line stops program from
+further execution
+
+if (!$dc) exit("NO DOMAIN CONTROLLERS AVAILABLE AT PRESENT, PLEASE TRY AGAIN
+LATER!"); //user being notified
+
+//now, ldap_connect would certainly connect succesfully to DC tested previously
+and no timeout will occur
+$ldapconn = ldap_connect($dc) or die("DC N/A, PLEASE TRY AGAIN LATER.");
+===========================================================
+
+Also with this approach, you get a real nice failover functionality, take for
+an example a company with a dozen of DC-a distributed along distant places,
+this way your PHP program will always have high availability if at least one DC
+is active at present.
+===============================================================================
+
+To be able to make modifications to Active Directory via the LDAP connector you
+must bind to the LDAP service over SSL. Otherwise Active Directory provides a
+mostly readonly connection. You cannot add objects or modify certain properties
+without LDAPS, e.g. passwords can only be changed using LDAPS connections to
+Active Directory.
+
+Therefore, for those wishing to securely connect to Active Directory, from a
+Unix host using PHP+OpenLDAP+OpenSSL I spent some time getting this going
+myself, and came across a few gotcha's. Hope this proves fruitfull for others
+like me when you couldn't find answers out there.
+
+Make sure you compile OpenLDAP with OpenSSL support, and that you compile PHP
+with OpenLDAP and OpenSSL.
+
+This provides PHP with what it needs to make use of ldaps:// connections.
+
+Configure OpenSSL:
+
+Extract your Root CA certificate from Active Directory, this is achived through
+the use of Certificate Services, a startard component of Windows 2000 Server,
+but may not be installed by default, (The usual Add/Remove Software method will
+work here). I extracted this in Base64 not DER format.
+
+Place the extracted CAcert into the certs folder for openssl. (e.g. /usr/local/
+ssl/certs) and setup the hashed symlinks. This is easily done by simply
+running:
+
+  /usr/local/ssl/bin/c_rehash
+
+Once this is done you can test it is worked by running:
+
+  /usr/local/ssl/bin/openssl verify -verbose -CApath /usr/local/ssl/certs /tmp/
+exported_cacert.pem
+
+(Should return: OK).
+
+Configure OpenLDAP:
+
+Add the following to your ldap.conf file.
+(found as /usr/local/openldap/etc/openldap/ldap.conf)
+
+  #--begin--
+
+  # Instruct client to NOT request a server's cert.
+  TLS_REQCERT never
+
+  # Define location of CA Cert
+  TLS_CACERT /usr/local/ssl/certs/AD_CA_CERT.pem
+  TLS_CACERTDIR /usr/local/ssl/certs
+
+  #--end--
+
+You also need to place those same settings in a file within the Apache Web user
+homedir called .ldaprc
+
+  e.g.:
+ 
+  cp /usr/local/openldap/etc/openldap/ldap.conf ~www/.ldaprc )
+
+You can then test that you're able to establish a LDAPS connection to Active
+Directory from the OpenLDAP command tools:
+
+  /usr/local/openldap/bin/ldapsearch -H "ldaps://adserver.ad.com"
+
+This should return some output in extended LDIF format and will indicate no
+matching objects, but it proves the connection works.
+
+The name of the server you're connecting to is important. If they server name
+you specify in the "ldaps://" URI does not match the name of the server in it's
+certificate, it will complain like so:
+
+  ldap_bind: Can't contact LDAP server (81)
+        additional info: TLS: hostname does not match CN in peer certificate
+
+Once you've gotten the ldapsearch tool working correctly PHP should work also.
+
+One important gotcha however is that the Web user must be able to locate it's
+HOME folder. You must check that Apache is providing a HOME variable set to the
+Web users home directory, so that php can locate the .ldaprc file and the
+settings contained within. This may well be different between Unix variants but
+it is such a simple and stupid thing if you miss it and it causes you grief.
+Simply use a SetEnv directive in Apache's httpd.conf:
+
+  SetEnv HOME /usr/local/www
+
+With all that done, you can now code up a simple connect function:
+
+  function connect_AD()
+  {
+    $ldap_server = "ldaps://adserver.ad.com" ;
+    $ldap_user   = "CN=web service account,OU=Service Accounts,DC=ad,DC=com" ;
+    $ldap_pass   = "password" ;
+
+    $ad = ldap_connect($ldap_server) ;
+    ldap_set_option($ad, LDAP_OPT_PROTOCOL_VERSION, 3) ;
+    $bound = ldap_bind($ad, $ldap_user, $ldap_pass);
+
+    return $ad ;
+  }
+
+Optionally you can avoid the URI style server string and use something like
+ldap_connect("adserver.ad.com", 636) ;  But work fine with Active Directory
+servers.
+
+Hope this proves usefull.
+===============================================================================
+
+In order to connect to an ldap server via ssl I needed to use a certificate.
+For this to work the ldap admin sent me a .der file which I put into /etc/
+openldap/cacerts.
+    cp ldap-server.der /etc/openldap/cacerts
+That directory must be chmod 755. Then the following entries had to be in /etc/
+openldap/ldap.conf
+    TLS_REQCERT   never 
+    TLS_CACERTDIR /etc/openldap/cacerts
+"TLS_REQCERT never" should only be required if there is a self-signed
+certificate in the certificate chain.
+===============================================================================
+
+Note that hostname can be a space-separated list of LDAP host names. This is
+very useful for failover; if the first ldap host is down, ldap_connect will ask
+the second LDAP host. Of course, you _must_ have LDAP replicates before doing
+this. :) Read the LDAP API documentation for more information.
+
+This can also be useful, apart from failover, for LDAP load balancing. Just use
+a random generator function that will return a different space-separated list
+every time. This is because the first host in the list is always tried first.
+
+Be careful when doing LDAP writes; be sure to always connect to your master
+host when you are about to modify the database, so that the replicates will get
+the changes as expected.
+
+Alexandros Vellis
+===============================================================================
+
+I have spent a lot of time to make an LDAPS connection to a MS AD Global
+Catalog port 3269
+
+My five Cents:
+
+ldap_connect("ldaps://example.com", 3269)
+=> Connection to 636.... :(, DC only
+
+ldap_connect("ldaps://example.com:3269")
+=> Connection to 3269.... :), GC as expected
+
+May it helps...
+===============================================================================
+
+I sure do wish there was some way I could get this information out to all
+programmers in the world about binding and searching MS AD.  This is the second
+time I was bit by the "I need to search the entire tree" problem.
+
+For php (and apache auth_ldap ) you need to specify port 3268 when you want to
+search the entire tree.  Otherwise it will spit out the partial results error.
+
+ldap_connect($server,3268);
+
+I'm just fortunate enough to have won this same battle with apache searching
+the whole directory.  When I noticed our php application failing auth's for
+users, I was immediately able to fix the problem by adding this port
+specification (and the ldap_set_option($ldapserver, LDAP_OPT_REFERRALS, 0) 
+option).
+
+I really hope this helps someone else before they pull all their hair out.  I
+know I miss mine.
+===============================================================================
+
+It bears repeating (and the examples should probably be updated) that
+ldap_connect() doesn't actually test the connection to the specified ldap
+server. This is important if you're trying to build failover into your
+ldap-based authentication routine.
+
+The only way to test the connection is to actually call ldap_bind( $ds,
+$username, $password ). But if that fails, is it because you have the wrong
+username/password or is it because the connection is down? As far as I can see
+there isn't any way to tell.
+
+It seems that if ldap_bind() fails against your primary server, you have no
+choice but to try ldap_bind() with the same credentials against the backup. And
+yet, if your organization limits failed login attempts, a single bad password
+counts as two failed login attempts. Not good.
+
+One possible workaround is to try an anonymous bind first:
+
+<?php
+// connect to primary
+$ds = ldap_connect( 'ldap://10.0.0.7/' );
+// note: $ds is always a resource even if primary is down
+
+// try anonymous login to test connection
+$anon = @ldap_bind( $ds );
+if ( !$anon ) {
+    // test failed, connect to failover host
+    $ds = ldap_connect( 'ldap://10.0.0.8/' );
+}
+else {
+    // test passed, unbind anonymous and reconnect to primary
+    ldap_unbind( $ds );
+    $ds = ldap_connect( 'ldap://10.0.0.7/' );
+}
+
+// now try a real login
+$login = @ldap_bind( $ds, $username, $password );
+?>
+
+Note that this workaround relies on anonymous login being enabled, which may
+not always be the case. It's a little sad that there is no other way to test
+the connection. Hopefully this can be remedied in some future implementation of
+ldap_connect().
+===============================================================================
+
+Hello,
+
+Little corrections to nemanja  post.
+- There was a warning if connection is denied by firewall (adding @ before
+fsockopen)
+- fclose parameter was incorrect.
+
+With this approach, you get a real nice failover functionality, take for an
+example a company with a dozen of DC-a distributed along distant places, this
+way your PHP program will always have high availability if at least one DC is
+active at present.
+<?php
+function serviceping($_host, $_port = 389, $_timeout = 1) {
+    $op = @fsockopen($_host, $_port, $errno, $errstr, $_timeout);
+    if (!$op) {
+        echo "KO!";
+        return 0;
+       
+    } //DC is N/A
+    else {
+        fclose($op); //explicitly close open socket connection
+        return 1; //DC is up & running, we can safely connect with ldap_connect
+    }
+}
+
+function ldap_connect_failover($_domain) {
+// ##### STATIC DC LIST, if your DNS round robin is not setup
+//$dclist = array('10.111.222.111', '10.111.222.100', '10.111.222.200');
+// ##### DYNAMIC DC LIST, reverse DNS lookup sorted by round-robin result
+    $dclist = gethostbynamel($_domain);
+
+    foreach ($dclist as $dc) {
+        if (serviceping($dc) == true) {
+            break;
+        } else {
+            $dc = 0;
+        }
+    }
+//after this loop, either there will be at least one DC which is available at
+present, or $dc would return bool false while the next line stops program from
+further execution
+
+    if (!$dc) {
+        return false;
+    } //user being notified
+
+    return ldap_connect($dc);
+}
+?>
+===============================================================================
+
+A resource ID is always returned when using URLs for the host parameter
+even if the host does not exist.
+
+"When using an URI to describe the connection, the (open)ldap library
+only parses the url and checks if it's valid, _no connection_ is
+established in that case."
+-mfischer@php.net
+http://bugs.php.net/bug.php?id=15637
+===============================================================================
+
+To use LDAPS on Windows whitout "c:\openldap\sysconf\ldap.conf":
+Generate a file like ldap.conf, name it "ldaprc".
+For PHP script running on command line put the file to the script.
+For PHP script running on webserver put the file in home directory of PHP.
+===============================================================================
+
+To override the ssl ca file can be done by setting an environmental variable
+within php.
+
+I found using saving the ca certificate (and intermediate ca's) to a file
+called ca.pem and then adding
+
+putenv('LDAPTLS_CACERT=./ca.pem');
+
+before ldap_connect works for me.  
+Code example:
+<?php
+putenv('LDAPTLS_CACERT=./ca.pem');
+ldap_set_option(NULL, LDAP_OPT_DEBUG_LEVEL, 7);
+$l = ldap_connect("ldaps://ldap/");
+ldap_set_option($l, LDAP_OPT_PROTOCOL_VERSION, 3);
+ldap_bind($l, "cn=apache,dc=example", "xxxxxxx");
+echo(ldap_error($l)."\n");
+$s = ldap_search($l, "dc=example", "uid=test");
+echo(ldap_count_entries($l, $s)."\n");
+?>
+in the file  ca.pem in the same directory we have our ca's:
+-----BEGIN CERTIFICATE-----
+<cert here>
+-----END CERTIFICATE-----
+===============================================================================
+
+The host name parameter can be a space separated list of host names. This means
+that the LDAP code will talk to a backup server if the main server is not
+operational. There will be a delay while the code times out trying to talk to
+the main server but things will still work. This is particularly useful with a
+typical Microsoft Active Directory setup of primary and backup domain
+controllers.
+<?php
+$ldaphost = "192.168.0.100 192.168.0.101";
+$ldapconn = ldap_connect($ldaphost);
+?>
+===============================================================================
+
+I support a LAMP stack with PHP-FPM on CentOS 7 that needs to connect to Active
+Directory over SSL.  We have a root certificate for the domain.  I was able to
+set this up in five steps.
+
+1. Get the domain's root SSL certificate in base64. (Must be an Enterprise
+Administrator - talk with your admin if you are not one.)
+Run mmc.exe
+File -> Add/Remove Snap-in
+Select Certification Authority, then the server that generates certificates for
+your domain.
+Expand the tree until you find the entry for the root certificate, then right
+click->Properties.
+Click the "View Certificate" button, The "Details" tab, then the "Copy to
+File..." button.
+Use the wizard to export the root certificate to your computer. Ensure you use
+the Base-64 format.
+
+2. Copy the root cert to the Linux server.  You can open the certificate in
+notepad and copy and paste the contents.
+
+3. Convert the certificate to pem format.  Substitute the names of files as
+needed.
+openssl x509 -in <copied certificate file> -out /etc/openldap/certs/<cert>.pem
+
+4. Add a line in ldap.conf to use new root cert.
+vi /etc/openldap/ldap.conf
+TLS_CACERT      /etc/openldap/certs/<cert>.pem
+
+5.Restart the PHP service.
+systemctl restart php-fpm.service
+===============================================================================
+
+If you have oci8 and are trying to use openldap for ldap you *may* run into a
+problem.  I have an Oracle database that I connect to from apache.  Oracle also
+has ldap libs which were taking precedence over the openldap libs.  This would
+cause a seg fault when calling ldap_connect with a uri style connect string;
+e.g. ldap_connect("ldaps://myldapserver.host");
+
+After using gdb to debug a core dump and a lot of googling I found that the
+solution was to add an env-var to apachectl startup.
+
+I am using Apache 2.2.8 with PHP 5.2.5 on RHEL.  I added:
+
+LD_PRELOAD=/path/to/libldap.so
+export LD_PRELOAD
+
+in /usr/sbin/envvars which is read when apachectl starts.  You can read more on
+this here: http://www.mail-archive.com/php-bugs@lists.php.net/msg02201.html
+
+Scott Geiger
+===============================================================================
+
+Everyone is posting about getting ldaps:// working in a WAMP/AD stack, I had a
+tough time finding how to get it going in RHEL 5.1 (w/ all stock rpms).  Good
+old strace did the trick and helped me find the problem...
+
+Turns out php was looking for the CA file in /etc/pki/CA, and I didn't have the
+correct permissions on the folder.  chmod'ing it to 755 solved my "Can't
+contact LDAP server" message.
+===============================================================================
+
+Be careful when using ldap_connect with the sun client libraries that come
+bundled with solaris.   When specifyng the host with the ldap protocol, my
+connection failed and it took me a good day to trouble shoot.  ie. ldap_connect
+("ldap://somwhere.com");  Just remove the 'ldap://' and specify the host.  
+This was on Solaris 10 sparc.
+===============================================================================
+
+The previous note concerning searching the whole AD tree works fully. Though
+you must be sure that the server you're authenticating/searching is a Global
+Catalog server. If not, connecting and binding will fail. Usually there is at
+least one Global Catalog server in your domain, so if the connect fails try
+another server it will work. The reason it works is that the Global Catalog
+server searches the whole domain as where the domain catalog only searches a
+given OU, offcourse this opposes a security threat as well :)...
+===============================================================================
+
+Be careful about the certificate's permission if you are using Windows.
+
+Set certificates' permissions for everyone to Read and Read&Execute or you may
+get binding errors because of this.
+===============================================================================
+
+This code sample shows how to connect and bind to eDirectory in PHP using LDAP
+for Netware.
+
+<?php
+
+$server='137.65.138.159';
+$admin='cn=admin,o=novell';
+$passwd='novell';
+
+$ds=ldap_connect($server);  // assuming the LDAP server is on this host
+
+if ($ds) {
+    // bind with appropriate dn to give update access
+    $r=ldap_bind($ds, $admin, $passwd);
+    if(!$r) die("ldap_bind failed<br>");
+
+    echo "ldap_bind success";
+    ldap_close($ds);
+} else {
+    echo "Unable to connect to LDAP server";
+}
+?>
+===============================================================================
+
+Using LDAP over SSL on NetWare:
+
+1. Copy the server certificates to sys:/php5/cert directory. This location is
+configurable in php.ini file.
+
+2. Use "ldaps://" prefix for host name argument or a value of 636 for port
+number argument in ldap_connect call.
+
+For more details, visit, NetWare specific PHP documentation at http://
+developer.novell.com/ndk/doc/php/index.html
+===============================================================================
+
+As mentioned above, openLDAP will always return a resource, even if the server
+name isn't valid. 
+
+If you then bind with errors suppressed (@ldap_bind) and it fails, it's not
+obvious what caused the failure (ie: connection or credentials).  As the bind
+doesn't return a resource you can't get the last error from ldap_error etc.
+either.
+
+If you display just a message about login failure to the user they may get
+frustrated re-typing a valid username/password when it's the connection that's
+at fault.
+===============================================================================
+
+To complete questions about how to connect to a LDAP ACTIVE DIRECTORY 2000/2003
+server with SASL on port 636, you can refer to prevous notes, and the following
+directives:
+
+A)Create CA certificates from AD;
+B)Export in .pem (DER) format;
+C)Install OPENSSL,CYRUS SASL,OPENLDAP,KERBEROS 5;
+D)Copy exported AD ca cert into openssl certs dir on your unix system;
+E)Reash with c_reash command;
+F)Get a kerberos ticket form AD for your user;
+G)Compile PHP with SSL and LDAP support;
+H)Test with ldapsearch -D <binddn> -W -H ldaps://ad.secure.com:636 -x
+
+If all works right, create your php script.
+
+Note: For writing parameters to AD you need to renew ticket each 10 hours or
+less (AD default lifetime ticket), for reading pourpose you can maintain
+expired ticket.
+When querying a windows 2000/2003 AD you MUST use only SASL and not TLS (non
+supported).
+===============================================================================
+
+I have spent hours and hours trying to get an LDAPS connection happening with
+my local AD LDS instance (running on Windows 8.1 64bit).
+
+I tried certificate after certificate. OpenSSL, Thawte and Self-signed - all
+with no success.
+
+I ended up deleting all of my certificates and created a Self-signed
+certificate using IIS 7 (running on Windows 8.1).
+
+I then downloaded the Softerra LDAP browser and it was able to connect to my AD
+LDS instance via SSL with no problems.
+
+Sure if it could PHP could.
+
+I used the following code to connect:
+<?php
+$ldap_server = "ldaps://delllappy:636";
+$ldap_conn = ldap_connect($ldap_server)  or die("Failed to connect to LDAP
+server.");
+?>
+I added the following above the ldap_connect:
+<?php
+putenv('LDAPTLS_REQCERT=allow');
+putenv("LDAPCONF=C:\OpenLDAP\sysconf\ldap.conf");
+?>
+
+That did nothing.
+
+The ldap_bind command I used was:
+<?php
+if (!ldap_bind($ldap_conn, $ldap_user, $ldap_pass)) {
+    echo "error";
+}else{
+    echo "success";
+}
+?>
+BTW: I added a heap of debug in the code too - which is referenced elsewhere -
+so I didn't add it in here.
+
+The error that I kept on getting was:
+Error Binding to LDAP: error:14090086:SSL
+routines:SSL3_GET_SERVER_CERTIFICATE:certificate verify failed
+
+I then ran ProcMon (Process Monitor from Microsoft).
+
+I monitored when I restarted my web server (Z-WAMP). At that point there was no
+attempt to read ldap.conf.
+
+I then loaded up my web page with my test.php file.
+
+At that point I noticed that it was ldap.conf that was being read but
+openldap.conf.
+
+Of course as my file was called ldap.conf, openldap.conf failed. I renamed my
+ldap.conf to openldap.conf and everything worked.
+
+On Z-WAMP running OpenLDAP don't used ldap.conf, use openldap.conf.
+
+The openldap.conf file was placed in C:\openldap\sysconf\.
+
+As the PUTENV values did not do anything, I removed them.
+===============================================================================
+
+An addition to trying to setup failover. After doing the ldap_connect, do the
+ldap_bind.  If ldap_bind fails, use the command ldap_errno to get the error
+number.  If the error number is 81, that represents the server is down.  That
+is the only time we do a failover to our backup ldap server.
+
+Another thing to consider is the error could be 49, then do
+ldap_get_option($this->ds,LDAP_OPT_ERROR_NUMBER,$optErrorNumber);. This will
+return extended data and if the data code in that is 532 or 773, the bind
+failure will be caused by the password being expired and requiring a password
+update before the bind will succeed.
+===============================================================================
+
+PHP:LDAP does not support persistent connections.
+===============================================================================
+
+I had terrible problems with "Unable to bind to server: Invalid credentials"
+error - everything seemed to be OK (login/pwd used in other apps).
+Solved by adding domain to login (instead "username" I used
+"username@example.com").

@@ -1,0 +1,157 @@
+
+imap_utf7_decode
+
+(PHP 4, PHP 5, PHP 7)
+
+imap_utf7_decode — Decodes a modified UTF-7 encoded string
+
+说明
+
+string imap_utf7_decode ( string $text )
+
+Decodes modified UTF-7 text into ISO-8859-1 string.
+
+This function is needed to decode mailbox names that contain certain characters
+which are not in range of printable ASCII characters.
+
+参数
+
+text
+
+    A modified UTF-7 encoding string, as defined in » RFC 2060, section 5.1.3
+    (original UTF-7 was defined in » RFC1642).
+
+返回值
+
+Returns a string that is encoded in ISO-8859-1 and consists of the same
+sequence of characters in text, or FALSE if text contains invalid modified
+UTF-7 sequence or text contains a character that is not part of ISO-8859-1
+character set.
+
+参见
+
+  • imap_utf7_encode() - Converts ISO-8859-1 string to modified UTF-7 text
+
+
+User Contributed Notes 4 notes
+
+===============================================================================
+
+For Chinese charset, we can use:
+
+mb_convert_encoding($mailbox, "UTF7-IMAP", "GB2312");
+
+when you want to create a mailbox in Chinese.
+
+OR
+
+mb_convert_encoding($mailbox, "GB2312", "UTF7-IMAP");
+
+when you want to show the listed mailbox with the right charset.
+===============================================================================
+
+For "Outlook-style" UTF-7, you can also use:
+
+mb_convert_encoding( $str, "ISO_8859-1", "UTF7-IMAP" ); # for decoding
+mb_convert_encoding( $str, "UTF7-IMAP", "ISO_8859-1" ); # for encoding
+===============================================================================
+
+I can't find method for converting imap utf7 into utf8.
+So I have to write several lines of code to solve this issue. May be this could
+be usefull. Here is no error handling but it could be added.
+
+Usage:
+$imap_utf7 = '[Gmail]/&BBIEMAQ2BD0EPgQ1-';
+$utf8 =  ImapUtf7::decode($imap_utf7);
+$imap_utf7_2 =  ImapUtf7::encode($utf8);
+
+[ImapUtf7.php]
+<?php
+class ImapUtf7 {
+    static $imap_base64 =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+,';
+    static private function encode_b64imap($s) {   
+        $a=0; $al=0; $res=''; $n=strlen($s);
+        for($i=0;$i<$n;$i++) {
+            $a=($a<<8)|ord($s[$i]); $al+=8;
+            for(;$al>=6;$al-=6) $res.=self::$imap_base64[($a>>($al-6))&0x3F];
+        }
+        if ($al>0) { $res.=self::$imap_base64[($a<<(6-$al))&0x3F]; }
+        return $res;
+    }
+    static private function encode_utf8_char($w) {
+        if ($w&0x80000000) return '';
+        if ($w&0xFC000000) $n=5; else
+        if ($w&0xFFE00000) $n=4; else
+        if ($w&0xFFFF0000) $n=3; else
+        if ($w&0xFFFFF800) $n=2; else
+        if ($w&0xFFFFFF80) $n=1; else return chr($w);
+        $res=chr(( (255<<(7-$n)) | ($w>>($n*6)) )&255);
+        while(--$n>=0) $res.=chr((($w>>($n*6))&0x3F)|0x80);
+        return $res;
+    }
+    static private function decode_b64imap($s) {
+        $a=0; $al=0; $res=''; $n=strlen($s);
+        for($i=0;$i<$n;$i++) {
+            $k=strpos(self::$imap_base64,$s[$i]); if ($k===FALSE) continue;
+            $a=($a<<6)|$k; $al+=6;
+            if ($al>=8) { $res.=chr(($a>>($al-8))&255);$al-=8; }
+        }
+        $r2=''; $n=strlen($res);
+        for($i=0;$i<$n;$i++) {
+            $c=ord($res[$i]); $i++;
+            if ($i<$n) $c=($c<<8) | ord($res[$i]);
+            $r2.=self::encode_utf8_char($c);
+        }
+        return $r2;
+    }
+    static function encode($s) {
+        $n=strlen($s);$err=0;$buf='';$res='';
+        for($i=0;$i<$n;) {
+            $x=ord($s[$i++]);
+            if (($x&0x80)==0x00) { $r=$x;$w=0; }
+            else if (($x&0xE0)==0xC0) { $w=1; $r=$x &0x1F; }
+            else if (($x&0xF0)==0xE0) { $w=2; $r=$x &0x0F; }
+            else if (($x&0xF8)==0xF0) { $w=3; $r=$x &0x07; }
+            else if (($x&0xFC)==0xF8) { $w=4; $r=$x &0x03; }
+            else if (($x&0xFE)==0xFC) { $w=5; $r=$x &0x01; }
+            else if (($x&0xC0)==0x80) { $w=0; $r=-1; $err++; }
+            else { $w=0;$r=-2;$err++; }
+            for($k=0;$k<$w && $i<$n; $k++) {
+                $x=ord($s[$i++]); if ($x&0xE0!=0x80) { $err++; }
+                $r=($r<<6)|($x&0x3F);
+            }
+            if ($r<0x20 || $r>0x7E ) {
+                $buf.=chr(($r>>8)&0xFF); $buf.=chr($r&0xFF);
+            } else {
+                if (strlen($buf)) {
+                    $res.='&'.self::encode_b64imap($buf).'-';
+                    $buf='';
+                }
+                if ($r==0x26) { $res.='&-'; } else $res.=chr($r);
+            }
+        }
+        if (strlen($buf)) $res.='&'.self::encode_b64imap($buf).'-';
+        return $res;
+    }
+    static function decode($s) {
+        $res=''; $n=strlen($s); $h=0;
+        while($h<$n) {
+            $t=strpos($s,'&',$h); if ($t===false) $t=$n;
+            $res.=substr($s,$h,$t-$h); $h=$t+1; if ($h>=$n) break;
+            $t=strpos($s,'-',$h); if ($t===false) $t=$n;
+            $k=$t-$h;
+            if ($k==0) $res.='&';
+            else $res.=self::decode_b64imap(substr($s,$h,$k));
+            $h=$t+1;
+        }
+        return $res;
+    }
+}
+===============================================================================
+
+imap_utf7_decode decodes 'modified'.
+For decoding Outlook UTF-7 - texts I use --enable-recode and $latin1string=
+recode_string("UTF-7..ISO_8859-1",$utf7string);
+Don't use recode-3.5c.*rpm from Contrib.
+recode_string seems to be buggy.

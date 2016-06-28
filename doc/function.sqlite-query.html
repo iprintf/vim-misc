@@ -1,0 +1,274 @@
+
+sqlite_query
+
+SQLiteDatabase::query
+
+(PHP 5 < 5.4.0, PECL sqlite >= 1.0.0)
+
+sqlite_query -- SQLiteDatabase::query — Executes a query against a given
+database and returns a result handle
+
+说明
+
+resource sqlite_query ( resource $dbhandle , string $query [, int $result_type
+= SQLITE_BOTH [, string &$error_msg ]] )
+resource sqlite_query ( string $query , resource $dbhandle [, int $result_type
+= SQLITE_BOTH [, string &$error_msg ]] )
+
+面向对象风格 (method):
+
+public SQLiteResult SQLiteDatabase::query ( string $query [, int $result_type =
+SQLITE_BOTH [, string &$error_msg ]] )
+
+Executes an SQL statement given by the query against a given database handle.
+
+参数
+
+dbhandle
+
+    The SQLite Database resource; returned from sqlite_open() when used
+    procedurally. This parameter is not required when using the object-oriented
+    method.
+
+query
+
+    The query to be executed.
+
+    Data inside the query should be properly escaped.
+
+result_type
+
+    可选的 result_type 参数接受常量，且决定返回的数组如何被索引。使用
+    SQLITE_ASSOC 会仅返回关联索引（已命名字段），而 SQLITE_NUM 会仅返回数值索引
+    。SQLITE_BOTH 会同时返回关联和数值索引。SQLITE_BOTH 是此函数的默认值。
+
+error_msg
+
+    The specified variable will be filled if an error occurs. This is specially
+    important because SQL syntax errors can't be fetched using the 
+    sqlite_last_error() function.
+
+    Note: 为兼容其他数据库扩展(比如 MySQL)，支持两种可替代的语法。推荐第一种格
+    式，函数的第一个参数是dbhandle。
+
+返回值
+
+This function will return a result handle 或者在失败时返回 FALSE. For queries
+that return rows, the result handle can then be used with functions such as 
+sqlite_fetch_array() and sqlite_seek().
+
+Regardless of the query type, this function will return FALSE if the query
+failed.
+
+sqlite_query() returns a buffered, seekable result handle. This is useful for
+reasonably small queries where you need to be able to randomly access the rows.
+Buffered result handles will allocate memory to hold the entire result and will
+not return until it has been fetched. If you only need sequential access to the
+data, it is recommended that you use the much higher performance 
+sqlite_unbuffered_query() instead.
+
+更新日志
+
+版本              说明
+5.1.0 Added the error_msg parameter
+
+注释
+
+Warning
+
+SQLite will execute multiple queries separated by semicolons, so you can use it
+to execute a batch of SQL that you have loaded from a file or have embedded in
+a script. However, this works only when the result of the function is not used
+- if it is used, only the first SQL statement would be executed. Function 
+sqlite_exec() will always execute multiple SQL statements.
+
+When executing multiple queries, the return value of this function will be
+FALSE if there was an error, but undefined otherwise (it might be TRUE for
+success or it might return a result handle).
+
+参见
+
+  • sqlite_unbuffered_query() - Execute a query that does not prefetch and
+    buffer all data
+  • sqlite_array_query() - Execute a query against a given database and returns
+    an array
+
+
+User Contributed Notes 7 notes
+
+===============================================================================
+
+I suppose this could be useful for users attempting to use a sqlite database
+for the first time.
+<?php
+$database = new SQLiteDatabase($yourfile, 0666, $error);
+if (!$database) {
+    $error = (file_exists($yourfile)) ? "Impossible to open, check permissions"
+: "Impossible to create, check permissions";
+    die($error);
+}
+$query = $database->query("SELECT name FROM sqlite_master WHERE type='table'", 
+SQLITE_ASSOC, $query_error); #Lists all tables
+if ($query_error)
+    die("Error: $query_error"); #This means that most probably we catch a
+syntax error
+if (!$query)
+    die("Impossible to execute query.") #As reported above, this means that the
+db owner is different from the web server's one, but we did not commit any
+syntax mistake.
+print $query->numRows();
+while ($row = $query->fetch())
+    print($row['name']."\n");
+?>
+i suppose that the example above is also useful because it will list all the
+tables created, giving also comprehension of what appens when managing a sqlite
+database in OO mode.
+===============================================================================
+
+Not a lot of examples on using the oo style of using sqlite files.  Maybe this
+helps someone trying to figure out all the names of the tables inside an sqlite
+file.
+
+<?php
+
+/* Just extend the class, add our method */
+class MySQLiteDatabase extends SQLiteDatabase {
+
+   /* A neat way to see which tables are inside a valid sqlite file */
+   public function getTables()  {
+      $tables=array();
+      $q = $this->query(sprintf("SELECT name FROM sqlite_master WHERE type=
+'table' ORDER BY name"));
+      $result = $q->fetchAll();
+      foreach($result as $tot_table) {
+         $tables[]=$tot_table['name'];
+      }
+      return($tables);
+   }
+}
+
+/* a sqlite file */
+$database="BLAHBLAH.sqlite";
+
+if (file_exists($database)) {
+   $db = new MySQLiteDatabase($database, 0666, $err);
+   if ($err) {
+      trigger_error($err);
+   } else {
+      print_r($db->getTables());
+   }
+}
+
+/* this sqlite db had 2 tables:
+   Array
+   (
+   [0] => Account
+   [1] => Device
+   )
+
+*/
+?>
+===============================================================================
+
+In follow up to Csaba Gabor's function (see below) that allows for
+multi-statement queries to be executed via sqlite_query() this alternative
+implementation avoids a problem with Csaba's version (which prevents
+multi-statement constructs like CREATE TRIGGER from being parsed correctly).
+<?php
+function sqlite_query_multi ($db, $query) {
+//
+// sqlite_query() rewritten to support concatenated SQL statements.
+//
+// This method works around the sqlite_query() deficiency by splitting
+// queries into two parts; the first part comprising all the statements
+// except the last one (executed via sqlite_exec) and then the last
+// statement (executed via sqlite_query).
+//
+// This allows the result of the last SELECT statement in a multi-statement
+// query to be accessed regardless of the SQL statements that came before it.
+// It also allows execution of arbitrary multi-statement programs regardless
+// whether the result is needed, subject to the following constraint:
+//
+// This method requires that the last statement in a multi-statement query
+// is a valid "stand-alone" SQL statement. If it is not (eg, the "END;" of
+// a multi-statement construct such as CREATE TRIGGER) append an additional
+// ";" (ie, a NULL statement). Normally this should not be needed because
+// almost all the multi-statement constructs I can think of should have a
+// stand-alone statement following them (ie, to makes use of the construct).
+//
+    $pattern = '/^(.*;)(.*;)/s';
+    if ( preg_match($pattern,$query,$match) ) {
+     // multi-statement query
+        sqlite_exec($db,$match[1]);
+        $result = sqlite_query($db,$match[2]);
+    } else {
+     // single-statement query
+        $result = sqlite_query($db,$query);
+    }
+    return (@$result);
+}
+?>
+===============================================================================
+
+Correction:
+
+sqlite_query will return NULL if the web server cannot write to the sqlite
+database file.
+
+(please correct the previous post and delete this one)
+===============================================================================
+
+sqlite_open will return NULL if the web server cannot write to the sqlite
+database file.
+
+I saw the following message in my web server error log:
+
+PHP Warning:  sqlite_query(): (null) ...
+
+It turns out that the sqlite database file was owned by a user other than the
+one the web server was running as.  In my case, it was a Linux system running
+Apache (which was running under the context of user apache).  The sqlite
+database file was owned by root.  I changed ownership of the file to user
+apache and now it works!  The sqlite_open call now returns a valid result
+handle.
+
+Jason Aeschilman
+===============================================================================
+
+While reading the manual at sqlite.org, I can answer for the quotes in strings.
+You should put two quote to get one.
+
+insert into atable values ( '5 O''Clock');
+===============================================================================
+
+The function below allows you to submit multiple queries in one shot to a
+SQLITE database, and will return whatever you would get for the final query.
+
+function sqlite_query_multi ($db, $query) {
+    // submit multiple queries (separated by ;) to $db
+    // and return the result from the last one
+    $multiSQL = "/('[^']*'|\"[^\"]*\"|[^;'\"])*;/";
+    preg_match_all ($multiSQL, "$query;", $aSQL);
+    for ($i=sizeof($aSQL=$aSQL[0]);$i--;)
+    if (!($trim=trim(substr($aSQL[$i],0,-1))))
+        unset ($aSQL[$i]);
+        else $aSQL[$i] = "$trim;";
+    foreach ($aSQL as $i => $sql)
+    $dbRes = sqlite_query ($db, $sql);
+    return (@$dbRes);
+}
+
+The section below illustrates the above function:
+
+$db = sqlite_open(":memory:", 0666, $sqliteerror);
+$query = <<<EOD
+CREATE TABLE foo (bar INTEGER PRIMARY KEY, baz TEXT);
+INSERT INTO foo VALUES (Null, 'Hi');
+INSERT INTO foo VALUES (Null, 'Mom');
+SELECT * FROM foo;
+EOD;
+$dbRes = sqlite_query_multi ($db, $query);  // 4 statements
+while (sqlite_has_more($dbRes))
+    var_dump(sqlite_fetch_array($dbRes, SQLITE_ASSOC));
+
+Csaba Gabor

@@ -1,0 +1,371 @@
+
+DOMDocument::createElement
+
+(PHP 5, PHP 7)
+
+DOMDocument::createElement — Create new element node
+
+说明
+
+public DOMElement DOMDocument::createElement ( string $name [, string $value ]
+)
+
+This function creates a new instance of class DOMElement. 此节点出现在文档中，
+除非是用诸如 DOMNode->appendChild() 等函数来将其插入。
+
+参数
+
+name
+
+    The tag name of the element.
+
+value
+
+    The value of the element. By default, an empty element will be created. The
+    value can also be set later with DOMElement::$nodeValue.
+
+    The value is used verbatim except that the < and > entity references will
+    escaped. Note that & has to be manually escaped; otherwise it is regarded
+    as starting an entity reference. Also " won't be escaped.
+
+返回值
+
+Returns a new instance of class DOMElement or FALSE if an error occurred.
+
+错误／异常
+
+DOM_INVALID_CHARACTER_ERR
+
+    Raised if name contains an invalid character.
+
+范例
+
+Example #1 Creating a new element and inserting it as root
+
+<?php
+
+$dom = new DOMDocument('1.0', 'utf-8');
+
+$element = $dom->createElement('test', 'This is the root element!');
+
+// We insert the new element as root (child of the document)
+$dom->appendChild($element);
+
+echo $dom->saveXML();
+?>
+
+以上例程会输出：
+
+<?xml version="1.0" encoding="utf-8"?>
+<test>This is the root element!</test>
+
+Example #2 Passing text containing an unescaped & as value
+
+<?php
+$dom = new DOMDocument('1.0', 'utf-8');
+$element = $dom->createElement('foo', 'me & you');
+$dom->appendChild($element);
+echo $dom->saveXML();
+?>
+
+以上例程的输出类似于：
+
+Warning: DOMDocument::createElement(): unterminated entity reference             you in /in/BjTCg on line 4
+<?xml version="1.0" encoding="utf-8"?>
+<foo/>
+
+注释
+
+    Note:
+
+    The value will not be escaped. Use DOMDocument::createTextNode() to create
+    a text node with escaping support.
+
+参见
+
+  • DOMNode::appendChild() - Adds new child at the end of the children
+  • DOMDocument::createAttribute() - Create new attribute
+  • DOMDocument::createAttributeNS() - Create new attribute node with an
+    associated namespace
+  • DOMDocument::createCDATASection() - Create new cdata node
+  • DOMDocument::createComment() - Create new comment node
+  • DOMDocument::createDocumentFragment() - Create new document fragment
+  • DOMDocument::createElementNS() - Create new element node with an associated
+    namespace
+  • DOMDocument::createEntityReference() - Create new entity reference node
+  • DOMDocument::createProcessingInstruction() - Creates new PI node
+  • DOMDocument::createTextNode() - Create new text node
+
+
+User Contributed Notes 8 notes
+
+===============================================================================
+
+With regard to the note below about needing htmlentities to avoid warnings
+about unterminated entity references, I thought it worthwhile to mention that
+that you don't need to with createTextNode and DOMText::__construct.  If you
+mix both methods of setting text nodes and do (or don't) apply htmlentities
+consistently to all data to be displayed, you'll get &amp;s (or warnings and
+badly-formed xml).
+
+It's probably in one's best interest to extend DOMElement and DOMDocument so
+that it creates a DOMText node and appends it, rather than passing it up to the
+DOMElement constructor.  Otherwise, good luck using (or not using) htmlentities
+in all the right places in your code, especially as code changes get made.
+
+<?php
+
+class XDOMElement extends DOMElement {
+    function __construct($name, $value = null, $namespaceURI = null) {
+        parent::__construct($name, null, $namespaceURI);
+    }
+}
+
+class XDOMDocument extends DOMDocument {
+    function __construct($version = null, $encoding = null) {
+        parent::__construct($version, $encoding);
+        $this->registerNodeClass('DOMElement', 'XDOMElement');
+    }
+
+    function createElement($name, $value = null, $namespaceURI = null) {
+        $element = new XDOMElement($name, $value, $namespaceURI);
+        $element = $this->importNode($element);
+        if (!empty($value)) {
+            $element->appendChild(new DOMText($value));
+        }
+        return $element;
+    }
+}
+
+$doc1 = new XDOMDocument();
+$doc1_e1 = $doc1->createElement('foo', 'bar & baz');
+$doc1->appendChild($doc1_e1);
+echo $doc1->saveXML();
+
+$doc2 = new XDOMDocument();
+$doc2_e1 = $doc2->createElement('foo');
+$doc2->appendChild($doc2_e1);
+$doc2_e1->appendChild($doc2->createTextNode('bar & baz'));
+echo $doc2->saveXML();
+
+?>
+
+Text specified in createElement:
+<?xml version=""?>
+<foo>bar &amp; baz</foo>
+
+Text added via createTextNode:
+<?xml version=""?>
+<foo>bar &amp; baz</foo>
+===============================================================================
+
+To avoid warning message "unterminated entity reference" you may use
+htmlentities() for escaping supplied value:
+<?php
+//...
+$dom->createElement('name', htmlentities($text))
+//...
+?>
+===============================================================================
+
+Note that the second parameter (value), although convenient, is non-standard.
+You should create elements like this instead:
+
+<?php
+$doc = new DOMDocument('1.0', 'iso-8859-1');
+
+$root = $doc->createElement('test');
+$doc->appendChild($root);
+
+$root_text = $doc->createTextNode('This is the root element!');
+$root->appendChild($root_text);
+
+print $doc->saveXML();
+?>
+
+Or, alternatively, extend the DOMDocument class and add your own custom,
+convenience method to avoid intruding on the standard:
+
+<?php
+class CustomDOMDocument extends DOMDocument {
+  function createElementWithText($name, $child_text) {
+    // Creates an element with a child text node
+   
+    // @param  string  $name        element tag name
+    // @param  string  $child_text  child node text
+   
+    // @return  object  new element
+   
+    $element = $this->createElement($name);
+   
+    $element_text = $this->createTextNode($child_text);
+    $element->appendChild($element_text);
+   
+    return $element;
+  }
+}
+
+$doc = new CustomDOMDocument('1.0', 'iso-8859-1');
+
+$root = $doc->createElementWithText('test', 'This is the root element!');
+$doc->appendChild($root);
+
+print $doc->saveXML();
+?>
+
+Also use caution with (or avoid) the 'DOMElement->nodeValue' property. It can
+return some unexpected values and changing its value will replace (remove) all
+descendants of the element with a single text node. It's also non-standard;
+according to the DOM spec it should return NULL.
+===============================================================================
+
+Although the built-in DOM functions are great, since they're designed to
+support generic XML, generating HTML DOMs becomes particularly verbose. I ended
+up writing this function to drastically speed things up.
+Instead of calling something like
+<?php
+  $div = $dom->createElement("div");
+  $div->setAttribute("class","MyClass");
+  $div->setAttribute("id","MyID");
+  $someOtherDiv->appendChild($div);
+?>
+you can accomplish the same thing with:
+<?php
+  $div = newElement("div", $someOtherDiv, "class=MyClass;id=MyID");
+?>
+The "key1=value;key2=value" syntax is really fast to use, but obviously doesn't
+hold up if your content has those characters in it. So, you can also pass it an
+array:
+<?php
+  $div = newElement("div", $someOtherDiv, array("class","MyClass"));
+?>
+Or an array of arrays, representing different attributes:
+<?php
+  $div = newElement("form", $someOtherDiv, array(array("method","get"), array(
+"action","/refer/?id=5");
+?>
+
+Here's the function:
+
+<?php
+function newElement($type, $insertInto = NULL, $params=NULL, $content="")
+    {
+        $tempEl =  $this->dom->createElement($type, $content);
+        if(gettype($params) == "string" && strlen($params) > 0)
+        {
+            $attributesCollection =split(";", $params);
+            foreach($attributesCollection  as $attribute)
+            {
+                $keyvalue = split("=", $attribute);
+                $tempEl->setAttribute($keyvalue[0], $keyvalue[1]);
+            }
+        }
+        if(gettype($params) == "array")
+        {
+            if(gettype($params[0]) == "array")
+            {
+                foreach($params as $attribute)
+                {
+                    $tempEl->setAttribute($attribute[0], $attribute[1]);
+                }
+            } else {
+                $tempEl->setAttribute($params[0], $params[1]);
+            }
+        }
+?>
+===============================================================================
+
+You may think insertBefore and insertAfter is a direct alternative for
+appendChild, this is not the case.
+
+<?php
+$dom = new DOMDocument();
+$dom->load($file);
+
+$dom->appendChild($newNode); //Works fine
+$dom->insertBefore($newNode, $refNode); //Will fail
+
+$refNode->parentNode->insertBefore($newNode, $refNode); // thanx to yasindagli
+(first post)
+?>
+===============================================================================
+
+Note that the NUL character "\0" is not in the list of invalid characters for
+$name, so no error is triggered, but the tag name will be truncated at the null
+byte:
+
+<?php
+
+$dom = new DOMDocument('1.0', 'utf-8');
+$el = $dom->createElement('foo' . "\0" . 'bar', 'Hello World');
+echo $el->tagName; // outputs "foo"
+
+?>
+===============================================================================
+
+To create elements with attributes,
+
+<?php
+
+function createElement($domObj, $tag_name, $value = NULL, $attributes = NULL)
+{
+    $element = ($value != NULL ) ? $domObj->createElement($tag_name, $value) : 
+$domObj->createElement($tag_name);
+
+    if( $attributes != NULL )
+    {
+        foreach ($attributes as $attr=>$val)
+        {
+            $element->setAttribute($attr, $val);
+        }
+    }
+
+    return $element;
+}
+
+$dom = new DOMDocument('1.0', 'utf-8');
+
+$elm = createElement($dom, 'foo', 'bar', array('attr_name'=>'attr_value'));
+
+$dom->appendChild($elm);
+
+echo $dom->saveXML();
+
+?>
+
+outputs :
+<?xml version="1.0" encoding="utf-8"?>
+<foo attr_name="attr_value">bar</foo>
+===============================================================================
+
+Remember:
+
+If you want to perform multiple actions with a new node, you may need to create
+a copy of it before
+
+means:
+## Create an address to an unique memory block !
+$td = $dom->createElement('td');
+## Change some things in this original unique pattern
+$td->setAttribute('class', 'saldo');
+
+## clone the unique pattern to two own one's
+$td1 = clone $td;
+$td2 = clone $td;
+
+## alter properties in each one
+$td1->nodeValue = 'Ich bin die erste neue Node';
+$td2->nodeValue = 'Ich bin die zweite neue Node';
+
+## find the parent element
+$tr = $dom->getElementById('t001-tr001');
+## find the first and the last child (here only for clearity)
+$first = $tr->firstChild;
+$last = $tr->lastChild;
+
+## produce the new nodes
+$newtd1 = $tr->insertBefore($td1, $first);
+$newtd2 = $tr->appendChild($td2);
+
+conclusion:
+YOU NEED AN ORIGINAL NEW NODE FOR EACH ACTION!
