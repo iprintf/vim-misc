@@ -32,6 +32,7 @@ function Kyo_Create_Command_PHP()
     let s = ['#!'.command_path, '<?PHP']
     call setline(1, s)
     :exe 'normal 2jo'
+    :set ft=php
 endfunction
 
 nnoremap ,pc :call Kyo_Create_Command_PHP()<CR>
